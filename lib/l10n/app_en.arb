@@ -1,0 +1,485 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Medora",
+
+  "navHome": "Home",
+  "navMedications": "Medications",
+  "navDoses": "Doses",
+  "navTreatments": "Treatments",
+
+  "dashboard": "Dashboard",
+  "seeAll": "See All",
+
+  "todaysDoses": "Today's Doses",
+  "noDosesScheduled": "No doses scheduled for today",
+  "dosesProgress": "{taken} of {total} taken · {pending} pending",
+  "@dosesProgress": {
+    "placeholders": {
+      "taken": { "type": "int" },
+      "total": { "type": "int" },
+      "pending": { "type": "int" }
+    }
+  },
+  "unableToLoadDoses": "Unable to load doses",
+
+  "addMedication": "Add\nMedication",
+  "scanBarcode": "Scan\nBarcode",
+  "newTreatment": "New\nTreatment",
+
+  "expiringSoon": "Expiring Soon",
+  "lowStock": "Low Stock",
+  "activeTreatments": "Active Treatments",
+  "allMedicationsWithinDate": "All medications are within date",
+  "allMedicationsWellStocked": "All medications are well stocked",
+  "noActiveTreatments": "No active treatments",
+  "expiresInDays": "Expires in {days} days",
+  "@expiresInDays": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "noExpirySet": "No expiry set",
+  "remaining": "{quantity} remaining",
+  "@remaining": {
+    "placeholders": {
+      "quantity": { "type": "int" }
+    }
+  },
+  "startedOn": "Started {date}",
+  "@startedOn": {
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+
+  "medications": "Medications",
+  "searchMedications": "Search medications...",
+  "noMedicationsYet": "No medications yet",
+  "addFirstMedication": "Add your first medication to get started",
+  "addMedicationButton": "Add Medication",
+  "edit": "Edit",
+  "delete": "Delete",
+  "deleteMedication": "Delete Medication",
+  "deleteMedicationConfirm": "Are you sure you want to delete \"{name}\"?",
+  "@deleteMedicationConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "cancel": "Cancel",
+  "noExpiry": "No expiry",
+  "loadingMedications": "Loading medications...",
+
+  "editMedication": "Edit Medication",
+  "medicationNameLabel": "Medication Name *",
+  "pleaseEnterMedicationName": "Please enter a medication name",
+  "activeIngredient": "Active Ingredient",
+  "category": "Category",
+  "quantityLabel": "Quantity *",
+  "required": "Required",
+  "invalidNumber": "Invalid number",
+  "minStock": "Min Stock",
+  "purchaseDate": "Purchase Date",
+  "expiryDate": "Expiry Date",
+  "storageLocation": "Storage Location",
+  "barcode": "Barcode",
+  "notes": "Notes",
+  "updateMedication": "Update Medication",
+  "medicationUpdatedSuccessfully": "Medication updated successfully",
+  "medicationAddedSuccessfully": "Medication added successfully",
+  "errorLoadingMedication": "Error loading medication: {message}",
+  "@errorLoadingMedication": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "selectDate": "Select date",
+
+  "medication": "Medication",
+  "medicationNotFound": "Medication not found",
+  "quantity": "Quantity",
+  "details": "Details",
+  "minimumStock": "Minimum Stock",
+
+  "expired": "Expired",
+  "expiresInDaysShort": "Expires in {days} days",
+  "@expiresInDaysShort": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "valid": "Valid",
+  "quantityLeft": "{quantity} left",
+  "@quantityLeft": {
+    "placeholders": {
+      "quantity": { "type": "int" }
+    }
+  },
+
+  "treatments": "Treatments",
+  "noTreatmentsYet": "No treatments yet",
+  "createTreatmentPlan": "Create a treatment plan for an illness",
+  "addTreatment": "Add Treatment",
+  "end": "End",
+  "deleteTreatment": "Delete Treatment",
+  "deleteTreatmentConfirm": "Delete \"{name}\" and all its prescriptions?",
+  "@deleteTreatmentConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "active": "Active",
+  "ended": "Ended",
+  "loadingTreatments": "Loading treatments...",
+
+  "newTreatmentTitle": "New Treatment",
+  "treatmentNameLabel": "Treatment Name *",
+  "treatmentNameHint": "e.g., Flu Treatment",
+  "pleaseEnterTreatmentName": "Please enter a treatment name",
+  "symptoms": "Symptoms",
+  "symptomsHint": "e.g., Fever, headache, sore throat",
+  "startDateLabel": "Start Date *",
+  "endDateLabel": "End Date (optional)",
+  "selectEndDate": "Select end date",
+  "createTreatment": "Create Treatment",
+  "treatmentCreatedSuccessfully": "Treatment created successfully",
+
+  "treatment": "Treatment",
+  "treatmentNotFound": "Treatment not found",
+  "endTreatment": "End Treatment",
+  "endTreatmentConfirm": "End \"{name}\"? This will deactivate all prescriptions.",
+  "@endTreatmentConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "startDate": "Start Date",
+  "endDate": "End Date",
+  "ongoing": "Ongoing",
+  "prescriptions": "Prescriptions",
+  "add": "Add",
+  "noPrescriptionsYet": "No prescriptions yet",
+  "addPrescription": "Add Prescription",
+  "unknownMedication": "Unknown Medication",
+  "prescriptionSummary": "{dosage} · every {hours}h · {days} days",
+  "@prescriptionSummary": {
+    "placeholders": {
+      "dosage": { "type": "String" },
+      "hours": { "type": "int" },
+      "days": { "type": "int" }
+    }
+  },
+  "done": "Done",
+  "errorLoadingPrescriptions": "Error loading prescriptions: {message}",
+  "@errorLoadingPrescriptions": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "medicationLabel": "Medication *",
+  "dosageLabel": "Dosage *",
+  "dosageHint": "e.g., 400mg",
+  "intervalHoursLabel": "Interval (hours)",
+  "durationDaysLabel": "Duration (days)",
+
+  "todaysDosesTitle": "Today's Doses",
+  "noDosesScheduledToday": "No doses scheduled for today",
+  "createTreatmentForDoses": "Create a treatment and add prescriptions to see doses here",
+  "upcoming": "Upcoming",
+  "completed": "Completed",
+  "taken": "Taken",
+  "pending": "Pending",
+  "skipped": "Skipped",
+  "missed": "Missed",
+  "overdue": "Overdue",
+  "skip": "Skip",
+  "take": "Take",
+  "loadingDoses": "Loading doses...",
+
+  "scanBarcodeTitle": "Scan AIC Code",
+  "pointCameraAtBarcode": "Point camera at AIC code on package",
+  "enterBarcodeManually": "Enter code manually",
+  "enterBarcode": "Enter AIC Code",
+  "barcodeNumber": "AIC code",
+  "barcodeHint": "e.g., A023834118",
+  "useBarcode": "Search",
+  "scanBarcodeTooltip": "Scan AIC Code",
+  "ocrDetectedCodes": "Detected codes — tap to search",
+  "ocrScanning": "Scanning for AIC codes…",
+
+  "settings": "Settings",
+  "about": "About",
+  "appVersion": "App Version",
+
+  "colorScheme": "Color Scheme",
+  "colorSchemeDesc": "Choose an accent color for the app",
+  "colorTeal": "Teal",
+  "colorBlue": "Blue",
+  "colorIndigo": "Indigo",
+  "colorPurple": "Purple",
+  "colorPink": "Pink",
+  "colorRed": "Red",
+  "colorOrange": "Orange",
+  "colorGreen": "Green",
+
+  "aifaDatabase": "AIFA Database",
+  "aifaDatabaseDesc": "Italian medication database for code lookup",
+  "aifaLastSync": "Last sync: {date}",
+  "@aifaLastSync": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "aifaNeverSynced": "Not yet downloaded",
+  "aifaSyncing": "Downloading database…",
+  "aifaSyncSuccess": "Database updated ({count} medications)",
+  "@aifaSyncSuccess": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "aifaSyncError": "Failed to download database",
+  "syncAifaDatabase": "Update Database",
+  "notifications": "Notifications",
+  "enableNotifications": "Enable Notifications",
+  "receiveDoseReminders": "Receive dose reminders",
+  "cancelAllReminders": "Cancel All Reminders",
+  "removePendingNotifications": "Remove all pending notifications",
+  "cancelAllRemindersConfirm": "Are you sure you want to cancel all pending reminders?",
+  "no": "No",
+  "yes": "Yes",
+  "allRemindersCancelled": "All reminders cancelled",
+  "dataAndSync": "Data & Sync",
+  "online": "Online",
+  "offline": "Offline",
+  "connectedSyncsAutomatically": "Connected — data syncs automatically",
+  "usingLocalData": "Using local data — will sync when online",
+  "syncNow": "Sync Now",
+  "syncIdle": "Tap to sync data with the cloud",
+  "syncing": "Syncing...",
+  "syncSuccess": "Sync completed successfully",
+  "syncError": "Sync failed — tap to retry",
+  "features": "Features",
+  "familySharing": "Family Sharing",
+  "shareCabinetWithFamily": "Share your medicine cabinet with family",
+  "exportData": "Export Data",
+  "exportAsCsvOrPdf": "Export as CSV or PDF",
+
+  "exportDataTitle": "Export Data",
+  "exportYourData": "Export Your Data",
+  "chooseWhatToExport": "Choose what to export and the format",
+  "include": "Include",
+  "fullMedicationInventory": "Full medication inventory",
+  "treatmentPlansAndHistory": "Treatment plans and history",
+  "doseLogs": "Dose Logs",
+  "medicationIntakeRecords": "Medication intake records",
+  "doseLogDateRange": "Dose Log Date Range",
+  "from": "From",
+  "to": "To",
+  "format": "Format",
+  "exporting": "Exporting...",
+  "exportAndShare": "Export & Share",
+  "noDataToExport": "No data to export",
+  "exportFailed": "Export failed: {error}",
+  "@exportFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "familySharingTitle": "Family Sharing",
+  "loadingFamily": "Loading family...",
+  "noFamilyGroup": "No Family Group",
+  "noFamilyDescription": "Create a family group to share your medicine cabinet, or join an existing one with an invite code.",
+  "createFamily": "Create Family",
+  "joinWithCode": "Join with Code",
+  "familyName": "Family Name",
+  "familyNameHint": "e.g., Smith Family",
+  "yourName": "Your Name",
+  "yourNameHint": "e.g., John",
+  "create": "Create",
+  "joinFamily": "Join Family",
+  "inviteCode": "Invite Code",
+  "inviteCodeHint": "e.g., ABC123",
+  "join": "Join",
+  "copyCode": "Copy code",
+  "codeCopied": "Code copied to clipboard",
+  "shareCode": "Share code",
+  "joinMedoraFamily": "Join my Medora family! Use code: {code}",
+  "@joinMedoraFamily": {
+    "placeholders": {
+      "code": { "type": "String" }
+    }
+  },
+  "generateNewCode": "Generate New Code",
+  "members": "Members",
+  "noMembersYet": "No members yet",
+  "unknown": "Unknown",
+  "owner": "Owner",
+  "member": "Member",
+  "removeMember": "Remove Member",
+  "removeMemberConfirm": "Remove {name} from the family?",
+  "@removeMemberConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "remove": "Remove",
+  "leaveFamily": "Leave Family",
+  "leaveFamilyConfirm": "Are you sure you want to leave this family? You will no longer have access to shared medications.",
+  "leave": "Leave",
+
+  "retry": "Retry",
+  "error": "Error: {message}",
+  "@error": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+
+  "appearance": "Appearance",
+  "darkMode": "Dark Mode",
+  "darkModeLabel": "Dark",
+  "lightMode": "Light",
+  "systemDefault": "System",
+  "language": "Language",
+
+  "lookingUpBarcode": "Looking up barcode…",
+  "autoFilledFromBarcode": "Product found — fields auto-filled",
+  "barcodeNotFound": "Product not found — enter details manually",
+
+  "editTreatment": "Edit Treatment",
+  "treatmentUpdatedSuccessfully": "Treatment updated successfully",
+  "updateTreatment": "Update Treatment",
+
+  "editPrescription": "Edit Prescription",
+  "prescriptionUpdated": "Prescription updated",
+  "scheduleType": "Schedule Type",
+  "fixedInterval": "Fixed Interval",
+  "timesPerDay": "Times per Day",
+  "specificTimes": "Specific Times",
+  "morning": "Morning",
+  "noon": "Noon",
+  "evening": "Evening",
+  "beforeSleep": "Before Sleep",
+  "selectTimes": "Select Times",
+  "everyXHours": "Every {hours} hours",
+  "@everyXHours": {
+    "placeholders": { "hours": { "type": "int" } }
+  },
+  "xTimesDaily": "{count} times daily",
+  "@xTimesDaily": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "save": "Save",
+  "update": "Update",
+  "selectMedication": "Select Medication",
+  "results": "results",
+  "searchByBarcode": "Search by code",
+  "archiveTreatment": "Archive Treatment",
+  "archiveTreatmentConfirm": "Archive \"{name}\"? It will be moved to the archive and can be viewed later.",
+  "@archiveTreatmentConfirm": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "archive": "Archive",
+  "archived": "Archived",
+  "deletePrescription": "Delete Prescription",
+  "deletePrescriptionConfirm": "Are you sure you want to delete this prescription? This action cannot be undone.",
+  "prescriptionDeleted": "Prescription deleted",
+  "patientName": "Patient",
+  "patientNameHint": "e.g. Baby, Mom...",
+  "doseHistory": "Dose History",
+  "noDoseHistory": "No dose history yet",
+  "medicationPhoto": "Photo",
+  "addPhoto": "Add Photo",
+  "changePhoto": "Change Photo",
+  "photoSource": "Photo Source",
+  "camera": "Camera",
+  "gallery": "Gallery",
+  "forPatient": "For: {name}",
+  "@forPatient": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "catPainkiller": "Painkiller",
+  "catAntibiotic": "Antibiotic",
+  "catAntihistamine": "Antihistamine",
+  "catVitamin": "Vitamin",
+  "catSupplement": "Supplement",
+  "catColdFlu": "Cold & Flu",
+  "catDigestive": "Digestive",
+  "catSkinCare": "Skin Care",
+  "catEyeCare": "Eye Care",
+  "catFirstAid": "First Aid",
+  "catOther": "Other",
+
+  "activeIngredients": "Active Ingredients",
+  "symptomsField": "Symptoms / Used For",
+  "patientTagsField": "Patient",
+  "addTag": "Add tag...",
+  "treatsSymptoms": "Treats",
+  "uncategorized": "Uncategorized",
+  "deactivatePrescription": "Deactivate",
+  "prescriptionDeactivated": "Prescription deactivated",
+  "reactivatePrescription": "Reactivate",
+  "prescriptionReactivated": "Prescription reactivated",
+
+  "locMedicineCabinet": "Medicine Cabinet",
+  "locBathroom": "Bathroom",
+  "locKitchen": "Kitchen",
+  "locBedroom": "Bedroom",
+  "locRefrigerator": "Refrigerator",
+  "locFirstAidKit": "First Aid Kit",
+  "locOther": "Other",
+
+  "deleteAllData": "Delete All Data",
+  "deleteAllDataDesc": "Remove all medications, treatments, doses and prescriptions",
+  "deleteAllDataConfirm": "This will permanently delete ALL your data locally and online. Type DELETE to confirm.",
+  "typeDeleteToConfirm": "Type DELETE to confirm",
+  "allDataDeleted": "All data has been deleted",
+  "dangerZone": "Danger Zone",
+
+  "treatmentPatientTags": "Patient",
+  "treatmentSymptomTags": "Symptoms",
+
+  "searchTreatments": "Search treatments…",
+  "all": "All",
+  "noResults": "No results found",
+
+  "medicationDescription": "Description",
+  "manufacturerLabel": "Manufacturer",
+  "formLabel": "Form",
+  "atcCodeLabel": "ATC Code",
+  "searchAifaByName": "Search AIFA Database",
+
+  "quantityUnit": "Unit",
+  "unitPieces": "Pieces",
+  "unitPills": "Pills",
+  "unitTablets": "Tablets",
+  "unitCapsules": "Capsules",
+  "unitMl": "ml",
+  "unitDrops": "Drops",
+  "unitBustine": "Sachets",
+  "unitAmpoules": "Ampoules",
+  "unitSuppositories": "Suppositories",
+  "unitPatches": "Patches",
+
+  "autoDiminish": "Auto-decrease stock",
+  "autoDiminishHint": "Automatically reduce medication quantity when a dose is taken",
+
+  "unarchive": "Unarchive",
+  "archivedMedications": "Archived Medications",
+  "showArchived": "Show archived"
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

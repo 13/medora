@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/medora.iml" filepath="$PROJECT_DIR$/medora.iml" />
+      <module fileurl="file://$PROJECT_DIR$/android/medora_android.iml" filepath="$PROJECT_DIR$/android/medora_android.iml" />
+    </modules>
+  </component>
+</project>
