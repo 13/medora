@@ -80,6 +80,9 @@ fvm flutter run --device-id=<ios-device-or-simulator>
 
 # Web
 fvm flutter build web --release
+
+# Linux
+fvm flutter build linux --release
 ```
 
 > **Note:** The project requires **minSdk 28** (Android 9.0+) due to `mobile_scanner` and `supabase_flutter`. Core library desugaring is already configured in `android/app/build.gradle.kts` for `flutter_local_notifications`.

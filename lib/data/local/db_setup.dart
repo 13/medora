@@ -1,3 +1,12 @@
+import 'dart:io';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+/// Initializes the database factory for desktop platforms.
 void setupDatabaseFactory() {
-  // No-op on mobile/desktop as sqflite handles it automatically.
+  if (Platform.isLinux || Platform.isWindows) {
+    // Initialize FFI
+    sqfliteFfiInit();
+    // Set the databaseFactory to the FFI version
+    databaseFactory = databaseFactoryFfi;
+  }
 }

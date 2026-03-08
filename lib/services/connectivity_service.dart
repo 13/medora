@@ -4,7 +4,9 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 
 class ConnectivityService {
   ConnectivityService._();
@@ -22,8 +24,15 @@ class ConnectivityService {
 
   /// Initialize and start listening to connectivity changes.
   Future<void> initialize() async {
-    final result = await _connectivity.checkConnectivity();
-    _isOnline = _isConnected(result);
+    try {
+      final result = await _connectivity.checkConnectivity();
+      _isOnline = _isConnected(result);
+    } catch (e) {
+      debugPrint('⚠ Connectivity check failed: $e');
+      // Default to online if check fails (e.g. DBus issues on Linux)
+      _isOnline = true;
+    }
+    
     _controller.add(_isOnline);
 
     _connectivity.onConnectivityChanged.listen((result) {
@@ -32,18 +41,26 @@ class ConnectivityService {
         _isOnline = nowOnline;
         _controller.add(_isOnline);
       }
+    }, onError: (e) {
+      debugPrint('⚠ Connectivity stream error: $e');
     });
   }
 
   bool _isConnected(List<ConnectivityResult> results) {
+    // If we're on desktop and get an error or empty list, assume online for now
+    // to avoid blocking app functionality.
+    if (results.isEmpty && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+      return true;
+    }
+    
     return results.any((r) =>
         r == ConnectivityResult.wifi ||
         r == ConnectivityResult.mobile ||
-        r == ConnectivityResult.ethernet);
+        r == ConnectivityResult.ethernet ||
+        r == ConnectivityResult.vpn);
   }
 
   void dispose() {
     _controller.close();
   }
 }
-

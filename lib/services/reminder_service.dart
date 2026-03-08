@@ -3,6 +3,8 @@
 /// Manages local notifications for medication dose reminders.
 library;
 
+import 'dart:io';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -33,9 +35,16 @@ class ReminderService {
       requestSoundPermission: true,
     );
 
-    const settings = InitializationSettings(
+    // Linux settings are required when targeting Linux
+    final linuxSettings = LinuxInitializationSettings(
+      defaultActionName: 'Open notification',
+      defaultIcon: AssetsLinuxIcon('assets/icon/medora_icon.png'),
+    );
+
+    final settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
+      linux: linuxSettings,
     );
 
     await _notifications.initialize(
@@ -91,9 +100,15 @@ class ReminderService {
       presentSound: true,
     );
 
-    const details = NotificationDetails(
+    final linuxDetails = LinuxNotificationDetails(
+      icon: AssetsLinuxIcon('assets/icon/medora_icon.png'),
+      urgency: LinuxNotificationUrgency.critical,
+    );
+
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
+      linux: linuxDetails,
     );
 
     await _notifications.zonedSchedule(
@@ -196,6 +211,8 @@ class ReminderService {
 
   /// Request notification permissions (iOS/Android 13+).
   Future<bool> requestPermissions() async {
+    if (Platform.isLinux) return true;
+
     // Android
     final androidPlugin =
         _notifications.resolvePlatformSpecificImplementation<
