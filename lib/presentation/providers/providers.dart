@@ -25,6 +25,9 @@ import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
 
 // ============================================================
 // Local Datasource Providers
@@ -143,7 +146,21 @@ final connectivityStreamProvider = StreamProvider<bool>((ref) {
 
 /// Stream provider for sync state.
 final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
-  return ref.watch(syncServiceProvider).stateStream;
+  final syncService = ref.watch(syncServiceProvider);
+  
+  // Listen to the sync state and trigger UI refreshes on success.
+  // Using a manual listener on the stream instead of listenSelf 
+  // to avoid compatibility issues with certain Ref types.
+  final subscription = syncService.stateStream.listen((state) {
+    if (state == SyncState.success) {
+      // Refresh key data providers after a successful sync
+      ref.read(medicationListProvider.notifier).refresh();
+      ref.read(treatmentListProvider.notifier).refresh();
+      ref.read(todaysDoseLogsProvider.notifier).refresh();
+    }
+  });
+
+  ref.onDispose(() => subscription.cancel());
+
+  return syncService.stateStream;
 });
-
-

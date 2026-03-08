@@ -15,6 +15,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isSignUp = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -95,8 +96,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   decoration: InputDecoration(
                     labelText: l10n.password,
                     prefixIcon: const Icon(Icons.lock),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
                   ),
-                  obscureText: true,
+                  obscureText: _obscurePassword,
                   validator: (v) => (v == null || v.length < 6) ? "Password too short" : null,
                 ),
                 const SizedBox(height: 24),
@@ -128,7 +139,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 TextButton.icon(
                   onPressed: () => ref.read(authControllerProvider.notifier).enterOfflineMode(),
                   icon: const Icon(Icons.cloud_off),
-                  label: const Text("Use Offline Mode"), // Localized if possible, but user asked for this specifically
+                  label: Text(l10n.useOfflineMode),
                 ),
               ],
             ),

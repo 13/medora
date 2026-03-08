@@ -166,11 +166,7 @@ class SyncService {
     for (final row in doseLogs) {
       try {
         final model = DoseLogModel.fromLocalMap(row);
-        await doseLogRemote.updateDoseLogStatus(
-          model.id,
-          model.status.name,
-          takenTime: model.takenTime,
-        );
+        await doseLogRemote.upsertDoseLog(model);
         await doseLogLocal.markSynced(model.id);
       } catch (_) {}
     }
