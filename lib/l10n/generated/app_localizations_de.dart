@@ -430,7 +430,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get about => 'Über';
 
   @override
-  String get appVersion => 'App-Version';
+  String get appVersion => 'Version';
 
   @override
   String get colorScheme => 'Farbschema';

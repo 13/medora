@@ -210,7 +210,7 @@
 
   "settings": "Settings",
   "about": "About",
-  "appVersion": "App Version",
+  "appVersion": "Version",
 
   "colorScheme": "Color Scheme",
   "colorSchemeDesc": "Choose an accent color for the app",

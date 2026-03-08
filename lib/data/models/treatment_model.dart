@@ -56,6 +56,29 @@ class TreatmentModel {
     );
   }
 
+  /// Create from local SQLite row.
+  factory TreatmentModel.fromLocalMap(Map<String, dynamic> map) {
+    return TreatmentModel(
+      id: map['id'] as String,
+      userId: map['user_id'] as String?,
+      name: map['name'] as String,
+      patientTags: MedicationModel.parseTags(map['patient_tags']),
+      symptomTags: MedicationModel.parseTags(map['symptom_tags']),
+      startDate: DateTime.parse(map['start_date'] as String),
+      endDate: map['end_date'] != null
+          ? DateTime.tryParse(map['end_date'] as String)
+          : null,
+      isActive: (map['is_active'] as int? ?? 1) == 1,
+      notes: map['notes'] as String?,
+      createdAt: map['created_at'] != null
+          ? DateTime.tryParse(map['created_at'] as String)
+          : null,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.tryParse(map['updated_at'] as String)
+          : null,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

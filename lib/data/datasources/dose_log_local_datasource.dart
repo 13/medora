@@ -178,6 +178,11 @@ class DoseLogLocalDatasource {
         where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<void> hardDelete(String id) async {
+    final db = await _db;
+    await db.delete('dose_logs', where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('dose_logs');
@@ -233,4 +238,3 @@ class DoseLogLocalDatasource {
     };
   }
 }
-

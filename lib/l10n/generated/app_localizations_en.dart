@@ -424,7 +424,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get about => 'About';
 
   @override
-  String get appVersion => 'App Version';
+  String get appVersion => 'Version';
 
   @override
   String get colorScheme => 'Color Scheme';

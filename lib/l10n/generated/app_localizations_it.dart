@@ -426,7 +426,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get about => 'Informazioni';
 
   @override
-  String get appVersion => 'Versione app';
+  String get appVersion => 'Versione';
 
   @override
   String get colorScheme => 'Schema colori';

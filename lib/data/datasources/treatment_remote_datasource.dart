@@ -41,25 +41,26 @@ class TreatmentRemoteDatasource {
     return TreatmentModel.fromJson(response);
   }
 
-  Future<TreatmentModel> addTreatment(TreatmentModel model) async {
-    final response = await SupabaseConfig.client
+  /// Add a new treatment.
+  Future<void> addTreatment(TreatmentModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.treatmentsTable)
-        .insert(model.toJson())
-        .select()
-        .single();
-
-    return TreatmentModel.fromJson(response);
+        .insert(model.toJson());
   }
 
-  Future<TreatmentModel> updateTreatment(TreatmentModel model) async {
-    final response = await SupabaseConfig.client
+  /// Update a treatment.
+  Future<void> updateTreatment(TreatmentModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.treatmentsTable)
         .update(model.toJson())
-        .eq('id', model.id)
-        .select()
-        .single();
+        .eq('id', model.id);
+  }
 
-    return TreatmentModel.fromJson(response);
+  /// Upsert a treatment (insert or update).
+  Future<void> upsertTreatment(TreatmentModel model) async {
+    await SupabaseConfig.client
+        .from(AppConstants.treatmentsTable)
+        .upsert(model.toJson());
   }
 
   Future<void> deleteTreatment(String id) async {
@@ -69,18 +70,13 @@ class TreatmentRemoteDatasource {
         .eq('id', id);
   }
 
-  Future<TreatmentModel> endTreatment(String id) async {
-    final response = await SupabaseConfig.client
+  Future<void> endTreatment(String id) async {
+    await SupabaseConfig.client
         .from(AppConstants.treatmentsTable)
         .update({
           'is_active': false,
           'end_date': DateTime.now().toIso8601String().split('T').first,
         })
-        .eq('id', id)
-        .select()
-        .single();
-
-    return TreatmentModel.fromJson(response);
+        .eq('id', id);
   }
 }
-

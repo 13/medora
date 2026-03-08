@@ -55,6 +55,12 @@ class DoseLogRemoteDatasource {
         .toList();
   }
 
+  Future<void> upsertDoseLog(DoseLogModel model) async {
+    await SupabaseConfig.client
+        .from(AppConstants.doseLogsTable)
+        .upsert(model.toJson());
+  }
+
   Future<DoseLogModel> addDoseLog(DoseLogModel model) async {
     final response = await SupabaseConfig.client
         .from(AppConstants.doseLogsTable)
@@ -92,4 +98,3 @@ class DoseLogRemoteDatasource {
         .insert(jsonList);
   }
 }
-

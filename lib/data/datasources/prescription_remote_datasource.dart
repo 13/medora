@@ -50,27 +50,26 @@ class PrescriptionRemoteDatasource {
     return PrescriptionModel.fromJson(response);
   }
 
-  Future<PrescriptionModel> addPrescription(PrescriptionModel model) async {
-    final response = await SupabaseConfig.client
+  /// Add a new prescription.
+  Future<void> addPrescription(PrescriptionModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.prescriptionsTable)
-        .insert(model.toJson())
-        .select('*, medications(name), treatments(name)')
-        .single();
-
-    return PrescriptionModel.fromJson(response);
+        .insert(model.toJson());
   }
 
-  Future<PrescriptionModel> updatePrescription(
-    PrescriptionModel model,
-  ) async {
-    final response = await SupabaseConfig.client
+  /// Update a prescription.
+  Future<void> updatePrescription(PrescriptionModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.prescriptionsTable)
         .update(model.toJson())
-        .eq('id', model.id)
-        .select('*, medications(name), treatments(name)')
-        .single();
+        .eq('id', model.id);
+  }
 
-    return PrescriptionModel.fromJson(response);
+  /// Upsert a prescription (insert or update).
+  Future<void> upsertPrescription(PrescriptionModel model) async {
+    await SupabaseConfig.client
+        .from(AppConstants.prescriptionsTable)
+        .upsert(model.toJson());
   }
 
   Future<void> deletePrescription(String id) async {
@@ -94,4 +93,3 @@ class PrescriptionRemoteDatasource {
         .eq('id', id);
   }
 }
-

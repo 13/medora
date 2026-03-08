@@ -167,7 +167,7 @@
   "aifaSyncError": "Download database fallito",
   "syncAifaDatabase": "Aggiorna database",
   "about": "Informazioni",
-  "appVersion": "Versione app",
+  "appVersion": "Versione",
   "notifications": "Notifiche",
   "enableNotifications": "Abilita notifiche",
   "receiveDoseReminders": "Ricevi promemoria per le dosi",

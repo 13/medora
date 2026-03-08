@@ -883,7 +883,7 @@ abstract class AppLocalizations {
   /// No description provided for @appVersion.
   ///
   /// In en, this message translates to:
-  /// **'App Version'**
+  /// **'Version'**
   String get appVersion;
 
   /// No description provided for @colorScheme.

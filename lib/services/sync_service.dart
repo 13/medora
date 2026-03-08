@@ -15,11 +15,14 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
+import 'package:medora/data/datasources/family_local_datasource.dart';
+import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/models/family_model.dart';
 import 'package:medora/services/connectivity_service.dart';
 
 /// Current state of the sync process.
@@ -35,6 +38,8 @@ class SyncService {
     required this.prescriptionRemote,
     required this.doseLogLocal,
     required this.doseLogRemote,
+    required this.familyLocal,
+    required this.familyRemote,
   });
 
   final MedicationLocalDatasource medicationLocal;
@@ -45,6 +50,8 @@ class SyncService {
   final PrescriptionRemoteDatasource prescriptionRemote;
   final DoseLogLocalDatasource doseLogLocal;
   final DoseLogRemoteDatasource doseLogRemote;
+  final FamilyLocalDatasource familyLocal;
+  final FamilyRemoteDatasource familyRemote;
 
   final _stateController = StreamController<SyncState>.broadcast();
   Stream<SyncState> get stateStream => _stateController.stream;
@@ -63,7 +70,7 @@ class SyncService {
     });
   }
 
-  /// Push local changes to Supabase, then pull remote data.
+  /// Push ALL local data to Supabase, then pull remote data.
   Future<void> syncAll() async {
     if (_currentState == SyncState.syncing) return;
     if (!ConnectivityService.instance.isOnline) {
@@ -76,23 +83,22 @@ class SyncService {
     }
 
     _setState(SyncState.syncing);
-    debugPrint('Sync: starting push/pull cycle...');
+    debugPrint('Sync: starting full cycle (user: ${SupabaseConfig.currentUserId})...');
 
     try {
-      // 1. Push local changes
-      await _pushMedications();
-      await _pushTreatments();
-      await _pushPrescriptions();
-      await _pushDoseLogs();
+      // 1. Force push ALL local records to ensure existing data is synced
+      // (not just those marked as 'pending')
+      await _forcePushAll();
 
       // 2. Pull remote data
+      await _pullFamilies();
       await _pullMedications();
       await _pullTreatments();
       await _pullPrescriptions();
       await _pullDoseLogs();
 
       _lastSyncTime = DateTime.now();
-      debugPrint('Sync: completed successfully at $_lastSyncTime');
+      debugPrint('Sync: cycle completed successfully at $_lastSyncTime');
       _setState(SyncState.success);
 
       // Return to idle after a brief success indication
@@ -102,189 +108,118 @@ class SyncService {
         }
       });
     } catch (e, st) {
-      debugPrint('Sync: error: $e\n$st');
+      debugPrint('Sync: fatal error during cycle: $e\n$st');
       _setState(SyncState.error);
     }
   }
 
-  // ── Push local changes ─────────────────────────────────────
+  /// Pushes all local records to Supabase, regardless of sync_status.
+  Future<void> _forcePushAll() async {
+    final db = await AppDatabase.instance.database;
+    final userId = SupabaseConfig.currentUserId;
+    if (userId == null) return;
 
-  Future<void> _pushMedications() async {
-    final pending = await medicationLocal.getPendingChanges();
-    if (pending.isEmpty) return;
-    
-    debugPrint('Sync: pushing ${pending.length} medications...');
-    for (final row in pending) {
-      final status = row['sync_status'] as String;
-      final id = row['id'] as String;
+    // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
+
+    // 1. Families
+    final families = await db.query('families');
+    for (final row in families) {
       try {
-        if (status == SyncStatus.pendingCreate ||
-            status == SyncStatus.pendingUpdate) {
-          // Use currentUserId if missing locally (e.g. created while offline-unauthenticated)
-          final userId = row['user_id'] as String? ?? SupabaseConfig.currentUserId;
-          
-          final model = MedicationModel.fromLocalMap({
-            ...row,
-            'user_id': userId,
-          });
-
-          if (status == SyncStatus.pendingCreate) {
-            await medicationRemote.addMedication(model);
-          } else {
-            await medicationRemote.updateMedication(model);
-          }
-          await medicationLocal.markSynced(id);
-        } else if (status == SyncStatus.pendingDelete) {
-          await medicationRemote.deleteMedication(id);
-          await medicationLocal.hardDelete(id);
-        }
-      } catch (e) {
-        debugPrint('Sync: failed to push medication $id: $e');
-        // Continue with next record
-      }
+        final model = FamilyModel.fromJson(row);
+        await familyRemote.createFamily(model);
+        await db.update('families', {'sync_status': SyncStatus.synced}, where: 'id = ?', whereArgs: [model.id]);
+      } catch (_) {}
     }
-  }
 
-  Future<void> _pushTreatments() async {
-    final pending = await treatmentLocal.getPendingChanges();
-    if (pending.isEmpty) return;
-
-    debugPrint('Sync: pushing ${pending.length} treatments...');
-    for (final row in pending) {
-      final status = row['sync_status'] as String;
-      final id = row['id'] as String;
+    // 2. Medications
+    final meds = await db.query('medications');
+    for (final row in meds) {
       try {
-        if (status == SyncStatus.pendingCreate ||
-            status == SyncStatus.pendingUpdate) {
-          final userId = row['user_id'] as String? ?? SupabaseConfig.currentUserId;
-          
-          final model = TreatmentModel.fromJson({
-            ...row,
-            'user_id': userId,
-            'is_active': (row['is_active'] as int? ?? 1) == 1,
-          });
-
-          if (status == SyncStatus.pendingCreate) {
-            await treatmentRemote.addTreatment(model);
-          } else {
-            await treatmentRemote.updateTreatment(model);
-          }
-          await treatmentLocal.markSynced(id);
-        } else if (status == SyncStatus.pendingDelete) {
-          await treatmentRemote.deleteTreatment(id);
-          await treatmentLocal.hardDelete(id);
-        }
-      } catch (e) {
-        debugPrint('Sync: failed to push treatment $id: $e');
-      }
+        final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
+        await medicationRemote.upsertMedication(model);
+        await medicationLocal.markSynced(model.id);
+      } catch (_) {}
     }
-  }
 
-  Future<void> _pushPrescriptions() async {
-    final pending = await prescriptionLocal.getPendingChanges();
-    if (pending.isEmpty) return;
-
-    debugPrint('Sync: pushing ${pending.length} prescriptions...');
-    for (final row in pending) {
-      final status = row['sync_status'] as String;
-      final id = row['id'] as String;
+    // 3. Treatments
+    final treatments = await db.query('treatments');
+    for (final row in treatments) {
       try {
-        if (status == SyncStatus.pendingCreate ||
-            status == SyncStatus.pendingUpdate) {
-          final model = PrescriptionModel.fromLocalMap(row);
-          if (status == SyncStatus.pendingCreate) {
-            await prescriptionRemote.addPrescription(model);
-          } else {
-            await prescriptionRemote.updatePrescription(model);
-          }
-          await prescriptionLocal.markSynced(id);
-        } else if (status == SyncStatus.pendingDelete) {
-          await prescriptionRemote.deletePrescription(id);
-          await prescriptionLocal.hardDelete(id);
-        }
-      } catch (e) {
-        debugPrint('Sync: failed to push prescription $id: $e');
-      }
+        final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
+        await treatmentRemote.upsertTreatment(model);
+        await treatmentLocal.markSynced(model.id);
+      } catch (_) {}
     }
-  }
 
-  Future<void> _pushDoseLogs() async {
-    final pending = await doseLogLocal.getPendingChanges();
-    if (pending.isEmpty) return;
-
-    debugPrint('Sync: pushing ${pending.length} dose logs...');
-    for (final row in pending) {
-      final status = row['sync_status'] as String;
-      final id = row['id'] as String;
+    // 4. Prescriptions
+    final prescriptions = await db.query('prescriptions');
+    for (final row in prescriptions) {
       try {
-        if (status == SyncStatus.pendingCreate) {
-          final model = DoseLogModel.fromJson({
-            ...row,
-            'status': row['status'] as String? ?? 'pending',
-          });
-          await doseLogRemote.addDoseLog(model);
-          await doseLogLocal.markSynced(id);
-        } else if (status == SyncStatus.pendingUpdate) {
-          final doseStatus = row['status'] as String? ?? 'pending';
-          await doseLogRemote.updateDoseLogStatus(
-            id,
-            doseStatus,
-            takenTime: row['taken_time'] != null
-                ? DateTime.tryParse(row['taken_time'] as String)
-                : null,
-          );
-          await doseLogLocal.markSynced(id);
-        }
-      } catch (e) {
-        debugPrint('Sync: failed to push dose log $id: $e');
-      }
+        final model = PrescriptionModel.fromLocalMap(row);
+        await prescriptionRemote.upsertPrescription(model);
+        await prescriptionLocal.markSynced(model.id);
+      } catch (_) {}
+    }
+
+    // 5. Dose Logs
+    final doseLogs = await db.query('dose_logs');
+    for (final row in doseLogs) {
+      try {
+        final model = DoseLogModel.fromLocalMap(row);
+        await doseLogRemote.updateDoseLogStatus(
+          model.id,
+          model.status.name,
+          takenTime: model.takenTime,
+        );
+        await doseLogLocal.markSynced(model.id);
+      } catch (_) {}
     }
   }
 
   // ── Pull remote data ───────────────────────────────────────
 
+  Future<void> _pullFamilies() async {
+    try {
+      final membership = await familyRemote.getCurrentMembership();
+      if (membership != null) {
+        final family = await familyRemote.getFamilyById(membership.familyId);
+        if (family != null) {
+          await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
+          final members = await familyRemote.getMembers(family.id);
+          for (final m in members) {
+            await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);
+          }
+        }
+      }
+    } catch (e) { debugPrint('Sync: pull families error: $e'); }
+  }
+
   Future<void> _pullMedications() async {
     try {
       final remoteMeds = await medicationRemote.getMedications();
-      for (final m in remoteMeds) {
-        await _safeUpsertMedication(m);
-      }
-    } catch (e) {
-      debugPrint('Sync: pull medications error: $e');
-    }
+      for (final m in remoteMeds) { await _safeUpsertMedication(m); }
+    } catch (e) { debugPrint('Sync: pull medications error: $e'); }
   }
 
   Future<void> _pullTreatments() async {
     try {
       final remote = await treatmentRemote.getTreatments();
-      for (final t in remote) {
-        await _safeUpsertTreatment(t);
-      }
-    } catch (e) {
-      debugPrint('Sync: pull treatments error: $e');
-    }
+      for (final t in remote) { await _safeUpsertTreatment(t); }
+    } catch (e) { debugPrint('Sync: pull treatments error: $e'); }
   }
 
   Future<void> _pullPrescriptions() async {
     try {
       final remote = await prescriptionRemote.getActivePrescriptions();
-      for (final p in remote) {
-        await _safeUpsertPrescription(p);
-      }
-    } catch (e) {
-      debugPrint('Sync: pull prescriptions error: $e');
-    }
+      for (final p in remote) { await _safeUpsertPrescription(p); }
+    } catch (e) { debugPrint('Sync: pull prescriptions error: $e'); }
   }
 
   Future<void> _pullDoseLogs() async {
     try {
       final remote = await doseLogRemote.getTodaysDoseLogs();
-      for (final d in remote) {
-        await doseLogLocal.upsertIfSynced(d);
-      }
-    } catch (e) {
-      debugPrint('Sync: pull dose logs error: $e');
-    }
+      for (final d in remote) { await doseLogLocal.upsertIfSynced(d); }
+    } catch (e) { debugPrint('Sync: pull dose logs error: $e'); }
   }
 
   void _setState(SyncState state) {
@@ -292,7 +227,7 @@ class SyncService {
     _stateController.add(state);
   }
 
-  // ── Safe upsert helpers (skip rows with local pending changes) ──
+  // ── Safe upsert helpers ──
 
   Future<void> _safeUpsertMedication(MedicationModel m) async {
     if (await _isLocalPending('medications', m.id)) return;
@@ -309,17 +244,11 @@ class SyncService {
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
   }
 
-  /// Check if a local row has unpushed changes.
   Future<bool> _isLocalPending(String table, String id) async {
     final db = await AppDatabase.instance.database;
-    final rows = await db.query(table,
-        columns: ['sync_status'],
-        where: 'id = ? AND sync_status != ?',
-        whereArgs: [id, SyncStatus.synced]);
+    final rows = await db.query(table, columns: ['sync_status'], where: 'id = ? AND sync_status != ?', whereArgs: [id, SyncStatus.synced]);
     return rows.isNotEmpty;
   }
 
-  void dispose() {
-    _stateController.close();
-  }
+  void dispose() { _stateController.close(); }
 }

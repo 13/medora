@@ -38,7 +38,7 @@ class MedicationRemoteDatasource {
     final response = await SupabaseConfig.client
         .from(AppConstants.medicationsTable)
         .select()
-        .or('name.ilike.%$query%,active_ingredient.ilike.%$query%')
+        .or('name.ilike.%$query%,active_ingredients.ilike.%$query%')
         .order('name');
 
     return (response as List)
@@ -46,72 +46,26 @@ class MedicationRemoteDatasource {
         .toList();
   }
 
-  /// Get medications expiring within [days].
-  Future<List<MedicationModel>> getExpiringSoon({int days = 30}) async {
-    final now = DateTime.now();
-    final threshold = now.add(Duration(days: days));
-
-    final response = await SupabaseConfig.client
+  /// Add a new medication.
+  Future<void> addMedication(MedicationModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.medicationsTable)
-        .select()
-        .gte('expiry_date', now.toIso8601String().split('T').first)
-        .lte('expiry_date', threshold.toIso8601String().split('T').first)
-        .order('expiry_date');
-
-    return (response as List)
-        .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
-        .toList();
-  }
-
-  /// Get medications with low stock.
-  Future<List<MedicationModel>> getLowStock() async {
-    // Use raw filter: quantity <= minimum_stock_level
-    // Supabase doesn't support column-to-column comparison directly,
-    // so we fetch all and filter in memory, or use an RPC.
-    final response = await SupabaseConfig.client
-        .from(AppConstants.medicationsTable)
-        .select()
-        .order('quantity');
-
-    return (response as List)
-        .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
-        .where((m) => m.quantity <= m.minimumStockLevel)
-        .toList();
-  }
-
-  /// Get medication by barcode.
-  Future<MedicationModel?> getMedicationByBarcode(String barcode) async {
-    final response = await SupabaseConfig.client
-        .from(AppConstants.medicationsTable)
-        .select()
-        .eq('barcode', barcode)
-        .maybeSingle();
-
-    if (response == null) return null;
-    return MedicationModel.fromJson(response);
-  }
-
-  /// Insert a new medication.
-  Future<MedicationModel> addMedication(MedicationModel model) async {
-    final response = await SupabaseConfig.client
-        .from(AppConstants.medicationsTable)
-        .insert(model.toJson())
-        .select()
-        .single();
-
-    return MedicationModel.fromJson(response);
+        .insert(model.toJson());
   }
 
   /// Update a medication.
-  Future<MedicationModel> updateMedication(MedicationModel model) async {
-    final response = await SupabaseConfig.client
+  Future<void> updateMedication(MedicationModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.medicationsTable)
         .update(model.toJson())
-        .eq('id', model.id)
-        .select()
-        .single();
+        .eq('id', model.id);
+  }
 
-    return MedicationModel.fromJson(response);
+  /// Upsert a medication (insert or update).
+  Future<void> upsertMedication(MedicationModel model) async {
+    await SupabaseConfig.client
+        .from(AppConstants.medicationsTable)
+        .upsert(model.toJson());
   }
 
   /// Delete a medication.
@@ -123,19 +77,13 @@ class MedicationRemoteDatasource {
   }
 
   /// Update medication quantity by delta.
-  Future<MedicationModel> updateQuantity(String id, int delta) async {
-    // Fetch current, update, return
+  Future<void> updateQuantity(String id, int delta) async {
     final current = await getMedicationById(id);
     final newQuantity = (current.quantity + delta).clamp(0, 999999);
 
-    final response = await SupabaseConfig.client
+    await SupabaseConfig.client
         .from(AppConstants.medicationsTable)
         .update({'quantity': newQuantity})
-        .eq('id', id)
-        .select()
-        .single();
-
-    return MedicationModel.fromJson(response);
+        .eq('id', id);
   }
 }
-

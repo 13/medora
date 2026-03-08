@@ -33,6 +33,8 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
     final user = ref.watch(currentUserProvider);
+    final biometricsEnabled = ref.watch(biometricsEnabledProvider);
+    final appVersionAsync = ref.watch(appVersionProvider);
 
     final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
     final syncState = syncAsync.value ?? SyncState.idle;
@@ -104,6 +106,17 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(l10n.colorSchemeDesc),
             trailing: _ColorDot(ref.watch(colorSchemeProvider).color),
             onTap: () => _showColorSchemePicker(context, ref, l10n),
+          ),
+          const Divider(),
+
+          // ── Security ───────────────────────────────────────
+          _SectionTitle("Security"),
+          SwitchListTile(
+            secondary: const Icon(Icons.fingerprint),
+            title: const Text("Fingerprint Unlock"),
+            subtitle: const Text("Use biometrics to protect your data"),
+            value: biometricsEnabled,
+            onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
           ),
           const Divider(),
 
@@ -235,7 +248,10 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: Text(l10n.appVersion),
-            subtitle: const Text(AppConstants.appVersion),
+            subtitle: Text(appVersionAsync.maybeWhen(
+              data: (v) => v,
+              orElse: () => AppConstants.appVersion,
+            )),
           ),
           const SizedBox(height: 32),
         ],

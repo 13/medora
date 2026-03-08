@@ -1,16 +1,18 @@
 /// Medora - Settings Providers
 ///
-/// Persisted providers for theme mode and locale preferences.
+/// Persisted providers for theme mode, locale, and security preferences.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // ── Keys ──────────────────────────────────────────────────────
 const _kThemeMode = 'theme_mode';
 const _kLocale = 'locale';
 const _kColorScheme = 'color_scheme';
+const _kBiometricsEnabled = 'biometrics_enabled';
 
 // ── SharedPreferences provider ───────────────────────────────
 final sharedPreferencesProvider = Provider<SharedPreferences>(
@@ -105,4 +107,27 @@ class ColorSchemeNotifier extends Notifier<AppColorScheme> {
   }
 }
 
+// ── Biometrics Setting ───────────────────────────────────────
+final biometricsEnabledProvider =
+    NotifierProvider<BiometricsEnabledNotifier, bool>(BiometricsEnabledNotifier.new);
 
+class BiometricsEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    // Default is OFF per user request
+    return prefs.getBool(_kBiometricsEnabled) ?? false;
+  }
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setBool(_kBiometricsEnabled, enabled);
+  }
+}
+
+// ── App Version ─────────────────────────────────────────────
+final appVersionProvider = FutureProvider<String>((ref) async {
+  final packageInfo = await PackageInfo.fromPlatform();
+  return packageInfo.version;
+});

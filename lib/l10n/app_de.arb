@@ -167,7 +167,7 @@
   "aifaSyncError": "Datenbank-Download fehlgeschlagen",
   "syncAifaDatabase": "Datenbank aktualisieren",
   "about": "Über",
-  "appVersion": "App-Version",
+  "appVersion": "Version",
   "notifications": "Benachrichtigungen",
   "enableNotifications": "Benachrichtigungen aktivieren",
   "receiveDoseReminders": "Erinnerungen an Einnahmen erhalten",

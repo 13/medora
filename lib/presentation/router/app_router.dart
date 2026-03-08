@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/auth/auth_screen.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/screens/medication/add_medication_screen.dart';
@@ -173,7 +174,7 @@ class _AuthGuardState extends ConsumerState<_AuthGuard> with WidgetsBindingObser
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Use a small delay to ensure the provider is ready
+    // Initial check on launch
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkBiometrics());
   }
 
@@ -185,6 +186,9 @@ class _AuthGuardState extends ConsumerState<_AuthGuard> with WidgetsBindingObser
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final biometricsEnabled = ref.read(biometricsEnabledProvider);
+    if (!biometricsEnabled) return;
+
     if (state == AppLifecycleState.paused) {
       ref.read(isBiometricLockedProvider.notifier).setLocked(true);
     } 
@@ -194,6 +198,12 @@ class _AuthGuardState extends ConsumerState<_AuthGuard> with WidgetsBindingObser
   }
 
   Future<void> _checkBiometrics() async {
+    final biometricsEnabled = ref.read(biometricsEnabledProvider);
+    if (!biometricsEnabled) {
+      ref.read(isBiometricLockedProvider.notifier).setLocked(false);
+      return;
+    }
+
     final isLocked = ref.read(isBiometricLockedProvider);
     if (!isLocked || _isAuthenticating) return;
 
@@ -219,9 +229,10 @@ class _AuthGuardState extends ConsumerState<_AuthGuard> with WidgetsBindingObser
     final authState = ref.watch(authStateProvider);
     final isOffline = ref.watch(isOfflineModeProvider);
     final isLocked = ref.watch(isBiometricLockedProvider);
+    final biometricsEnabled = ref.watch(biometricsEnabledProvider);
 
-    // If biometric is locked, show the unlock screen with Medora logo
-    if (isLocked) {
+    // If biometric is locked AND enabled, show the unlock screen
+    if (isLocked && biometricsEnabled) {
       return Scaffold(
         body: Center(
           child: Column(
