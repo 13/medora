@@ -67,7 +67,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 Center(
                   child: Image.asset(
                     'assets/icon/medora_icon.png',
-                    height: 100,
+                    height: 210,
                     errorBuilder: (ctx, err, st) => const Icon(Icons.medication, size: 80, color: Colors.teal),
                   ),
                 ),
