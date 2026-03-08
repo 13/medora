@@ -1,6 +1,7 @@
 /// Medora - Export Screen
 library;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -224,8 +225,16 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   }
 
   Future<void> _export() async {
-    setState(() => _isExporting = true);
     final l10n = AppLocalizations.of(context);
+
+    if (kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Export is not yet supported on Web.')),
+      );
+      return;
+    }
+
+    setState(() => _isExporting = true);
 
     try {
       final exportService = ExportService.instance;
@@ -262,23 +271,25 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           treatments: treatments,
           doseLogs: doseLogs,
         );
-        await SharePlus.instance.share(
-          ShareParams(files: [XFile(file.path)]),
-        );
+        if (file != null) {
+          await SharePlus.instance.share(
+            ShareParams(files: [XFile(file.path)]),
+          );
+        }
       } else {
         final files = <XFile>[];
 
         if (medications != null && medications.isNotEmpty) {
           final f = await exportService.exportMedicationsCSV(medications);
-          files.add(XFile(f.path));
+          if (f != null) files.add(XFile(f.path));
         }
         if (treatments != null && treatments.isNotEmpty) {
           final f = await exportService.exportTreatmentsCSV(treatments);
-          files.add(XFile(f.path));
+          if (f != null) files.add(XFile(f.path));
         }
         if (doseLogs != null && doseLogs.isNotEmpty) {
           final f = await exportService.exportDoseLogsCSV(doseLogs);
-          files.add(XFile(f.path));
+          if (f != null) files.add(XFile(f.path));
         }
 
         if (files.isNotEmpty) {
@@ -305,4 +316,3 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
 
 enum ExportFormat { pdf, csv }
-

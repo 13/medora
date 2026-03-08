@@ -5,6 +5,7 @@
 /// `sync_status` column for tracking pending changes.
 library;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -32,15 +33,27 @@ class AppDatabase {
   }
 
   Future<Database> _initDatabase() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final dbPath = join(dir.path, 'medora.db');
-    return openDatabase(
-      dbPath,
-      version: 10,
-      onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
-      onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
-    );
+    if (kIsWeb) {
+      // On web, use the global databaseFactory directly to avoid path issues
+      return await databaseFactory.openDatabase(
+        'medora.db',
+        options: OpenDatabaseOptions(
+          version: 10,
+          onCreate: _onCreate,
+          onUpgrade: _onUpgrade,
+        ),
+      );
+    } else {
+      final dir = await getApplicationDocumentsDirectory();
+      final dbPath = join(dir.path, 'medora.db');
+      return await openDatabase(
+        dbPath,
+        version: 10,
+        onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {

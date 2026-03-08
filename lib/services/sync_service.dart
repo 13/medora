@@ -90,6 +90,7 @@ class SyncService {
       await _pushPendingChanges();
 
       // 2. Pull remote data
+      // Order is important for Foreign Keys
       await _pullFamilies();
       await _pullMedications();
       await _pullTreatments();

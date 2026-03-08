@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/db_setup.dart' if (dart.library.html) 'package:medora/data/local/db_setup_web.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -20,6 +21,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize database factory for web if needed
+  setupDatabaseFactory();
 
   // Initialize SharedPreferences first (needed by settings providers)
   final prefs = await SharedPreferences.getInstance();

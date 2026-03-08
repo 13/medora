@@ -6,6 +6,7 @@ library;
 import 'dart:io';
 
 import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -27,7 +28,7 @@ class ExportService {
   // ═══════════════════════════════════════════════════════════
 
   /// Export medications as CSV file.
-  Future<File> exportMedicationsCSV(List<Medication> medications) async {
+  Future<File?> exportMedicationsCSV(List<Medication> medications) async {
     final headers = [
       'Name',
       'Active Ingredient',
@@ -58,7 +59,7 @@ class ExportService {
   }
 
   /// Export treatments as CSV file.
-  Future<File> exportTreatmentsCSV(List<Treatment> treatments) async {
+  Future<File?> exportTreatmentsCSV(List<Treatment> treatments) async {
     final headers = [
       'Name',
       'Symptoms',
@@ -81,7 +82,7 @@ class ExportService {
   }
 
   /// Export dose logs as CSV file.
-  Future<File> exportDoseLogsCSV(List<DoseLog> doseLogs) async {
+  Future<File?> exportDoseLogsCSV(List<DoseLog> doseLogs) async {
     final headers = [
       'Medication',
       'Dosage',
@@ -103,7 +104,9 @@ class ExportService {
     return _writeCSV('medora_dose_logs', [headers, ...rows]);
   }
 
-  Future<File> _writeCSV(String name, List<List<dynamic>> data) async {
+  Future<File?> _writeCSV(String name, List<List<dynamic>> data) async {
+    if (kIsWeb) return null; // Web needs a different download strategy
+
     final csv = const CsvEncoder().convert(data);
     final dir = await getTemporaryDirectory();
     final timestamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
@@ -117,11 +120,13 @@ class ExportService {
   // ═══════════════════════════════════════════════════════════
 
   /// Export a combined PDF report.
-  Future<File> exportPDF({
+  Future<File?> exportPDF({
     List<Medication>? medications,
     List<Treatment>? treatments,
     List<DoseLog>? doseLogs,
   }) async {
+    if (kIsWeb) return null; // Web needs a different download strategy
+
     final pdf = pw.Document(
       title: 'Medora Report',
       author: 'Medora App',
@@ -290,4 +295,3 @@ class ExportService {
     return file;
   }
 }
-

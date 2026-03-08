@@ -1,8 +1,9 @@
 /// Medora - Add/Edit Medication Screen
 library;
 
-import 'dart:io';
+import 'dart:io' show File, Directory;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -791,7 +792,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.shade300),
             ),
-            child: _imagePath != null && File(_imagePath!).existsSync()
+            child: _imagePath != null &&
+                    !kIsWeb &&
+                    File(_imagePath!).existsSync()
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: Image.file(File(_imagePath!),
@@ -825,6 +828,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   }
 
   Future<void> _pickImage() async {
+    if (kIsWeb) {
+      // Photo picking is limited on web in this implementation
+      return;
+    }
     final l10n = AppLocalizations.of(context);
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
