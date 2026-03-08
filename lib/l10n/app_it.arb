@@ -371,18 +371,16 @@
 
   "unarchive": "Ripristina",
   "archivedMedications": "Farmaci archiviati",
-  "showArchived": "Mostra archiviati"
+  "showArchived": "Mostra archiviati",
+
+  "signIn": "Accedi",
+  "signUp": "Registrati",
+  "createAccount": "Crea account",
+  "email": "Email",
+  "password": "Password",
+  "continueAsGuest": "Continua come ospite",
+  "signOut": "Disconnetti",
+  "alreadyHaveAccount": "Hai già un account? Accedi",
+  "dontHaveAccount": "Non hai un account? Registrati",
+  "useOfflineMode": "Usa modalità offline"
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

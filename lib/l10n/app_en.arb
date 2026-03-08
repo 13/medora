@@ -466,20 +466,16 @@
 
   "unarchive": "Unarchive",
   "archivedMedications": "Archived Medications",
-  "showArchived": "Show archived"
+  "showArchived": "Show archived",
+
+  "signIn": "Sign In",
+  "signUp": "Sign Up",
+  "createAccount": "Create Account",
+  "email": "Email",
+  "password": "Password",
+  "continueAsGuest": "Continue as Guest",
+  "signOut": "Sign Out",
+  "alreadyHaveAccount": "Already have an account? Sign In",
+  "dontHaveAccount": "Don't have an account? Sign Up",
+  "useOfflineMode": "Use Offline Mode"
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

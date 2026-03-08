@@ -64,10 +64,12 @@ class MedicationModel {
     if (raw == null) return [];
     if (raw is List) return raw.cast<String>();
     if (raw is String && raw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is List) return decoded.cast<String>();
-      } catch (_) {}
+      if (raw.startsWith('[') && raw.endsWith(']')) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is List) return decoded.cast<String>();
+        } catch (_) {}
+      }
       // Fallback: comma-separated
       return raw.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     }
@@ -107,6 +109,43 @@ class MedicationModel {
           : null,
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
+          : null,
+    );
+  }
+
+  /// Create from local SQLite row.
+  factory MedicationModel.fromLocalMap(Map<String, dynamic> map) {
+    return MedicationModel(
+      id: map['id'] as String,
+      userId: map['user_id'] as String?,
+      name: map['name'] as String,
+      description: map['description'] as String?,
+      activeIngredients: parseTags(map['active_ingredients'] ?? map['active_ingredient']),
+      category: map['category'] as String?,
+      manufacturer: map['manufacturer'] as String?,
+      form: map['form'] as String?,
+      atcCode: map['atc_code'] as String?,
+      symptoms: parseTags(map['symptoms']),
+      patientTags: parseTags(map['patient_tags']),
+      purchaseDate: map['purchase_date'] != null
+          ? DateTime.tryParse(map['purchase_date'] as String)
+          : null,
+      expiryDate: map['expiry_date'] != null
+          ? DateTime.tryParse(map['expiry_date'] as String)
+          : null,
+      quantity: map['quantity'] as int? ?? 0,
+      quantityUnit: map['quantity_unit'] as String?,
+      minimumStockLevel: map['minimum_stock_level'] as int? ?? 0,
+      storageLocation: map['storage_location'] as String?,
+      barcode: map['barcode'] as String?,
+      imagePath: map['image_path'] as String?,
+      notes: map['notes'] as String?,
+      isArchived: (map['is_archived'] as int? ?? 0) == 1,
+      createdAt: map['created_at'] != null
+          ? DateTime.tryParse(map['created_at'] as String)
+          : null,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.tryParse(map['updated_at'] as String)
           : null,
     );
   }
@@ -196,4 +235,3 @@ class MedicationModel {
     );
   }
 }
-

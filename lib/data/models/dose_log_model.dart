@@ -2,6 +2,7 @@
 library;
 
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/data/models/medication_model.dart';
 
 class DoseLogModel {
   const DoseLogModel({
@@ -39,7 +40,6 @@ class DoseLogModel {
   final String? prescriptionNotes;
 
   factory DoseLogModel.fromJson(Map<String, dynamic> json) {
-    // Handle joined prescription -> medication data
     final prescription = json['prescriptions'] as Map<String, dynamic>?;
     final medication = prescription?['medications'] as Map<String, dynamic>?;
 
@@ -57,10 +57,33 @@ class DoseLogModel {
           : null,
       medicationName: medication?['name'] as String?,
       dosage: prescription?['dosage'] as String?,
-      patientTags:
-          (json['patient_tags'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+      patientTags: MedicationModel.parseTags(json['patient_tags']),
       treatmentName: json['treatment_name'] as String?,
       prescriptionNotes: prescription?['notes'] as String?,
+    );
+  }
+
+  factory DoseLogModel.fromLocalMap(Map<String, dynamic> map) {
+    return DoseLogModel(
+      id: map['id'] as String,
+      prescriptionId: map['prescription_id'] as String,
+      scheduledTime: DateTime.parse(map['scheduled_time'] as String),
+      takenTime: map['taken_time'] != null
+          ? DateTime.tryParse(map['taken_time'] as String)
+          : null,
+      status: DoseStatus.fromString(map['status'] as String? ?? 'pending'),
+      notes: map['notes'] as String?,
+      createdAt: map['created_at'] != null
+          ? DateTime.tryParse(map['created_at'] as String)
+          : null,
+      medicationName: map['medication_name'] as String?,
+      dosage: map['dosage'] as String?,
+      dosageAmount: (map['dosage_amount'] as num?)?.toDouble(),
+      dosageUnit: map['dosage_unit'] as String?,
+      medicationUnit: map['medication_unit'] as String?,
+      patientTags: MedicationModel.parseTags(map['patient_tags']),
+      treatmentName: map['treatment_name'] as String?,
+      prescriptionNotes: map['prescription_notes'] as String?,
     );
   }
 
@@ -72,8 +95,6 @@ class DoseLogModel {
       'taken_time': takenTime?.toIso8601String(),
       'status': status.name,
       'notes': notes,
-      'patient_tags': patientTags,
-      'treatment_name': treatmentName,
     };
   }
 
@@ -117,4 +138,3 @@ class DoseLogModel {
     );
   }
 }
-

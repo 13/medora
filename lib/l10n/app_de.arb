@@ -371,18 +371,16 @@
 
   "unarchive": "Dearchivieren",
   "archivedMedications": "Archivierte Medikamente",
-  "showArchived": "Archiv anzeigen"
+  "showArchived": "Archiv anzeigen",
+
+  "signIn": "Anmelden",
+  "signUp": "Registrieren",
+  "createAccount": "Konto erstellen",
+  "email": "E-Mail",
+  "password": "Passwort",
+  "continueAsGuest": "Als Gast fortfahren",
+  "signOut": "Abmelden",
+  "alreadyHaveAccount": "Bereits ein Konto? Anmelden",
+  "dontHaveAccount": "Noch kein Konto? Registrieren",
+  "useOfflineMode": "Offline-Modus nutzen"
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -5,7 +5,8 @@
 library;
 
 import 'dart:async';
-
+import 'package:flutter/foundation.dart';
+import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
@@ -65,22 +66,33 @@ class SyncService {
   /// Push local changes to Supabase, then pull remote data.
   Future<void> syncAll() async {
     if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) return;
+    if (!ConnectivityService.instance.isOnline) {
+      debugPrint('Sync: skipped (offline)');
+      return;
+    }
+    if (!SupabaseConfig.isAuthenticated) {
+      debugPrint('Sync: skipped (unauthenticated)');
+      return;
+    }
 
     _setState(SyncState.syncing);
+    debugPrint('Sync: starting push/pull cycle...');
 
     try {
+      // 1. Push local changes
       await _pushMedications();
       await _pushTreatments();
       await _pushPrescriptions();
       await _pushDoseLogs();
 
+      // 2. Pull remote data
       await _pullMedications();
       await _pullTreatments();
       await _pullPrescriptions();
       await _pullDoseLogs();
 
       _lastSyncTime = DateTime.now();
+      debugPrint('Sync: completed successfully at $_lastSyncTime');
       _setState(SyncState.success);
 
       // Return to idle after a brief success indication
@@ -89,7 +101,8 @@ class SyncService {
           _setState(SyncState.idle);
         }
       });
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Sync: error: $e\n$st');
       _setState(SyncState.error);
     }
   }
@@ -98,34 +111,23 @@ class SyncService {
 
   Future<void> _pushMedications() async {
     final pending = await medicationLocal.getPendingChanges();
+    if (pending.isEmpty) return;
+    
+    debugPrint('Sync: pushing ${pending.length} medications...');
     for (final row in pending) {
       final status = row['sync_status'] as String;
       final id = row['id'] as String;
       try {
         if (status == SyncStatus.pendingCreate ||
             status == SyncStatus.pendingUpdate) {
-          final model = MedicationModel(
-            id: id,
-            userId: row['user_id'] as String?,
-            name: row['name'] as String,
-            activeIngredients: MedicationModel.parseTags(
-                row['active_ingredients'] ?? row['active_ingredient']),
-            category: row['category'] as String?,
-            symptoms: MedicationModel.parseTags(row['symptoms']),
-            patientTags: MedicationModel.parseTags(row['patient_tags']),
-            purchaseDate: row['purchase_date'] != null
-                ? DateTime.tryParse(row['purchase_date'] as String)
-                : null,
-            expiryDate: row['expiry_date'] != null
-                ? DateTime.tryParse(row['expiry_date'] as String)
-                : null,
-            quantity: row['quantity'] as int? ?? 0,
-            minimumStockLevel: row['minimum_stock_level'] as int? ?? 0,
-            storageLocation: row['storage_location'] as String?,
-            barcode: row['barcode'] as String?,
-            imagePath: row['image_path'] as String?,
-            notes: row['notes'] as String?,
-          );
+          // Use currentUserId if missing locally (e.g. created while offline-unauthenticated)
+          final userId = row['user_id'] as String? ?? SupabaseConfig.currentUserId;
+          
+          final model = MedicationModel.fromLocalMap({
+            ...row,
+            'user_id': userId,
+          });
+
           if (status == SyncStatus.pendingCreate) {
             await medicationRemote.addMedication(model);
           } else {
@@ -136,35 +138,32 @@ class SyncService {
           await medicationRemote.deleteMedication(id);
           await medicationLocal.hardDelete(id);
         }
-      } catch (_) {
-        // Skip this record, will retry on next sync
+      } catch (e) {
+        debugPrint('Sync: failed to push medication $id: $e');
+        // Continue with next record
       }
     }
   }
 
   Future<void> _pushTreatments() async {
     final pending = await treatmentLocal.getPendingChanges();
+    if (pending.isEmpty) return;
+
+    debugPrint('Sync: pushing ${pending.length} treatments...');
     for (final row in pending) {
       final status = row['sync_status'] as String;
       final id = row['id'] as String;
       try {
         if (status == SyncStatus.pendingCreate ||
             status == SyncStatus.pendingUpdate) {
-          final model = TreatmentModel(
-            id: id,
-            userId: row['user_id'] as String?,
-            name: row['name'] as String,
-            patientTags: MedicationModel.parseTags(
-                row['patient_tags'] ?? row['patient_name']),
-            symptomTags: MedicationModel.parseTags(
-                row['symptom_tags'] ?? row['symptoms']),
-            startDate: DateTime.parse(row['start_date'] as String),
-            endDate: row['end_date'] != null
-                ? DateTime.tryParse(row['end_date'] as String)
-                : null,
-            isActive: (row['is_active'] as int? ?? 1) == 1,
-            notes: row['notes'] as String?,
-          );
+          final userId = row['user_id'] as String? ?? SupabaseConfig.currentUserId;
+          
+          final model = TreatmentModel.fromJson({
+            ...row,
+            'user_id': userId,
+            'is_active': (row['is_active'] as int? ?? 1) == 1,
+          });
+
           if (status == SyncStatus.pendingCreate) {
             await treatmentRemote.addTreatment(model);
           } else {
@@ -175,31 +174,24 @@ class SyncService {
           await treatmentRemote.deleteTreatment(id);
           await treatmentLocal.hardDelete(id);
         }
-      } catch (_) {
-        // Will retry
+      } catch (e) {
+        debugPrint('Sync: failed to push treatment $id: $e');
       }
     }
   }
 
   Future<void> _pushPrescriptions() async {
     final pending = await prescriptionLocal.getPendingChanges();
+    if (pending.isEmpty) return;
+
+    debugPrint('Sync: pushing ${pending.length} prescriptions...');
     for (final row in pending) {
       final status = row['sync_status'] as String;
       final id = row['id'] as String;
       try {
         if (status == SyncStatus.pendingCreate ||
             status == SyncStatus.pendingUpdate) {
-          final model = PrescriptionModel(
-            id: id,
-            treatmentId: row['treatment_id'] as String,
-            medicationId: row['medication_id'] as String,
-            dosage: row['dosage'] as String,
-            intervalHours: row['interval_hours'] as int? ?? 8,
-            durationDays: row['duration_days'] as int? ?? 7,
-            startTime: DateTime.parse(row['start_time'] as String),
-            isActive: (row['is_active'] as int? ?? 1) == 1,
-            notes: row['notes'] as String?,
-          );
+          final model = PrescriptionModel.fromLocalMap(row);
           if (status == SyncStatus.pendingCreate) {
             await prescriptionRemote.addPrescription(model);
           } else {
@@ -210,29 +202,26 @@ class SyncService {
           await prescriptionRemote.deletePrescription(id);
           await prescriptionLocal.hardDelete(id);
         }
-      } catch (_) {
-        // Will retry
+      } catch (e) {
+        debugPrint('Sync: failed to push prescription $id: $e');
       }
     }
   }
 
   Future<void> _pushDoseLogs() async {
     final pending = await doseLogLocal.getPendingChanges();
+    if (pending.isEmpty) return;
+
+    debugPrint('Sync: pushing ${pending.length} dose logs...');
     for (final row in pending) {
       final status = row['sync_status'] as String;
       final id = row['id'] as String;
       try {
         if (status == SyncStatus.pendingCreate) {
-          final model = DoseLogModel(
-            id: id,
-            prescriptionId: row['prescription_id'] as String,
-            scheduledTime:
-                DateTime.parse(row['scheduled_time'] as String),
-            takenTime: row['taken_time'] != null
-                ? DateTime.tryParse(row['taken_time'] as String)
-                : null,
-            notes: row['notes'] as String?,
-          );
+          final model = DoseLogModel.fromJson({
+            ...row,
+            'status': row['status'] as String? ?? 'pending',
+          });
           await doseLogRemote.addDoseLog(model);
           await doseLogLocal.markSynced(id);
         } else if (status == SyncStatus.pendingUpdate) {
@@ -246,8 +235,8 @@ class SyncService {
           );
           await doseLogLocal.markSynced(id);
         }
-      } catch (_) {
-        // Will retry
+      } catch (e) {
+        debugPrint('Sync: failed to push dose log $id: $e');
       }
     }
   }
@@ -258,10 +247,11 @@ class SyncService {
     try {
       final remoteMeds = await medicationRemote.getMedications();
       for (final m in remoteMeds) {
-        // Only overwrite if local row is synced (no pending changes)
         await _safeUpsertMedication(m);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sync: pull medications error: $e');
+    }
   }
 
   Future<void> _pullTreatments() async {
@@ -270,7 +260,9 @@ class SyncService {
       for (final t in remote) {
         await _safeUpsertTreatment(t);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sync: pull treatments error: $e');
+    }
   }
 
   Future<void> _pullPrescriptions() async {
@@ -279,17 +271,20 @@ class SyncService {
       for (final p in remote) {
         await _safeUpsertPrescription(p);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sync: pull prescriptions error: $e');
+    }
   }
 
   Future<void> _pullDoseLogs() async {
     try {
       final remote = await doseLogRemote.getTodaysDoseLogs();
       for (final d in remote) {
-        // Use safe upsert that won't overwrite local pending changes
         await doseLogLocal.upsertIfSynced(d);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sync: pull dose logs error: $e');
+    }
   }
 
   void _setState(SyncState state) {
@@ -328,4 +323,3 @@ class SyncService {
     _stateController.close();
   }
 }
-

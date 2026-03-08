@@ -9,6 +9,7 @@ import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
@@ -31,6 +32,7 @@ class SettingsScreen extends ConsumerWidget {
     final syncAsync = ref.watch(syncStateStreamProvider);
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
+    final user = ref.watch(currentUserProvider);
 
     final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
     final syncState = syncAsync.value ?? SyncState.idle;
@@ -39,6 +41,19 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.settings)),
       body: ListView(
         children: [
+          // ── Account ────────────────────────────────────────
+          _SectionTitle(user?.isAnonymous == true ? "Guest Account" : "Account"),
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: Text(user?.email ?? (user?.isAnonymous == true ? "Anonymous User" : "Not signed in")),
+            subtitle: Text(user?.id ?? ""),
+            trailing: TextButton(
+              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
+              child: Text(l10n.signOut, style: const TextStyle(color: Colors.red)),
+            ),
+          ),
+          const Divider(),
+
           // ── Appearance ─────────────────────────────────────
           _SectionTitle(l10n.appearance),
 
@@ -180,7 +195,7 @@ class SettingsScreen extends ConsumerWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.sync),
-            onTap: syncState == SyncState.syncing
+            onTap: (syncState == SyncState.syncing || !isOnline)
                 ? null
                 : () => ref.read(syncServiceProvider).syncAll(),
           ),

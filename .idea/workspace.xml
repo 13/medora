@@ -10,10 +10,30 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c8a7e79e-842e-4302-8c4d-742d13c03fb4" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/lib/presentation/providers/auth_providers.dart" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lib/presentation/screens/auth/auth_screen.dart" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/lib/services/security_service.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_history_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_history_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_schedule_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_schedule_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/widgets/shared_widgets.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/widgets/shared_widgets.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/android/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/android/app/src/main/AndroidManifest.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/android/app/src/main/kotlin/com/medora/medora/MainActivity.kt" beforeDir="false" afterPath="$PROJECT_DIR$/android/app/src/main/kotlin/com/medora/medora/MainActivity.kt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/l10n.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/l10n.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/core/supabase_config.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/core/supabase_config.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/data/models/dose_log_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/models/dose_log_model.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/data/models/medication_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/models/medication_model.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/data/models/prescription_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/models/prescription_model.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/data/models/treatment_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/models/treatment_model.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/app_de.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_de.arb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/app_en.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_en.arb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/app_it.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_it.arb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/router/app_router.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/router/app_router.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/services/sync_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/services/sync_service.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/pubspec.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -41,6 +61,9 @@
   &quot;associatedIndex&quot;: 0
 }</component>
   <component name="ProjectId" id="3AZIIVHydNLqA9i2vGwEHff7yjD" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />

@@ -1051,4 +1051,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get showArchived => 'Show archived';
+
+  @override
+  String get signIn => 'Sign In';
+
+  @override
+  String get signUp => 'Sign Up';
+
+  @override
+  String get createAccount => 'Create Account';
+
+  @override
+  String get email => 'Email';
+
+  @override
+  String get password => 'Password';
+
+  @override
+  String get continueAsGuest => 'Continue as Guest';
+
+  @override
+  String get signOut => 'Sign Out';
+
+  @override
+  String get alreadyHaveAccount => 'Already have an account? Sign In';
+
+  @override
+  String get dontHaveAccount => 'Don\'t have an account? Sign Up';
+
+  @override
+  String get useOfflineMode => 'Use Offline Mode';
 }
