@@ -2,9 +2,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
 
 /// Badge showing medication expiry status.
 class ExpiryBadge extends StatelessWidget {
@@ -131,6 +134,125 @@ class DoseStatusChip extends StatelessWidget {
       labelStyle: TextStyle(color: color, fontSize: 12),
       padding: EdgeInsets.zero,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+}
+
+/// Show dose detail bottom sheet.
+void showDoseDetailBottomSheet({
+  required BuildContext context,
+  required DoseLog dose,
+  required WidgetRef ref,
+}) {
+  final l10n = AppLocalizations.of(context);
+  showModalBottomSheet(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
+                  child: const Icon(Icons.medication, color: AppTheme.primaryColor),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dose.medicationName ?? l10n.unknownMedication,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      if (dose.displayDosage != null)
+                        Text(dose.displayDosage!, style: TextStyle(color: Colors.grey[600])),
+                    ],
+                  ),
+                ),
+                DoseStatusChip(status: dose.status),
+              ],
+            ),
+            const Divider(height: 24),
+
+            // Details
+            DetailRow(icon: Icons.schedule, label: l10n.selectTimes, value: dose.scheduledTime.timeFormatted),
+            if (dose.treatmentName != null)
+              DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),
+            if (dose.patientTags.isNotEmpty)
+              DetailRow(icon: Icons.person, label: l10n.patientTagsField, value: dose.patientTags.join(', ')),
+            if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
+              DetailRow(icon: Icons.sticky_note_2, label: l10n.notes, value: dose.prescriptionNotes!),
+            if (dose.takenTime != null)
+              DetailRow(icon: Icons.check_circle, label: l10n.taken, value: dose.takenTime!.timeFormatted),
+            if (dose.notes != null && dose.notes!.isNotEmpty)
+              DetailRow(icon: Icons.notes, label: l10n.notes, value: dose.notes!),
+
+            const SizedBox(height: 16),
+
+            // Action buttons
+            if (dose.status == DoseStatus.pending)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        ref.read(todaysDoseLogsProvider.notifier).markSkipped(dose.id);
+                        Navigator.pop(ctx);
+                      },
+                      icon: const Icon(Icons.skip_next),
+                      label: Text(l10n.skip),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        ref.read(todaysDoseLogsProvider.notifier).markTaken(dose.id);
+                        Navigator.pop(ctx);
+                      },
+                      icon: const Icon(Icons.check),
+                      label: Text(l10n.take),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class DetailRow extends StatelessWidget {
+  const DetailRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey[600]),
+          const SizedBox(width: 8),
+          Text('$label: ', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
     );
   }
 }

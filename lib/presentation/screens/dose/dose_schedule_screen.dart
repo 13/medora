@@ -225,7 +225,7 @@ class _DoseCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 3),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _showDoseDetail(context, l10n),
+        onTap: () => showDoseDetailBottomSheet(context: context, dose: dose, ref: ref),
         child: Padding(
           padding: EdgeInsets.all(isSmall ? 8 : 12),
           child: Row(
@@ -361,119 +361,6 @@ class _DoseCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  /// Show dose detail bottom sheet on tap.
-  void _showDoseDetail(BuildContext context, AppLocalizations l10n) {
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
-                    child: const Icon(Icons.medication, color: AppTheme.primaryColor),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          dose.medicationName ?? l10n.unknownMedication,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        if (dose.displayDosage != null)
-                          Text(dose.displayDosage!, style: TextStyle(color: Colors.grey[600])),
-                      ],
-                    ),
-                  ),
-                  DoseStatusChip(status: dose.status),
-                ],
-              ),
-              const Divider(height: 24),
-
-              // Details
-              _DetailRow(icon: Icons.schedule, label: l10n.selectTimes, value: dose.scheduledTime.timeFormatted),
-              if (dose.treatmentName != null)
-                _DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),
-              if (dose.patientTags.isNotEmpty)
-                _DetailRow(icon: Icons.person, label: l10n.patientTagsField, value: dose.patientTags.join(', ')),
-              if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
-                _DetailRow(icon: Icons.sticky_note_2, label: l10n.notes, value: dose.prescriptionNotes!),
-              if (dose.takenTime != null)
-                _DetailRow(icon: Icons.check_circle, label: l10n.taken, value: dose.takenTime!.timeFormatted),
-              if (dose.notes != null && dose.notes!.isNotEmpty)
-                _DetailRow(icon: Icons.notes, label: l10n.notes, value: dose.notes!),
-
-              const SizedBox(height: 16),
-
-              // Action buttons
-              if (dose.status == DoseStatus.pending)
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          ref.read(todaysDoseLogsProvider.notifier).markSkipped(dose.id);
-                          Navigator.pop(ctx);
-                        },
-                        icon: const Icon(Icons.skip_next),
-                        label: Text(l10n.skip),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          ref.read(todaysDoseLogsProvider.notifier).markTaken(dose.id);
-                          Navigator.pop(ctx);
-                        },
-                        icon: const Icon(Icons.check),
-                        label: Text(l10n.take),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Colors.grey[600]),
-          const SizedBox(width: 8),
-          Text('$label: ', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
-        ],
       ),
     );
   }

@@ -10,33 +10,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c8a7e79e-842e-4302-8c4d-742d13c03fb4" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/supabase/initial_schema.sql" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/android/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/android/app/src/main/AndroidManifest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/assets/icon/medora1_icon.png" beforeDir="false" afterPath="$PROJECT_DIR$/assets/icon/medora1_icon.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/core/supabase_config.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/core/supabase_config.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/datasources/dose_log_local_datasource.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/datasources/dose_log_local_datasource.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/datasources/medication_local_datasource.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/datasources/medication_local_datasource.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/datasources/prescription_local_datasource.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/datasources/prescription_local_datasource.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/datasources/treatment_local_datasource.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/datasources/treatment_local_datasource.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/local/app_database.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/local/app_database.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/models/medication_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/models/medication_model.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/repositories/dose_log_repository_impl.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/repositories/dose_log_repository_impl.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/repositories/medication_repository_impl.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/repositories/medication_repository_impl.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/repositories/prescription_repository_impl.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/repositories/prescription_repository_impl.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/repositories/treatment_repository_impl.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/repositories/treatment_repository_impl.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/domain/repositories/dose_log_repository.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/domain/repositories/dose_log_repository.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/main.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/main.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/providers/dose_providers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/providers/dose_providers.dart" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_history_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_history_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/main_shell_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/main_shell_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/medication/add_medication_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/medication/add_medication_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_detail_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_detail_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/services/reminder_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/services/reminder_service.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/services/sync_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/services/sync_service.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/pubspec.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_schedule_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_schedule_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/widgets/shared_widgets.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/widgets/shared_widgets.dart" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

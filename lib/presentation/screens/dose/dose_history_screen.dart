@@ -156,7 +156,7 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        ...entry.value.map((dose) => _DoseHistoryTile(dose: dose)),
+                        ...entry.value.map((dose) => _DoseHistoryTile(dose: dose, ref: ref)),
                       ],
                     );
                   },
@@ -194,9 +194,10 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
 }
 
 class _DoseHistoryTile extends StatelessWidget {
-  const _DoseHistoryTile({required this.dose});
+  const _DoseHistoryTile({required this.dose, required this.ref});
 
   final DoseLog dose;
+  final WidgetRef ref;
 
   @override
   Widget build(BuildContext context) {
@@ -246,6 +247,7 @@ class _DoseHistoryTile extends StatelessWidget {
     }
 
     return ListTile(
+      onTap: () => showDoseDetailBottomSheet(context: context, dose: dose, ref: ref),
       leading: Icon(statusIcon, color: statusColor, size: 28),
       title: Text(
         dose.medicationName ?? '—',
@@ -273,22 +275,21 @@ class _DoseHistoryTile extends StatelessWidget {
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min, // Fix overflow by taking minimum space
         children: [
           Text(scheduledTime, style: const TextStyle(fontWeight: FontWeight.w600)),
           Text(
             statusLabel,
-            style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w500),
+            style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w500),
           ),
           if (takenTimeStr != null)
             Text(
               '@ $takenTimeStr',
-              style: TextStyle(color: Colors.grey[500], fontSize: 11),
+              style: TextStyle(color: Colors.grey[500], fontSize: 10),
             ),
         ],
       ),
-      dense: true,
+      dense: false, // Turn off dense to give more room for the multi-line content
     );
   }
 }
-
-

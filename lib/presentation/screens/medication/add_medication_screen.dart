@@ -73,7 +73,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _formController = TextEditingController();
     _atcCodeController = TextEditingController();
     _quantityController = TextEditingController(text: '1');
-    _minStockController = TextEditingController(text: '5');
+    _minStockController = TextEditingController(
+        text: AppConstants.defaultMinimumStock.toString());
     _storageLocationController = TextEditingController();
     _barcodeController = TextEditingController(text: widget.initialBarcode);
     _notesController = TextEditingController();
