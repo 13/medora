@@ -239,7 +239,7 @@ class _AuthGuardState extends ConsumerState<_AuthGuard> with WidgetsBindingObser
             mainAxisSize: MainAxisSize.min,
             children: [
               Image.asset(
-                'assets/icon/medora1_icon.png',
+                'assets/icon/medora_icon.png',
                 height: 120,
                 errorBuilder: (ctx, err, st) => const Icon(Icons.lock_outline, size: 80, color: Colors.teal),
               ),

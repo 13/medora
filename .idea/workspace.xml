@@ -10,16 +10,20 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c8a7e79e-842e-4302-8c4d-742d13c03fb4" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/assets/icon/medora_icon_pirate.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/app_de.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_de.arb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/app_en.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_en.arb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/app_it.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_it.arb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/services/sync_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/services/sync_service.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/icon/medora1_icon.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/icon/medora1_icon_white.png" beforeDir="false" afterPath="$PROJECT_DIR$/assets/icon/medora_icon_bgwhite.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/assets/icon/medora_icon.png" beforeDir="false" afterPath="$PROJECT_DIR$/assets/icon/medora_icon.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/router/app_router.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/router/app_router.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/auth/auth_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/auth/auth_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/pubspec.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/favicon.png" beforeDir="false" afterPath="$PROJECT_DIR$/web/favicon.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/icons/Icon-192.png" beforeDir="false" afterPath="$PROJECT_DIR$/web/icons/Icon-192.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/icons/Icon-512.png" beforeDir="false" afterPath="$PROJECT_DIR$/web/icons/Icon-512.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/icons/Icon-maskable-192.png" beforeDir="false" afterPath="$PROJECT_DIR$/web/icons/Icon-maskable-192.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/icons/Icon-maskable-512.png" beforeDir="false" afterPath="$PROJECT_DIR$/web/icons/Icon-maskable-512.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/web/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/web/index.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
