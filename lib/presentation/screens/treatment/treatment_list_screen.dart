@@ -12,6 +12,7 @@ import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
+import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for treatment list.
 enum TreatmentFilter { all, active, ended }
@@ -86,6 +87,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
               });
             },
           ),
+          const SyncIconButton(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),

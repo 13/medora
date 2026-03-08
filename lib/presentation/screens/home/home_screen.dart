@@ -13,6 +13,7 @@ import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
+import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -29,6 +30,7 @@ class HomeScreen extends ConsumerWidget {
             tooltip: l10n.scanBarcodeTooltip,
             onPressed: () => context.push(AppRoutes.scanner),
           ),
+          const SyncIconButton(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
@@ -359,5 +361,3 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
     );
   }
 }
-
-

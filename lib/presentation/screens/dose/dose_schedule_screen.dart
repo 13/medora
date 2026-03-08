@@ -11,6 +11,7 @@ import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 class DoseScheduleScreen extends ConsumerWidget {
   const DoseScheduleScreen({super.key});
@@ -29,11 +30,7 @@ class DoseScheduleScreen extends ConsumerWidget {
             tooltip: l10n.doseHistory,
             onPressed: () => context.push(AppRoutes.doseHistory),
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () =>
-                ref.read(todaysDoseLogsProvider.notifier).refresh(),
-          ),
+          const SyncIconButton(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),

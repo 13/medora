@@ -12,6 +12,7 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
+import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 class MedicationListScreen extends ConsumerStatefulWidget {
   const MedicationListScreen({super.key});
@@ -93,6 +94,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () => context.push(AppRoutes.scanner),
           ),
+          const SyncIconButton(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
@@ -365,4 +367,3 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
     }
   }
 }
-
