@@ -10,17 +10,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c8a7e79e-842e-4302-8c4d-742d13c03fb4" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/lib/data/local/db_setup.dart" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/lib/data/local/db_setup_web.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/libraries/Dart_Packages.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/local/app_database.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/local/app_database.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/main.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/main.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/export/export_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/export/export_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/medication/add_medication_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/medication/add_medication_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/services/export_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/services/export_service.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/app_de.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_de.arb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/app_en.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_en.arb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/app_it.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_it.arb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/services/sync_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/services/sync_service.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/pubspec.yaml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

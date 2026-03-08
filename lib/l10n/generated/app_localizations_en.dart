@@ -1081,4 +1081,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get useOfflineMode => 'Use Offline Mode';
+
+  @override
+  String get forcePush => 'Force Push';
+
+  @override
+  String get forcePull => 'Force Pull';
+
+  @override
+  String get forcePushTitle => 'Force Push to Cloud';
+
+  @override
+  String get forcePullTitle => 'Force Pull from Cloud';
+
+  @override
+  String get forcePushConfirm =>
+      'This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?';
+
+  @override
+  String get forcePullConfirm =>
+      'This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?';
+
+  @override
+  String get continueLabel => 'Continue';
 }

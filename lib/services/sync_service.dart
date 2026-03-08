@@ -113,16 +113,62 @@ class SyncService {
     }
   }
 
-  /// Pushes only records with sync_status != 'synced' to Supabase.
-  Future<void> _pushPendingChanges() async {
+  /// Force push ALL local data to Supabase, overwriting remote records.
+  Future<void> forcePush() async {
+    if (_currentState == SyncState.syncing) return;
+    if (!ConnectivityService.instance.isOnline || !SupabaseConfig.isAuthenticated) return;
+
+    _setState(SyncState.syncing);
+    debugPrint('Sync: starting FORCE PUSH...');
+
+    try {
+      await _pushPendingChanges(forceAll: true);
+      _setState(SyncState.success);
+      Future.delayed(const Duration(seconds: 2), () => _setState(SyncState.idle));
+    } catch (e) {
+      debugPrint('Sync: force push error: $e');
+      _setState(SyncState.error);
+    }
+  }
+
+  /// Force pull ALL remote data to local, overwriting local records.
+  Future<void> forcePull() async {
+    if (_currentState == SyncState.syncing) return;
+    if (!ConnectivityService.instance.isOnline || !SupabaseConfig.isAuthenticated) return;
+
+    _setState(SyncState.syncing);
+    debugPrint('Sync: starting FORCE PULL...');
+
+    try {
+      // Order is important for Foreign Keys
+      await _pullFamilies();
+      await _pullMedications(force: true);
+      await _pullTreatments(force: true);
+      await _pullPrescriptions(force: true);
+      await _pullDoseLogs(force: true);
+
+      _setState(SyncState.success);
+      Future.delayed(const Duration(seconds: 2), () => _setState(SyncState.idle));
+    } catch (e) {
+      debugPrint('Sync: force pull error: $e');
+      _setState(SyncState.error);
+    }
+  }
+
+  /// Pushes records to Supabase.
+  /// If [forceAll] is true, pushes everything regardless of sync_status.
+  Future<void> _pushPendingChanges({bool forceAll = false}) async {
     final db = await AppDatabase.instance.database;
     final userId = SupabaseConfig.currentUserId;
     if (userId == null) return;
 
+    final where = forceAll ? null : 'sync_status != ?';
+    final whereArgs = forceAll ? null : [SyncStatus.synced];
+
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
 
     // 1. Families
-    final families = await db.query('families', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    final families = await db.query('families', where: where, whereArgs: whereArgs);
     for (final row in families) {
       try {
         final model = FamilyModel.fromJson(row);
@@ -132,7 +178,7 @@ class SyncService {
     }
 
     // 2. Medications
-    final meds = await db.query('medications', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    final meds = await db.query('medications', where: where, whereArgs: whereArgs);
     for (final row in meds) {
       try {
         final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
@@ -148,7 +194,7 @@ class SyncService {
     }
 
     // 3. Treatments
-    final treatments = await db.query('treatments', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    final treatments = await db.query('treatments', where: where, whereArgs: whereArgs);
     for (final row in treatments) {
       try {
         final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
@@ -164,7 +210,7 @@ class SyncService {
     }
 
     // 4. Prescriptions
-    final prescriptions = await db.query('prescriptions', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    final prescriptions = await db.query('prescriptions', where: where, whereArgs: whereArgs);
     for (final row in prescriptions) {
       try {
         final model = PrescriptionModel.fromLocalMap(row);
@@ -180,7 +226,7 @@ class SyncService {
     }
 
     // 5. Dose Logs
-    final doseLogs = await db.query('dose_logs', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    final doseLogs = await db.query('dose_logs', where: where, whereArgs: whereArgs);
     for (final row in doseLogs) {
       try {
         final model = DoseLogModel.fromLocalMap(row);
@@ -208,31 +254,37 @@ class SyncService {
     } catch (e) { debugPrint('Sync: pull families error: $e'); }
   }
 
-  Future<void> _pullMedications() async {
+  Future<void> _pullMedications({bool force = false}) async {
     try {
       final remoteMeds = await medicationRemote.getMedications();
-      for (final m in remoteMeds) { await _safeUpsertMedication(m); }
+      for (final m in remoteMeds) { await _safeUpsertMedication(m, force: force); }
     } catch (e) { debugPrint('Sync: pull medications error: $e'); }
   }
 
-  Future<void> _pullTreatments() async {
+  Future<void> _pullTreatments({bool force = false}) async {
     try {
       final remote = await treatmentRemote.getTreatments();
-      for (final t in remote) { await _safeUpsertTreatment(t); }
+      for (final t in remote) { await _safeUpsertTreatment(t, force: force); }
     } catch (e) { debugPrint('Sync: pull treatments error: $e'); }
   }
 
-  Future<void> _pullPrescriptions() async {
+  Future<void> _pullPrescriptions({bool force = false}) async {
     try {
       final remote = await prescriptionRemote.getActivePrescriptions();
-      for (final p in remote) { await _safeUpsertPrescription(p); }
+      for (final p in remote) { await _safeUpsertPrescription(p, force: force); }
     } catch (e) { debugPrint('Sync: pull prescriptions error: $e'); }
   }
 
-  Future<void> _pullDoseLogs() async {
+  Future<void> _pullDoseLogs({bool force = false}) async {
     try {
       final remote = await doseLogRemote.getTodaysDoseLogs();
-      for (final d in remote) { await doseLogLocal.upsertIfSynced(d); }
+      for (final d in remote) {
+        if (force) {
+          await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
+        } else {
+          await doseLogLocal.upsertIfSynced(d);
+        }
+      }
     } catch (e) { debugPrint('Sync: pull dose logs error: $e'); }
   }
 
@@ -243,7 +295,11 @@ class SyncService {
 
   // ── Safe upsert helpers ──
 
-  Future<void> _safeUpsertMedication(MedicationModel m) async {
+  Future<void> _safeUpsertMedication(MedicationModel m, {bool force = false}) async {
+    if (force) {
+      await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
+      return;
+    }
     // Strategy: last-write-wins based on updatedAt
     final local = await medicationLocal.getMedicationById(m.id);
     if (local != null) {
@@ -259,7 +315,11 @@ class SyncService {
     await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
   }
 
-  Future<void> _safeUpsertTreatment(TreatmentModel t) async {
+  Future<void> _safeUpsertTreatment(TreatmentModel t, {bool force = false}) async {
+    if (force) {
+      await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
+      return;
+    }
     final local = await treatmentLocal.getTreatmentById(t.id);
     if (local != null) {
       if (await _isLocalPending('treatments', t.id)) {
@@ -272,7 +332,11 @@ class SyncService {
     await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
   }
 
-  Future<void> _safeUpsertPrescription(PrescriptionModel p) async {
+  Future<void> _safeUpsertPrescription(PrescriptionModel p, {bool force = false}) async {
+    if (force) {
+      await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
+      return;
+    }
     final local = await prescriptionLocal.getPrescriptionById(p.id);
     if (local != null) {
       if (await _isLocalPending('prescriptions', p.id)) {

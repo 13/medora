@@ -2139,6 +2139,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Use Offline Mode'**
   String get useOfflineMode;
+
+  /// No description provided for @forcePush.
+  ///
+  /// In en, this message translates to:
+  /// **'Force Push'**
+  String get forcePush;
+
+  /// No description provided for @forcePull.
+  ///
+  /// In en, this message translates to:
+  /// **'Force Pull'**
+  String get forcePull;
+
+  /// No description provided for @forcePushTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Force Push to Cloud'**
+  String get forcePushTitle;
+
+  /// No description provided for @forcePullTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Force Pull from Cloud'**
+  String get forcePullTitle;
+
+  /// No description provided for @forcePushConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?'**
+  String get forcePushConfirm;
+
+  /// No description provided for @forcePullConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?'**
+  String get forcePullConfirm;
+
+  /// No description provided for @continueLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get continueLabel;
 }
 
 class _AppLocalizationsDelegate

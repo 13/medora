@@ -477,5 +477,13 @@
   "signOut": "Sign Out",
   "alreadyHaveAccount": "Already have an account? Sign In",
   "dontHaveAccount": "Don't have an account? Sign Up",
-  "useOfflineMode": "Use Offline Mode"
+  "useOfflineMode": "Use Offline Mode",
+
+  "forcePush": "Force Push",
+  "forcePull": "Force Pull",
+  "forcePushTitle": "Force Push to Cloud",
+  "forcePullTitle": "Force Pull from Cloud",
+  "forcePushConfirm": "This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?",
+  "forcePullConfirm": "This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?",
+  "continueLabel": "Continue"
 }

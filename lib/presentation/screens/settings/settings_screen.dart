@@ -212,6 +212,39 @@ class SettingsScreen extends ConsumerWidget {
                 ? null
                 : () => ref.read(syncServiceProvider).syncAll(),
           ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: (syncState == SyncState.syncing || !isOnline)
+                        ? null
+                        : () => _showForceSyncDialog(context, ref, true),
+                    icon: const Icon(Icons.upload_outlined, size: 18),
+                    label: const Text("Force Push"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange,
+                      side: const BorderSide(color: Colors.orange),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: (syncState == SyncState.syncing || !isOnline)
+                        ? null
+                        : () => _showForceSyncDialog(context, ref, false),
+                    icon: const Icon(Icons.download_outlined, size: 18),
+                    label: const Text("Force Pull"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Divider(),
 
           // ── Features ───────────────────────────────────────
@@ -254,6 +287,38 @@ class SettingsScreen extends ConsumerWidget {
             )),
           ),
           const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  void _showForceSyncDialog(BuildContext context, WidgetRef ref, bool isPush) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isPush ? "Force Push to Cloud" : "Force Pull from Cloud"),
+        content: Text(isPush
+            ? "This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?"
+            : "This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (isPush) {
+                ref.read(syncServiceProvider).forcePush();
+              } else {
+                ref.read(syncServiceProvider).forcePull();
+              }
+            },
+            child: Text(
+              "Continue",
+              style: TextStyle(color: isPush ? Colors.orange : AppTheme.primaryColor),
+            ),
+          ),
         ],
       ),
     );
