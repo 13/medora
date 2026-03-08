@@ -36,7 +36,7 @@ class AppDatabase {
     final dbPath = join(dir.path, 'medora.db');
     return openDatabase(
       dbPath,
-      version: 9,
+      version: 10,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
@@ -125,6 +125,7 @@ class AppDatabase {
         status TEXT NOT NULL DEFAULT 'pending',
         notes TEXT,
         created_at TEXT,
+        updated_at TEXT,
         sync_status TEXT NOT NULL DEFAULT 'synced',
         FOREIGN KEY (prescription_id) REFERENCES prescriptions(id) ON DELETE CASCADE
       )
@@ -227,12 +228,10 @@ class AppDatabase {
 
     if (oldVersion < 5) {
       // Rename active_ingredient to active_ingredients (JSON array)
-      // SQLite doesn't support RENAME COLUMN on old versions,
-      // so we add the new columns alongside old ones.
       try {
         await db.execute(
             'ALTER TABLE medications ADD COLUMN active_ingredients TEXT');
-      } catch (_) {} // Column may already exist in fresh installs
+      } catch (_) {}
       try {
         await db.execute(
             'ALTER TABLE medications ADD COLUMN symptoms TEXT');
@@ -241,7 +240,7 @@ class AppDatabase {
         await db.execute(
             'ALTER TABLE medications ADD COLUMN patient_tags TEXT');
       } catch (_) {}
-      // Migrate old single active_ingredient to new JSON array column
+      // Migrate old data
       final rows = await db.query('medications',
           columns: ['id', 'active_ingredient'],
           where: 'active_ingredient IS NOT NULL AND active_ingredient != ?',
@@ -257,7 +256,6 @@ class AppDatabase {
     }
 
     if (oldVersion < 6) {
-      // Add tag columns to treatments
       try {
         await db.execute(
             'ALTER TABLE treatments ADD COLUMN patient_tags TEXT');
@@ -266,63 +264,34 @@ class AppDatabase {
         await db.execute(
             'ALTER TABLE treatments ADD COLUMN symptom_tags TEXT');
       } catch (_) {}
-      // Migrate existing patient_name → patient_tags JSON array
-      final rows = await db.query('treatments',
-          columns: ['id', 'patient_name', 'symptoms'],
-          where: "(patient_name IS NOT NULL AND patient_name != '') OR (symptoms IS NOT NULL AND symptoms != '')");
-      for (final row in rows) {
-        final id = row['id'] as String;
-        final pn = row['patient_name'] as String?;
-        final sy = row['symptoms'] as String?;
-        final updates = <String, dynamic>{};
-        if (pn != null && pn.isNotEmpty) {
-          updates['patient_tags'] = '["$pn"]';
-        }
-        if (sy != null && sy.isNotEmpty) {
-          updates['symptom_tags'] = '["$sy"]';
-        }
-        if (updates.isNotEmpty) {
-          await db.update('treatments', updates, where: 'id = ?', whereArgs: [id]);
-        }
-      }
     }
     if (oldVersion < 7) {
-      // Add description, manufacturer, form, atc_code columns to medications
       try {
         await db.execute('ALTER TABLE medications ADD COLUMN description TEXT');
-      } catch (_) {}
-      try {
         await db.execute('ALTER TABLE medications ADD COLUMN manufacturer TEXT');
-      } catch (_) {}
-      try {
         await db.execute('ALTER TABLE medications ADD COLUMN form TEXT');
-      } catch (_) {}
-      try {
         await db.execute('ALTER TABLE medications ADD COLUMN atc_code TEXT');
       } catch (_) {}
     }
 
     if (oldVersion < 8) {
-      // Add quantity_unit and is_archived to medications
       try {
         await db.execute('ALTER TABLE medications ADD COLUMN quantity_unit TEXT');
-      } catch (_) {}
-      try {
         await db.execute('ALTER TABLE medications ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
-      } catch (_) {}
-      // Add auto_diminish to prescriptions
-      try {
         await db.execute('ALTER TABLE prescriptions ADD COLUMN auto_diminish INTEGER NOT NULL DEFAULT 0');
       } catch (_) {}
     }
 
     if (oldVersion < 9) {
-      // Add dosage_amount and dosage_unit to prescriptions
       try {
         await db.execute('ALTER TABLE prescriptions ADD COLUMN dosage_amount REAL');
-      } catch (_) {}
-      try {
         await db.execute('ALTER TABLE prescriptions ADD COLUMN dosage_unit TEXT');
+      } catch (_) {}
+    }
+
+    if (oldVersion < 10) {
+      try {
+        await db.execute('ALTER TABLE dose_logs ADD COLUMN updated_at TEXT');
       } catch (_) {}
     }
   }
@@ -347,4 +316,3 @@ class AppDatabase {
     }
   }
 }
-

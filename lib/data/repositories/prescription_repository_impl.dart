@@ -56,10 +56,12 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   @override
   Future<Result<Prescription>> addPrescription(Prescription prescription) async {
     try {
-      final model = PrescriptionModel.fromDomain(prescription);
+      final now = DateTime.now();
+      final updated = prescription.copyWith(createdAt: now, updatedAt: now);
+      final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
       _syncInBackground(() => remoteDatasource.addPrescription(model), model.id);
-      return Result.success(prescription);
+      return Result.success(updated);
     } catch (e, st) {
       return Result.failure('Failed to add prescription: $e', st);
     }
@@ -69,10 +71,12 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<Prescription>> updatePrescription(
       Prescription prescription) async {
     try {
-      final model = PrescriptionModel.fromDomain(prescription);
+      final now = DateTime.now();
+      final updated = prescription.copyWith(updatedAt: now);
+      final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground(() => remoteDatasource.updatePrescription(model), model.id);
-      return Result.success(prescription);
+      return Result.success(updated);
     } catch (e, st) {
       return Result.failure('Failed to update prescription: $e', st);
     }

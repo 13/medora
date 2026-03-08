@@ -87,6 +87,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         scheduledTime: now,
         takenTime: now,
         status: DoseStatus.taken,
+        updatedAt: now,
       ));
     } catch (e, st) {
       return Result.failure('Failed to mark dose as taken: $e', st);
@@ -96,6 +97,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   @override
   Future<Result<DoseLog>> markDoseSkipped(String id) async {
     try {
+      final now = DateTime.now();
       await localDatasource.updateStatus(id, 'skipped',
           syncStatus: SyncStatus.pendingUpdate);
       _syncRemoteInBackground(
@@ -105,8 +107,9 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       return Result.success(DoseLog(
         id: id,
         prescriptionId: '',
-        scheduledTime: DateTime.now(),
+        scheduledTime: now,
         status: DoseStatus.skipped,
+        updatedAt: now,
       ));
     } catch (e, st) {
       return Result.failure('Failed to mark dose as skipped: $e', st);
@@ -116,6 +119,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   @override
   Future<Result<DoseLog>> markDoseMissed(String id) async {
     try {
+      final now = DateTime.now();
       await localDatasource.updateStatus(id, 'missed',
           syncStatus: SyncStatus.pendingUpdate);
       _syncRemoteInBackground(
@@ -125,8 +129,9 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       return Result.success(DoseLog(
         id: id,
         prescriptionId: '',
-        scheduledTime: DateTime.now(),
+        scheduledTime: now,
         status: DoseStatus.missed,
+        updatedAt: now,
       ));
     } catch (e, st) {
       return Result.failure('Failed to mark dose as missed: $e', st);
@@ -156,8 +161,6 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       }
 
       // Check for existing dose logs to avoid duplicates.
-      // Compare times truncated to minutes to prevent duplicates caused
-      // by millisecond-level precision differences.
       final existingModels =
           await localDatasource.getDoseLogsByPrescription(prescriptionId);
       final existingTimes = existingModels
@@ -165,6 +168,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
           .toSet();
 
       final newDoseLogs = <DoseLogModel>[];
+      final now = DateTime.now();
       for (final time in scheduledTimes) {
         if (!existingTimes.contains(_truncateToMinute(time))) {
           newDoseLogs.add(DoseLogModel(
@@ -172,7 +176,8 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
             prescriptionId: prescriptionId,
             scheduledTime: time,
             status: DoseStatus.pending,
-            createdAt: DateTime.now(),
+            createdAt: now,
+            updatedAt: now,
           ));
         }
       }
@@ -245,7 +250,6 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   /// Truncate a DateTime to minute precision for consistent comparison.
-  /// Avoids duplicates from second/millisecond differences.
   static String _truncateToMinute(DateTime dt) {
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}'
         'T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';

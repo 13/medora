@@ -13,6 +13,7 @@ class DoseLogModel {
     this.status = DoseStatus.pending,
     this.notes,
     this.createdAt,
+    this.updatedAt,
     this.medicationName,
     this.dosage,
     this.dosageAmount,
@@ -30,6 +31,7 @@ class DoseLogModel {
   final DoseStatus status;
   final String? notes;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
   final String? medicationName;
   final String? dosage;
   final double? dosageAmount;
@@ -55,6 +57,9 @@ class DoseLogModel {
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : null,
       medicationName: medication?['name'] as String?,
       dosage: prescription?['dosage'] as String?,
       patientTags: MedicationModel.parseTags(json['patient_tags']),
@@ -76,6 +81,9 @@ class DoseLogModel {
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'] as String)
           : null,
+      updatedAt: map['updated_at'] != null
+          ? DateTime.tryParse(map['updated_at'] as String)
+          : null,
       medicationName: map['medication_name'] as String?,
       dosage: map['dosage'] as String?,
       dosageAmount: (map['dosage_amount'] as num?)?.toDouble(),
@@ -95,6 +103,7 @@ class DoseLogModel {
       'taken_time': takenTime?.toIso8601String(),
       'status': status.name,
       'notes': notes,
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 
@@ -107,6 +116,7 @@ class DoseLogModel {
       status: status,
       notes: notes,
       createdAt: createdAt,
+      updatedAt: updatedAt,
       medicationName: medicationName,
       dosage: dosage,
       dosageAmount: dosageAmount,
@@ -127,6 +137,7 @@ class DoseLogModel {
       status: entity.status,
       notes: entity.notes,
       createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
       medicationName: entity.medicationName,
       dosage: entity.dosage,
       dosageAmount: entity.dosageAmount,

@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS dose_logs (
   taken_time TIMESTAMPTZ,
   status TEXT NOT NULL DEFAULT 'pending',  -- pending, taken, skipped, missed
   notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS families (
@@ -250,3 +251,6 @@ CREATE TRIGGER prescriptions_updated_at
   BEFORE UPDATE ON prescriptions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+CREATE TRIGGER dose_logs_updated_at
+  BEFORE UPDATE ON dose_logs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();

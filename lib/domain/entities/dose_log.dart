@@ -28,6 +28,7 @@ class DoseLog {
     this.status = DoseStatus.pending,
     this.notes,
     this.createdAt,
+    this.updatedAt,
     // Optional joined fields
     this.medicationName,
     this.dosage,
@@ -46,6 +47,7 @@ class DoseLog {
   final DoseStatus status;
   final String? notes;
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   // Optional joined fields for display
   final String? medicationName;
@@ -97,6 +99,7 @@ class DoseLog {
     DoseStatus? status,
     String? notes,
     DateTime? createdAt,
+    DateTime? updatedAt,
     String? medicationName,
     String? dosage,
     double? dosageAmount,
@@ -114,6 +117,7 @@ class DoseLog {
       status: status ?? this.status,
       notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       medicationName: medicationName ?? this.medicationName,
       dosage: dosage ?? this.dosage,
       dosageAmount: dosageAmount ?? this.dosageAmount,
@@ -125,4 +129,3 @@ class DoseLog {
     );
   }
 }
-
