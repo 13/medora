@@ -26,7 +26,7 @@ class ReminderService {
     tz.initializeTimeZones();
 
     const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+        AndroidInitializationSettings('@drawable/ic_stat_notify');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -82,7 +82,7 @@ class ReminderService {
       importance: Importance.high,
       priority: Priority.high,
       ticker: 'Medication Reminder',
-      icon: '@mipmap/ic_launcher',
+      icon: '@drawable/ic_stat_notify',
     );
 
     const iosDetails = DarwinNotificationDetails(

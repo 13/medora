@@ -891,7 +891,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       expiryDate: _expiryDate,
       quantity: int.tryParse(_quantityController.text) ?? 0,
       quantityUnit: _quantityUnit,
-      minimumStockLevel: int.tryParse(_minStockController.text) ?? 5,
+      minimumStockLevel: int.tryParse(_minStockController.text) ?? 0,
       storageLocation: _storageLocationController.text.trim().isEmpty
           ? null
           : _storageLocationController.text.trim(),

@@ -129,11 +129,15 @@ class MedicationLocalDatasource {
 
   Future<void> upsert(MedicationModel model, {required String syncStatus}) async {
     final db = await _db;
-    await db.insert(
-      'medications',
-      _toRow(model, syncStatus),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final row = _toRow(model, syncStatus);
+    // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
+    // which would CASCADE-DELETE prescriptions and dose_logs.
+    final updated = await db.update('medications', row,
+        where: 'id = ?', whereArgs: [model.id]);
+    if (updated == 0) {
+      await db.insert('medications', row,
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
   }
 
   Future<void> markDeleted(String id) async {
@@ -199,7 +203,7 @@ class MedicationLocalDatasource {
           : null,
       quantity: row['quantity'] as int? ?? 0,
       quantityUnit: row['quantity_unit'] as String?,
-      minimumStockLevel: row['minimum_stock_level'] as int? ?? 5,
+      minimumStockLevel: row['minimum_stock_level'] as int? ?? 0,
       storageLocation: row['storage_location'] as String?,
       barcode: row['barcode'] as String?,
       imagePath: row['image_path'] as String?,

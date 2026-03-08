@@ -35,5 +35,11 @@ abstract class DoseLogRepository {
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
     String prescriptionId,
   );
+
+  /// Regenerate dose logs for an updated prescription.
+  /// Deletes old pending doses and creates new ones.
+  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
+    String prescriptionId,
+  );
 }
 

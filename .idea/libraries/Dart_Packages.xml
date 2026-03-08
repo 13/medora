@@ -154,21 +154,21 @@
         <entry key="camera">
           <value>
             <list>
-              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/camera-0.11.4/lib" />
+              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/camera-0.12.0/lib" />
             </list>
           </value>
         </entry>
         <entry key="camera_android_camerax">
           <value>
             <list>
-              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/camera_android_camerax-0.6.30/lib" />
+              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/camera_android_camerax-0.7.1/lib" />
             </list>
           </value>
         </entry>
         <entry key="camera_avfoundation">
           <value>
             <list>
-              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/camera_avfoundation-0.9.23+2/lib" />
+              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/camera_avfoundation-0.10.1/lib" />
             </list>
           </value>
         </entry>
@@ -1654,9 +1654,9 @@
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/built_collection-5.1.1/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/built_value-8.12.1/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/built_value-8.12.4/lib" />
-      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera-0.11.4/lib" />
-      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera_android_camerax-0.6.30/lib" />
-      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera_avfoundation-0.9.23+2/lib" />
+      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera-0.12.0/lib" />
+      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera_android_camerax-0.7.1/lib" />
+      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera_avfoundation-0.10.1/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera_platform_interface-2.12.0/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/camera_web-0.3.5+3/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/characters-1.4.1/lib" />

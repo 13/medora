@@ -24,37 +24,22 @@ Future<void> main() async {
   // Initialize SharedPreferences first (needed by settings providers)
   final prefs = await SharedPreferences.getInstance();
 
-  // Wrap all initialization in try/catch so the app still launches
-  // even if some services fail (e.g., no network, missing .env, etc.)
+  // Load env — needed before Supabase
   try {
     await dotenv.load(fileName: '.env');
   } catch (e) {
     debugPrint('⚠ Failed to load .env: $e');
   }
 
-  try {
-    await AppDatabase.instance.database;
-  } catch (e) {
-    debugPrint('⚠ Failed to initialize local database: $e');
-  }
+  // Initialize critical local services in parallel (fast)
+  await Future.wait([
+    _initSafe('local database', () => AppDatabase.instance.database),
+    _initSafe('connectivity', () => ConnectivityService.instance.initialize()),
+    _initSafe('notifications', () => ReminderService.instance.initialize()),
+  ]);
 
-  try {
-    await ConnectivityService.instance.initialize();
-  } catch (e) {
-    debugPrint('⚠ Failed to initialize connectivity: $e');
-  }
-
-  try {
-    await SupabaseConfig.initialize();
-  } catch (e) {
-    debugPrint('⚠ Failed to initialize Supabase: $e');
-  }
-
-  try {
-    await ReminderService.instance.initialize();
-  } catch (e) {
-    debugPrint('⚠ Failed to initialize notifications: $e');
-  }
+  // Initialize Supabase in background — don't block app launch
+  unawaited(_initSafe('Supabase', () => SupabaseConfig.initialize()));
 
   runApp(
     ProviderScope(
@@ -64,6 +49,15 @@ Future<void> main() async {
       child: const MedoraApp(),
     ),
   );
+}
+
+/// Safe initialization helper — catches and logs errors.
+Future<void> _initSafe(String name, Future<dynamic> Function() init) async {
+  try {
+    await init();
+  } catch (e) {
+    debugPrint('⚠ Failed to initialize $name: $e');
+  }
 }
 
 /// Root application widget.

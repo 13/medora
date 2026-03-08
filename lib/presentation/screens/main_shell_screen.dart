@@ -46,7 +46,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: _currentIndex);
+    _pageController = PageController(
+      initialPage: _currentIndex,
+      keepPage: true,
+    );
   }
 
   @override

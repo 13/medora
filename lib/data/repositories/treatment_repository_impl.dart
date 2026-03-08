@@ -1,6 +1,7 @@
 /// Medora - Treatment Repository Implementation (Offline-First)
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
@@ -44,11 +45,6 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
     try {
       final model = await localDatasource.getTreatmentById(id);
       if (model != null) return Result.success(model.toDomain());
-      if (ConnectivityService.instance.isOnline) {
-        final remote = await remoteDatasource.getTreatmentById(id);
-        await localDatasource.upsert(remote, syncStatus: SyncStatus.synced);
-        return Result.success(remote.toDomain());
-      }
       return const Result.failure('Treatment not found');
     } catch (e, st) {
       return Result.failure('Failed to load treatment: $e', st);
@@ -60,12 +56,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
     try {
       final model = TreatmentModel.fromDomain(treatment);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.addTreatment(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.addTreatment(model), model.id);
       return Result.success(treatment);
     } catch (e, st) {
       return Result.failure('Failed to add treatment: $e', st);
@@ -77,12 +68,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
     try {
       final model = TreatmentModel.fromDomain(treatment);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updateTreatment(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.updateTreatment(model), model.id);
       return Result.success(treatment);
     } catch (e, st) {
       return Result.failure('Failed to update treatment: $e', st);
@@ -93,12 +79,10 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   Future<Result<void>> deleteTreatment(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.deleteTreatment(id);
-          await localDatasource.hardDelete(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() async {
+        await remoteDatasource.deleteTreatment(id);
+        await localDatasource.hardDelete(id);
+      }, id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete treatment: $e', st);
@@ -108,7 +92,6 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   @override
   Future<Result<Treatment>> endTreatment(String id) async {
     try {
-      // Update locally
       final existing = await localDatasource.getTreatmentById(id);
       if (existing == null) return const Result.failure('Treatment not found');
       final ended = TreatmentModel(
@@ -124,15 +107,23 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
         createdAt: existing.createdAt,
       );
       await localDatasource.upsert(ended, syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.endTreatment(id);
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.endTreatment(id), id);
       return Result.success(ended.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to end treatment: $e', st);
     }
+  }
+
+  /// Fire-and-forget remote sync.
+  void _syncInBackground(Future<dynamic> Function() remoteFn, String id) {
+    if (!ConnectivityService.instance.isOnline) return;
+    Future(() async {
+      try {
+        await remoteFn();
+        await localDatasource.markSynced(id);
+      } catch (e) {
+        debugPrint('⚠ Background sync failed for treatment $id: $e');
+      }
+    });
   }
 }

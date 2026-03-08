@@ -46,8 +46,15 @@ class TreatmentLocalDatasource {
   Future<void> upsert(TreatmentModel model,
       {required String syncStatus}) async {
     final db = await _db;
-    await db.insert('treatments', _toRow(model, syncStatus),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    final row = _toRow(model, syncStatus);
+    // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
+    // which would CASCADE-DELETE prescriptions and dose_logs.
+    final updated = await db.update('treatments', row,
+        where: 'id = ?', whereArgs: [model.id]);
+    if (updated == 0) {
+      await db.insert('treatments', row,
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
   }
 
   Future<void> markDeleted(String id) async {

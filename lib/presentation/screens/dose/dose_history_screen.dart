@@ -10,12 +10,17 @@ import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 /// Provider to load dose logs for a date range.
+/// Depends on [doseDataVersionProvider] so it auto-refreshes
+/// when doses are modified (taken/skipped/missed).
 final doseHistoryProvider =
     FutureProvider.family<List<DoseLog>, ({DateTime start, DateTime end})>(
   (ref, range) async {
+    // Watch the version counter to trigger refetch when doses change
+    ref.watch(doseDataVersionProvider);
     final repo = ref.watch(doseLogRepositoryProvider);
     final result = await repo.getDoseLogsByDateRange(range.start, range.end);
     return result.when(
@@ -42,6 +47,15 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
     final now = DateTime.now();
     _endDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
     _startDate = _endDate.subtract(const Duration(days: 7));
+
+    // Invalidate any cached history data so we get fresh results
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _invalidateCurrentRange();
+    });
+  }
+
+  void _invalidateCurrentRange() {
+    ref.invalidate(doseHistoryProvider((start: _startDate, end: _endDate)));
   }
 
   @override
@@ -54,6 +68,10 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
       appBar: AppBar(
         title: Text(l10n.doseHistory),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _invalidateCurrentRange,
+          ),
           IconButton(
             icon: const Icon(Icons.date_range),
             onPressed: _pickDateRange,
@@ -105,28 +123,33 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
                   );
                 }
 
-                // Group by date
+                // Group by date (using ISO date string for correct sorting)
                 final grouped = <String, List<DoseLog>>{};
                 for (final d in doses) {
-                  final key = d.scheduledTime.shortFormatted;
+                  final key = '${d.scheduledTime.year}-'
+                      '${d.scheduledTime.month.toString().padLeft(2, '0')}-'
+                      '${d.scheduledTime.day.toString().padLeft(2, '0')}';
                   (grouped[key] ??= []).add(d);
                 }
 
                 final days = grouped.entries.toList()
-                  ..sort((a, b) => a.key.compareTo(b.key)); // nearest first
+                  ..sort((a, b) => b.key.compareTo(a.key)); // newest first
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(bottom: 16),
                   itemCount: days.length,
                   itemBuilder: (context, index) {
                     final entry = days[index];
+                    // Parse date from key for display
+                    final displayDate = DateTime.tryParse(entry.key);
+                    final dateLabel = displayDate?.formatted ?? entry.key;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                           child: Text(
-                            entry.key,
+                            dateLabel,
                             style: Theme.of(context)
                                 .textTheme
                                 .titleSmall
@@ -177,42 +200,90 @@ class _DoseHistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time =
+    final l10n = AppLocalizations.of(context);
+    final scheduledTime =
         '${dose.scheduledTime.hour.toString().padLeft(2, '0')}:${dose.scheduledTime.minute.toString().padLeft(2, '0')}';
 
     Color statusColor;
     IconData statusIcon;
+    String statusLabel;
     switch (dose.status) {
       case DoseStatus.taken:
         statusColor = AppTheme.successColor;
         statusIcon = Icons.check_circle;
+        statusLabel = l10n.taken;
       case DoseStatus.skipped:
         statusColor = Colors.orange;
         statusIcon = Icons.skip_next;
+        statusLabel = l10n.skip;
       case DoseStatus.missed:
         statusColor = Colors.red;
         statusIcon = Icons.cancel;
+        statusLabel = l10n.missed;
       case DoseStatus.pending:
         statusColor = Colors.grey;
         statusIcon = Icons.schedule;
+        statusLabel = l10n.pending;
+    }
+
+    // Build subtitle parts
+    final subtitleParts = <String>[];
+    if (dose.displayDosage != null && dose.displayDosage!.isNotEmpty) {
+      subtitleParts.add(dose.displayDosage!);
+    }
+    if (dose.treatmentName != null && dose.treatmentName!.isNotEmpty) {
+      subtitleParts.add(dose.treatmentName!);
+    }
+    if (dose.patientTags.isNotEmpty) {
+      subtitleParts.add(dose.patientTags.join(', '));
+    }
+
+    // Taken time display
+    String? takenTimeStr;
+    if (dose.status == DoseStatus.taken && dose.takenTime != null) {
+      takenTimeStr =
+          '${dose.takenTime!.hour.toString().padLeft(2, '0')}:${dose.takenTime!.minute.toString().padLeft(2, '0')}';
     }
 
     return ListTile(
-      leading: Icon(statusIcon, color: statusColor),
+      leading: Icon(statusIcon, color: statusColor, size: 28),
       title: Text(
         dose.medicationName ?? '—',
         style: const TextStyle(fontWeight: FontWeight.w500),
       ),
-      subtitle: Text(dose.displayDosage ?? ''),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (subtitleParts.isNotEmpty)
+            Text(
+              subtitleParts.join(' · '),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
+            Text(
+              dose.prescriptionNotes!,
+              style: TextStyle(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+        ],
+      ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(time, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(scheduledTime, style: const TextStyle(fontWeight: FontWeight.w600)),
           Text(
-            dose.status.name,
-            style: TextStyle(color: statusColor, fontSize: 12),
+            statusLabel,
+            style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w500),
           ),
+          if (takenTimeStr != null)
+            Text(
+              '@ $takenTimeStr',
+              style: TextStyle(color: Colors.grey[500], fontSize: 11),
+            ),
         ],
       ),
       dense: true,

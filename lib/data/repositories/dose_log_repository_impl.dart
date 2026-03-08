@@ -1,6 +1,7 @@
 /// Medora - Dose Log Repository Implementation (Offline-First)
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -63,12 +64,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     try {
       final model = DoseLogModel.fromDomain(doseLog);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.addDoseLog(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {}
-      }
+      _syncRemoteInBackground(() => remoteDatasource.addDoseLog(model), model.id);
       return Result.success(doseLog);
     } catch (e, st) {
       return Result.failure('Failed to add dose log: $e', st);
@@ -81,13 +77,10 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final now = DateTime.now();
       await localDatasource.updateStatus(id, 'taken',
           takenTime: now, syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updateDoseLogStatus(id, 'taken',
-              takenTime: now);
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncRemoteInBackground(
+        () => remoteDatasource.updateDoseLogStatus(id, 'taken', takenTime: now),
+        id,
+      );
       return Result.success(DoseLog(
         id: id,
         prescriptionId: '',
@@ -105,12 +98,10 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     try {
       await localDatasource.updateStatus(id, 'skipped',
           syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updateDoseLogStatus(id, 'skipped');
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncRemoteInBackground(
+        () => remoteDatasource.updateDoseLogStatus(id, 'skipped'),
+        id,
+      );
       return Result.success(DoseLog(
         id: id,
         prescriptionId: '',
@@ -127,12 +118,10 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     try {
       await localDatasource.updateStatus(id, 'missed',
           syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updateDoseLogStatus(id, 'missed');
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncRemoteInBackground(
+        () => remoteDatasource.updateDoseLogStatus(id, 'missed'),
+        id,
+      );
       return Result.success(DoseLog(
         id: id,
         prescriptionId: '',
@@ -151,33 +140,114 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final prescription =
           await prescriptionLocal.getPrescriptionById(prescriptionId);
       if (prescription == null) {
+        debugPrint('⚠ generateDoseLogs: Prescription $prescriptionId not found in local DB');
         return const Result.failure('Prescription not found');
       }
+
       final entity = prescription.toDomain();
-      final doseLogs = entity.scheduledDoseTimes.map((time) {
-        return DoseLogModel(
-          id: _uuid.v4(),
-          prescriptionId: prescriptionId,
-          scheduledTime: time,
-          status: DoseStatus.pending,
-        );
-      }).toList();
+      final scheduledTimes = entity.scheduledDoseTimes;
 
-      await localDatasource.upsertBatch(doseLogs,
-          syncStatus: SyncStatus.pendingCreate);
-
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.addDoseLogsBatch(doseLogs);
-          for (final log in doseLogs) {
-            await localDatasource.markSynced(log.id);
-          }
-        } catch (_) {}
+      if (scheduledTimes.isEmpty) {
+        debugPrint('⚠ generateDoseLogs: No scheduled times generated for prescription $prescriptionId '
+            '(scheduleType=${entity.scheduleType}, startTime=${entity.startTime}, '
+            'durationDays=${entity.durationDays}, intervalHours=${entity.intervalHours}, '
+            'scheduleTimes=${entity.scheduleTimes})');
+        return const Result.success([]);
       }
 
-      return Result.success(doseLogs.map((m) => m.toDomain()).toList());
+      // Check for existing dose logs to avoid duplicates.
+      // Compare times truncated to minutes to prevent duplicates caused
+      // by millisecond-level precision differences.
+      final existingModels =
+          await localDatasource.getDoseLogsByPrescription(prescriptionId);
+      final existingTimes = existingModels
+          .map((m) => _truncateToMinute(m.scheduledTime))
+          .toSet();
+
+      final newDoseLogs = <DoseLogModel>[];
+      for (final time in scheduledTimes) {
+        if (!existingTimes.contains(_truncateToMinute(time))) {
+          newDoseLogs.add(DoseLogModel(
+            id: _uuid.v4(),
+            prescriptionId: prescriptionId,
+            scheduledTime: time,
+            status: DoseStatus.pending,
+            createdAt: DateTime.now(),
+          ));
+        }
+      }
+
+      if (newDoseLogs.isEmpty) {
+        debugPrint('✅ generateDoseLogs: All ${scheduledTimes.length} dose logs already exist for prescription $prescriptionId');
+        return Result.success(existingModels.map((m) => m.toDomain()).toList());
+      }
+
+      debugPrint('✅ generateDoseLogs: Creating ${newDoseLogs.length} new dose logs '
+          '(${existingModels.length} already exist) for prescription $prescriptionId');
+
+      await localDatasource.upsertBatch(newDoseLogs,
+          syncStatus: SyncStatus.pendingCreate);
+
+      // Remote sync in background — don't block
+      _syncRemoteBatchInBackground(newDoseLogs);
+
+      final allLogs = [...existingModels, ...newDoseLogs];
+      return Result.success(allLogs.map((m) => m.toDomain()).toList());
     } catch (e, st) {
+      debugPrint('❌ generateDoseLogs FAILED: $e\n$st');
       return Result.failure('Failed to generate dose logs: $e', st);
     }
+  }
+
+  /// Regenerate dose logs for an updated prescription.
+  /// Deletes old pending doses and creates new ones.
+  @override
+  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
+      String prescriptionId) async {
+    try {
+      // Delete only pending (not yet taken/skipped/missed) dose logs
+      await localDatasource.deletePendingByPrescription(prescriptionId);
+
+      // Generate fresh dose logs
+      return generateDoseLogsForPrescription(prescriptionId);
+    } catch (e, st) {
+      debugPrint('❌ regenerateDoseLogs FAILED: $e\n$st');
+      return Result.failure('Failed to regenerate dose logs: $e', st);
+    }
+  }
+
+  /// Fire-and-forget remote sync for a single record.
+  void _syncRemoteInBackground(Future<dynamic> Function() remoteFn, String id) {
+    if (!ConnectivityService.instance.isOnline) return;
+    Future(() async {
+      try {
+        await remoteFn();
+        await localDatasource.markSynced(id);
+      } catch (e) {
+        debugPrint('⚠ Background sync failed for dose log $id: $e');
+      }
+    });
+  }
+
+  /// Fire-and-forget remote sync for batch records.
+  void _syncRemoteBatchInBackground(List<DoseLogModel> models) {
+    if (!ConnectivityService.instance.isOnline) return;
+    Future(() async {
+      try {
+        await remoteDatasource.addDoseLogsBatch(models);
+        for (final log in models) {
+          await localDatasource.markSynced(log.id);
+        }
+      } catch (e) {
+        debugPrint('⚠ Background batch sync failed for dose logs: $e');
+      }
+    });
+  }
+
+  /// Truncate a DateTime to minute precision for consistent comparison.
+  /// Avoids duplicates from second/millisecond differences.
+  static String _truncateToMinute(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}'
+        'T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }

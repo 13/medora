@@ -48,6 +48,11 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Default notification icon for flutter_local_notifications -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/launcher_icon" />
+
         <!-- Required by flutter_local_notifications for exact alarm scheduling -->
         <receiver android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/>

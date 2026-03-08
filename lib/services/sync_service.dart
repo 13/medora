@@ -120,7 +120,7 @@ class SyncService {
                 ? DateTime.tryParse(row['expiry_date'] as String)
                 : null,
             quantity: row['quantity'] as int? ?? 0,
-            minimumStockLevel: row['minimum_stock_level'] as int? ?? 5,
+            minimumStockLevel: row['minimum_stock_level'] as int? ?? 0,
             storageLocation: row['storage_location'] as String?,
             barcode: row['barcode'] as String?,
             imagePath: row['image_path'] as String?,
@@ -258,18 +258,17 @@ class SyncService {
     try {
       final remoteMeds = await medicationRemote.getMedications();
       for (final m in remoteMeds) {
-        await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
+        // Only overwrite if local row is synced (no pending changes)
+        await _safeUpsertMedication(m);
       }
-    } catch (_) {
-      // Pull failed, local data remains available
-    }
+    } catch (_) {}
   }
 
   Future<void> _pullTreatments() async {
     try {
       final remote = await treatmentRemote.getTreatments();
       for (final t in remote) {
-        await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
+        await _safeUpsertTreatment(t);
       }
     } catch (_) {}
   }
@@ -278,7 +277,7 @@ class SyncService {
     try {
       final remote = await prescriptionRemote.getActivePrescriptions();
       for (final p in remote) {
-        await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
+        await _safeUpsertPrescription(p);
       }
     } catch (_) {}
   }
@@ -287,7 +286,8 @@ class SyncService {
     try {
       final remote = await doseLogRemote.getTodaysDoseLogs();
       for (final d in remote) {
-        await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
+        // Use safe upsert that won't overwrite local pending changes
+        await doseLogLocal.upsertIfSynced(d);
       }
     } catch (_) {}
   }
@@ -295,6 +295,33 @@ class SyncService {
   void _setState(SyncState state) {
     _currentState = state;
     _stateController.add(state);
+  }
+
+  // ── Safe upsert helpers (skip rows with local pending changes) ──
+
+  Future<void> _safeUpsertMedication(MedicationModel m) async {
+    if (await _isLocalPending('medications', m.id)) return;
+    await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
+  }
+
+  Future<void> _safeUpsertTreatment(TreatmentModel t) async {
+    if (await _isLocalPending('treatments', t.id)) return;
+    await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
+  }
+
+  Future<void> _safeUpsertPrescription(PrescriptionModel p) async {
+    if (await _isLocalPending('prescriptions', p.id)) return;
+    await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
+  }
+
+  /// Check if a local row has unpushed changes.
+  Future<bool> _isLocalPending(String table, String id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(table,
+        columns: ['sync_status'],
+        where: 'id = ? AND sync_status != ?',
+        whereArgs: [id, SyncStatus.synced]);
+    return rows.isNotEmpty;
   }
 
   void dispose() {

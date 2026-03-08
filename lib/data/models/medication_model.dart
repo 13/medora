@@ -96,7 +96,7 @@ class MedicationModel {
           : null,
       quantity: json['quantity'] as int? ?? 0,
       quantityUnit: json['quantity_unit'] as String?,
-      minimumStockLevel: json['minimum_stock_level'] as int? ?? 5,
+      minimumStockLevel: json['minimum_stock_level'] as int? ?? 0,
       storageLocation: json['storage_location'] as String?,
       barcode: json['barcode'] as String?,
       imagePath: json['image_path'] as String?,

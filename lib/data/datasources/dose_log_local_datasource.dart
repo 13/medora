@@ -61,14 +61,21 @@ class DoseLogLocalDatasource {
     final start = DateTime(now.year, now.month, now.day);
     final end = start.add(const Duration(days: 1));
     final db = await _db;
-    // Only show doses for active prescriptions in active treatments with non-archived medications
+    // Show ALL non-pending doses (taken/skipped/missed) regardless of
+    // treatment/prescription/medication status — they are historical facts.
+    // Only filter PENDING doses to active prescriptions/treatments/medications.
     final rows = await db.rawQuery(
       '''$_activeJoinQuery
         WHERE d.scheduled_time >= ? AND d.scheduled_time < ?
         AND d.sync_status != ?
-        AND (p.is_active IS NULL OR p.is_active = 1)
-        AND (t.id IS NULL OR t.is_active = 1)
-        AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
+        AND (
+          d.status != 'pending'
+          OR (
+            (p.is_active IS NULL OR p.is_active = 1)
+            AND (t.id IS NULL OR t.is_active = 1)
+            AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
+          )
+        )
         ORDER BY d.scheduled_time ASC''',
       [
         start.toIso8601String(),
@@ -91,19 +98,58 @@ class DoseLogLocalDatasource {
 
   Future<void> upsert(DoseLogModel model, {required String syncStatus}) async {
     final db = await _db;
-    await db.insert('dose_logs', _toRow(model, syncStatus),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    final row = _toRow(model, syncStatus);
+    // Use UPDATE-first to avoid DELETE+INSERT issues
+    final updated = await db.update('dose_logs', row,
+        where: 'id = ?', whereArgs: [model.id]);
+    if (updated == 0) {
+      await db.insert('dose_logs', row,
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+
+  /// Upsert ONLY if the local row is already synced or doesn't exist.
+  /// Prevents remote pull from overwriting local pending changes
+  /// (e.g., a dose marked "taken" locally but not yet pushed).
+  Future<void> upsertIfSynced(DoseLogModel model) async {
+    final db = await _db;
+    // Check if a local row exists with pending changes
+    final existing = await db.query('dose_logs',
+        columns: ['sync_status', 'status'],
+        where: 'id = ?',
+        whereArgs: [model.id]);
+    if (existing.isNotEmpty) {
+      final localSyncStatus = existing.first['sync_status'] as String;
+      if (localSyncStatus != SyncStatus.synced) {
+        // Local row has unpushed changes — don't overwrite
+        return;
+      }
+    }
+    // Safe to upsert from remote
+    final row = _toRow(model, SyncStatus.synced);
+    final updated = await db.update('dose_logs', row,
+        where: 'id = ?', whereArgs: [model.id]);
+    if (updated == 0) {
+      await db.insert('dose_logs', row,
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
   }
 
   Future<void> upsertBatch(List<DoseLogModel> models,
       {required String syncStatus}) async {
     final db = await _db;
-    final batch = db.batch();
-    for (final model in models) {
-      batch.insert('dose_logs', _toRow(model, syncStatus),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    // Use a transaction for atomicity
+    await db.transaction((txn) async {
+      for (final model in models) {
+        final row = _toRow(model, syncStatus);
+        final updated = await txn.update('dose_logs', row,
+            where: 'id = ?', whereArgs: [model.id]);
+        if (updated == 0) {
+          await txn.insert('dose_logs', row,
+              conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
+      }
+    });
   }
 
   Future<void> updateStatus(String id, String status,
@@ -135,6 +181,17 @@ class DoseLogLocalDatasource {
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('dose_logs');
+  }
+
+  /// Delete only pending dose logs for a specific prescription.
+  /// Preserves taken/skipped/missed logs.
+  Future<int> deletePendingByPrescription(String prescriptionId) async {
+    final db = await _db;
+    return db.delete(
+      'dose_logs',
+      where: 'prescription_id = ? AND status = ?',
+      whereArgs: [prescriptionId, 'pending'],
+    );
   }
 
   DoseLogModel _fromRow(Map<String, dynamic> row) {

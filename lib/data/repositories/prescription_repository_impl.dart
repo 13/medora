@@ -1,6 +1,7 @@
 /// Medora - Prescription Repository Implementation (Offline-First)
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
@@ -46,11 +47,6 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
     try {
       final model = await localDatasource.getPrescriptionById(id);
       if (model != null) return Result.success(model.toDomain());
-      if (ConnectivityService.instance.isOnline) {
-        final remote = await remoteDatasource.getPrescriptionById(id);
-        await localDatasource.upsert(remote, syncStatus: SyncStatus.synced);
-        return Result.success(remote.toDomain());
-      }
       return const Result.failure('Prescription not found');
     } catch (e, st) {
       return Result.failure('Failed to load prescription: $e', st);
@@ -62,12 +58,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
     try {
       final model = PrescriptionModel.fromDomain(prescription);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.addPrescription(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.addPrescription(model), model.id);
       return Result.success(prescription);
     } catch (e, st) {
       return Result.failure('Failed to add prescription: $e', st);
@@ -80,12 +71,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
     try {
       final model = PrescriptionModel.fromDomain(prescription);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updatePrescription(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.updatePrescription(model), model.id);
       return Result.success(prescription);
     } catch (e, st) {
       return Result.failure('Failed to update prescription: $e', st);
@@ -96,12 +82,10 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> deletePrescription(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.deletePrescription(id);
-          await localDatasource.hardDelete(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() async {
+        await remoteDatasource.deletePrescription(id);
+        await localDatasource.hardDelete(id);
+      }, id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete prescription: $e', st);
@@ -112,12 +96,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> deactivatePrescription(String id) async {
     try {
       await localDatasource.deactivate(id);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.deactivatePrescription(id);
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.deactivatePrescription(id), id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to deactivate prescription: $e', st);
@@ -128,15 +107,23 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> reactivatePrescription(String id) async {
     try {
       await localDatasource.reactivate(id);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.reactivatePrescription(id);
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.reactivatePrescription(id), id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to reactivate prescription: $e', st);
     }
+  }
+
+  /// Fire-and-forget remote sync.
+  void _syncInBackground(Future<dynamic> Function() remoteFn, String id) {
+    if (!ConnectivityService.instance.isOnline) return;
+    Future(() async {
+      try {
+        await remoteFn();
+        await localDatasource.markSynced(id);
+      } catch (e) {
+        debugPrint('⚠ Background sync failed for prescription $id: $e');
+      }
+    });
   }
 }

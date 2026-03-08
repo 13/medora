@@ -62,7 +62,7 @@ class AppDatabase {
         expiry_date TEXT,
         quantity INTEGER NOT NULL DEFAULT 0,
         quantity_unit TEXT,
-        minimum_stock_level INTEGER NOT NULL DEFAULT 5,
+        minimum_stock_level INTEGER NOT NULL DEFAULT 0,
         storage_location TEXT,
         barcode TEXT,
         image_path TEXT,

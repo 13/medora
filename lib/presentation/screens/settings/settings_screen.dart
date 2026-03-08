@@ -10,6 +10,8 @@ import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -274,10 +276,11 @@ class SettingsScreen extends ConsumerWidget {
                       // Delete local data
                       await AppDatabase.instance.clearAllData();
                       // Try to delete remote data
-                      try {
-                        final userId = SupabaseConfig.currentUserId;
-                        if (userId != null) {
+                      // With RLS enabled, this only deletes the current user's data
+                      if (SupabaseConfig.isAuthenticated) {
+                        try {
                           final client = SupabaseConfig.client;
+                          // Delete in FK order: dose_logs → prescriptions → treatments → medications
                           await client
                               .from(AppConstants.doseLogsTable)
                               .delete()
@@ -294,13 +297,15 @@ class SettingsScreen extends ConsumerWidget {
                               .from(AppConstants.medicationsTable)
                               .delete()
                               .neq('id', '');
+                        } catch (_) {
+                          // Ignore remote errors — local is already cleared
                         }
-                      } catch (_) {
-                        // Ignore remote errors
                       }
                       // Invalidate all providers
                       ref.invalidate(medicationListProvider);
                       ref.invalidate(treatmentListProvider);
+                      ref.invalidate(todaysDoseLogsProvider);
+                      ref.invalidate(activePrescriptionsProvider);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(l10n.allDataDeleted)),

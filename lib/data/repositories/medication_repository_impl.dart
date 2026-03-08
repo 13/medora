@@ -1,6 +1,7 @@
 /// Medora - Medication Repository Implementation (Offline-First)
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
@@ -34,12 +35,6 @@ class MedicationRepositoryImpl implements MedicationRepository {
     try {
       final model = await localDatasource.getMedicationById(id);
       if (model != null) return Result.success(model.toDomain());
-      // Fallback to remote if not found locally
-      if (ConnectivityService.instance.isOnline) {
-        final remote = await remoteDatasource.getMedicationById(id);
-        await localDatasource.upsert(remote, syncStatus: SyncStatus.synced);
-        return Result.success(remote.toDomain());
-      }
       return const Result.failure('Medication not found');
     } catch (e, st) {
       return Result.failure('Failed to load medication: $e', st);
@@ -90,17 +85,8 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<Medication>> addMedication(Medication medication) async {
     try {
       final model = MedicationModel.fromDomain(medication);
-      // Always write locally first
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      // Try remote if online
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.addMedication(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {
-          // Will sync later
-        }
-      }
+      _syncInBackground(() => remoteDatasource.addMedication(model), model.id);
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to add medication: $e', st);
@@ -112,12 +98,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
     try {
       final model = MedicationModel.fromDomain(medication);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updateMedication(model);
-          await localDatasource.markSynced(model.id);
-        } catch (_) {}
-      }
+      _syncInBackground(() => remoteDatasource.updateMedication(model), model.id);
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to update medication: $e', st);
@@ -128,12 +109,10 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<void>> deleteMedication(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.deleteMedication(id);
-          await localDatasource.hardDelete(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() async {
+        await remoteDatasource.deleteMedication(id);
+        await localDatasource.hardDelete(id);
+      }, id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete medication: $e', st);
@@ -168,12 +147,9 @@ class MedicationRepositoryImpl implements MedicationRepository {
         updatedAt: DateTime.now(),
       );
       await localDatasource.upsert(updated, syncStatus: SyncStatus.pendingUpdate);
-      if (ConnectivityService.instance.isOnline) {
-        try {
-          await remoteDatasource.updateQuantity(id, delta);
-          await localDatasource.markSynced(id);
-        } catch (_) {}
-      }
+      _syncInBackground(() async {
+        await remoteDatasource.updateQuantity(id, delta);
+      }, id);
       return Result.success(updated.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to update quantity: $e', st);
@@ -208,5 +184,18 @@ class MedicationRepositoryImpl implements MedicationRepository {
     } catch (e, st) {
       return Result.failure('Failed to load archived medications: $e', st);
     }
+  }
+
+  /// Fire-and-forget remote sync.
+  void _syncInBackground(Future<dynamic> Function() remoteFn, String id) {
+    if (!ConnectivityService.instance.isOnline) return;
+    Future(() async {
+      try {
+        await remoteFn();
+        await localDatasource.markSynced(id);
+      } catch (e) {
+        debugPrint('⚠ Background sync failed for medication $id: $e');
+      }
+    });
   }
 }

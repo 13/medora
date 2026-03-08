@@ -598,6 +598,17 @@ class _TreatmentDetailScreenState
     ];
   }
 
+  /// Compare two nullable string lists for equality.
+  static bool _listEquals(List<String>? a, List<String>? b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   /// Shows add or edit prescription as a full-screen bottom sheet.
   void _showPrescriptionDialog(BuildContext context,
       {Prescription? existing}) {
@@ -1018,13 +1029,41 @@ class _TreatmentDetailScreenState
                             bool saved = false;
 
                             if (isEdit) {
+                              // Detect whether schedule-affecting fields changed
+                              final scheduleChanged =
+                                  existing.intervalHours != prescription.intervalHours ||
+                                  existing.durationDays != prescription.durationDays ||
+                                  existing.scheduleType != prescription.scheduleType ||
+                                  existing.startTime != prescription.startTime ||
+                                  _listEquals(existing.scheduleTimes, prescription.scheduleTimes) == false;
+
                               final result =
                                   await repo.updatePrescription(
                                       prescription);
-                              result.when(
-                                success: (_) {
+                              await result.when(
+                                success: (_) async {
                                   saved = true;
-                                  if (mounted) {
+                                  // Only regenerate dose logs if schedule changed
+                                  if (scheduleChanged) {
+                                    try {
+                                      final doseLogRepo = ref
+                                          .read(doseLogRepositoryProvider);
+                                      final doseResult = await doseLogRepo
+                                          .regenerateDoseLogsForPrescription(
+                                              prescription.id);
+                                      doseResult.when(
+                                        success: (doses) {
+                                          debugPrint('✅ Regenerated ${doses.length} doses for edited prescription');
+                                        },
+                                        failure: (msg) {
+                                          debugPrint('⚠ Failed to regenerate doses: $msg');
+                                        },
+                                      );
+                                    } catch (e) {
+                                      debugPrint('⚠ Dose regeneration error: $e');
+                                    }
+                                  }
+                                  if (context.mounted) {
                                     ScaffoldMessenger.of(context)
                                         .showSnackBar(
                                       SnackBar(
@@ -1033,7 +1072,7 @@ class _TreatmentDetailScreenState
                                     );
                                   }
                                 },
-                                failure: (msg) {
+                                failure: (msg) async {
                                   if (mounted) {
                                     ScaffoldMessenger.of(context)
                                         .showSnackBar(
@@ -1050,13 +1089,27 @@ class _TreatmentDetailScreenState
                               await result.when(
                                 success: (p) async {
                                   saved = true;
+                                  // Generate dose logs for new prescription
                                   try {
                                     final doseLogRepo = ref
                                         .read(doseLogRepositoryProvider);
-                                    await doseLogRepo
+                                    final doseResult = await doseLogRepo
                                         .generateDoseLogsForPrescription(
                                             p.id);
+                                    doseResult.when(
+                                      success: (doses) {
+                                        debugPrint('✅ Generated ${doses.length} doses for new prescription');
+                                      },
+                                      failure: (msg) {
+                                        debugPrint('⚠ Failed to generate doses: $msg');
+                                      },
+                                    );
+                                  } catch (e) {
+                                    debugPrint('⚠ Dose generation error: $e');
+                                  }
 
+                                  // Schedule reminders (non-blocking)
+                                  try {
                                     final medName = medications
                                             .where((m) =>
                                                 m.id ==
@@ -1065,7 +1118,7 @@ class _TreatmentDetailScreenState
                                             ?.name ??
                                         l10n.medication;
 
-                                    await ReminderService.instance
+                                    ReminderService.instance
                                         .scheduleRepeatingReminders(
                                       prescriptionId: p.id,
                                       medicationName: medName,
@@ -1091,12 +1144,12 @@ class _TreatmentDetailScreenState
                             if (ctx.mounted) Navigator.pop(ctx);
 
                             if (saved) {
-                              await Future.delayed(
-                                  const Duration(milliseconds: 100));
+                              // Invalidate immediately — no delay needed
                               ref.invalidate(
                                   prescriptionsByTreatmentProvider(
                                       widget.treatmentId));
                               ref.invalidate(todaysDoseLogsProvider);
+                              ref.invalidate(activePrescriptionsProvider);
                             }
                           },
                         ),
