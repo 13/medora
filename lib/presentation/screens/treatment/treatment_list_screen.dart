@@ -1,6 +1,7 @@
 /// Medora - Treatment List Screen
 library;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
@@ -92,6 +94,12 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
           ),
+          if (kIsWeb)
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: l10n.signOut,
+              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
+            ),
         ],
       ),
       body: Column(

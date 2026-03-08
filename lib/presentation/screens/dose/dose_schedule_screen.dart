@@ -1,12 +1,14 @@
 /// Medora - Dose Schedule Screen
 library;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
@@ -35,6 +37,12 @@ class DoseScheduleScreen extends ConsumerWidget {
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
           ),
+          if (kIsWeb)
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: l10n.signOut,
+              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
+            ),
         ],
       ),
       body: dosesAsync.when(
