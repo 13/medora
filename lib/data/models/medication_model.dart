@@ -174,6 +174,7 @@ class MedicationModel {
       'image_path': imagePath,
       'notes': notes,
       'is_archived': isArchived,
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 

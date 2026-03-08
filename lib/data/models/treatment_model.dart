@@ -90,6 +90,7 @@ class TreatmentModel {
       'end_date': endDate?.toIso8601String().split('T').first,
       'is_active': isActive,
       'notes': notes,
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 

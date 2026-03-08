@@ -101,6 +101,7 @@ class PrescriptionModel {
       'schedule_type': scheduleType,
       'schedule_times':
           scheduleTimes != null ? jsonEncode(scheduleTimes) : null,
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 

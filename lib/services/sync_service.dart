@@ -70,7 +70,7 @@ class SyncService {
     });
   }
 
-  /// Push ALL local data to Supabase, then pull remote data.
+  /// Push pending local data to Supabase, then pull remote data.
   Future<void> syncAll() async {
     if (_currentState == SyncState.syncing) return;
     if (!ConnectivityService.instance.isOnline) {
@@ -86,9 +86,8 @@ class SyncService {
     debugPrint('Sync: starting full cycle (user: ${SupabaseConfig.currentUserId})...');
 
     try {
-      // 1. Force push ALL local records to ensure existing data is synced
-      // (not just those marked as 'pending')
-      await _forcePushAll();
+      // 1. Push only PENDING local changes to Supabase
+      await _pushPendingChanges();
 
       // 2. Pull remote data
       await _pullFamilies();
@@ -113,8 +112,8 @@ class SyncService {
     }
   }
 
-  /// Pushes all local records to Supabase, regardless of sync_status.
-  Future<void> _forcePushAll() async {
+  /// Pushes only records with sync_status != 'synced' to Supabase.
+  Future<void> _pushPendingChanges() async {
     final db = await AppDatabase.instance.database;
     final userId = SupabaseConfig.currentUserId;
     if (userId == null) return;
@@ -122,7 +121,7 @@ class SyncService {
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
 
     // 1. Families
-    final families = await db.query('families');
+    final families = await db.query('families', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
     for (final row in families) {
       try {
         final model = FamilyModel.fromJson(row);
@@ -132,37 +131,55 @@ class SyncService {
     }
 
     // 2. Medications
-    final meds = await db.query('medications');
+    final meds = await db.query('medications', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
     for (final row in meds) {
       try {
         final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
-        await medicationRemote.upsertMedication(model);
-        await medicationLocal.markSynced(model.id);
+        final status = row['sync_status'] as String;
+        if (status == SyncStatus.pendingDelete) {
+          await medicationRemote.deleteMedication(model.id);
+          await medicationLocal.hardDelete(model.id);
+        } else {
+          await medicationRemote.upsertMedication(model);
+          await medicationLocal.markSynced(model.id);
+        }
       } catch (_) {}
     }
 
     // 3. Treatments
-    final treatments = await db.query('treatments');
+    final treatments = await db.query('treatments', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
     for (final row in treatments) {
       try {
         final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
-        await treatmentRemote.upsertTreatment(model);
-        await treatmentLocal.markSynced(model.id);
+        final status = row['sync_status'] as String;
+        if (status == SyncStatus.pendingDelete) {
+          await treatmentRemote.deleteTreatment(model.id);
+          await treatmentLocal.hardDelete(model.id);
+        } else {
+          await treatmentRemote.upsertTreatment(model);
+          await treatmentLocal.markSynced(model.id);
+        }
       } catch (_) {}
     }
 
     // 4. Prescriptions
-    final prescriptions = await db.query('prescriptions');
+    final prescriptions = await db.query('prescriptions', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
     for (final row in prescriptions) {
       try {
         final model = PrescriptionModel.fromLocalMap(row);
-        await prescriptionRemote.upsertPrescription(model);
-        await prescriptionLocal.markSynced(model.id);
+        final status = row['sync_status'] as String;
+        if (status == SyncStatus.pendingDelete) {
+          await prescriptionRemote.deletePrescription(model.id);
+          await prescriptionLocal.hardDelete(model.id);
+        } else {
+          await prescriptionRemote.upsertPrescription(model);
+          await prescriptionLocal.markSynced(model.id);
+        }
       } catch (_) {}
     }
 
     // 5. Dose Logs
-    final doseLogs = await db.query('dose_logs');
+    final doseLogs = await db.query('dose_logs', where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
     for (final row in doseLogs) {
       try {
         final model = DoseLogModel.fromLocalMap(row);
@@ -226,17 +243,44 @@ class SyncService {
   // ── Safe upsert helpers ──
 
   Future<void> _safeUpsertMedication(MedicationModel m) async {
-    if (await _isLocalPending('medications', m.id)) return;
+    // Strategy: last-write-wins based on updatedAt
+    final local = await medicationLocal.getMedicationById(m.id);
+    if (local != null) {
+      if (await _isLocalPending('medications', m.id)) {
+         // If local is pending, only overwrite if remote is definitely newer
+         if (m.updatedAt != null && local.updatedAt != null && m.updatedAt!.isAfter(local.updatedAt!)) {
+           await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
+         }
+         return;
+      }
+      // If local is NOT pending, always take remote (it might have been changed by another device)
+    }
     await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
   }
 
   Future<void> _safeUpsertTreatment(TreatmentModel t) async {
-    if (await _isLocalPending('treatments', t.id)) return;
+    final local = await treatmentLocal.getTreatmentById(t.id);
+    if (local != null) {
+      if (await _isLocalPending('treatments', t.id)) {
+         if (t.updatedAt != null && local.updatedAt != null && t.updatedAt!.isAfter(local.updatedAt!)) {
+           await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
+         }
+         return;
+      }
+    }
     await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
   }
 
   Future<void> _safeUpsertPrescription(PrescriptionModel p) async {
-    if (await _isLocalPending('prescriptions', p.id)) return;
+    final local = await prescriptionLocal.getPrescriptionById(p.id);
+    if (local != null) {
+      if (await _isLocalPending('prescriptions', p.id)) {
+         if (p.updatedAt != null && local.updatedAt != null && p.updatedAt!.isAfter(local.updatedAt!)) {
+           await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
+         }
+         return;
+      }
+    }
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
   }
 
