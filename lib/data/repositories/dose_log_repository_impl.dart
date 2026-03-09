@@ -176,10 +176,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final scheduledTimes = entity.scheduledDoseTimes;
 
       if (scheduledTimes.isEmpty) {
-        debugPrint('⚠ generateDoseLogs: No scheduled times generated for prescription $prescriptionId '
-            '(scheduleType=${entity.scheduleType}, startTime=${entity.startTime}, '
-            'durationDays=${entity.durationDays}, intervalHours=${entity.intervalHours}, '
-            'scheduleTimes=${entity.scheduleTimes})');
+        debugPrint('⚠ generateDoseLogs: No scheduled times generated for prescription $prescriptionId');
         return const Result.success([]);
       }
 
@@ -193,9 +190,14 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final newDoseLogs = <DoseLogModel>[];
       final now = DateTime.now();
       for (final time in scheduledTimes) {
-        if (!existingTimes.contains(_truncateToMinute(time))) {
+        final timeString = _truncateToMinute(time);
+        if (!existingTimes.contains(timeString)) {
+          // Use deterministic ID (v5) to avoid duplicates across devices.
+          // Seed with prescriptionId and truncated scheduled time.
+          final deterministicId = _uuid.v5(Namespace.url.value, '$prescriptionId-$timeString');
+          
           newDoseLogs.add(DoseLogModel(
-            id: _uuid.v4(),
+            id: deterministicId,
             prescriptionId: prescriptionId,
             scheduledTime: time,
             status: DoseStatus.pending,
