@@ -29,8 +29,6 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(_fetchTreatments);
-    // After refreshing the full list, invalidate dependent providers
-    ref.invalidate(activeTreatmentsProvider);
   }
 
   Future<void> addTreatment(Treatment treatment) async {

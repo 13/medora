@@ -10,9 +10,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c8a7e79e-842e-4302-8c4d-742d13c03fb4" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/repositories/dose_log_repository_impl.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/repositories/dose_log_repository_impl.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/providers/medication_providers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/providers/medication_providers.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/providers/treatment_providers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/providers/treatment_providers.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/home/home_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/home/home_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_list_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_list_screen.dart" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

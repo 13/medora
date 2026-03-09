@@ -30,9 +30,6 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(_fetchMedications);
-    // Invalidate dependent dashboard providers
-    ref.invalidate(expiringSoonProvider);
-    ref.invalidate(lowStockProvider);
   }
 
   Future<void> addMedication(Medication medication) async {

@@ -237,21 +237,26 @@ class _ExpiringSoonCard extends ConsumerWidget {
                   color: AppTheme.expiringSoonColor,
                 ),
                 title: Text(med.name),
-                subtitle: Row(
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (med.expiryDate != null)
                       Text(med.expiryDate!.formatted, style: const TextStyle(fontSize: 12)),
                     if (med.patientTags.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.person, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          med.patientTags.join(', '),
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.person, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              med.patientTags.join(', '),
+                              style: const TextStyle(fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -328,21 +333,26 @@ class _LowStockCard extends ConsumerWidget {
                   color: AppTheme.lowStockColor,
                 ),
                 title: Text(med.name),
-                subtitle: Row(
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (med.category != null)
                       Text(AppConstants.categoryLabel(l10n, med.category!), style: const TextStyle(fontSize: 12)),
                     if (med.patientTags.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.person, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          med.patientTags.join(', '),
-                          style: const TextStyle(fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.person, size: 14, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              med.patientTags.join(', '),
+                              style: const TextStyle(fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -446,16 +456,21 @@ class _ActiveTreatmentTile extends ConsumerWidget {
     return ListTile(
       leading: const Icon(Icons.healing, color: AppTheme.primaryColor),
       title: Text(treatment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Row(
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(l10n.startedOn(treatment.startDate.formatted), style: const TextStyle(fontSize: 12)),
           if (treatment.patientName != null) ...[
-            const SizedBox(width: 8),
-            const Icon(Icons.person, size: 14, color: Colors.grey),
-            const SizedBox(width: 4),
-            Text(
-              treatment.patientName!,
-              style: const TextStyle(fontSize: 12),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(Icons.person, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  treatment.patientName!,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
             ),
           ],
         ],

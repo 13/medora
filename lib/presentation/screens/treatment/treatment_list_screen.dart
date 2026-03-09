@@ -309,26 +309,6 @@ class _TreatmentTile extends ConsumerWidget {
                 }).toList(),
               ),
             ),
-          
-          // User (Patient tags)
-          if (treatment.patientTags.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.person, size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      treatment.patientTags.join(', '),
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
           // Status and Started on
           Padding(
@@ -365,33 +345,60 @@ class _TreatmentTile extends ConsumerWidget {
           ),
         ],
       ),
-      trailing: prescriptionsAsync.when(
-        data: (prescriptions) => Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              '${prescriptions.length}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+      trailing: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          prescriptionsAsync.maybeWhen(
+            data: (prescriptions) => Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${prescriptions.length}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                  ),
+                ),
+                Text(
+                  l10n.prescriptions,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey[600],
+                    height: 1.0,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              l10n.prescriptions,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[600],
-              ),
+            loading: () => const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          if (treatment.patientName != null) ...[
+            const SizedBox(height: 1),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person, size: 10, color: Colors.grey),
+                const SizedBox(width: 2),
+                Text(
+                  treatment.patientName!,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 9,
+                    height: 1.0,
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
-        loading: () => const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        error: (error, _) => const SizedBox.shrink(),
+        ],
       ),
       isThreeLine: true,
       onTap: () => context.push('/treatments/${treatment.id}'),
