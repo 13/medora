@@ -29,6 +29,8 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(_fetchTreatments);
+    // After refreshing the full list, invalidate dependent providers
+    ref.invalidate(activeTreatmentsProvider);
   }
 
   Future<void> addTreatment(Treatment treatment) async {
@@ -69,13 +71,9 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
 }
 
 /// Provider for active treatments only.
-final activeTreatmentsProvider =
-    FutureProvider<List<Treatment>>((ref) async {
-  final repo = ref.watch(treatmentRepositoryProvider);
-  final result = await repo.getActiveTreatments();
-  return result.when(
-    success: (data) => data,
-    failure: (msg) => throw Exception(msg),
-  );
+final activeTreatmentsProvider = FutureProvider<List<Treatment>>((ref) async {
+  // Watch the full treatment list
+  final allTreatments = await ref.watch(treatmentListProvider.future);
+  // Filter for active treatments
+  return allTreatments.where((t) => t.isActive).toList();
 });
-

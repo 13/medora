@@ -4,6 +4,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
 
 /// Provider for the full medication list.
 final medicationListProvider =
@@ -29,6 +30,9 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> refresh() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(_fetchMedications);
+    // Invalidate dependent dashboard providers
+    ref.invalidate(expiringSoonProvider);
+    ref.invalidate(lowStockProvider);
   }
 
   Future<void> addMedication(Medication medication) async {
@@ -62,7 +66,11 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.updateQuantity(id, delta);
     result.when(
-      success: (_) => refresh(),
+      success: (_) {
+        refresh();
+        // Also refresh today's doses as they might show stock warnings
+        ref.invalidate(todaysDoseLogsProvider);
+      },
       failure: (msg) => throw Exception(msg),
     );
   }
@@ -105,22 +113,27 @@ final archivedMedicationsProvider =
 
 /// Provider for medications expiring soon.
 final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
-  final repo = ref.watch(medicationRepositoryProvider);
-  final result = await repo.getExpiringSoon(days: 30);
-  return result.when(
-    success: (data) => data,
-    failure: (msg) => throw Exception(msg),
-  );
+  // Watch the medication list to trigger updates
+  final meds = await ref.watch(medicationListProvider.future);
+  final now = DateTime.now();
+  final threshold = now.add(const Duration(days: 30));
+  
+  return meds.where((m) => 
+    !m.isArchived && 
+    m.expiryDate != null && 
+    m.expiryDate!.isBefore(threshold)
+  ).toList();
 });
 
 /// Provider for low stock medications.
 final lowStockProvider = FutureProvider<List<Medication>>((ref) async {
-  final repo = ref.watch(medicationRepositoryProvider);
-  final result = await repo.getLowStock();
-  return result.when(
-    success: (data) => data,
-    failure: (msg) => throw Exception(msg),
-  );
+  // Watch the medication list to trigger updates
+  final meds = await ref.watch(medicationListProvider.future);
+  
+  return meds.where((m) => 
+    !m.isArchived && 
+    m.quantity <= m.minimumStockLevel
+  ).toList();
 });
 
 /// Provider for medication search query.
@@ -150,4 +163,3 @@ final medicationSearchProvider = FutureProvider<List<Medication>>((ref) async {
     failure: (msg) => throw Exception(msg),
   );
 });
-

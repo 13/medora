@@ -1,1 +1,11 @@
-{}
+{
+  "de": [
+    "daysLabel",
+    "leftLabel"
+  ],
+
+  "it": [
+    "daysLabel",
+    "leftLabel"
+  ]
+}

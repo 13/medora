@@ -1134,4 +1134,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get continueLabel => 'Fortfahren';
+
+  @override
+  String get daysLabel => 'Days';
+
+  @override
+  String get leftLabel => 'Left';
 }

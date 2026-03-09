@@ -11,24 +11,15 @@
   <component name="ChangeListManager">
     <list default="true" id="c8a7e79e-842e-4302-8c4d-742d13c03fb4" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/repositories/dose_log_repository_impl.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/repositories/dose_log_repository_impl.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/domain/repositories/dose_log_repository.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/domain/repositories/dose_log_repository.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/app_de.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_de.arb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/l10n/app_en.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_en.arb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/l10n/app_it.arb" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/app_it.arb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations.dart" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_de.dart" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_en.dart" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/l10n/generated/app_localizations_it.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/providers/dose_providers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/providers/dose_providers.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_schedule_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/dose/dose_schedule_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/providers/medication_providers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/providers/medication_providers.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/presentation/providers/treatment_providers.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/providers/treatment_providers.dart" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/presentation/screens/home/home_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/home/home_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/medication/medication_detail_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/medication/medication_detail_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/medication/medication_list_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/medication/medication_list_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/settings/settings_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_detail_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_detail_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_list_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/screens/treatment/treatment_list_screen.dart" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/presentation/widgets/shared_widgets.dart" beforeDir="false" afterPath="$PROJECT_DIR$/lib/presentation/widgets/shared_widgets.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/untranslated.txt" beforeDir="false" afterPath="$PROJECT_DIR$/untranslated.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

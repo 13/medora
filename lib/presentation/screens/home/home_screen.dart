@@ -3,11 +3,14 @@ library;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
@@ -25,7 +28,7 @@ class HomeScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Medora'),
+        title: const Text('Dashboard'),
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
@@ -234,8 +237,42 @@ class _ExpiringSoonCard extends ConsumerWidget {
                   color: AppTheme.expiringSoonColor,
                 ),
                 title: Text(med.name),
-                subtitle: Text(
-                  days != null ? l10n.expiresInDays(days) : l10n.noExpirySet,
+                subtitle: Row(
+                  children: [
+                    if (med.expiryDate != null)
+                      Text(med.expiryDate!.formatted, style: const TextStyle(fontSize: 12)),
+                    if (med.patientTags.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.person, size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          med.patientTags.join(', '),
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${days ?? 0}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppTheme.expiringSoonColor,
+                      ),
+                    ),
+                    Text(
+                      l10n.daysLabel,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
                 ),
                 dense: true,
                 onTap: () => context.push('/medications/${med.id}'),
@@ -291,7 +328,43 @@ class _LowStockCard extends ConsumerWidget {
                   color: AppTheme.lowStockColor,
                 ),
                 title: Text(med.name),
-                subtitle: Text(l10n.remaining(med.quantity)),
+                subtitle: Row(
+                  children: [
+                    if (med.category != null)
+                      Text(AppConstants.categoryLabel(l10n, med.category!), style: const TextStyle(fontSize: 12)),
+                    if (med.patientTags.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.person, size: 14, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          med.patientTags.join(', '),
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${med.quantity}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppTheme.lowStockColor,
+                      ),
+                    ),
+                    Text(
+                      l10n.leftLabel,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
                 dense: true,
                 onTap: () => context.push('/medications/${med.id}'),
               );
@@ -363,7 +436,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
 
 class _ActiveTreatmentTile extends ConsumerWidget {
   const _ActiveTreatmentTile({required this.treatment});
-  final dynamic treatment;
+  final Treatment treatment;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -372,28 +445,47 @@ class _ActiveTreatmentTile extends ConsumerWidget {
 
     return ListTile(
       leading: const Icon(Icons.healing, color: AppTheme.primaryColor),
-      title: Text(treatment.name),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      title: Text(treatment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Row(
         children: [
-          if (treatment.patientName != null)
-            Text(treatment.patientName!),
-          Row(
-            children: [
-              prescriptionsAsync.when(
-                data: (prescriptions) => Text(
-                  '${prescriptions.length} ${l10n.prescriptions.toLowerCase()}',
-                ),
-                loading: () => const Text('...'),
-                error: (error, stack) => const Text('?'),
-              ),
-              const Text(' • '),
-              Text(l10n.startedOn(treatment.startDate.formatted)),
-            ],
-          ),
+          Text(l10n.startedOn(treatment.startDate.formatted), style: const TextStyle(fontSize: 12)),
+          if (treatment.patientName != null) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.person, size: 14, color: Colors.grey),
+            const SizedBox(width: 4),
+            Text(
+              treatment.patientName!,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ],
         ],
       ),
-      isThreeLine: treatment.patientName != null,
+      trailing: prescriptionsAsync.when(
+        data: (prescriptions) => Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${prescriptions.length}',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: AppTheme.primaryColor,
+              ),
+            ),
+            Text(
+              l10n.prescriptions,
+              style: const TextStyle(fontSize: 10, color: Colors.grey),
+            ),
+          ],
+        ),
+        loading: () => const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        error: (error, stack) => const Icon(Icons.error_outline, size: 16),
+      ),
       dense: true,
       onTap: () => context.push('/treatments/${treatment.id}'),
     );
