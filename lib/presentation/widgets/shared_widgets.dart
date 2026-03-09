@@ -222,6 +222,19 @@ void showDoseDetailBottomSheet({
                   ),
                 ],
               ),
+            if (dose.status == DoseStatus.taken)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ref.read(todaysDoseLogsProvider.notifier).undoTaken(dose.id);
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.undo),
+                  label: const Text("Undo Taken"),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                ),
+              ),
           ],
         ),
       ),

@@ -135,20 +135,28 @@ class _DoseSummaryHeader extends StatelessWidget {
               DateTime.now().formatted,
               style: TextStyle(color: Colors.grey[600], fontSize: isSmall ? 12 : 14),
             ),
-            const SizedBox(height: 10),
-            // Wrap for small screens instead of fixed Row
+            const SizedBox(height: 12),
+            // Taken on its own line
+            _StatChip(
+              count: taken,
+              label: l10n.taken,
+              color: AppTheme.doseTakenColor,
+              compact: isSmall,
+              large: true,
+            ),
+            const SizedBox(height: 12),
+            // Others in a row
             Wrap(
               alignment: WrapAlignment.spaceEvenly,
               spacing: isSmall ? 12 : 20,
               runSpacing: 8,
               children: [
-                _StatChip(count: taken, label: l10n.taken, color: AppTheme.doseTakenColor, compact: isSmall),
                 _StatChip(count: pending, label: l10n.pending, color: AppTheme.dosePendingColor, compact: isSmall),
                 _StatChip(count: skipped, label: l10n.skipped, color: AppTheme.doseSkippedColor, compact: isSmall),
                 _StatChip(count: missed, label: l10n.missed, color: AppTheme.doseMissedColor, compact: isSmall),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: LinearProgressIndicator(
@@ -172,15 +180,29 @@ class _StatChip extends StatelessWidget {
     required this.label,
     required this.color,
     this.compact = false,
+    this.large = false,
   });
 
   final int count;
   final String label;
   final Color color;
   final bool compact;
+  final bool large;
 
   @override
   Widget build(BuildContext context) {
+    if (large) {
+      return Column(
+        children: [
+          Text(
+            '$count',
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: color),
+          ),
+          Text(label, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
+        ],
+      );
+    }
+
     if (compact) {
       // Horizontal chip layout for narrow screens
       return Container(
@@ -330,6 +352,25 @@ class _DoseCard extends StatelessWidget {
                                 ),
                               ),
                             ],
+                          ],
+                        ),
+                      ),
+                    // Taken time info
+                    if (dose.status == DoseStatus.taken && dose.takenTime != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, size: 12, color: AppTheme.doseTakenColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              l10n.takenAt(dose.takenTime!.timeFormatted),
+                              style: const TextStyle(
+                                color: AppTheme.doseTakenColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         ),
                       ),

@@ -424,10 +424,10 @@ class SettingsScreen extends ConsumerWidget {
     Locale? current,
   ) {
     final options = <_LanguageOption>[
-      _LanguageOption(null, l10n.systemDefault, '🌐'),
-      _LanguageOption(const Locale('en'), 'English', '🇬🇧'),
-      _LanguageOption(const Locale('de'), 'Deutsch', '🇩🇪'),
-      _LanguageOption(const Locale('it'), 'Italiano', '🇮🇹'),
+      _LanguageOption(null, l10n.systemDefault),
+      _LanguageOption(const Locale('en'), 'English'),
+      _LanguageOption(const Locale('de'), 'Deutsch'),
+      _LanguageOption(const Locale('it'), 'Italiano'),
     ];
 
     showModalBottomSheet(
@@ -450,7 +450,6 @@ class SettingsScreen extends ConsumerWidget {
               final isSelected = current?.languageCode == opt.locale?.languageCode &&
                   (opt.locale != null || current == null);
               return ListTile(
-                leading: Text(opt.flag, style: const TextStyle(fontSize: 24)),
                 title: Text(opt.label),
                 trailing:
                     isSelected ? const Icon(Icons.check, color: AppTheme.primaryColor) : null,
@@ -744,10 +743,9 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
 }
 
 class _LanguageOption {
-  const _LanguageOption(this.locale, this.label, this.flag);
+  const _LanguageOption(this.locale, this.label);
   final Locale? locale;
   final String label;
-  final String flag;
 }
 
 class _SectionTitle extends StatelessWidget {

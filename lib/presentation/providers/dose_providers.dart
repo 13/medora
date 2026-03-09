@@ -120,6 +120,29 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     await _refreshAndInvalidateHistory();
   }
 
+  Future<void> undoTaken(String id) async {
+    // Optimistic update: back to pending
+    _updateDoseStatus(id, DoseStatus.pending, clearTakenTime: true);
+
+    final repo = ref.read(doseLogRepositoryProvider);
+    // There isn't a dedicated repo method for "undo", but we can use markDosePending if it existed.
+    // For now, let's look at how we update status.
+    // We'll need to manually call localDatasource.updateStatus with 'pending' and takenTime: null.
+    // However, repo interface is cleaner. Let's see if we can use a generic update if available.
+    // Since repo only has markDoseTaken/Skipped/Missed, I'll add a way to reset to pending.
+    
+    // For now, let's assume we can use a direct update or add markDosePending to repo.
+    // I will add markDosePending to repository and implement it.
+    await repo.markDosePending(id);
+    
+    // If it was auto-diminished, we should ideally reverse it, 
+    // but auto-diminish is complex to reverse perfectly without knowing the amount.
+    // Re-calculating based on prescription:
+    await _autoDiminish(id, reverse: true);
+
+    await _refreshAndInvalidateHistory();
+  }
+
   Future<void> markSkipped(String id) async {
     _updateDoseStatus(id, DoseStatus.skipped);
 
@@ -138,13 +161,16 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
   /// Optimistic UI update: change a dose's status in the current state
   /// without waiting for the DB roundtrip.
-  void _updateDoseStatus(String id, DoseStatus newStatus, {DateTime? takenTime}) {
+  void _updateDoseStatus(String id, DoseStatus newStatus, {DateTime? takenTime, bool clearTakenTime = false}) {
     final current = state.value;
     if (current == null) return;
 
     final updated = current.map((dose) {
       if (dose.id == id) {
-        return dose.copyWith(status: newStatus, takenTime: takenTime);
+        return dose.copyWith(
+          status: newStatus, 
+          takenTime: clearTakenTime ? null : (takenTime ?? dose.takenTime),
+        );
       }
       return dose;
     }).toList();
@@ -161,7 +187,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
   }
 
   /// If the prescription has autoDiminish enabled, decrease medication stock.
-  Future<void> _autoDiminish(String doseLogId) async {
+  Future<void> _autoDiminish(String doseLogId, {bool reverse = false}) async {
     try {
       // Find the dose log to get prescriptionId
       final doses = state.value ?? [];
@@ -180,7 +206,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       if (amount <= 0) return;
 
       final medNotifier = ref.read(medicationListProvider.notifier);
-      await medNotifier.updateQuantity(prescription.medicationId, -amount);
+      await medNotifier.updateQuantity(prescription.medicationId, reverse ? amount : -amount);
     } catch (_) {
       // Non-critical: don't fail the dose marking
     }

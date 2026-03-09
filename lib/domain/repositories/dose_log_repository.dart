@@ -31,6 +31,9 @@ abstract class DoseLogRepository {
   /// Mark a dose as missed.
   Future<Result<DoseLog>> markDoseMissed(String id);
 
+  /// Mark a dose as pending (undo take/skip/miss).
+  Future<Result<DoseLog>> markDosePending(String id);
+
   /// Generate dose log entries for a prescription.
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
     String prescriptionId,
@@ -42,4 +45,3 @@ abstract class DoseLogRepository {
     String prescriptionId,
   );
 }
-

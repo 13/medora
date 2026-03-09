@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
@@ -162,7 +162,7 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
               ),
-              error: (_, _) => Text(
+              error: (error, stack) => Text(
                 l10n.unableToLoadDoses,
                 style: const TextStyle(color: Colors.white70),
               ),
@@ -250,10 +250,10 @@ class _ExpiringSoonCard extends ConsumerWidget {
           child: Center(child: CircularProgressIndicator()),
         ),
       ),
-      error: (e, _) => Card(
+      error: (error, stack) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Error: $e'),
+          child: Text('Error: $error'),
         ),
       ),
     );
@@ -305,10 +305,10 @@ class _LowStockCard extends ConsumerWidget {
           child: Center(child: CircularProgressIndicator()),
         ),
       ),
-      error: (e, _) => Card(
+      error: (error, stack) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Error: $e'),
+          child: Text('Error: $error'),
         ),
       ),
     );
@@ -340,16 +340,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
         return Card(
           child: Column(
             children: treatments.take(3).map((t) {
-              return ListTile(
-                leading:
-                    const Icon(Icons.healing, color: AppTheme.primaryColor),
-                title: Text(t.name),
-                subtitle: Text(
-                  l10n.startedOn(t.startDate.formatted),
-                ),
-                dense: true,
-                onTap: () => context.push('/treatments/${t.id}'),
-              );
+              return _ActiveTreatmentTile(treatment: t);
             }).toList(),
           ),
         );
@@ -360,12 +351,51 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
           child: Center(child: CircularProgressIndicator()),
         ),
       ),
-      error: (e, _) => Card(
+      error: (error, stack) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Error: $e'),
+          child: Text('Error: $error'),
         ),
       ),
+    );
+  }
+}
+
+class _ActiveTreatmentTile extends ConsumerWidget {
+  const _ActiveTreatmentTile({required this.treatment});
+  final dynamic treatment;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final prescriptionsAsync = ref.watch(prescriptionsByTreatmentProvider(treatment.id));
+
+    return ListTile(
+      leading: const Icon(Icons.healing, color: AppTheme.primaryColor),
+      title: Text(treatment.name),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (treatment.patientName != null)
+            Text(treatment.patientName!),
+          Row(
+            children: [
+              prescriptionsAsync.when(
+                data: (prescriptions) => Text(
+                  '${prescriptions.length} ${l10n.prescriptions.toLowerCase()}',
+                ),
+                loading: () => const Text('...'),
+                error: (error, stack) => const Text('?'),
+              ),
+              const Text(' • '),
+              Text(l10n.startedOn(treatment.startDate.formatted)),
+            ],
+          ),
+        ],
+      ),
+      isThreeLine: treatment.patientName != null,
+      dense: true,
+      onTap: () => context.push('/treatments/${treatment.id}'),
     );
   }
 }

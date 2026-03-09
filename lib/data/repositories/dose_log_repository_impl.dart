@@ -139,6 +139,29 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   @override
+  Future<Result<DoseLog>> markDosePending(String id) async {
+    try {
+      final now = DateTime.now();
+      // Manual reset: status to pending, takenTime to NULL
+      await localDatasource.updateStatus(id, 'pending',
+          takenTime: null, syncStatus: SyncStatus.pendingUpdate);
+      _syncRemoteInBackground(
+        () => remoteDatasource.updateDoseLogStatus(id, 'pending', takenTime: null),
+        id,
+      );
+      return Result.success(DoseLog(
+        id: id,
+        prescriptionId: '',
+        scheduledTime: now,
+        status: DoseStatus.pending,
+        updatedAt: now,
+      ));
+    } catch (e, st) {
+      return Result.failure('Failed to reset dose to pending: $e', st);
+    }
+  }
+
+  @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
       String prescriptionId) async {
     try {

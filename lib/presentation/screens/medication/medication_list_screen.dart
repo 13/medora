@@ -9,7 +9,6 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
-import 'package:medora/core/extensions.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -49,6 +48,12 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: _showArchived
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => setState(() => _showArchived = false),
+              )
+            : null,
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -77,21 +82,18 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 });
               },
             ),
-          IconButton(
-            icon: Icon(
-              _showArchived ? Icons.inventory_2 : Icons.archive_outlined,
-            ),
-            tooltip: _showArchived ? l10n.medications : l10n.showArchived,
-            onPressed: () {
-              setState(() {
-                _showArchived = !_showArchived;
-                if (_showArchived) {
+          if (!_showArchived)
+            IconButton(
+              icon: const Icon(Icons.archive_outlined),
+              tooltip: l10n.showArchived,
+              onPressed: () {
+                setState(() {
+                  _showArchived = true;
                   _isSearching = false;
                   _searchController.clear();
-                }
-              });
-            },
-          ),
+                });
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             onPressed: () => context.push(AppRoutes.scanner),
@@ -114,10 +116,16 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
           if (medications.isEmpty) {
             return EmptyStateWidget(
               icon: Icons.medication_outlined,
-              title: l10n.noMedicationsYet,
-              subtitle: l10n.addFirstMedication,
-              actionLabel: l10n.addMedicationButton,
-              onAction: () => context.push(AppRoutes.addMedication),
+              title: _showArchived ? l10n.archivedMedications : l10n.noMedicationsYet,
+              subtitle: _showArchived ? "" : l10n.addFirstMedication,
+              actionLabel: _showArchived ? l10n.medications : l10n.addMedicationButton,
+              onAction: () {
+                if (_showArchived) {
+                  setState(() => _showArchived = false);
+                } else {
+                  context.push(AppRoutes.addMedication);
+                }
+              },
             );
           }
 
@@ -162,7 +170,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                       .colorScheme
                       .surfaceContainerHighest
                       .withValues(alpha: 0.5),
-                  leading: Icon(Icons.category,
+                  leading: Icon(_getCategoryIcon(catKey),
                       size: 18, color: _getCategoryColor(catKey)),
                   title: Row(
                     children: [
@@ -200,10 +208,12 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
               ref.read(medicationListProvider.notifier).refresh(),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push(AppRoutes.addMedication),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _showArchived
+          ? null
+          : FloatingActionButton(
+              onPressed: () => context.push(AppRoutes.addMedication),
+              child: const Icon(Icons.add),
+            ),
     );
   }
 
@@ -256,16 +266,6 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
         ],
       ),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: _getCategoryColor(med.category),
-          child: Text(
-            med.name.isNotEmpty ? med.name[0].toUpperCase() : '?',
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
         title: Text(
           med.name,
           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -338,14 +338,37 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
             ),
           ],
         ),
-        trailing: Text(
-          med.expiryDate.formattedOr(l10n.noExpiry),
-          style: TextStyle(color: Colors.grey[500], fontSize: 12),
-        ),
         isThreeLine: true,
         onTap: () => context.push('/medications/${med.id}'),
       ),
     );
+  }
+
+  IconData _getCategoryIcon(String? category) {
+    switch (category) {
+      case 'painkiller':
+        return Icons.healing;
+      case 'antibiotic':
+        return Icons.science;
+      case 'antihistamine':
+        return Icons.masks;
+      case 'vitamin':
+        return Icons.spa;
+      case 'supplement':
+        return Icons.energy_savings_leaf;
+      case 'cold_flu':
+        return Icons.thermostat;
+      case 'digestive':
+        return Icons.monitor_heart;
+      case 'skin_care':
+        return Icons.dry_cleaning;
+      case 'eye_care':
+        return Icons.visibility;
+      case 'first_aid':
+        return Icons.medical_services;
+      default:
+        return Icons.medication;
+    }
   }
 
   Color _getCategoryColor(String? category) {

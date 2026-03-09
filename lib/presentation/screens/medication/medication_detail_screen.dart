@@ -148,7 +148,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                             ),
                           ),
                           Text(
-                            '${med.quantity}${med.quantityUnit != null ? ' ${med.quantityUnit}' : ''}',
+                            '${med.quantity}${med.quantityUnit != null ? ' ${med.quantityUnit?.substring(0, 3)}' : ''}',
                             style: const TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,

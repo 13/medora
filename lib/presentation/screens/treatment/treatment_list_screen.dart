@@ -11,13 +11,14 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
+import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for treatment list.
-enum TreatmentFilter { all, active, ended }
+enum TreatmentFilter { active, ended, all }
 
 class TreatmentListScreen extends ConsumerStatefulWidget {
   const TreatmentListScreen({super.key});
@@ -30,7 +31,7 @@ class TreatmentListScreen extends ConsumerStatefulWidget {
 class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
   final _searchController = TextEditingController();
   bool _isSearching = false;
-  TreatmentFilter _filter = TreatmentFilter.all;
+  TreatmentFilter _filter = TreatmentFilter.active;
 
   @override
   void dispose() {
@@ -110,12 +111,6 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
             child: Row(
               children: [
                 _FilterChip(
-                  label: l10n.all,
-                  selected: _filter == TreatmentFilter.all,
-                  onTap: () => setState(() => _filter = TreatmentFilter.all),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
                   label: l10n.active,
                   selected: _filter == TreatmentFilter.active,
                   onTap: () =>
@@ -127,6 +122,12 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                   selected: _filter == TreatmentFilter.ended,
                   onTap: () =>
                       setState(() => _filter = TreatmentFilter.ended),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: l10n.all,
+                  selected: _filter == TreatmentFilter.all,
+                  onTap: () => setState(() => _filter = TreatmentFilter.all),
                 ),
               ],
             ),
@@ -238,123 +239,14 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                             ),
                           ],
                         ),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: t.isActive
-                                ? AppTheme.primaryColor
-                                : Colors.grey,
-                            child: Icon(
-                              t.isActive
-                                  ? Icons.healing
-                                  : Icons.healing_outlined,
-                              color: Colors.white,
-                            ),
-                          ),
-                          title: Text(
-                            t.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (t.patientTags.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 2,
-                                    children: t.patientTags.map((p) {
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.primaryColor
-                                              .withValues(alpha: 0.12),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(p,
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                color: AppTheme.primaryColor,
-                                                fontWeight:
-                                                    FontWeight.w500)),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              if (t.symptomTags.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 3),
-                                  child: Wrap(
-                                    spacing: 4,
-                                    runSpacing: 2,
-                                    children: t.symptomTags.map((s) {
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange
-                                              .withValues(alpha: 0.12),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(s,
-                                            style: const TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.orange)),
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: t.isActive
-                                          ? AppTheme.successColor
-                                              .withValues(alpha: 0.15)
-                                          : Colors.grey
-                                              .withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      t.isActive ? l10n.active : l10n.ended,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: t.isActive
-                                            ? AppTheme.successColor
-                                            : Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    l10n.startedOn(
-                                        t.startDate.shortFormatted),
-                                    style: TextStyle(
-                                        color: Colors.grey[500],
-                                        fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          isThreeLine: true,
-                          onTap: () => context.push('/treatments/${t.id}'),
-                        ),
+                        child: _TreatmentTile(treatment: t),
                       );
                     },
                   ),
                 );
               },
               loading: () => LoadingWidget(message: l10n.loadingTreatments),
-              error: (error, _) => ErrorDisplayWidget(
+              error: (error, stackTrace) => ErrorDisplayWidget(
                 message: error.toString(),
                 onRetry: () =>
                     ref.read(treatmentListProvider.notifier).refresh(),
@@ -367,6 +259,127 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
         onPressed: () => context.push(AppRoutes.addTreatment),
         child: const Icon(Icons.add),
       ),
+    );
+  }
+}
+
+class _TreatmentTile extends ConsumerWidget {
+  const _TreatmentTile({required this.treatment});
+  final Treatment treatment;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final prescriptionsAsync = ref.watch(prescriptionsByTreatmentProvider(treatment.id));
+
+    return ListTile(
+      title: Text(
+        treatment.name,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (treatment.patientTags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                children: treatment.patientTags.map((p) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor
+                          .withValues(alpha: 0.12),
+                      borderRadius:
+                          BorderRadius.circular(8),
+                    ),
+                    child: Text(p,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppTheme.primaryColor,
+                            fontWeight:
+                                FontWeight.w500)),
+                  );
+                }).toList(),
+              ),
+            ),
+          if (treatment.symptomTags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 2,
+                children: treatment.symptomTags.map((s) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.orange
+                          .withValues(alpha: 0.12),
+                      borderRadius:
+                          BorderRadius.circular(8),
+                    ),
+                    child: Text(s,
+                        style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.orange)),
+                  );
+                }).toList(),
+              ),
+            ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: treatment.isActive
+                      ? AppTheme.successColor
+                          .withValues(alpha: 0.15)
+                      : Colors.grey
+                          .withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  treatment.isActive ? l10n.active : l10n.ended,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: treatment.isActive
+                        ? AppTheme.successColor
+                        : Colors.grey,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              prescriptionsAsync.when(
+                data: (prescriptions) => Text(
+                  l10n.numPrescriptions(prescriptions.length),
+                  style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12),
+                ),
+                loading: () => const Text('...', style: TextStyle(fontSize: 12)),
+                error: (error, stackTrace) => const SizedBox.shrink(),
+              ),
+              const Text(' • ', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              Text(
+                l10n.startedOn(
+                    treatment.startDate.shortFormatted),
+                style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+      ),
+      isThreeLine: true,
+      onTap: () => context.push('/treatments/${treatment.id}'),
     );
   }
 }

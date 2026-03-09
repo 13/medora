@@ -575,7 +575,7 @@ class _TreatmentDetailScreenState
         if (h < 20) return l10n.evening;
         return l10n.beforeSleep;
       }).join(', ');
-      return '$dosageText · $labels · ${p.durationDays} ${l10n.durationDaysLabel.toLowerCase()}';
+      return '$dosageText · $labels · ${p.durationDays} ${l10n.durationDaysLabel}';
     }
     return l10n.prescriptionSummary(
         dosageText, p.intervalHours, p.durationDays);
@@ -939,7 +939,7 @@ class _TreatmentDetailScreenState
                         decoration: InputDecoration(
                           border: const OutlineInputBorder(),
                           prefixIcon: const Icon(Icons.date_range),
-                          suffixText: l10n.durationDaysLabel.toLowerCase(),
+                          suffixText: l10n.durationDaysLabel,
                         ),
                         keyboardType: TextInputType.number,
                       ),

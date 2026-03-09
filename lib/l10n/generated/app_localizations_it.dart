@@ -310,6 +310,18 @@ class AppLocalizationsIt extends AppLocalizations {
   String get prescriptions => 'Prescrizioni';
 
   @override
+  String numPrescriptions(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count prescrizioni',
+      one: '1 prescrizione',
+      zero: 'Nessuna prescrizione',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get add => 'Aggiungi';
 
   @override
@@ -367,6 +379,11 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get taken => 'Assunta';
+
+  @override
+  String takenAt(String time) {
+    return 'Assunta alle $time';
+  }
 
   @override
   String get pending => 'In attesa';

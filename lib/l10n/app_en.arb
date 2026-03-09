@@ -158,6 +158,14 @@
   "endDate": "End Date",
   "ongoing": "Ongoing",
   "prescriptions": "Prescriptions",
+  "numPrescriptions": "{count, plural, =0{No prescriptions} =1{1 prescription} other{{count} prescriptions}}",
+  "@numPrescriptions": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "add": "Add",
   "noPrescriptionsYet": "No prescriptions yet",
   "addPrescription": "Add Prescription",
@@ -189,6 +197,14 @@
   "upcoming": "Upcoming",
   "completed": "Completed",
   "taken": "Taken",
+  "takenAt": "Taken at {time}",
+  "@takenAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "pending": "Pending",
   "skipped": "Skipped",
   "missed": "Missed",

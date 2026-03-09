@@ -658,6 +658,12 @@ abstract class AppLocalizations {
   /// **'Prescriptions'**
   String get prescriptions;
 
+  /// No description provided for @numPrescriptions.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No prescriptions} =1{1 prescription} other{{count} prescriptions}}'**
+  String numPrescriptions(int count);
+
   /// No description provided for @add.
   ///
   /// In en, this message translates to:
@@ -765,6 +771,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Taken'**
   String get taken;
+
+  /// No description provided for @takenAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Taken at {time}'**
+  String takenAt(String time);
 
   /// No description provided for @pending.
   ///
