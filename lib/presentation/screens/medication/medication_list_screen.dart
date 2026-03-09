@@ -170,8 +170,6 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                       .colorScheme
                       .surfaceContainerHighest
                       .withValues(alpha: 0.5),
-                  leading: Icon(_getCategoryIcon(catKey),
-                      size: 18, color: _getCategoryColor(catKey)),
                   title: Row(
                     children: [
                       Text(
@@ -179,7 +177,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: _getCategoryColor(catKey),
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -266,6 +264,13 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
         ],
       ),
       child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
+          child: Icon(
+            Icons.medication,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
         title: Text(
           med.name,
           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -304,97 +309,53 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                   }).toList(),
                 ),
               ),
-            // Patient tags
+            // Patient tags (User)
             if (med.patientTags.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Wrap(
-                  spacing: 4,
-                  children: med.patientTags.map((t) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.person, size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 4,
+                        children: med.patientTags.map((t) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(t,
+                                style: const TextStyle(
+                                    fontSize: 10, color: Colors.purple)),
+                          );
+                        }).toList(),
                       ),
-                      child: Text(t,
-                          style: const TextStyle(
-                              fontSize: 10, color: Colors.purple)),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
               ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                ExpiryBadge(expiryDate: med.expiryDate),
-                const SizedBox(width: 8),
-                StockIndicator(
-                  quantity: med.quantity,
-                  minimumStock: med.minimumStockLevel,
-                ),
-              ],
+          ],
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            StockIndicator(
+              quantity: med.quantity,
+              minimumStock: med.minimumStockLevel,
+              isExpired: med.isExpired,
             ),
+            const SizedBox(height: 4),
+            ExpiryBadge(expiryDate: med.expiryDate),
           ],
         ),
         isThreeLine: true,
         onTap: () => context.push('/medications/${med.id}'),
       ),
     );
-  }
-
-  IconData _getCategoryIcon(String? category) {
-    switch (category) {
-      case 'painkiller':
-        return Icons.healing;
-      case 'antibiotic':
-        return Icons.science;
-      case 'antihistamine':
-        return Icons.masks;
-      case 'vitamin':
-        return Icons.spa;
-      case 'supplement':
-        return Icons.energy_savings_leaf;
-      case 'cold_flu':
-        return Icons.thermostat;
-      case 'digestive':
-        return Icons.monitor_heart;
-      case 'skin_care':
-        return Icons.dry_cleaning;
-      case 'eye_care':
-        return Icons.visibility;
-      case 'first_aid':
-        return Icons.medical_services;
-      default:
-        return Icons.medication;
-    }
-  }
-
-  Color _getCategoryColor(String? category) {
-    switch (category) {
-      case 'painkiller':
-        return Colors.red[400]!;
-      case 'antibiotic':
-        return Colors.orange[400]!;
-      case 'antihistamine':
-        return Colors.amber[600]!;
-      case 'vitamin':
-        return Colors.green[400]!;
-      case 'supplement':
-        return Colors.green[600]!;
-      case 'cold_flu':
-        return Colors.blue[400]!;
-      case 'digestive':
-        return Colors.purple[400]!;
-      case 'skin_care':
-        return Colors.pink[300]!;
-      case 'eye_care':
-        return Colors.cyan[400]!;
-      case 'first_aid':
-        return Colors.red[600]!;
-      default:
-        return Colors.teal[400]!;
-    }
   }
 }

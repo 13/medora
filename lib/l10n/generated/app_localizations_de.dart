@@ -1126,18 +1126,18 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get forcePushConfirm =>
-      'This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?';
+      'Dies wird alle Daten in Supabase mit Ihren lokalen Daten überschreiben. Dies kann nicht rückgängig gemacht werden. Fortfahren?';
 
   @override
   String get forcePullConfirm =>
-      'This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?';
+      'Dies wird alle Ihre lokalen Daten mit Daten aus Supabase überschreiben. Nicht synchronisierte lokale Änderungen gehen verloren. Fortfahren?';
 
   @override
   String get continueLabel => 'Fortfahren';
 
   @override
-  String get daysLabel => 'Days';
+  String get daysLabel => 'Tage';
 
   @override
-  String get leftLabel => 'Left';
+  String get leftLabel => 'Übrig';
 }

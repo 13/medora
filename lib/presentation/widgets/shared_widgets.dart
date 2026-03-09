@@ -63,29 +63,45 @@ class StockIndicator extends StatelessWidget {
     super.key,
     required this.quantity,
     required this.minimumStock,
+    this.isExpired = false,
   });
 
   final int quantity;
   final int minimumStock;
+  final bool isExpired;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isLow = quantity <= minimumStock;
 
+    Color color;
+    IconData icon;
+
+    if (isExpired) {
+      color = AppTheme.expiredColor;
+      icon = Icons.warning_rounded;
+    } else if (isLow) {
+      color = AppTheme.lowStockColor;
+      icon = Icons.warning_rounded;
+    } else {
+      color = AppTheme.inStockColor;
+      icon = Icons.check_circle_rounded;
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          isLow ? Icons.warning_rounded : Icons.check_circle_rounded,
+          icon,
           size: 16,
-          color: isLow ? AppTheme.lowStockColor : AppTheme.inStockColor,
+          color: color,
         ),
         const SizedBox(width: 4),
         Text(
           l10n.quantityLeft(quantity),
           style: TextStyle(
-            color: isLow ? AppTheme.lowStockColor : AppTheme.inStockColor,
+            color: color,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),

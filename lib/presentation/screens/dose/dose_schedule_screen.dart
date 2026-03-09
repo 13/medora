@@ -355,25 +355,6 @@ class _DoseCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                    // Taken time info
-                    if (dose.status == DoseStatus.taken && dose.takenTime != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.check_circle, size: 12, color: AppTheme.doseTakenColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              l10n.takenAt(dose.takenTime!.timeFormatted),
-                              style: const TextStyle(
-                                color: AppTheme.doseTakenColor,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -403,7 +384,25 @@ class _DoseCard extends StatelessWidget {
                   child: Text(l10n.take, style: TextStyle(fontSize: isSmall ? 12 : 14)),
                 ),
               ] else
-                DoseStatusChip(status: dose.status),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DoseStatusChip(status: dose.status),
+                    if (dose.status == DoseStatus.taken && dose.takenTime != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, right: 4),
+                        child: Text(
+                          dose.takenTime!.timeFormatted,
+                          style: TextStyle(
+                            color: AppTheme.doseTakenColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
             ],
           ),
         ),
