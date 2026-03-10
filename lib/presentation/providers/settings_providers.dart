@@ -13,6 +13,7 @@ const _kThemeMode = 'theme_mode';
 const _kLocale = 'locale';
 const _kColorScheme = 'color_scheme';
 const _kBiometricsEnabled = 'biometrics_enabled';
+const _kRemindersEnabled = 'reminders_enabled';
 
 // ── SharedPreferences provider ───────────────────────────────
 final sharedPreferencesProvider = Provider<SharedPreferences>(
@@ -123,6 +124,25 @@ class BiometricsEnabledNotifier extends Notifier<bool> {
     state = enabled;
     final prefs = ref.read(sharedPreferencesProvider);
     await prefs.setBool(_kBiometricsEnabled, enabled);
+  }
+}
+
+// ── Reminders Setting ────────────────────────────────────────
+final remindersEnabledProvider =
+    NotifierProvider<RemindersEnabledNotifier, bool>(RemindersEnabledNotifier.new);
+
+class RemindersEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    // Default is ON
+    return prefs.getBool(_kRemindersEnabled) ?? true;
+  }
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setBool(_kRemindersEnabled, enabled);
   }
 }
 

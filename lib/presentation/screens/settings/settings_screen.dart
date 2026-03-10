@@ -34,6 +34,7 @@ class SettingsScreen extends ConsumerWidget {
     final locale = ref.watch(localeProvider);
     final user = ref.watch(currentUserProvider);
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
+    final remindersEnabled = ref.watch(remindersEnabledProvider);
     final appVersionAsync = ref.watch(appVersionProvider);
 
     final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
@@ -127,23 +128,28 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Notifications ──────────────────────────────────
           _SectionTitle(l10n.notifications),
-          ListTile(
-            leading: const Icon(Icons.notifications_outlined),
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_outlined),
             title: Text(l10n.enableNotifications),
             subtitle: Text(l10n.receiveDoseReminders),
-            trailing: Switch(
-              value: true,
-              onChanged: (value) async {
-                if (value) {
-                  await ReminderService.instance.requestPermissions();
-                }
-              },
-            ),
+            value: remindersEnabled,
+            onChanged: (value) async {
+              if (value) {
+                await ReminderService.instance.requestPermissions();
+              } else {
+                // If disabling, also clear pending notifications to be thorough
+                await ReminderService.instance.cancelAllReminders();
+              }
+              await ref.read(remindersEnabledProvider.notifier).set(value);
+              // Trigger a refresh of dose logs to re-schedule/cancel reminders
+              ref.invalidate(todaysDoseLogsProvider);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.cancel_outlined),
             title: Text(l10n.cancelAllReminders),
             subtitle: Text(l10n.removePendingNotifications),
+            enabled: remindersEnabled,
             onTap: () async {
               final confirm = await showDialog<bool>(
                 context: context,

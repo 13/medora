@@ -4,8 +4,9 @@
 library;
 
 import 'dart:io';
-
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:medora/domain/entities/dose_log.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -58,59 +59,90 @@ class ReminderService {
   /// Handle notification tap.
   void _onNotificationResponse(NotificationResponse response) {
     // Future: Navigate to the dose schedule screen
-    // The payload contains the prescription ID
+    // The payload contains the dose ID
   }
 
-  /// Schedule a dose reminder at a specific time.
+  /// Schedule all required reminders for a specific dose log.
   ///
-  /// [id] - Unique notification ID (use hashCode of dose log ID).
-  /// [title] - Notification title (e.g., 'Time to take Ibuprofen').
-  /// [body] - Notification body (e.g., '400mg - Flu Treatment').
-  /// [scheduledTime] - When to show the notification.
-  /// [payload] - Optional data (e.g., prescription ID).
-  Future<void> scheduleDoseReminder({
+  /// Schedules 4 notifications: 1 hour, 30 min, 10 min before, and at the time.
+  Future<void> scheduleRemindersForDose({
+    required DoseLog dose,
+    required String medicationName,
+  }) async {
+    await _ensureInitialized();
+
+    final now = DateTime.now();
+    final baseId = dose.id.hashCode;
+
+    // Define the sequence of reminders (minutes before)
+    final offsets = [60, 30, 10, 0];
+
+    for (var i = 0; i < offsets.length; i++) {
+      final minutesBefore = offsets[i];
+      final scheduledTime = dose.scheduledTime.subtract(Duration(minutes: minutesBefore));
+
+      // Don't schedule if it's in the past
+      if (scheduledTime.isBefore(now)) continue;
+
+      String title;
+      if (minutesBefore == 0) {
+        title = 'Time for $medicationName';
+      } else {
+        title = 'Reminder: $medicationName in $minutesBefore min';
+      }
+
+      await _scheduleNotification(
+        id: baseId + i,
+        title: title,
+        body: '${dose.displayDosage ?? ""} — Tap to log your dose',
+        scheduledTime: scheduledTime,
+        payload: dose.id,
+      );
+    }
+  }
+
+  /// Internal method to schedule a single zoned notification.
+  Future<void> _scheduleNotification({
     required int id,
     required String title,
     required String body,
     required DateTime scheduledTime,
     String? payload,
   }) async {
-    await _ensureInitialized();
-
     final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
-
-    // Don't schedule notifications in the past
-    if (tzScheduledTime.isBefore(tz.TZDateTime.now(tz.local))) {
-      return;
-    }
 
     const androidDetails = AndroidNotificationDetails(
       'medora_dose_reminders',
       'Dose Reminders',
       channelDescription: 'Reminders for scheduled medication doses',
-      importance: Importance.high,
+      importance: Importance.max,
       priority: Priority.high,
       ticker: 'Medication Reminder',
       icon: '@drawable/ic_stat_notify',
+      styleInformation: BigTextStyleInformation(''),
+      category: AndroidNotificationCategory.reminder,
+      color: Color(0xFF2196F3), // Medora Primary Blue
+      ledColor: Color(0xFF2196F3),
+      ledOnMs: 1000,
+      ledOffMs: 500,
+      enableVibration: true,
+      groupKey: 'medora_doses',
     );
 
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
-    final linuxDetails = LinuxNotificationDetails(
-      icon: AssetsLinuxIcon('assets/icon/medora_icon.png'),
-      urgency: LinuxNotificationUrgency.critical,
-    );
-
-    final details = NotificationDetails(
+    const details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
-      linux: linuxDetails,
     );
 
+    // In flutter_local_notifications v21.0.0, all parameters are named.
+    // uiLocalNotificationDateInterpretation is removed.
     await _notifications.zonedSchedule(
       id: id,
       title: title,
@@ -122,9 +154,17 @@ class ReminderService {
     );
   }
 
-  /// Schedule repeating reminders for a prescription.
-  ///
-  /// Generates individual notifications for each dose time.
+  /// Cancel all reminders associated with a specific dose.
+  Future<void> cancelRemindersForDose(String doseId) async {
+    await _ensureInitialized();
+    final baseId = doseId.hashCode;
+    // Cancel all 4 possible notification slots
+    for (var i = 0; i < 4; i++) {
+      await _notifications.cancel(id: baseId + i);
+    }
+  }
+
+  /// Legacy method kept for backward compatibility but redirected.
   Future<void> scheduleRepeatingReminders({
     required String prescriptionId,
     required String medicationName,
@@ -133,70 +173,7 @@ class ReminderService {
     required int intervalHours,
     required int durationDays,
   }) async {
-    await _ensureInitialized();
-
-    final endTime = startTime.add(Duration(days: durationDays));
-    var currentTime = startTime;
-    var notificationId = prescriptionId.hashCode;
-
-    while (currentTime.isBefore(endTime)) {
-      await scheduleDoseReminder(
-        id: notificationId,
-        title: 'Time to take $medicationName',
-        body: '$dosage — Tap to log your dose',
-        scheduledTime: currentTime,
-        payload: prescriptionId,
-      );
-
-      currentTime = currentTime.add(Duration(hours: intervalHours));
-      notificationId++;
-    }
-  }
-
-  /// Cancel a specific reminder by ID.
-  Future<void> cancelReminder(int id) async {
-    await _notifications.cancel(id: id);
-  }
-
-  /// Cancel all reminders for a prescription.
-  ///
-  /// Cancels notifications with IDs starting from the prescription hashCode.
-  Future<void> cancelPrescriptionReminders({
-    required String prescriptionId,
-    required int totalDoses,
-  }) async {
-    final startId = prescriptionId.hashCode;
-    for (var i = 0; i < totalDoses; i++) {
-      await _notifications.cancel(id: startId + i);
-    }
-  }
-
-  /// Reschedule reminders for a prescription.
-  Future<void> rescheduleReminder({
-    required String prescriptionId,
-    required String medicationName,
-    required String dosage,
-    required DateTime startTime,
-    required int intervalHours,
-    required int durationDays,
-  }) async {
-    // Cancel existing reminders
-    final totalDoses =
-        (durationDays * 24 / intervalHours).ceil();
-    await cancelPrescriptionReminders(
-      prescriptionId: prescriptionId,
-      totalDoses: totalDoses,
-    );
-
-    // Schedule new ones
-    await scheduleRepeatingReminders(
-      prescriptionId: prescriptionId,
-      medicationName: medicationName,
-      dosage: dosage,
-      startTime: startTime,
-      intervalHours: intervalHours,
-      durationDays: durationDays,
-    );
+    // Individual dose reminders are now handled by scheduleRemindersForDose
   }
 
   /// Cancel all reminders.
@@ -213,7 +190,6 @@ class ReminderService {
   Future<bool> requestPermissions() async {
     if (Platform.isLinux) return true;
 
-    // Android
     final androidPlugin =
         _notifications.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
@@ -222,7 +198,6 @@ class ReminderService {
       return granted ?? false;
     }
 
-    // iOS
     final iosPlugin =
         _notifications.resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>();

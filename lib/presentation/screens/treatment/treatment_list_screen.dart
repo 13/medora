@@ -300,14 +300,14 @@ class _TreatmentTile extends ConsumerWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.person, size: 12, color: Colors.grey),
+                        Icon(Icons.person, size: 12, color: Colors.blueGrey[600]),
                         const SizedBox(width: 2),
                         Text(
                           treatment.patientName!,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey,
+                            color: Colors.blueGrey[600],
                           ),
                         ),
                       ],
@@ -324,7 +324,7 @@ class _TreatmentTile extends ConsumerWidget {
                           style: const TextStyle(
                               fontSize: 10, color: Colors.orange)),
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ),
