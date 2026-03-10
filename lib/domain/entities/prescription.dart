@@ -81,19 +81,23 @@ class Prescription {
     if (scheduleType == 'times_per_day' && scheduleTimes != null) {
       return scheduleTimes!.length;
     }
-    return (24 / intervalHours).ceil();
+    return (24 / (intervalHours < 1 ? 1 : intervalHours)).ceil();
   }
 
   /// Generate all scheduled dose times for this prescription.
+  /// Includes a sanity limit of 1000 doses to prevent performance issues
+  /// if a user enters an extremely long duration or tiny interval.
   List<DateTime> get scheduledDoseTimes {
     final times = <DateTime>[];
     final end = endTime;
+    const maxDoses = 1000;
 
     if (scheduleType == 'times_per_day' && scheduleTimes != null && scheduleTimes!.isNotEmpty) {
       // Generate times for each day at the specified times
       var currentDate = DateTime(startTime.year, startTime.month, startTime.day);
-      while (currentDate.isBefore(end)) {
+      while (currentDate.isBefore(end) && times.length < maxDoses) {
         for (final timeStr in scheduleTimes!) {
+          if (times.length >= maxDoses) break;
           final parts = timeStr.split(':');
           final h = int.tryParse(parts[0]) ?? 8;
           final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
@@ -105,11 +109,12 @@ class Prescription {
         currentDate = currentDate.add(const Duration(days: 1));
       }
     } else {
-      // Fixed interval
+      // Fixed interval (ensure interval is at least 1h to avoid infinite loop)
+      final safeInterval = intervalHours < 1 ? 1 : intervalHours;
       var current = startTime;
-      while (current.isBefore(end)) {
+      while (current.isBefore(end) && times.length < maxDoses) {
         times.add(current);
-        current = current.add(Duration(hours: intervalHours));
+        current = current.add(Duration(hours: safeInterval));
       }
     }
 
@@ -159,4 +164,3 @@ class Prescription {
     );
   }
 }
-

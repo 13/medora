@@ -139,17 +139,18 @@ class DoseLogLocalDatasource {
   Future<void> upsertBatch(List<DoseLogModel> models,
       {required String syncStatus}) async {
     final db = await _db;
-    // Use a transaction for atomicity
+    // Optimize: Use a single transaction and direct insert if possible
     await db.transaction((txn) async {
+      final batch = txn.batch();
       for (final model in models) {
         final row = _toRow(model, syncStatus);
-        final updated = await txn.update('dose_logs', row,
-            where: 'id = ?', whereArgs: [model.id]);
-        if (updated == 0) {
-          await txn.insert('dose_logs', row,
-              conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
+        // Use insert with ConflictAlgorithm.replace or manual logic.
+        // Since generateDoseLogsForPrescription handles the existence check,
+        // we can just use insert here.
+        batch.insert('dose_logs', row,
+            conflictAlgorithm: ConflictAlgorithm.replace);
       }
+      await batch.commit(noResult: true);
     });
   }
 

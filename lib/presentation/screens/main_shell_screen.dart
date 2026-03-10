@@ -5,6 +5,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/screens/dose/dose_schedule_screen.dart';
 import 'package:medora/presentation/screens/home/home_screen.dart';
 import 'package:medora/presentation/screens/medication/medication_list_screen.dart';
@@ -29,16 +31,16 @@ class MainShellScope extends InheritedWidget {
   bool updateShouldNotify(MainShellScope oldWidget) => false;
 }
 
-class MainShellScreen extends StatefulWidget {
+class MainShellScreen extends ConsumerStatefulWidget {
   const MainShellScreen({super.key, this.initialIndex = 0});
 
   final int initialIndex;
 
   @override
-  State<MainShellScreen> createState() => _MainShellScreenState();
+  ConsumerState<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends State<MainShellScreen> {
+class _MainShellScreenState extends ConsumerState<MainShellScreen> {
   late final PageController _pageController;
   late int _currentIndex;
 
@@ -50,6 +52,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
       initialPage: _currentIndex,
       keepPage: true,
     );
+
+    // Automatically trigger sync when the app shell is first loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(syncServiceProvider).syncAll();
+    });
   }
 
   @override
@@ -93,5 +100,3 @@ class _MainShellScreenState extends State<MainShellScreen> {
     );
   }
 }
-
-
