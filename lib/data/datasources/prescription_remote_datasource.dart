@@ -8,6 +8,20 @@ import 'package:medora/data/models/prescription_model.dart';
 class PrescriptionRemoteDatasource {
   PrescriptionRemoteDatasource();
 
+  Future<List<PrescriptionModel>> getPrescriptions() async {
+    final response = await SupabaseConfig.client
+        .from(AppConstants.prescriptionsTable)
+        .select('*, medications(name), treatments(name)')
+        .order('start_time');
+
+    return (response as List)
+        .map(
+          (json) =>
+              PrescriptionModel.fromJson(json as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
   Future<List<PrescriptionModel>> getPrescriptionsByTreatment(
     String treatmentId,
   ) async {

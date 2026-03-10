@@ -358,7 +358,7 @@ class _TreatmentTile extends ConsumerWidget {
                 Text(
                   '${prescriptions.length}',
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     height: 1.0,
                   ),
@@ -374,8 +374,8 @@ class _TreatmentTile extends ConsumerWidget {
               ],
             ),
             loading: () => const SizedBox(
-              width: 16,
-              height: 16,
+              width: 14,
+              height: 14,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             orElse: () => const SizedBox.shrink(),
@@ -385,13 +385,13 @@ class _TreatmentTile extends ConsumerWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.person, size: 10, color: Colors.grey),
+                const Icon(Icons.person, size: 9, color: Colors.grey),
                 const SizedBox(width: 2),
                 Text(
                   treatment.patientName!,
                   style: TextStyle(
                     color: Colors.grey[600],
-                    fontSize: 9,
+                    fontSize: 8,
                     height: 1.0,
                   ),
                 ),

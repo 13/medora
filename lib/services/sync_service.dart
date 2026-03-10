@@ -140,6 +140,10 @@ class SyncService {
     debugPrint('Sync: starting FORCE PULL...');
 
     try {
+      // CLEAR LOCAL DATA FIRST to ensure a true clean pull
+      // This prevents deleted remote records from staying locally
+      await AppDatabase.instance.clearAllData();
+
       // Order is important for Foreign Keys
       await _pullFamilies();
       await _pullMedications(force: true);
@@ -270,14 +274,14 @@ class SyncService {
 
   Future<void> _pullPrescriptions({bool force = false}) async {
     try {
-      final remote = await prescriptionRemote.getActivePrescriptions();
+      final remote = await prescriptionRemote.getPrescriptions();
       for (final p in remote) { await _safeUpsertPrescription(p, force: force); }
     } catch (e) { debugPrint('Sync: pull prescriptions error: $e'); }
   }
 
   Future<void> _pullDoseLogs({bool force = false}) async {
     try {
-      final remote = await doseLogRemote.getTodaysDoseLogs();
+      final remote = await doseLogRemote.getDoseLogs();
       for (final d in remote) {
         if (force) {
           await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);

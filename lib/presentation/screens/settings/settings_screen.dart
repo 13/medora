@@ -369,43 +369,48 @@ class SettingsScreen extends ConsumerWidget {
               onPressed: controller.text == 'DELETE'
                   ? () async {
                       Navigator.pop(ctx);
-                      // Delete local data
-                      await AppDatabase.instance.clearAllData();
-                      // Try to delete remote data
-                      // With RLS enabled, this only deletes the current user's data
-                      if (SupabaseConfig.isAuthenticated) {
-                        try {
-                          final client = SupabaseConfig.client;
-                          // Delete in FK order: dose_logs → prescriptions → treatments → medications
-                          await client
-                              .from(AppConstants.doseLogsTable)
-                              .delete()
-                              .neq('id', '');
-                          await client
-                              .from(AppConstants.prescriptionsTable)
-                              .delete()
-                              .neq('id', '');
-                          await client
-                              .from(AppConstants.treatmentsTable)
-                              .delete()
-                              .neq('id', '');
-                          await client
-                              .from(AppConstants.medicationsTable)
-                              .delete()
-                              .neq('id', '');
-                        } catch (_) {
-                          // Ignore remote errors — local is already cleared
+                      try {
+                        // Try to delete remote data first
+                        if (SupabaseConfig.isAuthenticated) {
+                            final client = SupabaseConfig.client;
+                            // Delete in FK order: dose_logs → prescriptions → treatments → medications
+                            await client
+                                .from(AppConstants.doseLogsTable)
+                                .delete()
+                                .neq('id', '');
+                            await client
+                                .from(AppConstants.prescriptionsTable)
+                                .delete()
+                                .neq('id', '');
+                            await client
+                                .from(AppConstants.treatmentsTable)
+                                .delete()
+                                .neq('id', '');
+                            await client
+                                .from(AppConstants.medicationsTable)
+                                .delete()
+                                .neq('id', '');
                         }
-                      }
-                      // Invalidate all providers
-                      ref.invalidate(medicationListProvider);
-                      ref.invalidate(treatmentListProvider);
-                      ref.invalidate(todaysDoseLogsProvider);
-                      ref.invalidate(activePrescriptionsProvider);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(l10n.allDataDeleted)),
-                        );
+                        // If remote deletion is successful, delete local data
+                        await AppDatabase.instance.clearAllData();
+
+                        // Invalidate all providers
+                        ref.invalidate(medicationListProvider);
+                        ref.invalidate(treatmentListProvider);
+                        ref.invalidate(todaysDoseLogsProvider);
+                        ref.invalidate(activePrescriptionsProvider);
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(l10n.allDataDeleted)),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Error deleting data: ${e.toString()}")),
+                          );
+                        }
                       }
                     }
                   : null,

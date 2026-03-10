@@ -8,14 +8,10 @@ import 'package:medora/data/models/dose_log_model.dart';
 class DoseLogRemoteDatasource {
   DoseLogRemoteDatasource();
 
-  Future<List<DoseLogModel>> getDoseLogsByPrescription(
-    String prescriptionId,
-  ) async {
+  Future<List<DoseLogModel>> getDoseLogs() async {
     final response = await SupabaseConfig.client
         .from(AppConstants.doseLogsTable)
-        .select('*, prescriptions(dosage, medications(name))')
-        .eq('prescription_id', prescriptionId)
-        .order('scheduled_time');
+        .select('*, prescriptions(id, medications(name)) ');
 
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
@@ -29,30 +25,26 @@ class DoseLogRemoteDatasource {
 
     final response = await SupabaseConfig.client
         .from(AppConstants.doseLogsTable)
-        .select('*, prescriptions(dosage, medications(name))')
+        .select('*, prescriptions(id, medications(name))')
         .gte('scheduled_time', startOfDay.toIso8601String())
-        .lt('scheduled_time', endOfDay.toIso8601String())
-        .order('scheduled_time');
+        .lt('scheduled_time', endOfDay.toIso8601String());
 
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
-  Future<List<DoseLogModel>> getDoseLogsByDateRange(
-    DateTime start,
-    DateTime end,
-  ) async {
-    final response = await SupabaseConfig.client
+  Future<void> addDoseLog(DoseLogModel model) async {
+    await SupabaseConfig.client
         .from(AppConstants.doseLogsTable)
-        .select('*, prescriptions(dosage, medications(name))')
-        .gte('scheduled_time', start.toIso8601String())
-        .lt('scheduled_time', end.toIso8601String())
-        .order('scheduled_time');
+        .insert(model.toJson());
+  }
 
-    return (response as List)
-        .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
-        .toList();
+  Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
+    if (models.isEmpty) return;
+    await SupabaseConfig.client
+        .from(AppConstants.doseLogsTable)
+        .insert(models.map((m) => m.toJson()).toList());
   }
 
   Future<void> upsertDoseLog(DoseLogModel model) async {
@@ -61,40 +53,22 @@ class DoseLogRemoteDatasource {
         .upsert(model.toJson());
   }
 
-  Future<DoseLogModel> addDoseLog(DoseLogModel model) async {
-    final response = await SupabaseConfig.client
-        .from(AppConstants.doseLogsTable)
-        .insert(model.toJson())
-        .select('*, prescriptions(dosage, medications(name))')
-        .single();
-
-    return DoseLogModel.fromJson(response);
-  }
-
-  Future<DoseLogModel> updateDoseLogStatus(
-    String id,
-    String status, {
-    DateTime? takenTime,
-  }) async {
-    final updates = <String, dynamic>{'status': status};
+  /// Update dose log status.
+  Future<void> updateDoseLogStatus(String id, String status, {DateTime? takenTime}) async {
+    final Map<String, dynamic> updateData = {
+      'status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    
     if (takenTime != null) {
-      updates['taken_time'] = takenTime.toIso8601String();
+      updateData['taken_time'] = takenTime.toIso8601String();
+    } else if (status == 'pending') {
+      updateData['taken_time'] = null;
     }
 
-    final response = await SupabaseConfig.client
-        .from(AppConstants.doseLogsTable)
-        .update(updates)
-        .eq('id', id)
-        .select('*, prescriptions(dosage, medications(name))')
-        .single();
-
-    return DoseLogModel.fromJson(response);
-  }
-
-  Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
-    final jsonList = models.map((m) => m.toJson()).toList();
     await SupabaseConfig.client
         .from(AppConstants.doseLogsTable)
-        .insert(jsonList);
+        .update(updateData)
+        .eq('id', id);
   }
 }
