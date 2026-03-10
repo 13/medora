@@ -248,18 +248,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                                   spacing: 4,
                                   runSpacing: 4,
                                   children: med.symptoms.map((s) {
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.teal.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(s,
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.teal)),
-                                    );
+                                    return TagChip(label: s, fontSize: 12);
                                   }).toList(),
                                 ),
                               ),
@@ -289,18 +278,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                                   spacing: 4,
                                   runSpacing: 4,
                                   children: med.patientTags.map((t) {
-                                    return Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.purple.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(t,
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.purple)),
-                                    );
+                                    return TagChip(label: t, icon: Icons.person, fontSize: 12);
                                   }).toList(),
                                 ),
                               ),
@@ -456,5 +434,3 @@ class _DetailRow extends StatelessWidget {
     );
   }
 }
-
-

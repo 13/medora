@@ -12,11 +12,12 @@ class DoseLogLocalDatasource {
 
   Future<Database> get _db => AppDatabase.instance.database;
 
-  /// Shared JOIN query for fetching dose logs with medication info.
+  /// Shared JOIN query for fetching dose logs with medication and treatment info.
+  /// Uses patient_tags from treatments instead of medications.
   static const _joinQuery = '''
     SELECT d.*,
            m.name AS medication_name,
-           m.patient_tags AS patient_tags,
+           t.patient_tags AS patient_tags,
            m.quantity_unit AS medication_unit,
            p.dosage AS dosage,
            p.dosage_amount AS dosage_amount,
@@ -33,7 +34,7 @@ class DoseLogLocalDatasource {
   static const _activeJoinQuery = '''
     SELECT d.*,
            m.name AS medication_name,
-           m.patient_tags AS patient_tags,
+           t.patient_tags AS patient_tags,
            m.quantity_unit AS medication_unit,
            p.dosage AS dosage,
            p.dosage_amount AS dosage_amount,

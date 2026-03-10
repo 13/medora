@@ -4,29 +4,33 @@ library;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/core/constants.dart';
-import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/core/extensions.dart';
+import 'package:medora/core/theme.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
+/// Filter options for medication list.
+enum MedicationFilter { all, inStock, lowStock, expired, archived }
+
 class MedicationListScreen extends ConsumerStatefulWidget {
   const MedicationListScreen({super.key});
 
   @override
-  ConsumerState<MedicationListScreen> createState() =>
-      _MedicationListScreenState();
+  ConsumerState<MedicationListScreen> createState() => _MedicationListScreenState();
 }
 
 class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
   final _searchController = TextEditingController();
   bool _isSearching = false;
-  bool _showArchived = false;
+  MedicationFilter _filter = MedicationFilter.all;
 
   @override
   void dispose() {
@@ -34,26 +38,45 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
     super.dispose();
   }
 
+  List<Medication> _applyFilter(List<Medication> medications) {
+    var filtered = medications;
+
+    // Apply search query
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isNotEmpty) {
+      filtered = filtered.where((m) {
+        return m.name.toLowerCase().contains(query) ||
+            (m.manufacturer ?? '').toLowerCase().contains(query) ||
+            m.patientTags.any((p) => p.toLowerCase().contains(query)) ||
+            m.symptoms.any((s) => s.toLowerCase().contains(query)) ||
+            (m.notes ?? '').toLowerCase().contains(query);
+      }).toList();
+    }
+
+    // Apply status filter
+    return switch (_filter) {
+      // Exclude archived from "All" view per user request.
+      MedicationFilter.all => filtered.where((m) => !m.isArchived).toList(),
+      MedicationFilter.inStock =>
+        filtered.where((m) => m.quantity > m.minimumStockLevel && !m.isArchived).toList(),
+      MedicationFilter.lowStock =>
+        filtered.where((m) => m.quantity <= m.minimumStockLevel && !m.isArchived).toList(),
+      MedicationFilter.expired => filtered.where((m) {
+          if (m.isArchived) return false;
+          if (m.expiryDate == null) return false;
+          return m.expiryDate!.isPast;
+        }).toList(),
+      MedicationFilter.archived => filtered.where((m) => m.isArchived).toList(),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final AsyncValue<List<Medication>> medicationsAsync;
-    if (_showArchived) {
-      medicationsAsync = ref.watch(archivedMedicationsProvider);
-    } else if (_isSearching) {
-      medicationsAsync = ref.watch(medicationSearchProvider);
-    } else {
-      medicationsAsync = ref.watch(medicationListProvider);
-    }
+    final medicationsAsync = ref.watch(medicationListProvider);
 
     return Scaffold(
       appBar: AppBar(
-        leading: _showArchived
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => setState(() => _showArchived = false),
-              )
-            : null,
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -63,40 +86,18 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                   border: InputBorder.none,
                   filled: false,
                 ),
-                onChanged: (value) {
-                  ref.read(medicationSearchQueryProvider.notifier).set(value);
-                },
+                onChanged: (_) => setState(() {}),
               )
-            : Text(_showArchived ? l10n.archivedMedications : l10n.medications),
+            : Text(l10n.medications),
         actions: [
-          if (!_showArchived)
-            IconButton(
-              icon: Icon(_isSearching ? Icons.close : Icons.search),
-              onPressed: () {
-                setState(() {
-                  _isSearching = !_isSearching;
-                  if (!_isSearching) {
-                    _searchController.clear();
-                    ref.read(medicationSearchQueryProvider.notifier).set('');
-                  }
-                });
-              },
-            ),
-          if (!_showArchived)
-            IconButton(
-              icon: const Icon(Icons.archive_outlined),
-              tooltip: l10n.showArchived,
-              onPressed: () {
-                setState(() {
-                  _showArchived = true;
-                  _isSearching = false;
-                  _searchController.clear();
-                });
-              },
-            ),
           IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => context.push(AppRoutes.scanner),
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                _isSearching = !_isSearching;
+                if (!_isSearching) _searchController.clear();
+              });
+            },
           ),
           const SyncIconButton(),
           IconButton(
@@ -111,251 +112,277 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
             ),
         ],
       ),
-      body: medicationsAsync.when(
-        data: (medications) {
-          if (medications.isEmpty) {
-            return EmptyStateWidget(
-              icon: Icons.medication_outlined,
-              title: _showArchived ? l10n.archivedMedications : l10n.noMedicationsYet,
-              subtitle: _showArchived ? "" : l10n.addFirstMedication,
-              actionLabel: _showArchived ? l10n.medications : l10n.addMedicationButton,
-              onAction: () {
-                if (_showArchived) {
-                  setState(() => _showArchived = false);
-                } else {
-                  context.push(AppRoutes.addMedication);
+      body: Column(
+        children: [
+          // Filter chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                _FilterChip(
+                  label: l10n.all,
+                  selected: _filter == MedicationFilter.all,
+                  onTap: () => setState(() => _filter = MedicationFilter.all),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: l10n.lowStock,
+                  selected: _filter == MedicationFilter.lowStock,
+                  onTap: () => setState(() => _filter = MedicationFilter.lowStock),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: l10n.expired,
+                  selected: _filter == MedicationFilter.expired,
+                  onTap: () => setState(() => _filter = MedicationFilter.expired),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: l10n.archived,
+                  selected: _filter == MedicationFilter.archived,
+                  onTap: () => setState(() => _filter = MedicationFilter.archived),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+          // Medication list
+          Expanded(
+            child: medicationsAsync.when(
+              data: (medications) {
+                final filtered = _applyFilter(medications);
+                if (medications.isEmpty) {
+                  return EmptyStateWidget(
+                    icon: Icons.inventory_2_outlined,
+                    title: l10n.noMedicationsYet,
+                    subtitle: l10n.addFirstMedication,
+                    actionLabel: l10n.addMedicationButton,
+                    onAction: () => context.push(AppRoutes.addMedication),
+                  );
                 }
-              },
-            );
-          }
 
-          // Group medications by category
-          final grouped = <String, List<Medication>>{};
-          for (final med in medications) {
-            final key = med.category ?? '_uncategorized';
-            (grouped[key] ??= []).add(med);
-          }
+                if (filtered.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                        const SizedBox(height: 8),
+                        Text(l10n.noResults, style: TextStyle(color: Colors.grey[500])),
+                      ],
+                    ),
+                  );
+                }
 
-          // Sort category keys: known categories first, then uncategorized
-          final sortedKeys = grouped.keys.toList()
-            ..sort((a, b) {
-              if (a == '_uncategorized') return 1;
-              if (b == '_uncategorized') return -1;
-              return a.compareTo(b);
-            });
-
-          return RefreshIndicator(
-            onRefresh: () async {
-              ref.read(medicationListProvider.notifier).refresh();
-            },
-            child: ListView.builder(
-              padding: const EdgeInsets.only(bottom: 80),
-              itemCount: sortedKeys.length,
-              itemBuilder: (context, sectionIndex) {
-                final catKey = sortedKeys[sectionIndex];
-                final meds = grouped[catKey]!;
-                final catLabel = catKey == '_uncategorized'
-                    ? l10n.uncategorized
-                    : AppConstants.categoryLabel(l10n, catKey);
-
-                return ExpansionTile(
-                  key: PageStorageKey('cat_$catKey'),
-                  initiallyExpanded: true,
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-                  backgroundColor: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.3),
-                  collapsedBackgroundColor: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
-                      .withValues(alpha: 0.5),
-                  title: Row(
-                    children: [
-                      Text(
-                        catLabel,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.primary,
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    ref.read(medicationListProvider.notifier).refresh();
+                  },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 80),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final med = filtered[index];
+                      // Providing a unique Key is essential for Slidable items 
+                      // to prevent layout errors when items are removed/reordered.
+                      return Slidable(
+                        key: ValueKey(med.id),
+                        endActionPane: ActionPane(
+                          motion: const ScrollMotion(),
+                          children: [
+                            if (!med.isArchived)
+                              SlidableAction(
+                                onPressed: (_) {
+                                  ref.read(medicationListProvider.notifier).archiveMedication(med.id);
+                                },
+                                backgroundColor: Colors.blueGrey,
+                                foregroundColor: Colors.white,
+                                icon: Icons.archive,
+                                label: l10n.archive,
+                              ),
+                            if (med.isArchived)
+                              SlidableAction(
+                                onPressed: (_) {
+                                  ref.read(medicationListProvider.notifier).unarchiveMedication(med.id);
+                                },
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                icon: Icons.unarchive,
+                                label: l10n.unarchive,
+                              ),
+                            SlidableAction(
+                              onPressed: (_) async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: Text(l10n.deleteMedication),
+                                    content: Text(l10n.deleteMedicationConfirm(med.name)),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, false),
+                                        child: Text(l10n.cancel),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(ctx, true),
+                                        child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  ref.read(medicationListProvider.notifier).deleteMedication(med.id);
+                                }
+                              },
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                              icon: Icons.delete,
+                              label: l10n.delete,
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '(${meds.length})',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
+                        child: _MedicationTile(med: med),
+                      );
+                    },
                   ),
-                  children: meds
-                      .map((med) =>
-                          _buildMedicationTile(context, l10n, med))
-                      .toList(),
                 );
               },
+              loading: () => LoadingWidget(message: l10n.loadingMedications),
+              error: (error, stackTrace) => ErrorDisplayWidget(
+                message: error.toString(),
+                onRetry: () => ref.read(medicationListProvider.notifier).refresh(),
+              ),
             ),
-          );
-        },
-        loading: () => LoadingWidget(message: l10n.loadingMedications),
-        error: (error, _) => ErrorDisplayWidget(
-          message: error.toString(),
-          onRetry: () =>
-              ref.read(medicationListProvider.notifier).refresh(),
-        ),
-      ),
-      floatingActionButton: _showArchived
-          ? null
-          : FloatingActionButton(
-              onPressed: () => context.push(AppRoutes.addMedication),
-              child: const Icon(Icons.add),
-            ),
-    );
-  }
-
-  Widget _buildMedicationTile(
-      BuildContext context, AppLocalizations l10n, Medication med) {
-    return Slidable(
-      endActionPane: ActionPane(
-        motion: const ScrollMotion(),
-        children: [
-          SlidableAction(
-            onPressed: (_) {
-              context.push('/medications/${med.id}/edit');
-            },
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            icon: Icons.edit,
-            label: l10n.edit,
-          ),
-          SlidableAction(
-            onPressed: (_) async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text(l10n.deleteMedication),
-                  content: Text(l10n.deleteMedicationConfirm(med.name)),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: Text(l10n.cancel),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: Text(l10n.delete,
-                          style: const TextStyle(color: Colors.red)),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                ref
-                    .read(medicationListProvider.notifier)
-                    .deleteMedication(med.id);
-              }
-            },
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            icon: Icons.delete,
-            label: l10n.delete,
           ),
         ],
       ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
-          child: Icon(
-            Icons.medication,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        title: Text(
-          med.name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Active ingredients as small chips
-            if (med.activeIngredients.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  med.activeIngredients.join(', '),
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-              ),
-            // Symptom tags
-            if (med.symptoms.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Wrap(
-                  spacing: 4,
-                  runSpacing: 2,
-                  children: med.symptoms.map((s) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.teal.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(s,
-                          style: const TextStyle(
-                              fontSize: 10, color: Colors.teal)),
-                    );
-                  }).toList(),
-                ),
-              ),
-            // Patient tags (User)
-            if (med.patientTags.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Row(
-                  children: [
-                    const Icon(Icons.person, size: 12, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Wrap(
-                        spacing: 4,
-                        children: med.patientTags.map((t) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.purple.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(t,
-                                style: const TextStyle(
-                                    fontSize: 10, color: Colors.purple)),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            StockIndicator(
-              quantity: med.quantity,
-              minimumStock: med.minimumStockLevel,
-              isExpired: med.isExpired,
-            ),
-            const SizedBox(height: 4),
-            ExpiryBadge(expiryDate: med.expiryDate),
-          ],
-        ),
-        isThreeLine: true,
-        onTap: () => context.push('/medications/${med.id}'),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push(AppRoutes.addMedication),
+        child: const Icon(Icons.add),
       ),
+    );
+  }
+}
+
+class _MedicationTile extends StatelessWidget {
+  const _MedicationTile({required this.med});
+  final Medication med;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isLowStock = med.quantity <= med.minimumStockLevel;
+    final isExpired = med.expiryDate?.isPast ?? false;
+    final now = DateTime.now();
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: (isExpired || isLowStock)
+            ? (isExpired ? Colors.red[50] : Colors.orange[50])
+            : AppTheme.primaryColor.withValues(alpha: 0.1),
+        child: Icon(
+          Icons.medication,
+          color: (isExpired || isLowStock)
+              ? (isExpired ? Colors.red : Colors.orange)
+              : AppTheme.primaryColor,
+        ),
+      ),
+      title: Text(
+        med.name,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Replace manufacturer with symptom ("treats") tags
+          if (med.symptoms.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, bottom: 2),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: med.symptoms.take(3).map((s) => TagChip(label: s, fontSize: 10)).toList(),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 2),
+            child: Row(
+              children: [
+                StockIndicator(
+                  quantity: med.quantity,
+                  minimumStock: med.minimumStockLevel,
+                  isExpired: isExpired,
+                ),
+                if (med.expiryDate != null) ...[
+                  const Text(' · ', style: TextStyle(color: Colors.grey)),
+                  Text(
+                    med.expiryDate!.year == now.year
+                        ? med.expiryDate!.shortFormatted
+                        : med.expiryDate!.formatted,
+                    style: TextStyle(
+                      color: isExpired ? Colors.red : Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                if (med.isArchived) ...[
+                  const Text(' · ', style: TextStyle(color: Colors.grey)),
+                  Icon(Icons.archive, size: 12, color: Colors.blueGrey[300]),
+                ],
+              ],
+            ),
+          ),
+          if (med.patientTags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: med.patientTags.map((t) => TagChip(label: t, icon: Icons.person)).toList(),
+              ),
+            ),
+        ],
+      ),
+      trailing: med.category != null
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.blueGrey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                AppConstants.categoryLabel(l10n, med.category!),
+                style: TextStyle(fontSize: 10, color: Colors.blueGrey[700]),
+              ),
+            )
+          : null,
+      isThreeLine: true,
+      onTap: () => context.push('/medications/${med.id}'),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => onTap(),
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
     );
   }
 }

@@ -224,12 +224,7 @@ class _TreatmentDetailScreenState
                           spacing: 6,
                           runSpacing: 4,
                           children: treatment.patientTags.map((t) {
-                            return Chip(
-                              label: Text(t, style: const TextStyle(fontSize: 12)),
-                              avatar: const Icon(Icons.person, size: 16),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                            );
+                            return TagChip(label: t, icon: Icons.person, fontSize: 12);
                           }).toList(),
                         ),
                         const SizedBox(height: 12),
@@ -243,12 +238,7 @@ class _TreatmentDetailScreenState
                           spacing: 6,
                           runSpacing: 4,
                           children: treatment.symptomTags.map((s) {
-                            return Chip(
-                              label: Text(s, style: const TextStyle(fontSize: 12)),
-                              backgroundColor: Colors.orange.withValues(alpha: 0.12),
-                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                            );
+                            return TagChip(label: s, fontSize: 12);
                           }).toList(),
                         ),
                         const SizedBox(height: 12),
@@ -1118,14 +1108,19 @@ class _TreatmentDetailScreenState
                                             ?.name ??
                                         l10n.medication;
 
-                                    ReminderService.instance
-                                        .scheduleRepeatingReminders(
-                                      prescriptionId: p.id,
-                                      medicationName: medName,
-                                      dosage: p.dosage,
-                                      startTime: p.startTime,
-                                      intervalHours: p.intervalHours,
-                                      durationDays: p.durationDays,
+                                    // Schedule reminders for all newly generated doses
+                                    final repo = ref.read(doseLogRepositoryProvider);
+                                    final doseLogs = await repo.getDoseLogsByPrescription(p.id);
+                                    doseLogs.when(
+                                      success: (doses) {
+                                        for (final dose in doses) {
+                                          ReminderService.instance.scheduleRemindersForDose(
+                                            dose: dose,
+                                            medicationName: medName,
+                                          );
+                                        }
+                                      },
+                                      failure: (_) {},
                                     );
                                   } catch (_) {}
                                 },

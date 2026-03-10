@@ -20,6 +20,7 @@ import 'package:medora/services/aifa_cache_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class AddMedicationScreen extends ConsumerStatefulWidget {
   const AddMedicationScreen({
@@ -539,6 +540,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
               icon: Icons.person,
               tags: _patientTags,
               onChanged: (tags) => setState(() => _patientTags = tags),
+              isUserTag: true,
             ),
             const SizedBox(height: 16),
 
@@ -1007,12 +1009,14 @@ class _TagInputField extends StatefulWidget {
     required this.icon,
     required this.tags,
     required this.onChanged,
+    this.isUserTag = false,
   });
 
   final String label;
   final IconData icon;
   final List<String> tags;
   final ValueChanged<List<String>> onChanged;
+  final bool isUserTag;
 
   @override
   State<_TagInputField> createState() => _TagInputFieldState();
@@ -1050,13 +1054,20 @@ class _TagInputFieldState extends State<_TagInputField> {
               spacing: 6,
               runSpacing: 4,
               children: widget.tags.map((tag) {
-                return Chip(
-                  label: Text(tag, style: const TextStyle(fontSize: 13)),
-                  deleteIcon: const Icon(Icons.close, size: 16),
+                return InputChip(
+                  label: TagChip(
+                    label: tag, 
+                    fontSize: 12, 
+                    icon: widget.isUserTag ? Icons.person : null,
+                  ),
                   onDeleted: () {
                     widget.onChanged(
                         widget.tags.where((t) => t != tag).toList());
                   },
+                  backgroundColor: Colors.transparent,
+                  side: BorderSide.none,
+                  padding: EdgeInsets.zero,
+                  labelPadding: EdgeInsets.zero,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                 );

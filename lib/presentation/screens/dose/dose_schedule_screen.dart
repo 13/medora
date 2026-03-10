@@ -291,7 +291,7 @@ class _DoseCard extends StatelessWidget {
                     Text(
                       dose.medicationName ?? l10n.unknownMedication,
                       style: TextStyle(
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.bold,
                         fontSize: isSmall ? 13 : 14,
                       ),
                       maxLines: 1,
@@ -316,42 +316,29 @@ class _DoseCard extends StatelessWidget {
                     // Treatment and patient info
                     if (dose.treatmentName != null || dose.patientTags.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Row(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            if (dose.treatmentName != null) ...[
-                              Icon(Icons.medical_services, size: 11, color: Colors.grey[500]),
-                              const SizedBox(width: 3),
-                              Flexible(
-                                child: Text(
-                                  dose.treatmentName!,
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 11,
-                                    fontStyle: FontStyle.italic,
+                            if (dose.treatmentName != null)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.medical_services, size: 11, color: Colors.grey[500]),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    dose.treatmentName!,
+                                    style: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 11,
+                                      fontStyle: FontStyle.italic,
+                                    ),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                ],
                               ),
-                            ],
-                            if (dose.treatmentName != null && dose.patientTags.isNotEmpty)
-                              Text(' · ', style: TextStyle(color: Colors.grey[400], fontSize: 11)),
-                            if (dose.patientTags.isNotEmpty) ...[
-                              Icon(Icons.person, size: 11, color: Colors.grey[500]),
-                              const SizedBox(width: 3),
-                              Flexible(
-                                child: Text(
-                                  dose.patientTags.join(', '),
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 11,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
+                            ...dose.patientTags.map((t) => TagChip(label: t, fontSize: 10, icon: Icons.person)),
                           ],
                         ),
                       ),

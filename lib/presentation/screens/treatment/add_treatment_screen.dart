@@ -10,6 +10,7 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:uuid/uuid.dart';
+import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class AddTreatmentScreen extends ConsumerStatefulWidget {
   const AddTreatmentScreen({super.key, this.treatmentId});
@@ -115,6 +116,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
               hintText: l10n.patientNameHint,
               tags: _patientTags,
               onChanged: (tags) => setState(() => _patientTags = tags),
+              isUserTag: true,
             ),
             const SizedBox(height: 16),
 
@@ -280,6 +282,7 @@ class _TagInputField extends StatefulWidget {
     required this.tags,
     required this.onChanged,
     this.hintText,
+    this.isUserTag = false,
   });
 
   final String label;
@@ -287,6 +290,7 @@ class _TagInputField extends StatefulWidget {
   final List<String> tags;
   final ValueChanged<List<String>> onChanged;
   final String? hintText;
+  final bool isUserTag;
 
   @override
   State<_TagInputField> createState() => _TagInputFieldState();
@@ -324,13 +328,20 @@ class _TagInputFieldState extends State<_TagInputField> {
               spacing: 6,
               runSpacing: 4,
               children: widget.tags.map((tag) {
-                return Chip(
-                  label: Text(tag, style: const TextStyle(fontSize: 13)),
-                  deleteIcon: const Icon(Icons.close, size: 16),
+                return InputChip(
+                  label: TagChip(
+                    label: tag, 
+                    fontSize: 12, 
+                    icon: widget.isUserTag ? Icons.person : null,
+                  ),
                   onDeleted: () {
                     widget.onChanged(
                         widget.tags.where((t) => t != tag).toList());
                   },
+                  backgroundColor: Colors.transparent,
+                  side: BorderSide.none,
+                  padding: EdgeInsets.zero,
+                  labelPadding: EdgeInsets.zero,
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   visualDensity: VisualDensity.compact,
                 );

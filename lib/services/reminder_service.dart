@@ -4,6 +4,7 @@
 library;
 
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:medora/domain/entities/dose_log.dart';
@@ -109,6 +110,12 @@ class ReminderService {
     required DateTime scheduledTime,
     String? payload,
   }) async {
+    // zonedSchedule is not implemented on Web and Linux in the current version of the plugin.
+    if (kIsWeb || (!kIsWeb && Platform.isLinux)) {
+      debugPrint('Scheduling notifications is not supported on this platform.');
+      return;
+    }
+
     final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
 
     const androidDetails = AndroidNotificationDetails(
@@ -136,13 +143,12 @@ class ReminderService {
       interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
 
-    // In flutter_local_notifications v21.0.0, all parameters are named.
-    // uiLocalNotificationDateInterpretation is removed.
+    // In flutter_local_notifications v21.0.0, zonedSchedule uses only named parameters.
     await _notifications.zonedSchedule(
       id: id,
       title: title,
@@ -188,7 +194,7 @@ class ReminderService {
 
   /// Request notification permissions (iOS/Android 13+).
   Future<bool> requestPermissions() async {
-    if (Platform.isLinux) return true;
+    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return true;
 
     final androidPlugin =
         _notifications.resolvePlatformSpecificImplementation<

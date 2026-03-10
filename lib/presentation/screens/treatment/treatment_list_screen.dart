@@ -287,7 +287,7 @@ class _TreatmentTile extends ConsumerWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Patient and Symptoms (max 3)
+          // User and Symptoms
           if (treatment.patientName != null || treatment.symptomTags.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4, bottom: 2),
@@ -297,34 +297,8 @@ class _TreatmentTile extends ConsumerWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (treatment.patientName != null)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.person, size: 12, color: Colors.blueGrey[600]),
-                        const SizedBox(width: 2),
-                        Text(
-                          treatment.patientName!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blueGrey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ...treatment.symptomTags.take(3).map((s) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(s,
-                          style: const TextStyle(
-                              fontSize: 10, color: Colors.orange)),
-                    );
-                  }),
+                    ...treatment.patientTags.map((t) => TagChip(label: t, icon: Icons.person)),
+                  ...treatment.symptomTags.take(3).map((s) => TagChip(label: s)),
                 ],
               ),
             ),

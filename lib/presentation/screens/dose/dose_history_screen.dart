@@ -227,18 +227,6 @@ class _DoseHistoryTile extends StatelessWidget {
         statusLabel = l10n.pending;
     }
 
-    // Build subtitle parts
-    final subtitleParts = <String>[];
-    if (dose.displayDosage != null && dose.displayDosage!.isNotEmpty) {
-      subtitleParts.add(dose.displayDosage!);
-    }
-    if (dose.treatmentName != null && dose.treatmentName!.isNotEmpty) {
-      subtitleParts.add(dose.treatmentName!);
-    }
-    if (dose.patientTags.isNotEmpty) {
-      subtitleParts.add(dose.patientTags.join(', '));
-    }
-
     // Taken time display
     String? takenTimeStr;
     if (dose.status == DoseStatus.taken && dose.takenTime != null) {
@@ -256,26 +244,56 @@ class _DoseHistoryTile extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (subtitleParts.isNotEmpty)
+          if (dose.displayDosage != null && dose.displayDosage!.isNotEmpty)
             Text(
-              subtitleParts.join(' · '),
+              dose.displayDosage!,
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            ),
+          // Treatment and patient info with chips
+          if (dose.treatmentName != null || dose.patientTags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (dose.treatmentName != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.medical_services, size: 11, color: Colors.grey[500]),
+                        const SizedBox(width: 3),
+                        Text(
+                          dose.treatmentName!,
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 11,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ...dose.patientTags.map((t) => TagChip(label: t, fontSize: 10, icon: Icons.person)),
+                ],
+              ),
             ),
           if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
-            Text(
-              dose.prescriptionNotes!,
-              style: TextStyle(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                dose.prescriptionNotes!,
+                style: TextStyle(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
         ],
       ),
       trailing: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min, // Fix overflow by taking minimum space
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(scheduledTime, style: const TextStyle(fontWeight: FontWeight.w600)),
           Text(
@@ -289,7 +307,7 @@ class _DoseHistoryTile extends StatelessWidget {
             ),
         ],
       ),
-      dense: false, // Turn off dense to give more room for the multi-line content
+      isThreeLine: true,
     );
   }
 }

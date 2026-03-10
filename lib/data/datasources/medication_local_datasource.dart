@@ -1,6 +1,4 @@
 /// Medora - Medication Local Datasource
-///
-/// Medora - Medication Local Datasource
 library;
 
 import 'dart:convert';
@@ -14,11 +12,12 @@ class MedicationLocalDatasource {
 
   Future<Database> get _db => AppDatabase.instance.database;
 
+  /// Get all medications (including archived, excluding deleted).
   Future<List<MedicationModel>> getMedications() async {
     final db = await _db;
     final rows = await db.query(
       'medications',
-      where: 'sync_status != ? AND (is_archived IS NULL OR is_archived = 0)',
+      where: 'sync_status != ?',
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'name ASC',
     );
@@ -76,11 +75,18 @@ class MedicationLocalDatasource {
 
   Future<List<MedicationModel>> searchMedications(String query) async {
     final db = await _db;
+    // Search in name, description, active ingredients (JSON), and notes
     final rows = await db.query(
       'medications',
       where:
-          "(name LIKE ? OR active_ingredient LIKE ?) AND sync_status != ?",
-      whereArgs: ['%$query%', '%$query%', SyncStatus.pendingDelete],
+          "(name LIKE ? OR description LIKE ? OR active_ingredients LIKE ? OR notes LIKE ?) AND sync_status != ?",
+      whereArgs: [
+        '%$query%',
+        '%$query%',
+        '%$query%',
+        '%$query%',
+        SyncStatus.pendingDelete
+      ],
       orderBy: 'name ASC',
     );
     return rows.map((r) => _fromRow(r)).toList();
@@ -248,4 +254,3 @@ class MedicationLocalDatasource {
     };
   }
 }
-

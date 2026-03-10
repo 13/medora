@@ -154,6 +154,50 @@ class DoseStatusChip extends StatelessWidget {
   }
 }
 
+/// A chip for displaying tags (patient, symptom, etc.) with a unique color.
+class TagChip extends StatelessWidget {
+  const TagChip({
+    super.key,
+    required this.label,
+    this.icon,
+    this.fontSize = 11,
+  });
+
+  final String label;
+  final IconData? icon;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = label.toColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2), width: 0.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: fontSize + 1, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Show dose detail bottom sheet.
 void showDoseDetailBottomSheet({
   required BuildContext context,
@@ -201,7 +245,23 @@ void showDoseDetailBottomSheet({
             if (dose.treatmentName != null)
               DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),
             if (dose.patientTags.isNotEmpty)
-              DetailRow(icon: Icons.person, label: l10n.patientTagsField, value: dose.patientTags.join(', ')),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.person, size: 18, color: Colors.grey[600]),
+                    const SizedBox(width: 8),
+                    Text('${l10n.patientTagsField}: ', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: dose.patientTags.map((t) => TagChip(label: t, icon: Icons.person, fontSize: 12)).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
               DetailRow(icon: Icons.sticky_note_2, label: l10n.notes, value: dose.prescriptionNotes!),
             if (dose.takenTime != null)

@@ -18,6 +18,7 @@ import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
+import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -244,19 +245,10 @@ class _ExpiringSoonCard extends ConsumerWidget {
                       Text(med.expiryDate!.formatted, style: const TextStyle(fontSize: 12)),
                     if (med.patientTags.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          const Icon(Icons.person, size: 14, color: Colors.grey),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              med.patientTags.join(', '),
-                              style: const TextStyle(fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: med.patientTags.map((t) => TagChip(label: t, fontSize: 10)).toList(),
                       ),
                     ],
                   ],
@@ -340,19 +332,10 @@ class _LowStockCard extends ConsumerWidget {
                       Text(AppConstants.categoryLabel(l10n, med.category!), style: const TextStyle(fontSize: 12)),
                     if (med.patientTags.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          const Icon(Icons.person, size: 14, color: Colors.grey),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              med.patientTags.join(', '),
-                              style: const TextStyle(fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: med.patientTags.map((t) => TagChip(label: t, fontSize: 10)).toList(),
                       ),
                     ],
                   ],
@@ -460,17 +443,12 @@ class _ActiveTreatmentTile extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(l10n.startedOn(treatment.startDate.formatted), style: const TextStyle(fontSize: 12)),
-          if (treatment.patientName != null) ...[
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                const Icon(Icons.person, size: 14, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text(
-                  treatment.patientName!,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
+          if (treatment.patientTags.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: treatment.patientTags.map((t) => TagChip(label: t, fontSize: 10, icon: Icons.person)).toList(),
             ),
           ],
         ],
