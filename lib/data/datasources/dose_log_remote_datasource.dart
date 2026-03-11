@@ -71,4 +71,12 @@ class DoseLogRemoteDatasource {
         .update(updateData)
         .eq('id', id);
   }
+
+  /// Delete a dose log from remote.
+  Future<void> deleteDoseLog(String id) async {
+    await SupabaseConfig.client
+        .from(AppConstants.doseLogsTable)
+        .delete()
+        .eq('id', id);
+  }
 }

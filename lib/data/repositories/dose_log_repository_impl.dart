@@ -11,6 +11,7 @@ import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/reminder_service.dart';
 import 'package:uuid/uuid.dart';
 
 class DoseLogRepositoryImpl implements DoseLogRepository {
@@ -235,6 +236,17 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
       String prescriptionId) async {
     try {
+      // First, find all pending dose logs for this prescription to cancel their reminders
+      final existingLogsResult = await getDoseLogsByPrescription(prescriptionId);
+      if (existingLogsResult.isSuccess) {
+        final pendingLogs = existingLogsResult.dataOrNull
+                ?.where((l) => l.status == DoseStatus.pending) ??
+            [];
+        for (final log in pendingLogs) {
+          await ReminderService.instance.cancelRemindersForDose(log.id);
+        }
+      }
+
       // Delete only pending (not yet taken/skipped/missed) dose logs
       await localDatasource.deletePendingByPrescription(prescriptionId);
 

@@ -1,6 +1,6 @@
 /// Medora - Main Shell Screen
 ///
-/// Provides swipeable navigation between the four main tabs:
+/// Provides navigation between the four main tabs:
 /// Home, Medications, Treatments, Doses.
 library;
 
@@ -41,17 +41,12 @@ class MainShellScreen extends ConsumerStatefulWidget {
 }
 
 class _MainShellScreenState extends ConsumerState<MainShellScreen> {
-  late final PageController _pageController;
   late int _currentIndex;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
-    _pageController = PageController(
-      initialPage: _currentIndex,
-      keepPage: true,
-    );
 
     // Automatically trigger sync when the app shell is first loaded
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -59,22 +54,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  void _onPageChanged(int index) {
-    setState(() => _currentIndex = index);
-  }
-
   void _onNavTapped(int index) {
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    if (_currentIndex == index) return;
+    setState(() => _currentIndex = index);
   }
 
   @override
@@ -82,9 +64,9 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     return MainShellScope(
       switchTab: _onNavTapped,
       child: Scaffold(
-        body: PageView(
-          controller: _pageController,
-          onPageChanged: _onPageChanged,
+        // IndexedStack keeps all tabs in memory, making switching instantaneous.
+        body: IndexedStack(
+          index: _currentIndex,
           children: const [
             HomeScreen(),
             MedicationListScreen(),

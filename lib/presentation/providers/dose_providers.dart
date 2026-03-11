@@ -39,7 +39,8 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     // interfering with already-taken doses on subsequent invalidations.
     if (!_startupCheckDone) {
       _startupCheckDone = true;
-      await _ensureDoseLogsExist();
+      // We don't await this to keep app startup snappy
+      _ensureDoseLogsExistInBackground();
     }
     final doses = await _fetchTodaysDoses();
     _scheduleUpcomingReminders(doses);
@@ -60,18 +61,23 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     if (kIsWeb) return;
     
     final pending = doses.where((d) => d.status == DoseStatus.pending).toList();
-    for (final dose in pending) {
-      ReminderService.instance.scheduleRemindersForDose(
-        dose: dose,
-        medicationName: dose.medicationName ?? 'Medication',
-      );
-    }
+    // Use a background future to avoid blocking the main build process
+    Future(() async {
+      for (final dose in pending) {
+        // We pass cancelFirst: false here because we're doing a bulk schedule 
+        // and assuming it's fresh. Individual updates still use cancelFirst: true.
+        await ReminderService.instance.scheduleRemindersForDose(
+          dose: dose,
+          medicationName: dose.medicationName ?? 'Medication',
+          cancelFirst: false, 
+        );
+      }
+    });
   }
 
   /// Ensure dose logs exist for all active prescriptions.
-  /// Only runs once at app startup to fill in any missing dose logs
-  /// (e.g. new day, or generation failed previously).
-  Future<void> _ensureDoseLogsExist() async {
+  /// Runs in background to avoid blocking app startup.
+  Future<void> _ensureDoseLogsExistInBackground() async {
     try {
       final prescRepo = ref.read(prescriptionRepositoryProvider);
       final doseRepo = ref.read(doseLogRepositoryProvider);
@@ -85,6 +91,10 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       final today = DateTime(now.year, now.month, now.day);
       final tomorrow = today.add(const Duration(days: 1));
 
+      // Get ALL dose logs for today in one query instead of looping
+      final logsResult = await doseRepo.getTodaysDoseLogs();
+      final allTodayLogs = logsResult.dataOrNull ?? [];
+
       for (final p in prescriptions) {
         // Skip prescriptions that ended before today
         if (p.endTime.isBefore(today)) continue;
@@ -95,26 +105,23 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
         if (scheduledToday.isEmpty) continue;
 
-        // Check if dose logs exist for today for this prescription
-        final logsResult =
-            await doseRepo.getDoseLogsByPrescription(p.id);
-        final logs = logsResult.dataOrNull ?? [];
-
-        final todayLogs = logs.where((l) =>
-            !l.scheduledTime.isBefore(today) &&
-            l.scheduledTime.isBefore(tomorrow)).toList();
+        // Filter logs for THIS prescription
+        final todayLogs = allTodayLogs.where((l) => l.prescriptionId == p.id).toList();
 
         if (todayLogs.length < scheduledToday.length) {
           debugPrint('⚠ Missing dose logs for prescription ${p.id} '
               '(${p.medicationName ?? "unknown"}): '
               'has ${todayLogs.length}, expected ${scheduledToday.length}. Generating missing...');
-          // generateDoseLogsForPrescription is idempotent — it checks
-          // existing times before creating and never overwrites existing logs.
           await doseRepo.generateDoseLogsForPrescription(p.id);
         }
       }
+      
+      // If we generated anything, refresh the state
+      if (_startupCheckDone) {
+        state = await AsyncValue.guard(_fetchTodaysDoses);
+      }
     } catch (e) {
-      debugPrint('⚠ _ensureDoseLogsExist error (non-fatal): $e');
+      debugPrint('⚠ _ensureDoseLogsExist error: $e');
     }
   }
 
@@ -175,7 +182,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     }
 
     final repo = ref.read(doseLogRepositoryProvider);
-    await repo.markDoseSkipped(id); // Corrected from markSkipped
+    await repo.markDoseSkipped(id); 
     await _refreshAndInvalidateHistory();
   }
 
@@ -187,7 +194,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     }
 
     final repo = ref.read(doseLogRepositoryProvider);
-    await repo.markDoseMissed(id); // Corrected from markMissed
+    await repo.markDoseMissed(id);
     await _refreshAndInvalidateHistory();
   }
 

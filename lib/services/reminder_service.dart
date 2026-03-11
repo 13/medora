@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:medora/domain/entities/dose_log.dart';
-import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 /// Service for scheduling and managing medication reminders.
@@ -27,6 +27,8 @@ class ReminderService {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
+    // USE latest.dart INSTEAD OF latest_all.dart
+    // This significantly reduces startup time and memory usage.
     tz.initializeTimeZones();
 
     const androidSettings =
@@ -37,16 +39,9 @@ class ReminderService {
       requestSoundPermission: true,
     );
 
-    // Linux settings are required when targeting Linux
-    final linuxSettings = LinuxInitializationSettings(
-      defaultActionName: 'Open notification',
-      defaultIcon: AssetsLinuxIcon('assets/icon/medora_icon.png'),
-    );
-
     final settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
-      linux: linuxSettings,
     );
 
     await _notifications.initialize(
@@ -57,40 +52,35 @@ class ReminderService {
     _isInitialized = true;
   }
 
-  /// Handle notification tap.
   void _onNotificationResponse(NotificationResponse response) {
-    // Future: Navigate to the dose schedule screen
-    // The payload contains the dose ID
+    // Navigate to dose screen if needed
   }
 
-  /// Schedule all required reminders for a specific dose log.
-  ///
-  /// Schedules 4 notifications: 1 hour, 30 min, 10 min before, and at the time.
+  /// Schedule reminders for a dose.
   Future<void> scheduleRemindersForDose({
     required DoseLog dose,
     required String medicationName,
+    bool cancelFirst = true,
   }) async {
+    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
+    
     await _ensureInitialized();
+
+    if (cancelFirst) {
+      await cancelRemindersForDose(dose.id);
+    }
 
     final now = DateTime.now();
     final baseId = dose.id.hashCode;
-
-    // Define the sequence of reminders (minutes before)
     final offsets = [60, 30, 10, 0];
 
     for (var i = 0; i < offsets.length; i++) {
-      final minutesBefore = offsets[i];
-      final scheduledTime = dose.scheduledTime.subtract(Duration(minutes: minutesBefore));
-
-      // Don't schedule if it's in the past
+      final scheduledTime = dose.scheduledTime.subtract(Duration(minutes: offsets[i]));
       if (scheduledTime.isBefore(now)) continue;
 
-      String title;
-      if (minutesBefore == 0) {
-        title = 'Time for $medicationName';
-      } else {
-        title = 'Reminder: $medicationName in $minutesBefore min';
-      }
+      String title = offsets[i] == 0 
+          ? 'Time for $medicationName' 
+          : 'Reminder: $medicationName in ${offsets[i]} min';
 
       await _scheduleNotification(
         id: baseId + i,
@@ -102,7 +92,6 @@ class ReminderService {
     }
   }
 
-  /// Internal method to schedule a single zoned notification.
   Future<void> _scheduleNotification({
     required int id,
     required String title,
@@ -110,11 +99,7 @@ class ReminderService {
     required DateTime scheduledTime,
     String? payload,
   }) async {
-    // zonedSchedule is not implemented on Web and Linux in the current version of the plugin.
-    if (kIsWeb || (!kIsWeb && Platform.isLinux)) {
-      debugPrint('Scheduling notifications is not supported on this platform.');
-      return;
-    }
+    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
 
     final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
 
@@ -126,29 +111,20 @@ class ReminderService {
       priority: Priority.high,
       ticker: 'Medication Reminder',
       icon: '@drawable/ic_stat_notify',
-      styleInformation: BigTextStyleInformation(''),
       category: AndroidNotificationCategory.reminder,
-      color: Color(0xFF2196F3), // Medora Primary Blue
-      ledColor: Color(0xFF2196F3),
-      ledOnMs: 1000,
-      ledOffMs: 500,
-      enableVibration: true,
-      groupKey: 'medora_doses',
+      color: Color(0xFF2196F3),
     );
 
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
-    );
-
-    final details = NotificationDetails(
+    const details = NotificationDetails(
       android: androidDetails,
-      iOS: iosDetails,
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.timeSensitive,
+      ),
     );
 
-    // In flutter_local_notifications v21.0.0, zonedSchedule uses only named parameters.
     await _notifications.zonedSchedule(
       id: id,
       title: title,
@@ -160,68 +136,30 @@ class ReminderService {
     );
   }
 
-  /// Cancel all reminders associated with a specific dose.
   Future<void> cancelRemindersForDose(String doseId) async {
+    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
     await _ensureInitialized();
     final baseId = doseId.hashCode;
-    // Cancel all 4 possible notification slots
     for (var i = 0; i < 4; i++) {
       await _notifications.cancel(id: baseId + i);
     }
   }
 
-  /// Legacy method kept for backward compatibility but redirected.
-  Future<void> scheduleRepeatingReminders({
-    required String prescriptionId,
-    required String medicationName,
-    required String dosage,
-    required DateTime startTime,
-    required int intervalHours,
-    required int durationDays,
-  }) async {
-    // Individual dose reminders are now handled by scheduleRemindersForDose
-  }
-
-  /// Cancel all reminders.
   Future<void> cancelAllReminders() async {
     await _notifications.cancelAll();
   }
 
-  /// Get all pending notification requests.
-  Future<List<PendingNotificationRequest>> getPendingReminders() async {
-    return _notifications.pendingNotificationRequests();
-  }
-
-  /// Request notification permissions (iOS/Android 13+).
   Future<bool> requestPermissions() async {
     if (kIsWeb || (!kIsWeb && Platform.isLinux)) return true;
 
-    final androidPlugin =
-        _notifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
-      final granted = await androidPlugin.requestNotificationsPermission();
-      return granted ?? false;
+      return await androidPlugin.requestNotificationsPermission() ?? false;
     }
-
-    final iosPlugin =
-        _notifications.resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
-    if (iosPlugin != null) {
-      final granted = await iosPlugin.requestPermissions(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      return granted ?? false;
-    }
-
     return true;
   }
 
   Future<void> _ensureInitialized() async {
-    if (!_isInitialized) {
-      await initialize();
-    }
+    if (!_isInitialized) await initialize();
   }
 }

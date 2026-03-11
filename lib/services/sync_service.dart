@@ -116,7 +116,11 @@ class SyncService {
   /// Force push ALL local data to Supabase, overwriting remote records.
   Future<void> forcePush() async {
     if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline || !SupabaseConfig.isAuthenticated) return;
+    if (!ConnectivityService.instance.isOnline) {
+      debugPrint('Force Push: skipped (offline)');
+      return;
+    }
+    if (!SupabaseConfig.isAuthenticated) return;
 
     _setState(SyncState.syncing);
     debugPrint('Sync: starting FORCE PUSH...');
@@ -134,7 +138,11 @@ class SyncService {
   /// Force pull ALL remote data to local, overwriting local records.
   Future<void> forcePull() async {
     if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline || !SupabaseConfig.isAuthenticated) return;
+    if (!ConnectivityService.instance.isOnline) {
+      debugPrint('Force Pull: skipped (offline)');
+      return;
+    }
+    if (!SupabaseConfig.isAuthenticated) return;
 
     _setState(SyncState.syncing);
     debugPrint('Sync: starting FORCE PULL...');
@@ -234,8 +242,14 @@ class SyncService {
     for (final row in doseLogs) {
       try {
         final model = DoseLogModel.fromLocalMap(row);
-        await doseLogRemote.upsertDoseLog(model);
-        await doseLogLocal.markSynced(model.id);
+        final status = row['sync_status'] as String;
+        if (status == SyncStatus.pendingDelete) {
+          await doseLogRemote.deleteDoseLog(model.id);
+          await doseLogLocal.hardDelete(model.id);
+        } else {
+          await doseLogRemote.upsertDoseLog(model);
+          await doseLogLocal.markSynced(model.id);
+        }
       } catch (_) {}
     }
   }
