@@ -49,8 +49,14 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     _currentIndex = widget.initialIndex;
 
     // Automatically trigger sync when the app shell is first loaded
+    // Delay sync significantly to allow UI to fully render and settle
+    // The initial frame drop is caused by provider loading, not sync itself
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(syncServiceProvider).syncAll();
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          ref.read(syncServiceProvider).syncAll();
+        }
+      });
     });
   }
 
@@ -64,16 +70,14 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     return MainShellScope(
       switchTab: _onNavTapped,
       child: Scaffold(
-        // IndexedStack keeps all tabs in memory, making switching instantaneous.
-        body: IndexedStack(
-          index: _currentIndex,
-          children: const [
-            HomeScreen(),
-            MedicationListScreen(),
-            TreatmentListScreen(),
-            DoseScheduleScreen(),
-          ],
-        ),
+        // Use a simple switcher that only builds the active tab
+        // This prevents loading all 4 screens' data simultaneously on startup
+        body: [
+          const HomeScreen(),
+          const MedicationListScreen(),
+          const TreatmentListScreen(),
+          const DoseScheduleScreen(),
+        ][_currentIndex],
         bottomNavigationBar: AppNavBar(
           currentIndex: _currentIndex,
           onTap: _onNavTapped,

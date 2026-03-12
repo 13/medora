@@ -15,6 +15,20 @@ class ExpiryBadge extends StatelessWidget {
 
   final DateTime? expiryDate;
 
+  // Cache computed values as static to avoid recalculation
+  static DateTime? _lastNowCache;
+  static DateTime? _lastNow;
+
+  static DateTime _getCachedNow() {
+    final now = DateTime.now();
+    // Cache for 1 minute to avoid excessive DateTime.now() calls
+    if (_lastNowCache == null || now.difference(_lastNowCache!).inSeconds > 60) {
+      _lastNowCache = now;
+      _lastNow = DateTime(now.year, now.month, now.day);
+    }
+    return _lastNow!;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (expiryDate == null) {
@@ -22,22 +36,14 @@ class ExpiryBadge extends StatelessWidget {
     }
 
     final l10n = AppLocalizations.of(context);
-    final now = DateTime.now();
+    final now = _getCachedNow();
     final daysUntilExpiry = expiryDate!.difference(now).inDays;
 
-    Color color;
-    String label;
-
-    if (daysUntilExpiry < 0) {
-      color = AppTheme.expiredColor;
-      label = l10n.expired;
-    } else if (daysUntilExpiry <= 30) {
-      color = AppTheme.expiringSoonColor;
-      label = l10n.expiresInDaysShort(daysUntilExpiry);
-    } else {
-      color = AppTheme.inStockColor;
-      label = l10n.valid;
-    }
+    final (color, label) = daysUntilExpiry < 0
+        ? (AppTheme.expiredColor, l10n.expired)
+        : daysUntilExpiry <= 30
+            ? (AppTheme.expiringSoonColor, l10n.expiresInDaysShort(daysUntilExpiry))
+            : (AppTheme.inStockColor, l10n.valid);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -75,19 +81,11 @@ class StockIndicator extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final isLow = quantity <= minimumStock;
 
-    Color color;
-    IconData icon;
-
-    if (isExpired) {
-      color = AppTheme.expiredColor;
-      icon = Icons.warning_rounded;
-    } else if (isLow) {
-      color = AppTheme.lowStockColor;
-      icon = Icons.warning_rounded;
-    } else {
-      color = AppTheme.inStockColor;
-      icon = Icons.check_circle_rounded;
-    }
+    final (color, icon) = isExpired
+        ? (AppTheme.expiredColor, Icons.warning_rounded)
+        : isLow
+            ? (AppTheme.lowStockColor, Icons.warning_rounded)
+            : (AppTheme.inStockColor, Icons.check_circle_rounded);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -120,28 +118,13 @@ class DoseStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    Color color;
-    IconData icon;
-    String label;
 
-    switch (status) {
-      case DoseStatus.taken:
-        color = AppTheme.doseTakenColor;
-        icon = Icons.check_circle;
-        label = l10n.taken;
-      case DoseStatus.skipped:
-        color = AppTheme.doseSkippedColor;
-        icon = Icons.skip_next;
-        label = l10n.skipped;
-      case DoseStatus.missed:
-        color = AppTheme.doseMissedColor;
-        icon = Icons.cancel;
-        label = l10n.missed;
-      case DoseStatus.pending:
-        color = AppTheme.dosePendingColor;
-        icon = Icons.schedule;
-        label = l10n.pending;
-    }
+    final (color, icon, label) = switch (status) {
+      DoseStatus.taken => (AppTheme.doseTakenColor, Icons.check_circle, l10n.taken),
+      DoseStatus.skipped => (AppTheme.doseSkippedColor, Icons.skip_next, l10n.skipped),
+      DoseStatus.missed => (AppTheme.doseMissedColor, Icons.cancel, l10n.missed),
+      DoseStatus.pending => (AppTheme.dosePendingColor, Icons.schedule, l10n.pending),
+    };
 
     return Chip(
       avatar: Icon(icon, color: color, size: 18),
@@ -330,6 +313,10 @@ class DetailRow extends StatelessWidget {
   final String label;
   final String value;
 
+  // Cache the text style to avoid recreating it
+  static final _labelStyle = TextStyle(color: Colors.grey[600], fontSize: 13);
+  static const _valueStyle = TextStyle(fontSize: 13);
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -338,8 +325,8 @@ class DetailRow extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: Colors.grey[600]),
           const SizedBox(width: 8),
-          Text('$label: ', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
+          Text('$label: ', style: _labelStyle),
+          Expanded(child: Text(value, style: _valueStyle)),
         ],
       ),
     );

@@ -89,12 +89,20 @@ class SyncService {
       // 1. Push only PENDING local changes to Supabase
       await _pushPendingChanges();
 
-      // 2. Pull remote data
+      // 2. Pull remote data in parallel where possible
       // Order is important for Foreign Keys
       await _pullFamilies();
-      await _pullMedications();
-      await _pullTreatments();
+
+      // These can run in parallel after families are loaded
+      await Future.wait([
+        _pullMedications(),
+        _pullTreatments(),
+      ]);
+
+      // Prescriptions depend on medications and treatments
       await _pullPrescriptions();
+
+      // Dose logs depend on prescriptions
       await _pullDoseLogs();
 
       _lastSyncTime = DateTime.now();
@@ -179,78 +187,80 @@ class SyncService {
 
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
 
-    // 1. Families
-    final families = await db.query('families', where: where, whereArgs: whereArgs);
-    for (final row in families) {
-      try {
-        final model = FamilyModel.fromJson(row);
-        await familyRemote.createFamily(model);
-        await db.update('families', {'sync_status': SyncStatus.synced}, where: 'id = ?', whereArgs: [model.id]);
-      } catch (_) {}
-    }
+    // Process each table in batches to avoid blocking UI
+    await _pushBatch('families', where, whereArgs, (row) async {
+      final model = FamilyModel.fromJson(row);
+      await familyRemote.createFamily(model);
+      await db.update('families', {'sync_status': SyncStatus.synced}, where: 'id = ?', whereArgs: [model.id]);
+    });
 
-    // 2. Medications
-    final meds = await db.query('medications', where: where, whereArgs: whereArgs);
-    for (final row in meds) {
-      try {
-        final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
-        final status = row['sync_status'] as String;
-        if (status == SyncStatus.pendingDelete) {
-          await medicationRemote.deleteMedication(model.id);
-          await medicationLocal.hardDelete(model.id);
-        } else {
-          await medicationRemote.upsertMedication(model);
-          await medicationLocal.markSynced(model.id);
-        }
-      } catch (_) {}
-    }
+    await _pushBatch('medications', where, whereArgs, (row) async {
+      final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
+      final status = row['sync_status'] as String;
+      if (status == SyncStatus.pendingDelete) {
+        await medicationRemote.deleteMedication(model.id);
+        await medicationLocal.hardDelete(model.id);
+      } else {
+        await medicationRemote.upsertMedication(model);
+        await medicationLocal.markSynced(model.id);
+      }
+    });
 
-    // 3. Treatments
-    final treatments = await db.query('treatments', where: where, whereArgs: whereArgs);
-    for (final row in treatments) {
-      try {
-        final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
-        final status = row['sync_status'] as String;
-        if (status == SyncStatus.pendingDelete) {
-          await treatmentRemote.deleteTreatment(model.id);
-          await treatmentLocal.hardDelete(model.id);
-        } else {
-          await treatmentRemote.upsertTreatment(model);
-          await treatmentLocal.markSynced(model.id);
-        }
-      } catch (_) {}
-    }
+    await _pushBatch('treatments', where, whereArgs, (row) async {
+      final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
+      final status = row['sync_status'] as String;
+      if (status == SyncStatus.pendingDelete) {
+        await treatmentRemote.deleteTreatment(model.id);
+        await treatmentLocal.hardDelete(model.id);
+      } else {
+        await treatmentRemote.upsertTreatment(model);
+        await treatmentLocal.markSynced(model.id);
+      }
+    });
 
-    // 4. Prescriptions
-    final prescriptions = await db.query('prescriptions', where: where, whereArgs: whereArgs);
-    for (final row in prescriptions) {
-      try {
-        final model = PrescriptionModel.fromLocalMap(row);
-        final status = row['sync_status'] as String;
-        if (status == SyncStatus.pendingDelete) {
-          await prescriptionRemote.deletePrescription(model.id);
-          await prescriptionLocal.hardDelete(model.id);
-        } else {
-          await prescriptionRemote.upsertPrescription(model);
-          await prescriptionLocal.markSynced(model.id);
-        }
-      } catch (_) {}
-    }
+    await _pushBatch('prescriptions', where, whereArgs, (row) async {
+      final model = PrescriptionModel.fromLocalMap(row);
+      final status = row['sync_status'] as String;
+      if (status == SyncStatus.pendingDelete) {
+        await prescriptionRemote.deletePrescription(model.id);
+        await prescriptionLocal.hardDelete(model.id);
+      } else {
+        await prescriptionRemote.upsertPrescription(model);
+        await prescriptionLocal.markSynced(model.id);
+      }
+    });
 
-    // 5. Dose Logs
-    final doseLogs = await db.query('dose_logs', where: where, whereArgs: whereArgs);
-    for (final row in doseLogs) {
+    await _pushBatch('dose_logs', where, whereArgs, (row) async {
+      final model = DoseLogModel.fromLocalMap(row);
+      final status = row['sync_status'] as String;
+      if (status == SyncStatus.pendingDelete) {
+        await doseLogRemote.deleteDoseLog(model.id);
+        await doseLogLocal.hardDelete(model.id);
+      } else {
+        await doseLogRemote.upsertDoseLog(model);
+        await doseLogLocal.markSynced(model.id);
+      }
+    });
+  }
+
+  /// Process records in batches with periodic yields
+  Future<void> _pushBatch(
+    String table,
+    String? where,
+    List<dynamic>? whereArgs,
+    Future<void> Function(Map<String, dynamic>) processRow,
+  ) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(table, where: where, whereArgs: whereArgs);
+
+    for (var i = 0; i < rows.length; i++) {
       try {
-        final model = DoseLogModel.fromLocalMap(row);
-        final status = row['sync_status'] as String;
-        if (status == SyncStatus.pendingDelete) {
-          await doseLogRemote.deleteDoseLog(model.id);
-          await doseLogLocal.hardDelete(model.id);
-        } else {
-          await doseLogRemote.upsertDoseLog(model);
-          await doseLogLocal.markSynced(model.id);
-        }
-      } catch (_) {}
+        await processRow(rows[i]);
+      } catch (_) {
+        // Continue with other items on error
+      }
+      // Yield to UI every 5 items for better responsiveness
+      if (i % 5 == 2) await Future.delayed(Duration.zero);
     }
   }
 

@@ -15,11 +15,20 @@ import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
-class DoseScheduleScreen extends ConsumerWidget {
+class DoseScheduleScreen extends ConsumerStatefulWidget {
   const DoseScheduleScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DoseScheduleScreen> createState() => _DoseScheduleScreenState();
+}
+
+class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final l10n = AppLocalizations.of(context);
     final dosesAsync = ref.watch(todaysDoseLogsProvider);
 
@@ -71,28 +80,16 @@ class DoseScheduleScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
 
                 if (pending.isNotEmpty) ...[
-                  Text(
-                    l10n.upcoming,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+                  _SectionTitle(text: l10n.upcoming),
                   const SizedBox(height: 6),
-                  ...pending.map((dose) => _DoseCard(dose: dose, ref: ref)),
+                  ...pending.map((dose) => _DoseCard(key: ValueKey(dose.id), dose: dose)),
                   const SizedBox(height: 16),
                 ],
 
                 if (completed.isNotEmpty) ...[
-                  Text(
-                    l10n.completed,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
+                  _SectionTitle(text: l10n.completed),
                   const SizedBox(height: 6),
-                  ...completed.map((dose) => _DoseCard(dose: dose, ref: ref)),
+                  ...completed.map((dose) => _DoseCard(key: ValueKey(dose.id), dose: dose)),
                 ],
               ],
             ),
@@ -109,6 +106,24 @@ class DoseScheduleScreen extends ConsumerWidget {
   }
 }
 
+// ── Section Title Widget ───────────────────────────────────────
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: Theme.of(context)
+          .textTheme
+          .titleMedium
+          ?.copyWith(fontWeight: FontWeight.w600),
+    );
+  }
+}
+
 // ── Summary Header (responsive) ────────────────────────────────
 
 class _DoseSummaryHeader extends StatelessWidget {
@@ -119,11 +134,19 @@ class _DoseSummaryHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final total = doses.length;
-    final taken = doses.where((d) => d.status == DoseStatus.taken).length;
-    final skipped = doses.where((d) => d.status == DoseStatus.skipped).length;
-    final missed = doses.where((d) => d.status == DoseStatus.missed).length;
-    final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+
+    // Cache calculations to avoid multiple iterations
+    int total = 0, taken = 0, skipped = 0, missed = 0, pending = 0;
+    for (final dose in doses) {
+      total++;
+      switch (dose.status) {
+        case DoseStatus.taken: taken++;
+        case DoseStatus.skipped: skipped++;
+        case DoseStatus.missed: missed++;
+        case DoseStatus.pending: pending++;
+      }
+    }
+
     final isSmall = MediaQuery.sizeOf(context).width < 360;
 
     return Card(
@@ -236,14 +259,13 @@ class _StatChip extends StatelessWidget {
 
 // ── Dose Card (clickable + responsive) ─────────────────────────
 
-class _DoseCard extends StatelessWidget {
-  const _DoseCard({required this.dose, required this.ref});
+class _DoseCard extends ConsumerWidget {
+  const _DoseCard({super.key, required this.dose});
 
   final DoseLog dose;
-  final WidgetRef ref;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final isPending = dose.status == DoseStatus.pending;
     final isSmall = MediaQuery.sizeOf(context).width < 360;
@@ -347,30 +369,9 @@ class _DoseCard extends StatelessWidget {
               ),
 
               // Actions or status
-              if (isPending) ...[
-                if (!isSmall)
-                  IconButton(
-                    onPressed: () => ref
-                        .read(todaysDoseLogsProvider.notifier)
-                        .markSkipped(dose.id),
-                    icon: const Icon(Icons.skip_next, size: 20),
-                    tooltip: l10n.skip,
-                    color: AppTheme.doseSkippedColor,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  ),
-                FilledButton(
-                  onPressed: () => ref
-                      .read(todaysDoseLogsProvider.notifier)
-                      .markTaken(dose.id),
-                  style: FilledButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: isSmall ? 10 : 16),
-                    minimumSize: Size(isSmall ? 48 : 64, 34),
-                  ),
-                  child: Text(l10n.take, style: TextStyle(fontSize: isSmall ? 12 : 14)),
-                ),
-              ] else
+              if (isPending)
+                _DoseActions(dose: dose, isSmall: isSmall)
+              else
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
@@ -394,6 +395,47 @@ class _DoseCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Dose Actions (extracted for const optimization) ────────────
+class _DoseActions extends ConsumerWidget {
+  const _DoseActions({required this.dose, required this.isSmall});
+
+  final DoseLog dose;
+  final bool isSmall;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!isSmall)
+          IconButton(
+            onPressed: () => ref
+                .read(todaysDoseLogsProvider.notifier)
+                .markSkipped(dose.id),
+            icon: const Icon(Icons.skip_next, size: 20),
+            tooltip: l10n.skip,
+            color: AppTheme.doseSkippedColor,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
+        FilledButton(
+          onPressed: () => ref
+              .read(todaysDoseLogsProvider.notifier)
+              .markTaken(dose.id),
+          style: FilledButton.styleFrom(
+            padding: EdgeInsets.symmetric(horizontal: isSmall ? 10 : 16),
+            minimumSize: Size(isSmall ? 48 : 64, 34),
+          ),
+          child: Text(l10n.take, style: TextStyle(fontSize: isSmall ? 12 : 14)),
+        ),
+      ],
     );
   }
 }

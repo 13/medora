@@ -59,19 +59,22 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
   /// Schedule reminders for all pending doses.
   void _scheduleUpcomingReminders(List<DoseLog> doses) {
     if (kIsWeb) return;
-    
-    final pending = doses.where((d) => d.status == DoseStatus.pending).toList();
-    // Use a background future to avoid blocking the main build process
-    Future(() async {
-      for (final dose in pending) {
-        // We pass cancelFirst: false here because we're doing a bulk schedule 
-        // and assuming it's fresh. Individual updates still use cancelFirst: true.
-        await ReminderService.instance.scheduleRemindersForDose(
+
+    final pending = <DoseLog>[];
+    for (final d in doses) {
+      if (d.status == DoseStatus.pending) pending.add(d);
+    }
+
+    // Schedule all reminders in parallel without blocking the UI
+    Future.microtask(() async {
+      final futures = pending.map((dose) =>
+        ReminderService.instance.scheduleRemindersForDose(
           dose: dose,
           medicationName: dose.medicationName ?? 'Medication',
-          cancelFirst: false, 
-        );
-      }
+          cancelFirst: false,
+        )
+      );
+      await Future.wait(futures);
     });
   }
 
@@ -95,6 +98,15 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       final logsResult = await doseRepo.getTodaysDoseLogs();
       final allTodayLogs = logsResult.dataOrNull ?? [];
 
+      // Build a map for O(1) lookup instead of filtering repeatedly
+      final logsByPrescription = <String, List<dynamic>>{};
+      for (final log in allTodayLogs) {
+        logsByPrescription.putIfAbsent(log.prescriptionId, () => []).add(log);
+      }
+
+      // Collect prescriptions that need dose generation
+      final needsGeneration = <String>[];
+
       for (final p in prescriptions) {
         // Skip prescriptions that ended before today
         if (p.endTime.isBefore(today)) continue;
@@ -105,20 +117,27 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
         if (scheduledToday.isEmpty) continue;
 
-        // Filter logs for THIS prescription
-        final todayLogs = allTodayLogs.where((l) => l.prescriptionId == p.id).toList();
+        // O(1) lookup using map
+        final todayLogs = logsByPrescription[p.id] ?? [];
 
         if (todayLogs.length < scheduledToday.length) {
           debugPrint('⚠ Missing dose logs for prescription ${p.id} '
               '(${p.medicationName ?? "unknown"}): '
               'has ${todayLogs.length}, expected ${scheduledToday.length}. Generating missing...');
-          await doseRepo.generateDoseLogsForPrescription(p.id);
+          needsGeneration.add(p.id);
         }
       }
-      
-      // If we generated anything, refresh the state
-      if (_startupCheckDone) {
-        state = await AsyncValue.guard(_fetchTodaysDoses);
+
+      // Generate all missing dose logs in parallel
+      if (needsGeneration.isNotEmpty) {
+        await Future.wait(
+          needsGeneration.map((id) => doseRepo.generateDoseLogsForPrescription(id))
+        );
+
+        // Refresh the state after generation
+        if (_startupCheckDone) {
+          state = await AsyncValue.guard(_fetchTodaysDoses);
+        }
       }
     } catch (e) {
       debugPrint('⚠ _ensureDoseLogsExist error: $e');
@@ -204,15 +223,19 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     final current = state.value;
     if (current == null) return;
 
-    final updated = current.map((dose) {
+    // Use indexed loop for better performance
+    final updated = <DoseLog>[];
+    for (var i = 0; i < current.length; i++) {
+      final dose = current[i];
       if (dose.id == id) {
-        return dose.copyWith(
-          status: newStatus, 
+        updated.add(dose.copyWith(
+          status: newStatus,
           takenTime: clearTakenTime ? null : (takenTime ?? dose.takenTime),
-        );
+        ));
+      } else {
+        updated.add(dose);
       }
-      return dose;
-    }).toList();
+    }
 
     state = AsyncData(updated);
   }
