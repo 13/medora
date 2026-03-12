@@ -31,22 +31,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
   @override
   bool get wantKeepAlive => true;
 
-  bool _hasLoadedCards = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Defer loading of secondary cards significantly to avoid blocking initial render
-    // This prevents multiple database queries from running during app startup
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) {
-          setState(() => _hasLoadedCards = true);
-        }
-      });
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
@@ -87,36 +71,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
             const _TodaysDosesSummaryCard(),
             const SizedBox(height: 16),
 
-            // Defer loading other cards until after first frame
-            if (_hasLoadedCards) ...[
-              // Active Treatments
-              _SectionHeader(
-                title: l10n.activeTreatments,
-                onSeeAll: () => MainShellScope.of(context)?.switchTab(2),
-              ),
-              const _ActiveTreatmentsCard(),
-              const SizedBox(height: 16),
+            // Active Treatments
+            _SectionHeader(
+              title: l10n.activeTreatments,
+              onSeeAll: () => MainShellScope.of(context)?.switchTab(2),
+            ),
+            const _ActiveTreatmentsCard(),
+            const SizedBox(height: 16),
 
-              // Expiring Soon
-              _SectionHeader(
-                title: l10n.expiringSoon,
-                onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
-              ),
-              const _ExpiringSoonCard(),
-              const SizedBox(height: 16),
+            // Expiring Soon
+            _SectionHeader(
+              title: l10n.expiringSoon,
+              onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
+            ),
+            const _ExpiringSoonCard(),
+            const SizedBox(height: 16),
 
-              // Low Stock
-              _SectionHeader(
-                title: l10n.lowStock,
-                onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
-              ),
-              const _LowStockCard(),
-            ] else
-              // Show loading placeholder
-              const Padding(
-                padding: EdgeInsets.all(32.0),
-                child: Center(child: CircularProgressIndicator()),
-              ),
+            // Low Stock
+            _SectionHeader(
+              title: l10n.lowStock,
+              onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
+            ),
+            const _LowStockCard(),
           ],
         ),
       ),

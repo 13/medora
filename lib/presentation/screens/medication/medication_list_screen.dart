@@ -18,7 +18,7 @@ import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for medication list.
-enum MedicationFilter { all, inStock, lowStock, expired, archived }
+enum MedicationFilter { all, needsAttention, archived }
 
 class MedicationListScreen extends ConsumerStatefulWidget {
   const MedicationListScreen({super.key});
@@ -57,14 +57,11 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
     return switch (_filter) {
       // Exclude archived from "All" view per user request.
       MedicationFilter.all => filtered.where((m) => !m.isArchived).toList(),
-      MedicationFilter.inStock =>
-        filtered.where((m) => m.quantity > m.minimumStockLevel && !m.isArchived).toList(),
-      MedicationFilter.lowStock =>
-        filtered.where((m) => m.quantity <= m.minimumStockLevel && !m.isArchived).toList(),
-      MedicationFilter.expired => filtered.where((m) {
+      MedicationFilter.needsAttention => filtered.where((m) {
           if (m.isArchived) return false;
-          if (m.expiryDate == null) return false;
-          return m.expiryDate!.isPast;
+          final isLowStock = m.quantity <= m.minimumStockLevel;
+          final isExpired = m.expiryDate?.isPast ?? false;
+          return isLowStock || isExpired;
         }).toList(),
       MedicationFilter.archived => filtered.where((m) => m.isArchived).toList(),
     };
@@ -127,15 +124,9 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: l10n.lowStock,
-                  selected: _filter == MedicationFilter.lowStock,
-                  onTap: () => setState(() => _filter = MedicationFilter.lowStock),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: l10n.expired,
-                  selected: _filter == MedicationFilter.expired,
-                  onTap: () => setState(() => _filter = MedicationFilter.expired),
+                  label: '⚠️ ${l10n.lowStock} / ${l10n.expired}',
+                  selected: _filter == MedicationFilter.needsAttention,
+                  onTap: () => setState(() => _filter = MedicationFilter.needsAttention),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(

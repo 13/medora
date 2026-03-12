@@ -188,6 +188,25 @@ void showDoseDetailBottomSheet({
   required WidgetRef ref,
 }) {
   final l10n = AppLocalizations.of(context);
+
+  // Determine date label
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final doseDate = DateTime(
+    dose.scheduledTime.year,
+    dose.scheduledTime.month,
+    dose.scheduledTime.day,
+  );
+
+  final String dateLabel;
+  if (doseDate == today) {
+    dateLabel = 'Today';
+  } else if (doseDate == today.subtract(const Duration(days: 1))) {
+    dateLabel = 'Yesterday';
+  } else {
+    dateLabel = dose.scheduledTime.formatted;
+  }
+
   showModalBottomSheet(
     context: context,
     builder: (ctx) => SafeArea(
@@ -224,6 +243,7 @@ void showDoseDetailBottomSheet({
             const Divider(height: 24),
 
             // Details
+            DetailRow(icon: Icons.calendar_today, label: 'Date', value: dateLabel),
             DetailRow(icon: Icons.schedule, label: l10n.selectTimes, value: dose.scheduledTime.timeFormatted),
             if (dose.treatmentName != null)
               DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),

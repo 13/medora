@@ -10,6 +10,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:go_router/go_router.dart';
 
 /// Service for scheduling and managing medication reminders.
 class ReminderService {
@@ -23,6 +24,9 @@ class ReminderService {
 
   bool _isInitialized = false;
 
+  // Store navigation callback
+  static BuildContext? _navigationContext;
+
   /// Initialize the notification service.
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -32,7 +36,7 @@ class ReminderService {
     tz.initializeTimeZones();
 
     const androidSettings =
-        AndroidInitializationSettings('@drawable/ic_stat_notify');
+        AndroidInitializationSettings('ic_stat_notify');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -53,7 +57,16 @@ class ReminderService {
   }
 
   void _onNotificationResponse(NotificationResponse response) {
-    // Navigate to dose screen if needed
+    // Navigate to doses screen when notification is tapped
+    if (_navigationContext != null && _navigationContext!.mounted) {
+      _navigationContext!.go('/doses');
+    }
+  }
+
+  /// Set the navigation context for handling notification taps.
+  /// Call this from the main app widget.
+  static void setNavigationContext(BuildContext context) {
+    _navigationContext = context;
   }
 
   /// Schedule reminders for a dose.
@@ -110,7 +123,7 @@ class ReminderService {
       importance: Importance.max,
       priority: Priority.high,
       ticker: 'Medication Reminder',
-      icon: '@drawable/ic_stat_notify',
+      icon: 'ic_stat_notify',
       category: AndroidNotificationCategory.reminder,
       color: Color(0xFF2196F3),
     );

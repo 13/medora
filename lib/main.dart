@@ -96,6 +96,11 @@ class MedoraApp extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       routerConfig: appRouter,
+      builder: (context, child) {
+        // Set navigation context for notification handling
+        ReminderService.setNavigationContext(context);
+        return child ?? const SizedBox.shrink();
+      },
     );
   }
 }
