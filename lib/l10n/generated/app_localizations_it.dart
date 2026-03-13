@@ -619,7 +619,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get exporting => 'Esportazione...';
 
   @override
-  String get exportAndShare => 'Esporta e condividi';
+  String get exportAndShare => 'Esporta e condivi';
 
   @override
   String get noDataToExport => 'Nessun dato da esportare';
@@ -1133,4 +1133,29 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get leftLabel => 'Rimanenti';
+
+  @override
+  String get notificationChannelName => 'Promemoria dosi';
+
+  @override
+  String get notificationChannelDescription =>
+      'Promemoria per le dosi di farmaci programmate';
+
+  @override
+  String get notificationTicker => 'Promemoria farmaco';
+
+  @override
+  String notificationReminderTimeFor(String medication) {
+    return 'È ora di assumere $medication';
+  }
+
+  @override
+  String notificationReminderInMinutes(String medication, int minutes) {
+    return 'Promemoria: $medication tra $minutes min';
+  }
+
+  @override
+  String notificationReminderBody(String dosage) {
+    return '$dosage — Tocca per registrare la dose';
+  }
 }

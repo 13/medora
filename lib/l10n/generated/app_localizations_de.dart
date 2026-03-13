@@ -1140,4 +1140,29 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get leftLabel => 'Übrig';
+
+  @override
+  String get notificationChannelName => 'Einnahmeerinnerungen';
+
+  @override
+  String get notificationChannelDescription =>
+      'Erinnerungen für geplante Medikamenteneinnahmen';
+
+  @override
+  String get notificationTicker => 'Medikamenten-Erinnerung';
+
+  @override
+  String notificationReminderTimeFor(String medication) {
+    return 'Zeit für $medication';
+  }
+
+  @override
+  String notificationReminderInMinutes(String medication, int minutes) {
+    return 'Erinnerung: $medication in $minutes Min';
+  }
+
+  @override
+  String notificationReminderBody(String dosage) {
+    return '$dosage — Tippen zum Registrieren';
+  }
 }

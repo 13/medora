@@ -2205,6 +2205,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Left'**
   String get leftLabel;
+
+  /// No description provided for @notificationChannelName.
+  ///
+  /// In en, this message translates to:
+  /// **'Dose Reminders'**
+  String get notificationChannelName;
+
+  /// No description provided for @notificationChannelDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminders for scheduled medication doses'**
+  String get notificationChannelDescription;
+
+  /// No description provided for @notificationTicker.
+  ///
+  /// In en, this message translates to:
+  /// **'Medication Reminder'**
+  String get notificationTicker;
+
+  /// No description provided for @notificationReminderTimeFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Time for {medication}'**
+  String notificationReminderTimeFor(String medication);
+
+  /// No description provided for @notificationReminderInMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminder: {medication} in {minutes} min'**
+  String notificationReminderInMinutes(String medication, int minutes);
+
+  /// No description provided for @notificationReminderBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{dosage} — Tap to log your dose'**
+  String notificationReminderBody(String dosage);
 }
 
 class _AppLocalizationsDelegate

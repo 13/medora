@@ -252,3 +252,5 @@ app.*.symbols
 # idea
 .idea
 .idea/workspace.xml
+
+untranslated.txt

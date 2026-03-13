@@ -124,7 +124,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: '⚠️ ${l10n.lowStock} / ${l10n.expired}',
+                  label: '${l10n.lowStock}/${l10n.expired}',
                   selected: _filter == MedicationFilter.needsAttention,
                   onTap: () => setState(() => _filter = MedicationFilter.needsAttention),
                 ),

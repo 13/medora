@@ -1127,4 +1127,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get leftLabel => 'Left';
+
+  @override
+  String get notificationChannelName => 'Dose Reminders';
+
+  @override
+  String get notificationChannelDescription =>
+      'Reminders for scheduled medication doses';
+
+  @override
+  String get notificationTicker => 'Medication Reminder';
+
+  @override
+  String notificationReminderTimeFor(String medication) {
+    return 'Time for $medication';
+  }
+
+  @override
+  String notificationReminderInMinutes(String medication, int minutes) {
+    return 'Reminder: $medication in $minutes min';
+  }
+
+  @override
+  String notificationReminderBody(String dosage) {
+    return '$dosage — Tap to log your dose';
+  }
 }
