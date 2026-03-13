@@ -395,5 +395,12 @@
   "continueLabel": "Fortfahren",
 
   "daysLabel": "Tage",
-  "leftLabel": "Übrig"
+  "leftLabel": "Übrig",
+
+  "notificationChannelName": "Einnahmeerinnerungen",
+  "notificationChannelDescription": "Erinnerungen für geplante Medikamenteneinnahmen",
+  "notificationTicker": "Medikamenten-Erinnerung",
+  "notificationReminderTimeFor": "Zeit für {medication}",
+  "notificationReminderInMinutes": "Erinnerung: {medication} in {minutes} Min",
+  "notificationReminderBody": "{dosage} — Tippen zum Registrieren"
 }

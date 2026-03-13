@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:go_router/go_router.dart';
@@ -85,22 +86,42 @@ class ReminderService {
 
     final now = DateTime.now();
     final baseId = dose.id.hashCode;
-    final offsets = [60, 30, 10, 0];
+    final offsets = [60, 0];
+
+    // Get localization from the stored context
+    final l10n = _navigationContext != null && _navigationContext!.mounted
+        ? AppLocalizations.of(_navigationContext!)
+        : null;
 
     for (var i = 0; i < offsets.length; i++) {
       final scheduledTime = dose.scheduledTime.subtract(Duration(minutes: offsets[i]));
       if (scheduledTime.isBefore(now)) continue;
 
-      String title = offsets[i] == 0 
-          ? 'Time for $medicationName' 
-          : 'Reminder: $medicationName in ${offsets[i]} min';
+      String title;
+      if (l10n != null) {
+        title = offsets[i] == 0 
+            ? l10n.notificationReminderTimeFor(medicationName) 
+            : l10n.notificationReminderInMinutes(medicationName, offsets[i]);
+      } else {
+        title = offsets[i] == 0 
+            ? 'Time for $medicationName' 
+            : 'Reminder: $medicationName in ${offsets[i]} min';
+      }
+
+      String body;
+      if (l10n != null) {
+        body = l10n.notificationReminderBody(dose.displayDosage ?? "");
+      } else {
+        body = '${dose.displayDosage ?? ""} — Tap to log your dose';
+      }
 
       await _scheduleNotification(
         id: baseId + i,
         title: title,
-        body: '${dose.displayDosage ?? ""} — Tap to log your dose',
+        body: body,
         scheduledTime: scheduledTime,
         payload: dose.id,
+        l10n: l10n,
       );
     }
   }
@@ -111,26 +132,27 @@ class ReminderService {
     required String body,
     required DateTime scheduledTime,
     String? payload,
+    AppLocalizations? l10n,
   }) async {
     if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
 
     final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
 
-    const androidDetails = AndroidNotificationDetails(
+    final androidDetails = AndroidNotificationDetails(
       'medora_dose_reminders',
-      'Dose Reminders',
-      channelDescription: 'Reminders for scheduled medication doses',
+      l10n?.notificationChannelName ?? 'Dose Reminders',
+      channelDescription: l10n?.notificationChannelDescription ?? 'Reminders for scheduled medication doses',
       importance: Importance.max,
       priority: Priority.high,
-      ticker: 'Medication Reminder',
+      ticker: l10n?.notificationTicker ?? 'Medication Reminder',
       icon: 'ic_stat_notify',
       category: AndroidNotificationCategory.reminder,
-      color: Color(0xFF2196F3),
+      color: const Color(0xFF2196F3),
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
-      iOS: DarwinNotificationDetails(
+      iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,

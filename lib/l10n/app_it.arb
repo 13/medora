@@ -208,7 +208,7 @@
   "to": "A",
   "format": "Formato",
   "exporting": "Esportazione...",
-  "exportAndShare": "Esporta e condividi",
+  "exportAndShare": "Esporta e condivi",
   "noDataToExport": "Nessun dato da esportare",
   "exportFailed": "Esportazione fallita: {error}",
 
@@ -395,5 +395,12 @@
   "continueLabel": "Continua",
 
   "daysLabel": "Giorni",
-  "leftLabel": "Rimanenti"
+  "leftLabel": "Rimanenti",
+
+  "notificationChannelName": "Promemoria dosi",
+  "notificationChannelDescription": "Promemoria per le dosi di farmaci programmate",
+  "notificationTicker": "Promemoria farmaco",
+  "notificationReminderTimeFor": "È ora di assumere {medication}",
+  "notificationReminderInMinutes": "Promemoria: {medication} tra {minutes} min",
+  "notificationReminderBody": "{dosage} — Tocca per registrare la dose"
 }

@@ -504,5 +504,28 @@
   "continueLabel": "Continue",
 
   "daysLabel": "Days",
-  "leftLabel": "Left"
+  "leftLabel": "Left",
+
+  "notificationChannelName": "Dose Reminders",
+  "notificationChannelDescription": "Reminders for scheduled medication doses",
+  "notificationTicker": "Medication Reminder",
+  "notificationReminderTimeFor": "Time for {medication}",
+  "@notificationReminderTimeFor": {
+    "placeholders": {
+      "medication": { "type": "String" }
+    }
+  },
+  "notificationReminderInMinutes": "Reminder: {medication} in {minutes} min",
+  "@notificationReminderInMinutes": {
+    "placeholders": {
+      "medication": { "type": "String" },
+      "minutes": { "type": "int" }
+    }
+  },
+  "notificationReminderBody": "{dosage} — Tap to log your dose",
+  "@notificationReminderBody": {
+    "placeholders": {
+      "dosage": { "type": "String" }
+    }
+  }
 }
