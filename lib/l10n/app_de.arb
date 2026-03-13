@@ -2,6 +2,7 @@
   "@@locale": "de",
 
   "appTitle": "Medora",
+  "appDescription": "Medora - Hausapotheken-Verwalter",
 
   "navHome": "Dashboard",
   "navMedications": "Medikamente",

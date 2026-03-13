@@ -2,6 +2,7 @@
   "@@locale": "it",
 
   "appTitle": "Medora",
+  "appDescription": "Medora - Gestore dell'armadietto dei medicinali di casa",
 
   "navHome": "Dashboard",
   "navMedications": "Farmaci",

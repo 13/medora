@@ -2,7 +2,7 @@ name: medora
 description: "Medora - Home Medicine Cabinet Manager"
 publish_to: 'none'
 
-version: 0.0.8+8
+version: 0.0.9+9
 
 environment:
   sdk: ^3.11.0
@@ -90,3 +90,4 @@ flutter:
   assets:
     - .env
     - assets/icon/medora_icon.png
+    - assets/icon/medora_icon_pill.png
