@@ -109,7 +109,7 @@ abstract class AppLocalizations {
   /// No description provided for @navHome.
   ///
   /// In en, this message translates to:
-  /// **'Home'**
+  /// **'Dashboard'**
   String get navHome;
 
   /// No description provided for @navMedications.

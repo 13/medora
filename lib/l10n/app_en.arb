@@ -3,7 +3,7 @@
 
   "appTitle": "Medora",
 
-  "navHome": "Home",
+  "navHome": "Dashboard",
   "navMedications": "Medications",
   "navDoses": "Doses",
   "navTreatments": "Treatments",

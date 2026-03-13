@@ -12,7 +12,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get appTitle => 'Medora';
 
   @override
-  String get navHome => 'Home';
+  String get navHome => 'Dashboard';
 
   @override
   String get navMedications => 'Farmaci';

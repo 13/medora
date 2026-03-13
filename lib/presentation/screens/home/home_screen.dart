@@ -159,8 +159,8 @@ class _DosesSummaryContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Today\'s Doses',
+        Text(
+          l10n.todaysDosesTitle,
           style: TextStyle(
             color: Colors.white,
             fontSize: 18,
