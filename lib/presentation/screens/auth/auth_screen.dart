@@ -66,7 +66,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                 // Use default app icon instead of Icons.medication
                 Center(
                   child: Image.asset(
-                    'assets/icon/medora_icon.png',
+                    'assets/icon/medora_icon_pill.png',
                     height: 210,
                     errorBuilder: (ctx, err, st) => const Icon(Icons.medication, size: 80, color: Colors.teal),
                   ),

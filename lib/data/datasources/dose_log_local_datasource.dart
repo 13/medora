@@ -84,7 +84,17 @@ class DoseLogLocalDatasource {
         SyncStatus.pendingDelete,
       ],
     );
-    return rows.map(_fromRow).toList();
+    // Deduplicate by dose log ID to prevent showing the same dose multiple times
+    final seen = <String>{};
+    final unique = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final id = row['id'] as String;
+      if (!seen.contains(id)) {
+        seen.add(id);
+        unique.add(row);
+      }
+    }
+    return unique.map(_fromRow).toList();
   }
 
   Future<List<DoseLogModel>> getDoseLogsByDateRange(
