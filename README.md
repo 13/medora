@@ -1,4 +1,4 @@
-# <img src="assets/icon/medora1_icon.png" width="30" height="30" /> Medora — Home Medicine Cabinet Manager
+# <img src="assets/icon/medora_icon_pill.png" width="30" height="30" /> Medora — Home Medicine Cabinet Manager
 
 A production-ready Flutter mobile application for managing your home medicine cabinet, tracking medication expiration dates, creating treatment plans, managing dose schedules, and receiving medication reminders.
 
