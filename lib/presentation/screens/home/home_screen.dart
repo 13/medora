@@ -129,6 +129,8 @@ class _NowCardState extends ConsumerState<_NowCard> {
         padding: const EdgeInsets.all(20),
         child: AsyncValueView<List<DoseLog>>(
           value: dosesAsync,
+          compact: true,
+          onRetry: () async => ref.invalidate(todaysDoseLogsProvider),
           loading: SizedBox(
             height: 72,
             child: Center(
