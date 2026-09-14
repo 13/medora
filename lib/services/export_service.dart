@@ -6,7 +6,7 @@ library;
 import 'dart:io';
 
 import 'package:csv/csv.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:intl/intl.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
@@ -51,6 +51,10 @@ class ExportLabels {
     required this.scheduledTime,
     required this.takenTime,
     required this.status,
+    required this.doseTaken,
+    required this.doseSkipped,
+    required this.doseMissed,
+    required this.dosePending,
   });
 
   factory ExportLabels.fromL10n(AppLocalizations l10n) => ExportLabels(
@@ -81,6 +85,10 @@ class ExportLabels {
     scheduledTime: l10n.colScheduled,
     takenTime: l10n.colTaken,
     status: l10n.colStatus,
+    doseTaken: l10n.taken,
+    doseSkipped: l10n.skipped,
+    doseMissed: l10n.missed,
+    dosePending: l10n.pending,
   );
 
   final String reportTitle;
@@ -110,7 +118,43 @@ class ExportLabels {
   final String scheduledTime;
   final String takenTime;
   final String status;
+  final String doseTaken;
+  final String doseSkipped;
+  final String doseMissed;
+  final String dosePending;
+
+  /// Localized label for a dose's status column, e.g. "Skipped" — never
+  /// [DoseStatus.name], which is the raw untranslated enum value.
+  String statusLabel(DoseStatus status) => switch (status) {
+    DoseStatus.taken => doseTaken,
+    DoseStatus.skipped => doseSkipped,
+    DoseStatus.missed => doseMissed,
+    DoseStatus.pending => dosePending,
+  };
 }
+
+/// A dose log's row for the CSV export — [ExportService.exportDoseLogsCSV]'s
+/// values, split out so the status localization is testable without writing
+/// a file.
+@visibleForTesting
+List<String> doseLogCsvRow(DoseLog d, ExportLabels labels) => [
+  d.medicationName ?? '',
+  d.dosage ?? '',
+  d.scheduledTime.dateTimeFormatted,
+  d.takenTime != null ? d.takenTime!.dateTimeFormatted : '',
+  labels.statusLabel(d.status),
+  d.notes ?? '',
+];
+
+/// A dose log's row for the PDF export's dose-log table — the [doseLogCsvRow]
+/// twin for [ExportService.exportPDF].
+@visibleForTesting
+List<String> doseLogPdfRow(DoseLog d, ExportLabels labels) => [
+  d.medicationName ?? '—',
+  d.scheduledTime.dateTimeFormatted,
+  d.takenTime != null ? d.takenTime!.dateTimeFormatted : '—',
+  labels.statusLabel(d.status),
+];
 
 class ExportService {
   ExportService._();
@@ -198,16 +242,7 @@ class ExportService {
       labels.notes,
     ];
 
-    final rows = doseLogs.map(
-      (d) => [
-        d.medicationName ?? '',
-        d.dosage ?? '',
-        d.scheduledTime.dateTimeFormatted,
-        d.takenTime != null ? d.takenTime!.dateTimeFormatted : '',
-        d.status.name,
-        d.notes ?? '',
-      ],
-    );
+    final rows = doseLogs.map((d) => doseLogCsvRow(d, labels));
 
     return _writeCSV('medora_dose_logs', [headers, ...rows]);
   }
@@ -384,18 +419,7 @@ class ExportService {
                 labels.takenTime,
                 labels.status,
               ],
-              data: doseLogs
-                  .map(
-                    (d) => [
-                      d.medicationName ?? '—',
-                      d.scheduledTime.dateTimeFormatted,
-                      d.takenTime != null
-                          ? d.takenTime!.dateTimeFormatted
-                          : '—',
-                      d.status.name,
-                    ],
-                  )
-                  .toList(),
+              data: doseLogs.map((d) => doseLogPdfRow(d, labels)).toList(),
             ),
           ],
         ),

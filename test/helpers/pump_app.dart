@@ -18,7 +18,9 @@ Future<ProviderContainer> pumpMedoraApp(
   Brightness brightness = Brightness.light,
   Locale locale = const Locale('en'),
 }) async {
+  final previousLocale = Intl.defaultLocale;
   Intl.defaultLocale = locale.languageCode;
+  addTearDown(() => Intl.defaultLocale = previousLocale);
   final container = ProviderContainer(overrides: overrides);
   addTearDown(container.dispose);
   await tester.pumpWidget(

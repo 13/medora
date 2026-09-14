@@ -12,6 +12,7 @@ import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/reminder_text.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -30,7 +31,30 @@ class ReminderService implements ReminderPort {
   /// The app's router, assigned once from `main.dart`. A router is not bound
   /// to a widget's lifecycle (a [BuildContext] is), so keeping it in a static
   /// cannot leave a disposed element behind.
-  static GoRouter? router;
+  ///
+  /// A notification can be tapped before `main.dart` has finished building
+  /// the router (e.g. a cold start from a notification). Assigning `null`
+  /// clears any pending route along with the router — that reads as
+  /// "detached", not "remember this for later" — while assigning a router
+  /// flushes a pending route recorded by [handleNotificationTap] in the
+  /// meantime.
+  static GoRouter? get router => _router;
+
+  static set router(GoRouter? value) {
+    _router = value;
+    if (value == null) {
+      _pendingRoute = null;
+      return;
+    }
+    final pending = _pendingRoute;
+    if (pending != null) {
+      _pendingRoute = null;
+      value.go(pending);
+    }
+  }
+
+  static GoRouter? _router;
+  static String? _pendingRoute;
 
   /// Resolves the user's chosen locale. Services must not import presentation
   /// code, so `main.dart` installs this seam next to [router]; `null` (or no
@@ -70,11 +94,19 @@ class ReminderService implements ReminderPort {
   void _onNotificationResponse(NotificationResponse response) =>
       handleNotificationTap(response.payload);
 
-  /// Navigate to the doses screen when a notification is tapped. A no-op
-  /// until `main.dart` has assigned [router].
+  /// Navigate to the doses screen when a notification is tapped. When
+  /// [router] has not been assigned yet (e.g. a cold start from a
+  /// notification, before `main.dart` finishes building the router), the
+  /// route is remembered and applied as soon as [router] is set.
   @visibleForTesting
   void handleNotificationTap(String? payload) {
-    router?.go('/doses');
+    const route = '/doses';
+    final currentRouter = router;
+    if (currentRouter == null) {
+      _pendingRoute = route;
+      return;
+    }
+    currentRouter.go(route);
   }
 
   /// Localizations for the app's current locale, or `null` when it is not one
@@ -171,7 +203,7 @@ class ReminderService implements ReminderPort {
 
       String body;
       if (l10n != null) {
-        body = l10n.notificationReminderBody(dose.displayDosage ?? '');
+        body = reminderBody(l10n, dose);
       } else {
         body = '${dose.displayDosage ?? ""} — Tap to log your dose';
       }

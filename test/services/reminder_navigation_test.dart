@@ -44,6 +44,37 @@ void main() {
     );
   });
 
+  testWidgets(
+    'a tap before the router is assigned routes once the router arrives',
+    (tester) async {
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const Text('home')),
+          GoRoute(path: '/doses', builder: (_, _) => const Text('doses')),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      expect(find.text('home'), findsOneWidget);
+
+      ReminderService.router = null;
+      ReminderService.instance.handleNotificationTap('dose-1');
+      expect(
+        router.routerDelegate.currentConfiguration.uri.path,
+        '/',
+        reason: 'no router yet — the route is only remembered',
+      );
+
+      ReminderService.router = router;
+      await tester.pumpAndSettle();
+
+      expect(router.routerDelegate.currentConfiguration.uri.path, '/doses');
+      expect(find.text('doses'), findsOneWidget);
+    },
+  );
+
   test('notification titles use the locale from the seam', () {
     ReminderService.localeResolver = () => const Locale('it');
     expect(

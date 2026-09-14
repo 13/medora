@@ -7,6 +7,10 @@ class FakePort implements ReminderPort {
   final scheduled = <DoseLog>[];
   final cancelledDoses = <String>[];
 
+  /// When true, [scheduleForDose] throws instead of recording — simulates
+  /// the underlying notification plugin failing mid-reconcile.
+  bool throwOnSchedule = false;
+
   @override
   Future<void> cancelAll() async => cancelAllCalls++;
 
@@ -18,6 +22,9 @@ class FakePort implements ReminderPort {
     required DoseLog dose,
     required String medicationName,
   }) async {
+    if (throwOnSchedule) {
+      throw StateError('scheduleForDose failed');
+    }
     scheduled.add(dose);
   }
 }

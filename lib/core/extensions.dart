@@ -19,32 +19,6 @@ extension DateTimeExtensions on DateTime {
 
   /// Locale-aware short weekday name, e.g. 'Mon'.
   String get weekdayShort => DateFormat.E().format(this);
-
-  /// Returns true if this date is today.
-  bool get isToday {
-    final now = DateTime.now();
-    return year == now.year && month == now.month && day == now.day;
-  }
-
-  /// Returns true if this date is before today (expired).
-  bool get isPast {
-    final today = DateTime.now();
-    return isBefore(DateTime(today.year, today.month, today.day));
-  }
-
-  /// Returns the number of days from now.
-  int get daysFromNow {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final target = DateTime(year, month, day);
-    return target.difference(today).inDays;
-  }
-
-  /// Returns true if within [days] from now.
-  bool isWithinDays(int days) {
-    final d = daysFromNow;
-    return d >= 0 && d <= days;
-  }
 }
 
 extension NullableDateTimeExtensions on DateTime? {

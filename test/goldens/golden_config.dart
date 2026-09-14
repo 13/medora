@@ -109,7 +109,9 @@ Future<void> pumpGolden(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
+  final previousLocale = Intl.defaultLocale;
   Intl.defaultLocale = 'en';
+  addTearDown(() => Intl.defaultLocale = previousLocale);
   SharedPreferences.setMockInitialValues({'onboarding_seen': true});
   final prefs = await SharedPreferences.getInstance();
 

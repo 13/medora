@@ -341,11 +341,65 @@ void main() {
         now: () => now,
       );
 
+      expect(scheduler.lastError, isNull);
       final count = await scheduler.reconcile();
 
       expect(port.cancelAllCalls, 0);
       expect(port.scheduled, isEmpty);
       expect(count, 0);
+      expect(scheduler.lastError, isNotNull);
     },
   );
+
+  test(
+    'a port failure mid-reconcile keeps the previous count and sets lastError',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      await seedDoseLog(
+        db,
+        s.prescriptionId,
+        now.add(const Duration(hours: 1)),
+      );
+      final port = FakePort();
+      final scheduler = make(port);
+
+      final first = await scheduler.reconcile();
+      expect(first, 1);
+      expect(scheduler.lastError, isNull);
+
+      port.throwOnSchedule = true;
+      await seedDoseLog(
+        db,
+        s.prescriptionId,
+        now.add(const Duration(hours: 2)),
+      );
+
+      final second = await scheduler.reconcile();
+
+      expect(scheduler.lastError, isNotNull);
+      expect(
+        second,
+        1,
+        reason: 'previous snapshot count is kept when the port fails',
+      );
+    },
+  );
+
+  test('lastError is cleared once a later reconcile succeeds', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 1)));
+    final port = FakePort()..throwOnSchedule = true;
+    final scheduler = make(port);
+
+    await scheduler.reconcile();
+    expect(scheduler.lastError, isNotNull);
+
+    port.throwOnSchedule = false;
+    final count = await scheduler.reconcile();
+
+    expect(count, 1);
+    expect(scheduler.lastError, isNull);
+  });
 }

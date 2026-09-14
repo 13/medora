@@ -37,6 +37,13 @@ class ReminderScheduler {
   bool _running = false;
   bool _rerunRequested = false;
 
+  /// The error from the most recent reconcile attempt, or null when the
+  /// last attempt succeeded. A failed attempt keeps the previous snapshot
+  /// and notification set untouched — this is purely for callers that want
+  /// to surface "reminders may be out of date" somewhere.
+  Object? get lastError => _lastError;
+  Object? _lastError;
+
   /// Returns the number of doses that received notifications.
   ///
   /// If a reconcile is requested while one is already running, it is not
@@ -69,6 +76,7 @@ class ReminderScheduler {
     if (!_remindersEnabled()) {
       await _port.cancelAll();
       _scheduled = {};
+      _lastError = null;
       return 0;
     }
     final now = _now();
@@ -83,38 +91,54 @@ class ReminderScheduler {
         return null;
       },
     );
-    if (pending == null) return _scheduled?.length ?? 0;
+    if (pending == null) {
+      _lastError = StateError('could not load pending doses');
+      return _scheduled?.length ?? 0;
+    }
 
     const limit = maxNotifications ~/ notificationsPerDose;
     final desired = pending.take(limit).toList();
     final desiredMap = {for (final d in desired) d.id: d.scheduledTime};
     final previous = _scheduled;
 
-    if (previous == null) {
-      await _port.cancelAll();
-      for (final dose in desired) {
-        await _port.scheduleForDose(
-          dose: dose,
-          medicationName: dose.medicationName ?? 'Medication',
-        );
-      }
-    } else {
-      for (final id in previous.keys) {
-        if (!desiredMap.containsKey(id) || desiredMap[id] != previous[id]) {
-          await _port.cancelForDose(id);
-        }
-      }
-      for (final dose in desired) {
-        if (!previous.containsKey(dose.id) ||
-            previous[dose.id] != dose.scheduledTime) {
+    try {
+      if (previous == null) {
+        await _port.cancelAll();
+        for (final dose in desired) {
           await _port.scheduleForDose(
             dose: dose,
             medicationName: dose.medicationName ?? 'Medication',
           );
         }
+      } else {
+        for (final id in previous.keys) {
+          if (!desiredMap.containsKey(id) || desiredMap[id] != previous[id]) {
+            await _port.cancelForDose(id);
+          }
+        }
+        for (final dose in desired) {
+          if (!previous.containsKey(dose.id) ||
+              previous[dose.id] != dose.scheduledTime) {
+            await _port.scheduleForDose(
+              dose: dose,
+              medicationName: dose.medicationName ?? 'Medication',
+            );
+          }
+        }
       }
+    } catch (e) {
+      // Whatever was already scheduled/cancelled up to the failure stands;
+      // the previous snapshot is kept so the next reconcile still diffs
+      // correctly rather than assuming a state we never fully reached.
+      debugPrint(
+        'Reminders: reconcile failed talking to the notification port: $e',
+      );
+      _lastError = e;
+      return _scheduled?.length ?? 0;
     }
+
     _scheduled = desiredMap;
+    _lastError = null;
     debugPrint(
       'Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)',
     );
