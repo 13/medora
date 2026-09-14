@@ -75,13 +75,7 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
               child: AsyncValueView<List<DoseLog>>(
                 value: dosesAsync,
                 onRetry: () async => ref.invalidate(dosesForDayProvider(selected)),
-                emptyWhen: (doses) => doses.isEmpty,
-                empty: EmptyStateWidget(
-                  icon: Icons.check_circle_outline,
-                  title: l10n.noDosesScheduledToday,
-                  subtitle: l10n.createTreatmentForDoses,
-                ),
-                data: (doses) => _buildDay(context, l10n, doses, now, selected),
+                data: (doses) => _buildDay(context, l10n, doses, now, selected, today),
                 loading: LoadingWidget(message: l10n.loadingDoses),
               ),
             ),
@@ -97,7 +91,32 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
     List<DoseLog> doses,
     DateTime now,
     DateTime selected,
+    DateTime today,
   ) {
+    Future<void> onRefresh() async {
+      ref.invalidate(dosesForDayProvider(selected));
+      await ref.read(dosesForDayProvider(selected).future);
+    }
+
+    if (doses.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.6,
+              child: EmptyStateWidget(
+                icon: Icons.check_circle_outline,
+                title: selected == today ? l10n.noDosesScheduledToday : l10n.noDosesForThisDay,
+                subtitle: l10n.createTreatmentForDoses,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final pendingDue = doses
         .where((d) => d.status == DoseStatus.pending && !d.scheduledTime.isAfter(now))
         .toList();
@@ -105,7 +124,7 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
     final groups = _timeOfDayGroups(doses, l10n);
 
     return RefreshIndicator(
-      onRefresh: () async => ref.invalidate(dosesForDayProvider(selected)),
+      onRefresh: onRefresh,
       child: ListView(
         padding: const EdgeInsets.all(12),
         children: [
@@ -212,15 +231,15 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
     setState(() => _takeAllBusy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final count = await ref.read(doseActionsProvider).takeAllDue(ids);
-      if (!mounted) return;
+      final taken = await ref.read(doseActionsProvider).takeAllDue(ids);
+      if (!mounted || taken.isEmpty) return;
       messenger.showSnackBar(
         SnackBar(
-          content: Text(l10n.dosesTakenCount(count)),
+          content: Text(l10n.dosesTakenCount(taken.length)),
           action: SnackBarAction(
             label: l10n.undo,
             onPressed: () async {
-              for (final id in ids) {
+              for (final id in taken) {
                 await ref.read(doseActionsProvider).undoTake(id);
               }
             },
@@ -319,8 +338,8 @@ class _DateStrip extends StatelessWidget {
           for (var i = -3; i <= 3; i++)
             Expanded(
               child: _DayChip(
-                day: today.add(Duration(days: i)),
-                selected: selected == today.add(Duration(days: i)),
+                day: dayKey(DateTime(today.year, today.month, today.day + i)),
+                selected: selected == dayKey(DateTime(today.year, today.month, today.day + i)),
                 now: now,
               ),
             ),
@@ -397,24 +416,57 @@ class _DoseSummaryHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final total = doses.length;
-    final taken = doses.where((d) => d.status == DoseStatus.taken).length;
-    final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+
+    int total = 0, taken = 0, skipped = 0, missed = 0, pending = 0;
+    for (final dose in doses) {
+      total++;
+      switch (dose.status) {
+        case DoseStatus.taken:
+          taken++;
+        case DoseStatus.skipped:
+          skipped++;
+        case DoseStatus.missed:
+          missed++;
+        case DoseStatus.pending:
+          pending++;
+      }
+    }
+
+    final isSmall = MediaQuery.sizeOf(context).width < 360;
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(isSmall ? 10 : 16),
         child: Column(
           children: [
             Text(
               l10n.dosesProgress(taken, total, pending),
-              style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13),
+              style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: isSmall ? 12 : 14),
             ),
             const SizedBox(height: 12),
+            _StatChip(
+              count: taken,
+              label: l10n.taken,
+              color: context.medora.success,
+              compact: isSmall,
+              large: true,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.spaceEvenly,
+              spacing: isSmall ? 12 : 20,
+              runSpacing: 8,
+              children: [
+                _StatChip(count: pending, label: l10n.pending, color: context.medora.neutral, compact: isSmall),
+                _StatChip(count: skipped, label: l10n.skipped, color: context.medora.warning, compact: isSmall),
+                _StatChip(count: missed, label: l10n.missed, color: context.medora.danger, compact: isSmall),
+              ],
+            ),
+            const SizedBox(height: 16),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: LinearProgressIndicator(
-                value: total > 0 ? taken / total : 0,
+                value: total > 0 ? (taken + skipped + missed) / total : 0,
                 backgroundColor: context.colors.surfaceContainerHighest,
                 valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
                 minHeight: 6,
@@ -423,6 +475,66 @@ class _DoseSummaryHeader extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Compact stat chip that works on small screens.
+class _StatChip extends StatelessWidget {
+  const _StatChip({
+    required this.count,
+    required this.label,
+    required this.color,
+    this.compact = false,
+    this.large = false,
+  });
+
+  final int count;
+  final String label;
+  final Color color;
+  final bool compact;
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    if (large) {
+      return Column(
+        children: [
+          Text(
+            '$count',
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: color),
+          ),
+          Text(label, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w600)),
+        ],
+      );
+    }
+
+    if (compact) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('$count', style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 14)),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(color: color, fontSize: 11)),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Text(
+          '$count',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color),
+        ),
+        Text(label, style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 12)),
+      ],
     );
   }
 }
@@ -449,6 +561,7 @@ class _DoseCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final isPending = dose.status == DoseStatus.pending;
+    final isSmall = MediaQuery.sizeOf(context).width < 360;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 3),
@@ -457,16 +570,16 @@ class _DoseCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: () => showDoseDetailBottomSheet(context: context, dose: dose, ref: ref),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.all(isSmall ? 8 : 12),
           child: Row(
             children: [
               SizedBox(
-                width: 56,
+                width: isSmall ? 48 : 56,
                 child: Column(
                   children: [
                     Text(
                       dose.scheduledTime.timeFormatted,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmall ? 13 : 16),
                     ),
                     if (overdue)
                       Text(
@@ -480,21 +593,31 @@ class _DoseCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 16),
+              SizedBox(width: isSmall ? 8 : 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       dose.medicationName ?? l10n.unknownMedication,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmall ? 13 : 14),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (dose.displayDosage != null)
                       Text(
                         dose.displayDosage!,
-                        style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13),
+                        style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: isSmall ? 11 : 13),
+                      ),
+                    if (dose.prescriptionNotes?.isNotEmpty == true)
+                      Text(
+                        dose.prescriptionNotes!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.bodySmall?.copyWith(
+                          color: context.colors.onSurfaceVariant,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     if (dose.treatmentName != null || dose.patientTags.isNotEmpty)
                       Padding(
@@ -531,68 +654,35 @@ class _DoseCard extends ConsumerWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    IconButton(
-                      onPressed: busy ? null : onSkip,
-                      icon: const Icon(Icons.skip_next, size: 20),
-                      tooltip: l10n.skip,
-                      color: context.medora.warning,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    ),
+                    if (!isSmall)
+                      IconButton(
+                        onPressed: busy ? null : onSkip,
+                        icon: const Icon(Icons.skip_next, size: 20),
+                        tooltip: l10n.skip,
+                        color: context.medora.warning,
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      ),
                     FilledButton(
                       onPressed: busy ? null : onTake,
                       style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        minimumSize: const Size(64, 34),
+                        padding: EdgeInsets.symmetric(horizontal: isSmall ? 10 : 16),
+                        minimumSize: Size(isSmall ? 48 : 64, 34),
                       ),
-                      child: Text(l10n.take, style: const TextStyle(fontSize: 14)),
+                      child: Text(l10n.take, style: TextStyle(fontSize: isSmall ? 12 : 14)),
                     ),
                   ],
                 )
               else
-                _StatusBadge(dose: dose),
+                DoseStatusChip(
+                  status: dose.status,
+                  suffix: dose.status == DoseStatus.taken ? dose.takenTime?.timeFormatted : null,
+                ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-/// A compact status badge for a non-pending dose. For a taken dose it
-/// folds the taken time into the same label ("Taken · 15:00") rather than
-/// rendering it as a separate Text, so the plain status word stays unique
-/// on screen even while an undo SnackBar (which also reads e.g. "Taken")
-/// is visible.
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.dose});
-
-  final DoseLog dose;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final medora = context.medora;
-
-    final (bg, fg, icon, label) = switch (dose.status) {
-      DoseStatus.taken => (medora.successContainer, medora.onSuccessContainer, Icons.check_circle, l10n.taken),
-      DoseStatus.skipped => (medora.warningContainer, medora.onWarningContainer, Icons.skip_next, l10n.skipped),
-      DoseStatus.missed => (medora.dangerContainer, medora.onDangerContainer, Icons.cancel, l10n.missed),
-      DoseStatus.pending => (medora.neutralContainer, medora.onNeutralContainer, Icons.schedule, l10n.pending),
-    };
-
-    final text = (dose.status == DoseStatus.taken && dose.takenTime != null)
-        ? '$label · ${dose.takenTime!.timeFormatted}'
-        : label;
-
-    return Chip(
-      avatar: Icon(icon, color: fg, size: 18),
-      label: Text(text),
-      backgroundColor: bg,
-      labelStyle: TextStyle(color: fg, fontSize: 12),
-      padding: EdgeInsets.zero,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 }

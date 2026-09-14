@@ -125,6 +125,7 @@
 
   "todaysDosesTitle": "Dosi di oggi",
   "noDosesScheduledToday": "Nessuna dose programmata per oggi",
+  "noDosesForThisDay": "Nessuna dose in questo giorno",
   "createTreatmentForDoses": "Crea un trattamento e aggiungi prescrizioni per vedere le dosi qui",
   "upcoming": "Prossime",
   "completed": "Completate",

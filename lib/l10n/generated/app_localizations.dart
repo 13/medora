@@ -760,6 +760,12 @@ abstract class AppLocalizations {
   /// **'No doses scheduled for today'**
   String get noDosesScheduledToday;
 
+  /// No description provided for @noDosesForThisDay.
+  ///
+  /// In en, this message translates to:
+  /// **'No doses on this day'**
+  String get noDosesForThisDay;
+
   /// No description provided for @createTreatmentForDoses.
   ///
   /// In en, this message translates to:

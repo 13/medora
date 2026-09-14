@@ -63,13 +63,14 @@ void main() {
     expect(c.read(nextDueDoseProvider), isNull);
   });
 
-  test('takeAllDue marks each id taken and returns the count', () async {
+  test('takeAllDue marks each id taken and returns the taken ids', () async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
     final a = await seedDoseLog(db, s.prescriptionId, now.subtract(const Duration(hours: 2)));
     final b = await seedDoseLog(db, s.prescriptionId, now.subtract(const Duration(hours: 1)));
-    final n = await c.read(doseActionsProvider).takeAllDue([a, b]);
-    expect(n, 2);
+    final taken = await c.read(doseActionsProvider).takeAllDue([a, b]);
+    expect(taken.length, 2);
+    expect(taken, containsAll([a, b]));
     final doses = await c.read(dosesForDayProvider(today).future);
     expect(doses.where((d) => d.status == DoseStatus.taken).length, 2);
   });
@@ -85,8 +86,9 @@ void main() {
         db, s.prescriptionId, now.subtract(const Duration(hours: 3)),
         status: 'taken');
 
-    final n = await c.read(doseActionsProvider).takeAllDue([a, b, alreadyTaken]);
-    expect(n, 2);
+    final taken = await c.read(doseActionsProvider).takeAllDue([a, b, alreadyTaken]);
+    expect(taken.length, 2);
+    expect(taken, isNot(contains(alreadyTaken)));
 
     final med = await db.query('medications',
         where: 'id = ?', whereArgs: [s.medicationId]);

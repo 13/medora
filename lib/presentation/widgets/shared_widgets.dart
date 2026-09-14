@@ -113,9 +113,13 @@ class StockIndicator extends StatelessWidget {
 
 /// Chip displaying dose status.
 class DoseStatusChip extends StatelessWidget {
-  const DoseStatusChip({super.key, required this.status});
+  const DoseStatusChip({super.key, required this.status, this.suffix});
 
   final DoseStatus status;
+
+  /// When non-null, appended to the label as `'$label · $suffix'` (e.g. a
+  /// taken time), keeping it inside the same [Text] as the status word.
+  final String? suffix;
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +135,7 @@ class DoseStatusChip extends StatelessWidget {
 
     return Chip(
       avatar: Icon(icon, color: fg, size: 18),
-      label: Text(label),
+      label: Text(suffix == null ? label : '$label · $suffix'),
       backgroundColor: bg,
       labelStyle: TextStyle(color: fg, fontSize: 12),
       padding: EdgeInsets.zero,

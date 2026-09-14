@@ -375,6 +375,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get noDosesScheduledToday => 'Keine Dosen für heute geplant';
 
   @override
+  String get noDosesForThisDay => 'Keine Dosen an diesem Tag';
+
+  @override
   String get createTreatmentForDoses =>
       'Erstellen Sie eine Behandlung und fügen Sie Verschreibungen hinzu, um Dosen hier zu sehen';
 

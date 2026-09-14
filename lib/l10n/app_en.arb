@@ -190,6 +190,7 @@
 
   "todaysDosesTitle": "Today's Doses",
   "noDosesScheduledToday": "No doses scheduled for today",
+  "noDosesForThisDay": "No doses on this day",
   "createTreatmentForDoses": "Create a treatment and add prescriptions to see doses here",
   "upcoming": "Upcoming",
   "completed": "Completed",

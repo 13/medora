@@ -108,19 +108,19 @@ class DoseActions {
     return result.isSuccess;
   }
 
-  /// Take each dose in turn; returns the number actually taken (ids that
+  /// Take each dose in turn; returns the ids actually taken (ids that
   /// aren't currently pending — e.g. already taken — are skipped and not
-  /// counted).
-  Future<int> takeAllDue(List<String> ids) async {
+  /// included).
+  Future<List<String>> takeAllDue(List<String> ids) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    var count = 0;
+    final taken = <String>[];
     for (final id in ids) {
       final doseResult = await repo.getDoseLogById(id);
       final dose = doseResult.dataOrNull;
       if (dose == null || dose.status != DoseStatus.pending) continue;
-      if (await take(id)) count++;
+      if (await take(id)) taken.add(id);
     }
-    return count;
+    return taken;
   }
 
   Future<void> _refresh() async {
@@ -265,7 +265,6 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       unawaited(ref.read(reminderSchedulerProvider).reconcile());
     }
   }
-
 }
 
 /// The day currently selected on the Doses tab (midnight-normalized).
@@ -279,7 +278,22 @@ class SelectedDoseDay extends Notifier<DateTime> {
 
   void set(DateTime day) => state = dayKey(day);
 
-  void shift(int days) => state = state.add(Duration(days: days));
+  /// Shifts the selected day by [days], using calendar (not 24h-duration)
+  /// arithmetic so it stays correct across DST transitions, clamped to
+  /// today ± 3 days (the range shown by [_DateStrip]).
+  void shift(int days) {
+    final today = dayKey(ref.read(nowProvider)());
+    final shifted = dayKey(DateTime(state.year, state.month, state.day + days));
+    final min = dayKey(DateTime(today.year, today.month, today.day - 3));
+    final max = dayKey(DateTime(today.year, today.month, today.day + 3));
+    if (shifted.isBefore(min)) {
+      state = min;
+    } else if (shifted.isAfter(max)) {
+      state = max;
+    } else {
+      state = shifted;
+    }
+  }
 }
 
 /// Provider for dose logs by prescription.
