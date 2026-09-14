@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, labeled]
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
 jobs:
@@ -69,11 +69,13 @@ jobs:
           cache: true
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.117.0
       - run: supabase start
       - name: Export local credentials
-        # `supabase status -o env` prints API_URL=..., ANON_KEY=..., etc.
-        run: supabase status -o env >> "$GITHUB_ENV"
+        # `supabase status -o env` prints API_URL="...", ANON_KEY="...".
+        # The quotes are part of the output and GITHUB_ENV takes values
+        # literally, so they must be stripped or every value keeps them.
+        run: supabase status -o env | sed 's/"//g' >> "$GITHUB_ENV"
       - run: flutter pub get
       - name: Run the convergence test
         run: |

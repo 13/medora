@@ -40,7 +40,16 @@ Medora works completely offline. All data lives in a local SQLite database on th
 
 ## Optional: cloud sync with Supabase
 
-1. Create a Supabase project and apply the SQL files in `supabase/migrations/` in order — paste them into the SQL editor one by one, or run `supabase db push` with the [Supabase CLI](https://supabase.com/docs/guides/cli).
+1. Apply the SQL files in `supabase/migrations/` in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
+   - **Fresh project** (nothing applied yet): `supabase db push` applies both migrations.
+   - **Existing install** that ran `20260901000000_initial_schema.sql` by hand: the migration history is empty, so `supabase db push` would try to replay the initial schema. Tell Supabase it is already applied first, then push:
+
+     ```bash
+     supabase migration repair --status applied 20260901000000
+     supabase db push
+     ```
+
+   - Or skip the CLI entirely and paste only the new file (`20260914000000_tombstones_and_family.sql`) into the SQL editor. It is written to be re-runnable (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP POLICY IF EXISTS`).
 2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
 3. Run or build with the defines:
 
@@ -56,10 +65,10 @@ Then open **Settings → Cloud sync → Turn on** and sign in. Without defines t
 - Offline-first: every change is written to the local database first and works with no network.
 - Each cycle pushes the pending local changes, then pulls only what changed since the last pull (delta by `updated_at`).
 - Deletes are tombstones (`deleted_at`), so a deletion made on one device is applied on every other device.
-- A row edited on two devices resolves last-write-wins by `updated_at`; a tombstone always wins.
+- A row edited on two devices resolves **last pusher wins**: the push runs before the pull and upserts unconditionally, so whichever device syncs last overwrites the server copy — not whichever edit is newer. The `updated_at` comparison is only a tiebreak on the pull side, for rows whose push failed and are therefore still pending locally. A tombstone always wins over a live row.
 - Settings shows the last sync report — what was pushed, pulled and deleted, and any rows that failed.
-- **Force pull** wipes the local rows and re-downloads everything from the server.
-- Turning cloud sync on uploads the data already on the device instead of discarding it.
+- **Force pull** wipes the local rows and re-downloads everything from the server. Local changes that have not been uploaded yet are lost. If a table cannot be fetched after the wipe, the cycle reports an error rather than a partial success.
+- Signing in uploads the data already on the device instead of discarding it. If that data was saved under a *different* account, the app asks whether to merge it into the new account or delete it, rather than uploading one person's records into someone else's.
 
 ### Integration test
 

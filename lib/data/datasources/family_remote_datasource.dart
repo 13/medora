@@ -92,6 +92,7 @@ class FamilyRemoteDatasource {
         .from('family_members')
         .select()
         .eq('user_id', userId)
+        .order('joined_at')
         .limit(1)
         .maybeSingle();
     if (response == null) return null;

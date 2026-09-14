@@ -13,7 +13,8 @@ class DoseLogRemoteDatasource {
   Future<List<DoseLogModel>> getDoseLogs() async {
     final response = await _client
         .from(AppConstants.doseLogsTable)
-        .select('*, prescriptions(id, medications(name)) ');
+        .select('*, prescriptions(id, medications(name)) ')
+        .isFilter('deleted_at', null);
 
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
@@ -42,7 +43,8 @@ class DoseLogRemoteDatasource {
         .from(AppConstants.doseLogsTable)
         .select('*, prescriptions(id, medications(name))')
         .gte('scheduled_time', startOfDay.toIso8601String())
-        .lt('scheduled_time', endOfDay.toIso8601String());
+        .lt('scheduled_time', endOfDay.toIso8601String())
+        .isFilter('deleted_at', null);
 
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))

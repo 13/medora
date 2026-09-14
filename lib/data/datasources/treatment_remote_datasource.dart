@@ -14,6 +14,7 @@ class TreatmentRemoteDatasource {
     final response = await _client
         .from(AppConstants.treatmentsTable)
         .select()
+        .isFilter('deleted_at', null)
         .order('start_date', ascending: false);
 
     return (response as List)
@@ -37,6 +38,7 @@ class TreatmentRemoteDatasource {
         .from(AppConstants.treatmentsTable)
         .select()
         .eq('is_active', true)
+        .isFilter('deleted_at', null)
         .order('start_date', ascending: false);
 
     return (response as List)

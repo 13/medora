@@ -14,6 +14,7 @@ class PrescriptionRemoteDatasource {
     final response = await _client
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
+        .isFilter('deleted_at', null)
         .order('start_time');
 
     return (response as List)
@@ -44,6 +45,7 @@ class PrescriptionRemoteDatasource {
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
         .eq('treatment_id', treatmentId)
+        .isFilter('deleted_at', null)
         .order('start_time');
 
     return (response as List)
@@ -59,6 +61,7 @@ class PrescriptionRemoteDatasource {
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
         .eq('is_active', true)
+        .isFilter('deleted_at', null)
         .order('start_time');
 
     return (response as List)

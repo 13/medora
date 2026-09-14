@@ -17,6 +17,7 @@ class MedicationRemoteDatasource {
     final response = await _client
         .from(AppConstants.medicationsTable)
         .select()
+        .isFilter('deleted_at', null)
         .order('name');
 
     return (response as List)
@@ -52,6 +53,7 @@ class MedicationRemoteDatasource {
         .from(AppConstants.medicationsTable)
         .select()
         .or('name.ilike.%$query%,active_ingredients.ilike.%$query%')
+        .isFilter('deleted_at', null)
         .order('name');
 
     return (response as List)
