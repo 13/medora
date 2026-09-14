@@ -29,6 +29,7 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
@@ -199,7 +200,16 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     doseLogRemote: ref.watch(doseLogDatasourceProvider),
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
+    cursors: ref.watch(syncCursorStoreProvider),
+    // Belt and braces: the auth screen records the data owner right after a
+    // sign-in, but if that ever did not happen (an app killed mid-flow, a
+    // session restored from disk) the first clean cycle records it.
+    onFirstSuccessfulSync: (userId) async {
+      final marker = ref.read(localUploadMarkerProvider);
+      if (marker.ownerUserId == null) await marker.setOwner(userId);
+    },
   );
+  if (service.isAvailable) service.startAutoSync();
   ref.onDispose(service.dispose);
   return service;
 });
@@ -217,8 +227,9 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   // Using a manual listener on the stream instead of listenSelf 
   // to avoid compatibility issues with certain Ref types.
   final subscription = syncService.stateStream.listen((state) {
-    if (state == SyncState.success) {
-      // Refresh key data providers after a successful sync
+    if (state == SyncState.success || state == SyncState.partial) {
+      // Refresh key data providers after a sync that changed data; a partial
+      // cycle still applied every row that did not fail.
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
       ref.read(todaysDoseLogsProvider.notifier).refresh();
@@ -228,6 +239,12 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   ref.onDispose(() => subscription.cancel());
 
   return syncService.stateStream;
+});
+
+/// The report of the most recent sync cycle; re-evaluated on every state change.
+final syncLastReportProvider = Provider<SyncReport?>((ref) {
+  ref.watch(syncStateStreamProvider);
+  return ref.watch(syncServiceProvider).lastReport;
 });
 
 // ============================================================

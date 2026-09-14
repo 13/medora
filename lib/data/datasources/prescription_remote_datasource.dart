@@ -14,6 +14,7 @@ class PrescriptionRemoteDatasource {
     final response = await _client
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
+        .isFilter('deleted_at', null)
         .order('start_time');
 
     return (response as List)
@@ -24,6 +25,19 @@ class PrescriptionRemoteDatasource {
         .toList();
   }
 
+  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
+  Future<List<PrescriptionModel>> getPrescriptionsSince(DateTime? since) async {
+    final base = _client
+        .from(AppConstants.prescriptionsTable)
+        .select('*, medications(name), treatments(name)');
+    final filtered =
+        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final response = await filtered.order('updated_at');
+    return (response as List)
+        .map((json) => PrescriptionModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<PrescriptionModel>> getPrescriptionsByTreatment(
     String treatmentId,
   ) async {
@@ -31,6 +45,7 @@ class PrescriptionRemoteDatasource {
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
         .eq('treatment_id', treatmentId)
+        .isFilter('deleted_at', null)
         .order('start_time');
 
     return (response as List)
@@ -46,6 +61,7 @@ class PrescriptionRemoteDatasource {
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
         .eq('is_active', true)
+        .isFilter('deleted_at', null)
         .order('start_time');
 
     return (response as List)
@@ -88,10 +104,13 @@ class PrescriptionRemoteDatasource {
         .upsert(model.toJson());
   }
 
+  /// Soft delete (tombstone). The row stays on the server with `deleted_at`
+  /// set so other devices pull the deletion; see spec §4.6.
   Future<void> deletePrescription(String id) async {
+    final now = DateTime.now().toUtc().toIso8601String();
     await _client
         .from(AppConstants.prescriptionsTable)
-        .delete()
+        .update({'deleted_at': now, 'updated_at': now})
         .eq('id', id);
   }
 

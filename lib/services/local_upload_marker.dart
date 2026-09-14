@@ -1,0 +1,77 @@
+/// Medora - Prepares local data for a cloud account, and remembers which
+/// account the data on this device belongs to.
+///
+/// After a sign-in, everything already on the device has to be uploaded:
+/// every synced row becomes pending_update and the pull cursors are cleared
+/// so the first cycle is a full pull. Rows pending deletion are left alone.
+///
+/// Marking is deliberately *not* done when cloud mode is switched on, because
+/// at that point nobody is signed in yet. A device that kept user A's data
+/// ("turn off cloud → keep local data") would otherwise upload it into
+/// whichever account signed in next. [ownerUserId] records whose data this is
+/// so the sign-in flow can ask instead of guessing.
+library;
+
+import 'package:medora/data/local/app_database.dart';
+import 'package:medora/services/sync_cursor_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class LocalUploadMarker {
+  LocalUploadMarker({
+    required AppDatabase database,
+    required SyncCursorStore cursors,
+    required SharedPreferences prefs,
+  })  : _database = database,
+        _cursors = cursors,
+        _prefs = prefs;
+
+  final AppDatabase _database;
+  final SyncCursorStore _cursors;
+  final SharedPreferences _prefs;
+
+  /// Pref holding the id of the account the local rows belong to.
+  static const ownerKey = 'sync.owner_user_id';
+
+  static const tables = ['families', 'family_members', 'medications', 'treatments', 'prescriptions', 'dose_logs'];
+
+  /// The account the data on this device was last uploaded under, if known.
+  String? get ownerUserId => _prefs.getString(ownerKey);
+
+  Future<void> setOwner(String userId) => _prefs.setString(ownerKey, userId);
+
+  /// True when this device holds rows that were saved under a *different*
+  /// account. Unknown ownership counts as "not foreign": data created before
+  /// any sign-in belongs to whoever signs in first.
+  Future<bool> hasDataFromAnotherAccount(String userId) async {
+    final owner = ownerUserId;
+    if (owner == null || owner == userId) return false;
+    final db = await _database.database;
+    for (final table in tables) {
+      final rows = await db.query(table, columns: ['id'], limit: 1);
+      if (rows.isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  /// Flips every synced row to pending_update so the next cycle uploads it.
+  ///
+  /// [userId] is the signed-in account: only that user's own `family_members`
+  /// row is marked. Other members' rows belong to them — re-uploading them
+  /// would push rows this user has no business writing, and RLS rejects them
+  /// anyway unless the user owns the family.
+  Future<int> markAllForUpload(String userId) async {
+    final db = await _database.database;
+    var count = 0;
+    for (final table in tables) {
+      final ownRowOnly = table == 'family_members';
+      count += await db.update(
+        table,
+        {'sync_status': SyncStatus.pendingUpdate},
+        where: ownRowOnly ? 'sync_status = ? AND user_id = ?' : 'sync_status = ?',
+        whereArgs: ownRowOnly ? [SyncStatus.synced, userId] : [SyncStatus.synced],
+      );
+    }
+    await _cursors.clear();
+    return count;
+  }
+}

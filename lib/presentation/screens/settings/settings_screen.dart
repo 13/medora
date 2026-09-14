@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
+import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme_extensions.dart';
@@ -44,6 +45,7 @@ class SettingsScreen extends ConsumerWidget {
 
     final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
     final syncState = syncAsync.value ?? SyncState.idle;
+    final lastReport = ref.watch(syncLastReportProvider);
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settings)),
@@ -242,7 +244,7 @@ class SettingsScreen extends ConsumerWidget {
                             child: Text(l10n.turnOff),
                           )
                         : FilledButton.tonal(
-                            onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.cloud),
+                            onPressed: () => _turnOnCloud(context, ref, l10n),
                             child: Text(l10n.turnOn),
                           ),
               ),
@@ -282,6 +284,16 @@ class SettingsScreen extends ConsumerWidget {
                   onTap: (syncState == SyncState.syncing || !isOnline)
                       ? null
                       : () => ref.read(syncServiceProvider).syncAll(),
+                ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.history),
+                  title: Text(_lastSyncText(l10n, lastReport)),
+                  trailing:
+                      (lastReport?.hasFailures ?? false) ? const Icon(Icons.chevron_right) : null,
+                  onTap: (lastReport?.hasFailures ?? false)
+                      ? () => _showSyncFailures(context, l10n, lastReport!)
+                      : null,
                 ),
                 ExpansionTile(
                   title: Text(l10n.advanced),
@@ -391,6 +403,17 @@ class SettingsScreen extends ConsumerWidget {
           );
         }
       }
+    }
+  }
+
+  Future<void> _turnOnCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    try {
+      await ref.read(appModeProvider.notifier).set(AppMode.cloud);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
+      );
     }
   }
 
@@ -595,6 +618,7 @@ class SettingsScreen extends ConsumerWidget {
       SyncState.idle => Icons.sync,
       SyncState.syncing => Icons.sync,
       SyncState.success => Icons.check_circle,
+      SyncState.partial => Icons.warning_amber_rounded,
       SyncState.error => Icons.error_outline,
     };
   }
@@ -604,6 +628,7 @@ class SettingsScreen extends ConsumerWidget {
       SyncState.idle => context.colors.onSurfaceVariant,
       SyncState.syncing => context.colors.primary,
       SyncState.success => context.medora.success,
+      SyncState.partial => context.medora.warning,
       SyncState.error => context.medora.danger,
     };
   }
@@ -613,8 +638,42 @@ class SettingsScreen extends ConsumerWidget {
       SyncState.idle => l10n.syncIdle,
       SyncState.syncing => l10n.syncing,
       SyncState.success => l10n.syncSuccess,
+      SyncState.partial => l10n.syncPartial,
       SyncState.error => l10n.syncError,
     };
+  }
+
+  String _lastSyncText(AppLocalizations l10n, SyncReport? r) {
+    final finished = r?.finishedAt;
+    if (r == null || finished == null) return l10n.syncNever;
+    return l10n.lastSyncSummary(finished.dateTimeFormatted, r.pushed, r.pulled,
+        r.deleted, r.failures.length);
+  }
+
+  void _showSyncFailures(BuildContext context, AppLocalizations l10n, SyncReport r) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.syncFailedItems),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final f in r.failures)
+                ListTile(
+                  dense: true,
+                  title: Text('${f.table} · ${f.id}'),
+                  subtitle: Text(f.error),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.ok)),
+        ],
+      ),
+    );
   }
 
   void _showColorSchemePicker(

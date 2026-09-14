@@ -20,6 +20,7 @@ class PrescriptionModel {
     this.notes,
     this.createdAt,
     this.updatedAt,
+    this.deletedAt,
     this.scheduleType = 'fixed_interval',
     this.scheduleTimes,
     this.medicationName,
@@ -40,6 +41,9 @@ class PrescriptionModel {
   final String? notes;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// Tombstone: non-null when the row is deleted (spec §4.6).
+  final DateTime? deletedAt;
   final String scheduleType;
   final List<String>? scheduleTimes;
   final String? medicationName;
@@ -77,6 +81,9 @@ class PrescriptionModel {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : null,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
       scheduleType: json['schedule_type'] as String? ?? 'fixed_interval',
       scheduleTimes: parsedTimes,
       medicationName: medication?['name'] as String?,
@@ -101,7 +108,8 @@ class PrescriptionModel {
       'schedule_type': scheduleType,
       'schedule_times':
           scheduleTimes != null ? jsonEncode(scheduleTimes) : null,
-      'updated_at': updatedAt?.toIso8601String(),
+      'updated_at': updatedAt?.toUtc().toIso8601String(),
+      if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
     };
   }
 
@@ -132,6 +140,9 @@ class PrescriptionModel {
       updatedAt: map['updated_at'] != null
           ? DateTime.parse(map['updated_at'] as String)
           : null,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.tryParse(map['deleted_at'] as String)
+          : null,
       scheduleType: map['schedule_type'] as String? ?? 'fixed_interval',
       scheduleTimes: parsedTimes,
       medicationName: map['medication_name'] as String?,
@@ -159,6 +170,7 @@ class PrescriptionModel {
       'schedule_type': scheduleType,
       'schedule_times':
           scheduleTimes != null ? jsonEncode(scheduleTimes) : null,
+      'deleted_at': deletedAt?.toIso8601String(),
     };
   }
 

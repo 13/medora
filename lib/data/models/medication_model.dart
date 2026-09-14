@@ -34,6 +34,7 @@ class MedicationModel {
     this.isArchived = false,
     this.createdAt,
     this.updatedAt,
+    this.deletedAt,
   });
 
   final String id;
@@ -59,6 +60,9 @@ class MedicationModel {
   final bool isArchived;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// Tombstone: non-null when the row is deleted (spec §4.6).
+  final DateTime? deletedAt;
 
   /// Helper: parse a JSON array or comma-separated string into a list of strings.
   static List<String> parseTags(dynamic raw) {
@@ -113,6 +117,9 @@ class MedicationModel {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : null,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
     );
   }
 
@@ -150,6 +157,9 @@ class MedicationModel {
       updatedAt: map['updated_at'] != null
           ? DateTime.tryParse(map['updated_at'] as String)
           : null,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.tryParse(map['deleted_at'] as String)
+          : null,
     );
   }
 
@@ -177,7 +187,8 @@ class MedicationModel {
       'image_path': imagePath,
       'notes': notes,
       'is_archived': isArchived,
-      'updated_at': updatedAt?.toIso8601String(),
+      'updated_at': updatedAt?.toUtc().toIso8601String(),
+      if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
     };
   }
 

@@ -1,32 +1,49 @@
 /// Medora - Sync Service
 ///
-/// Handles bidirectional sync between local SQLite and Supabase.
-/// Strategy: offline-first, last-write-wins by updated_at timestamp.
+/// Bidirectional sync between local SQLite and Supabase.
+///
+/// Offline-first. A cycle pushes first, then pulls, and the push upserts
+/// unconditionally — so in practice the effective rule is **last pusher
+/// wins**: whichever device syncs last overwrites the remote row, regardless
+/// of which edit is newer. The `updated_at` comparison in
+/// [_localPendingIsNewer] is a last-write-wins tiebreak that only comes into
+/// play on the pull side, for rows whose push failed and which are therefore
+/// still pending locally.
+///
+/// Remote tombstones (`deleted_at`) always win and become local hard deletes.
+/// Every cycle produces a [SyncReport]; per-row failures never abort the
+/// cycle.
 library;
 
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
+import 'package:medora/data/datasources/family_local_datasource.dart';
+import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
-import 'package:medora/data/datasources/family_local_datasource.dart';
-import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/models/family_member_model.dart';
+import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
-import 'package:medora/data/models/family_model.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/sync_cursor_store.dart';
+import 'package:medora/services/sync_report.dart';
+
+export 'package:medora/services/sync_report.dart';
 
 /// Current state of the sync process.
-enum SyncState { idle, syncing, error, success }
+enum SyncState { idle, syncing, success, partial, error }
 
 class SyncService {
   SyncService({
@@ -40,7 +57,17 @@ class SyncService {
     required this.doseLogRemote,
     required this.familyLocal,
     required this.familyRemote,
-  });
+    SyncCursorStore? cursors,
+    bool Function()? isOnline,
+    String? Function()? currentUserId,
+    Stream<bool>? onlineStream,
+    DateTime Function()? now,
+    this.onFirstSuccessfulSync,
+  })  : _cursors = cursors ?? SyncCursorStore.inMemory(),
+        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
+        _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
+        _onlineStream = onlineStream ?? ConnectivityService.instance.onlineStream,
+        _now = now ?? DateTime.now;
 
   final MedicationLocalDatasource medicationLocal;
   final MedicationRemoteDatasource? medicationRemote;
@@ -52,6 +79,19 @@ class SyncService {
   final DoseLogRemoteDatasource? doseLogRemote;
   final FamilyLocalDatasource familyLocal;
   final FamilyRemoteDatasource? familyRemote;
+
+  /// Called with the signed-in user id after a clean cycle. Belt and braces
+  /// for the data-owner bookkeeping the auth screen normally does: if a sign
+  /// in ever completed without the screen recording the owner, the first
+  /// clean sync records it. The callback itself decides whether an owner is
+  /// already stored.
+  final Future<void> Function(String userId)? onFirstSuccessfulSync;
+
+  final SyncCursorStore _cursors;
+  final bool Function() _isOnline;
+  final String? Function() _currentUserId;
+  final Stream<bool> _onlineStream;
+  final DateTime Function() _now;
 
   /// True when every remote datasource exists (cloud mode, configured build).
   bool get isAvailable =>
@@ -66,348 +106,441 @@ class SyncService {
   SyncState _currentState = SyncState.idle;
   SyncState get currentState => _currentState;
 
-  DateTime? _lastSyncTime;
-  DateTime? get lastSyncTime => _lastSyncTime;
+  SyncReport? _lastReport;
+  SyncReport? get lastReport => _lastReport;
+  DateTime? get lastSyncTime => _lastReport?.finishedAt;
 
-  /// Start listening to connectivity and auto-sync when coming online.
-  void startAutoSync() {
-    ConnectivityService.instance.onlineStream.listen((isOnline) {
-      if (isOnline) {
-        syncAll();
+  // ── Auto-sync on reconnect (Task 6 wires the provider) ─────
+
+  StreamSubscription<bool>? _onlineSub;
+  Timer? _reconnectTimer;
+  bool _wasOnline = true;
+
+  /// Sync once, [debounce] after connectivity comes back. Idempotent.
+  void startAutoSync({Duration debounce = const Duration(seconds: 2)}) {
+    if (_onlineSub != null) return;
+    _wasOnline = _isOnline();
+    _onlineSub = _onlineStream.listen((online) {
+      final cameOnline = online && !_wasOnline;
+      _wasOnline = online;
+      if (!cameOnline) return;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = Timer(debounce, () => unawaited(syncAll()));
+    });
+  }
+
+  void stopAutoSync() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _onlineSub?.cancel();
+    _onlineSub = null;
+  }
+
+  // ── Entry points ───────────────────────────────────────────
+
+  /// Push pending local changes, then pull remote changes. Returns the report,
+  /// or null when the cycle was skipped (local-only, offline, signed out, or
+  /// already syncing).
+  Future<SyncReport?> syncAll() => _run('sync', (report) async {
+        await _pushPendingChanges(report);
+        await _pullAll(report, force: false);
+      });
+
+  /// Push ALL local rows regardless of sync_status.
+  Future<SyncReport?> forcePush() =>
+      _run('force push', (report) => _pushPendingChanges(report, forceAll: true));
+
+  /// Wipe local rows and pull everything again.
+  Future<SyncReport?> forcePull() => _run('force pull', (report) async {
+        await _cursors.clear();
+        await AppDatabase.instance.clearAllData();
+        await _pullAll(report, force: true);
+      });
+
+  Future<SyncReport?> _run(String label, Future<void> Function(SyncReport) body) async {
+    if (!isAvailable) {
+      debugPrint('Sync: $label skipped (local-only mode)');
+      return null;
+    }
+    if (_currentState == SyncState.syncing) return null;
+    if (!_isOnline()) {
+      debugPrint('Sync: $label skipped (offline)');
+      return null;
+    }
+    if (_currentUserId() == null) {
+      debugPrint('Sync: $label skipped (unauthenticated)');
+      return null;
+    }
+
+    _setState(SyncState.syncing);
+    final report = SyncReport(startedAt: _now());
+    try {
+      await body(report);
+    } on _FetchFailedFatally catch (e) {
+      // Force pull already wiped the local database, so a whole-table fetch
+      // failure leaves the device with a hole in its data. That is a failed
+      // cycle, not a partial one.
+      debugPrint('Sync: $label aborted — ${e.table} fetch failed: ${e.cause}');
+      report.fatal = '$label: ${e.table} fetch failed';
+    } catch (e, st) {
+      debugPrint('Sync: fatal error during $label: $e\n$st');
+      report.fatal = '$e';
+    }
+    report.finishedAt = _now();
+    final userId = _currentUserId();
+    if (report.isClean && userId != null && onFirstSuccessfulSync != null) {
+      try {
+        await onFirstSuccessfulSync!(userId);
+      } catch (e) {
+        debugPrint('Sync: recording the data owner failed: $e');
+      }
+    }
+    _lastReport = report;
+    debugPrint('Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
+        'deleted ${report.deleted}, failed ${report.failures.length}');
+    _setState(report.fatal != null
+        ? SyncState.error
+        : report.hasFailures
+            ? SyncState.partial
+            : SyncState.success);
+    _returnToIdleLater();
+    return report;
+  }
+
+  void _returnToIdleLater() {
+    Future<void>.delayed(const Duration(seconds: 2), () {
+      if (_currentState == SyncState.success || _currentState == SyncState.partial) {
+        _setState(SyncState.idle);
       }
     });
   }
 
-  /// Push pending local data to Supabase, then pull remote data.
-  Future<void> syncAll() async {
-    if (!isAvailable) {
-      debugPrint('Sync: skipped (local-only mode)');
-      return;
-    }
-    if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) {
-      debugPrint('Sync: skipped (offline)');
-      return;
-    }
-    if (!SupabaseConfig.isAuthenticated) {
-      debugPrint('Sync: skipped (unauthenticated)');
-      return;
-    }
+  // ── Push ───────────────────────────────────────────────────
 
-    _setState(SyncState.syncing);
-    debugPrint('Sync: starting full cycle (user: ${SupabaseConfig.currentUserId})...');
-
-    try {
-      // 1. Push only PENDING local changes to Supabase
-      await _pushPendingChanges();
-
-      // 2. Pull remote data in parallel where possible
-      // Order is important for Foreign Keys
-      await _pullFamilies();
-
-      // These can run in parallel after families are loaded
-      await Future.wait([
-        _pullMedications(),
-        _pullTreatments(),
-      ]);
-
-      // Prescriptions depend on medications and treatments
-      await _pullPrescriptions();
-
-      // Dose logs depend on prescriptions
-      await _pullDoseLogs();
-
-      _lastSyncTime = DateTime.now();
-      debugPrint('Sync: cycle completed successfully at $_lastSyncTime');
-      _setState(SyncState.success);
-
-      // Return to idle after a brief success indication
-      Future.delayed(const Duration(seconds: 2), () {
-        if (_currentState == SyncState.success) {
-          _setState(SyncState.idle);
-        }
-      });
-    } catch (e, st) {
-      debugPrint('Sync: fatal error during cycle: $e\n$st');
-      _setState(SyncState.error);
-    }
-  }
-
-  /// Force push ALL local data to Supabase, overwriting remote records.
-  Future<void> forcePush() async {
-    if (!isAvailable) {
-      debugPrint('Sync: skipped (local-only mode)');
-      return;
-    }
-    if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) {
-      debugPrint('Force Push: skipped (offline)');
-      return;
-    }
-    if (!SupabaseConfig.isAuthenticated) return;
-
-    _setState(SyncState.syncing);
-    debugPrint('Sync: starting FORCE PUSH...');
-
-    try {
-      await _pushPendingChanges(forceAll: true);
-      _setState(SyncState.success);
-      Future.delayed(const Duration(seconds: 2), () => _setState(SyncState.idle));
-    } catch (e) {
-      debugPrint('Sync: force push error: $e');
-      _setState(SyncState.error);
-    }
-  }
-
-  /// Force pull ALL remote data to local, overwriting local records.
-  Future<void> forcePull() async {
-    if (!isAvailable) {
-      debugPrint('Sync: skipped (local-only mode)');
-      return;
-    }
-    if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) {
-      debugPrint('Force Pull: skipped (offline)');
-      return;
-    }
-    if (!SupabaseConfig.isAuthenticated) return;
-
-    _setState(SyncState.syncing);
-    debugPrint('Sync: starting FORCE PULL...');
-
-    try {
-      // CLEAR LOCAL DATA FIRST to ensure a true clean pull
-      // This prevents deleted remote records from staying locally
-      await AppDatabase.instance.clearAllData();
-
-      // Order is important for Foreign Keys
-      await _pullFamilies();
-      await _pullMedications(force: true);
-      await _pullTreatments(force: true);
-      await _pullPrescriptions(force: true);
-      await _pullDoseLogs(force: true);
-
-      _setState(SyncState.success);
-      Future.delayed(const Duration(seconds: 2), () => _setState(SyncState.idle));
-    } catch (e) {
-      debugPrint('Sync: force pull error: $e');
-      _setState(SyncState.error);
-    }
-  }
-
-  /// Pushes records to Supabase.
-  /// If [forceAll] is true, pushes everything regardless of sync_status.
-  Future<void> _pushPendingChanges({bool forceAll = false}) async {
+  Future<void> _pushPendingChanges(SyncReport report, {bool forceAll = false}) async {
     final db = await AppDatabase.instance.database;
-    final userId = SupabaseConfig.currentUserId;
+    final userId = _currentUserId();
     if (userId == null) return;
 
     final where = forceAll ? null : 'sync_status != ?';
     final whereArgs = forceAll ? null : [SyncStatus.synced];
 
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
-
-    // Process each table in batches to avoid blocking UI
-    await _pushBatch('families', where, whereArgs, (row) async {
+    await _pushBatch('families', report, where, whereArgs, (row) async {
+      if (row['sync_status'] == SyncStatus.pendingDelete) return false; // Task 5
       final model = FamilyModel.fromJson(row);
-      await familyRemote!.createFamily(model);
-      await db.update('families', {'sync_status': SyncStatus.synced}, where: 'id = ?', whereArgs: [model.id]);
+      await familyRemote!.upsertFamily(model);
+      await db.update('families', {'sync_status': SyncStatus.synced},
+          where: 'id = ?', whereArgs: [model.id]);
+      return true;
     });
 
-    await _pushBatch('medications', where, whereArgs, (row) async {
+    await _pushBatch('family_members', report, where, whereArgs, (row) async {
+      final model = FamilyMemberModel.fromJson(row);
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
+        await familyRemote!.removeMember(model.id);
+        await familyLocal.hardDeleteMember(model.id);
+      } else {
+        await familyRemote!.upsertMember(model);
+        await db.update('family_members', {'sync_status': SyncStatus.synced},
+            where: 'id = ?', whereArgs: [model.id]);
+      }
+      return true;
+    });
+
+    // Families the user left: drop locally once their member rows are gone.
+    await _pushBatch('families', report, 'sync_status = ?', [SyncStatus.pendingDelete],
+        (row) async {
+      final id = row['id'] as String;
+      final remaining = await db.query('family_members',
+          columns: ['id'],
+          where: 'family_id = ? AND sync_status = ?',
+          whereArgs: [id, SyncStatus.pendingDelete]);
+      if (remaining.isNotEmpty) return false; // member removal still pending
+      await familyLocal.deleteFamily(id);
+      return true;
+    });
+
+    await _pushBatch('medications', report, where, whereArgs, (row) async {
       final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
-      final status = row['sync_status'] as String;
-      if (status == SyncStatus.pendingDelete) {
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
         await medicationRemote!.deleteMedication(model.id);
         await medicationLocal.hardDelete(model.id);
       } else {
         await medicationRemote!.upsertMedication(model);
         await medicationLocal.markSynced(model.id);
       }
+      return true;
     });
 
-    await _pushBatch('treatments', where, whereArgs, (row) async {
+    await _pushBatch('treatments', report, where, whereArgs, (row) async {
       final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
-      final status = row['sync_status'] as String;
-      if (status == SyncStatus.pendingDelete) {
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
         await treatmentRemote!.deleteTreatment(model.id);
         await treatmentLocal.hardDelete(model.id);
       } else {
         await treatmentRemote!.upsertTreatment(model);
         await treatmentLocal.markSynced(model.id);
       }
+      return true;
     });
 
-    await _pushBatch('prescriptions', where, whereArgs, (row) async {
+    await _pushBatch('prescriptions', report, where, whereArgs, (row) async {
       final model = PrescriptionModel.fromLocalMap(row);
-      final status = row['sync_status'] as String;
-      if (status == SyncStatus.pendingDelete) {
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
         await prescriptionRemote!.deletePrescription(model.id);
         await prescriptionLocal.hardDelete(model.id);
       } else {
         await prescriptionRemote!.upsertPrescription(model);
         await prescriptionLocal.markSynced(model.id);
       }
+      return true;
     });
 
-    await _pushBatch('dose_logs', where, whereArgs, (row) async {
+    await _pushBatch('dose_logs', report, where, whereArgs, (row) async {
       final model = DoseLogModel.fromLocalMap(row);
-      final status = row['sync_status'] as String;
-      if (status == SyncStatus.pendingDelete) {
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
         await doseLogRemote!.deleteDoseLog(model.id);
         await doseLogLocal.hardDelete(model.id);
       } else {
         await doseLogRemote!.upsertDoseLog(model);
         await doseLogLocal.markSynced(model.id);
       }
+      return true;
     });
   }
 
-  /// Process records in batches with periodic yields
+  /// Runs [processRow] per row; a thrown error becomes a [SyncFailure] and the
+  /// batch continues. [processRow] returns false when the row was skipped
+  /// (not counted).
   Future<void> _pushBatch(
     String table,
+    SyncReport report,
     String? where,
     List<dynamic>? whereArgs,
-    Future<void> Function(Map<String, dynamic>) processRow,
+    Future<bool> Function(Map<String, dynamic>) processRow,
   ) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query(table, where: where, whereArgs: whereArgs);
-
     for (var i = 0; i < rows.length; i++) {
+      final row = rows[i];
       try {
-        await processRow(rows[i]);
-      } catch (_) {
-        // Continue with other items on error
+        if (await processRow(row)) report.pushed++;
+      } catch (e) {
+        report.failures.add(SyncFailure(table, '${row['id']}', 'push: $e'));
       }
-      // Yield to UI every 5 items for better responsiveness
-      if (i % 5 == 2) await Future.delayed(Duration.zero);
+      // Yield to the UI every few rows.
+      if (i % 5 == 2) await Future<void>.delayed(Duration.zero);
     }
   }
 
-  // ── Pull remote data ───────────────────────────────────────
+  // ── Pull ───────────────────────────────────────────────────
 
-  Future<void> _pullFamilies() async {
+  Future<void> _pullAll(SyncReport report, {required bool force}) async {
+    await _pullFamilies(report, failFast: force);
+    await Future.wait([
+      _pullTable<MedicationModel>(
+        table: 'medications',
+        report: report,
+        force: force,
+        fetch: (since) => medicationRemote!.getMedicationsSince(since),
+        idOf: (m) => m.id,
+        updatedAtOf: (m) => m.updatedAt,
+        deletedAtOf: (m) => m.deletedAt,
+        delete: medicationLocal.hardDelete,
+        upsert: (m) => _safeUpsertMedication(m, force: force),
+      ),
+      _pullTable<TreatmentModel>(
+        table: 'treatments',
+        report: report,
+        force: force,
+        fetch: (since) => treatmentRemote!.getTreatmentsSince(since),
+        idOf: (t) => t.id,
+        updatedAtOf: (t) => t.updatedAt,
+        deletedAtOf: (t) => t.deletedAt,
+        delete: treatmentLocal.hardDelete,
+        upsert: (t) => _safeUpsertTreatment(t, force: force),
+      ),
+    ]);
+    await _pullTable<PrescriptionModel>(
+      table: 'prescriptions',
+      report: report,
+      force: force,
+      fetch: (since) => prescriptionRemote!.getPrescriptionsSince(since),
+      idOf: (p) => p.id,
+      updatedAtOf: (p) => p.updatedAt,
+      deletedAtOf: (p) => p.deletedAt,
+      delete: prescriptionLocal.hardDelete,
+      upsert: (p) => _safeUpsertPrescription(p, force: force),
+    );
+    await _pullTable<DoseLogModel>(
+      table: 'dose_logs',
+      report: report,
+      force: force,
+      fetch: (since) => doseLogRemote!.getDoseLogsSince(since),
+      idOf: (d) => d.id,
+      updatedAtOf: (d) => d.updatedAt,
+      deletedAtOf: (d) => d.deletedAt,
+      delete: doseLogLocal.hardDelete,
+      upsert: (d) => _safeUpsertDoseLog(d, force: force),
+    );
+  }
+
+  /// Delta pull for one table: asks the remote only for rows newer than the
+  /// stored cursor, applies tombstones as hard deletes, and advances the
+  /// cursor (with a 1 s overlap) to the newest `updated_at` it saw.
+  ///
+  /// A failure to fetch the table at all is normally recorded and skipped, so
+  /// the other tables still sync. When [force] is set the caller has already
+  /// cleared the local database, so the same failure is rethrown as
+  /// [_FetchFailedFatally] and aborts the whole cycle instead.
+  Future<void> _pullTable<T>({
+    required String table,
+    required SyncReport report,
+    required bool force,
+    required Future<List<T>> Function(DateTime? since) fetch,
+    required String Function(T) idOf,
+    required DateTime? Function(T) updatedAtOf,
+    required DateTime? Function(T) deletedAtOf,
+    required Future<void> Function(String id) delete,
+    required Future<void> Function(T row) upsert,
+  }) async {
+    final since = force ? null : await _cursors.lastPullAt(table);
+    final List<T> rows;
     try {
-      final membership = await familyRemote!.getCurrentMembership();
-      if (membership != null) {
-        final family = await familyRemote!.getFamilyById(membership.familyId);
-        if (family != null) {
-          await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
-          final members = await familyRemote!.getMembers(family.id);
-          for (final m in members) {
-            await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);
-          }
-        }
-      }
-    } catch (e) { debugPrint('Sync: pull families error: $e'); }
-  }
-
-  Future<void> _pullMedications({bool force = false}) async {
-    try {
-      final remoteMeds = await medicationRemote!.getMedications();
-      for (final m in remoteMeds) { await _safeUpsertMedication(m, force: force); }
-    } catch (e) { debugPrint('Sync: pull medications error: $e'); }
-  }
-
-  Future<void> _pullTreatments({bool force = false}) async {
-    try {
-      final remote = await treatmentRemote!.getTreatments();
-      for (final t in remote) { await _safeUpsertTreatment(t, force: force); }
-    } catch (e) { debugPrint('Sync: pull treatments error: $e'); }
-  }
-
-  Future<void> _pullPrescriptions({bool force = false}) async {
-    try {
-      final remote = await prescriptionRemote!.getPrescriptions();
-      for (final p in remote) { await _safeUpsertPrescription(p, force: force); }
-    } catch (e) { debugPrint('Sync: pull prescriptions error: $e'); }
-  }
-
-  Future<void> _pullDoseLogs({bool force = false}) async {
-    try {
-      final remote = await doseLogRemote!.getDoseLogs();
-      for (final d in remote) {
-        if (force) {
-          await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
-        } else {
-          await doseLogLocal.upsertIfSynced(d);
-        }
-      }
-    } catch (e) { debugPrint('Sync: pull dose logs error: $e'); }
-  }
-
-  void _setState(SyncState state) {
-    if (_stateController.isClosed) return;
-    _currentState = state;
-    _stateController.add(state);
-  }
-
-  // ── Safe upsert helpers ──
-
-  Future<void> _safeUpsertMedication(MedicationModel m, {bool force = false}) async {
-    if (force) {
-      await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
+      rows = await fetch(since);
+    } catch (e) {
+      report.failures.add(SyncFailure(table, '*', 'pull: $e'));
+      if (force) throw _FetchFailedFatally(table, e);
       return;
     }
-    // Strategy: last-write-wins based on updatedAt
-    final local = await medicationLocal.getMedicationById(m.id);
-    if (local != null) {
-      if (await _isLocalPending('medications', m.id)) {
-         // If local is pending, only overwrite if remote is definitely newer
-         if (m.updatedAt != null && local.updatedAt != null && m.updatedAt!.isAfter(local.updatedAt!)) {
-           await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
-         }
-         return;
+    DateTime? newest;
+    var anyFailure = false;
+    for (final row in rows) {
+      try {
+        if (deletedAtOf(row) != null) {
+          await delete(idOf(row));
+          report.deleted++;
+        } else {
+          await upsert(row);
+        }
+        report.pulled++;
+      } catch (e) {
+        anyFailure = true;
+        report.failures.add(SyncFailure(table, idOf(row), 'apply: $e'));
       }
-      // If local is NOT pending, always take remote (it might have been changed by another device)
+      final u = updatedAtOf(row)?.toUtc();
+      if (u != null && (newest == null || u.isAfter(newest))) newest = u;
     }
+    if (newest != null && !anyFailure) {
+      await _cursors.setLastPullAt(table, newest.subtract(const Duration(seconds: 1)));
+    }
+  }
+
+  Future<void> _pullFamilies(SyncReport report, {bool failFast = false}) async {
+    try {
+      final membership = await familyRemote!.getCurrentMembership();
+      if (membership == null) return;
+      final family = await familyRemote!.getFamilyById(membership.familyId);
+      if (family == null) return;
+      // A row with unpushed local changes (in particular a pending_delete
+      // from "leave family" / "remove member") must not be stamped back to
+      // `synced` from the remote copy — that would silently drop the user's
+      // change before the next push ever gets to send it.
+      if (!await _isLocallyPending('families', family.id)) {
+        await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
+        report.pulled++;
+      }
+      final members = await familyRemote!.getMembers(family.id);
+      for (final m in members) {
+        if (await _isLocallyPending('family_members', m.id)) continue;
+        await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);
+        report.pulled++;
+      }
+      // Members that vanished remotely are dropped locally (pending local
+      // rows are left alone — the next push decides their fate).
+      await familyLocal.deleteMembersNotIn(
+          family.id, members.map((m) => m.id).toSet());
+    } catch (e) {
+      report.failures.add(SyncFailure('families', '*', 'pull: $e'));
+      if (failFast) throw _FetchFailedFatally('families', e);
+    }
+  }
+
+  /// True when the local row exists and still has unpushed changes.
+  Future<bool> _isLocallyPending(String table, String id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(table,
+        columns: ['id'],
+        where: 'id = ? AND sync_status != ?',
+        whereArgs: [id, SyncStatus.synced],
+        limit: 1);
+    return rows.isNotEmpty;
+  }
+
+  // ── Merge helpers (last-write-wins for locally pending rows) ──
+
+  Future<void> _safeUpsertMedication(MedicationModel m, {bool force = false}) async {
+    if (!force && await _localPendingIsNewer('medications', m.id, m.updatedAt)) return;
     await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
   }
 
   Future<void> _safeUpsertTreatment(TreatmentModel t, {bool force = false}) async {
-    if (force) {
-      await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
-      return;
-    }
-    final local = await treatmentLocal.getTreatmentById(t.id);
-    if (local != null) {
-      if (await _isLocalPending('treatments', t.id)) {
-         if (t.updatedAt != null && local.updatedAt != null && t.updatedAt!.isAfter(local.updatedAt!)) {
-           await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
-         }
-         return;
-      }
-    }
+    if (!force && await _localPendingIsNewer('treatments', t.id, t.updatedAt)) return;
     await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
   }
 
   Future<void> _safeUpsertPrescription(PrescriptionModel p, {bool force = false}) async {
-    if (force) {
-      await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
-      return;
-    }
-    final local = await prescriptionLocal.getPrescriptionById(p.id);
-    if (local != null) {
-      if (await _isLocalPending('prescriptions', p.id)) {
-         if (p.updatedAt != null && local.updatedAt != null && p.updatedAt!.isAfter(local.updatedAt!)) {
-           await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
-         }
-         return;
-      }
-    }
+    if (!force && await _localPendingIsNewer('prescriptions', p.id, p.updatedAt)) return;
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
   }
 
-  Future<bool> _isLocalPending(String table, String id) async {
+  Future<void> _safeUpsertDoseLog(DoseLogModel d, {bool force = false}) async {
+    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) return;
+    await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
+  }
+
+  /// True when the local row has unpushed changes that are at least as new as
+  /// the remote row (so the remote row must not overwrite it). A local
+  /// tombstone waiting to be pushed always wins over a live remote row — a
+  /// pull must never resurrect a row the user deleted.
+  Future<bool> _localPendingIsNewer(String table, String id, DateTime? remoteUpdatedAt) async {
     final db = await AppDatabase.instance.database;
-    final rows = await db.query(table, columns: ['sync_status'], where: 'id = ? AND sync_status != ?', whereArgs: [id, SyncStatus.synced]);
-    return rows.isNotEmpty;
+    final rows = await db.query(table,
+        columns: ['updated_at', 'sync_status'],
+        where: 'id = ? AND sync_status != ?',
+        whereArgs: [id, SyncStatus.synced]);
+    if (rows.isEmpty) return false;
+    if (rows.first['sync_status'] == SyncStatus.pendingDelete) return true;
+    final localRaw = rows.first['updated_at'] as String?;
+    final local = localRaw == null ? null : DateTime.tryParse(localRaw);
+    if (local == null || remoteUpdatedAt == null) return true; // keep local when unsure
+    return !remoteUpdatedAt.toUtc().isAfter(local.toUtc());
+  }
+
+  void _setState(SyncState state) {
+    _currentState = state;
+    if (_stateController.isClosed) return;
+    _stateController.add(state);
   }
 
   void dispose() {
+    stopAutoSync();
     if (!_stateController.isClosed) _stateController.close();
   }
 
   @visibleForTesting
   void debugSetStateForTest(SyncState state) => _setState(state);
+}
+
+/// Internal: a whole-table fetch failed during a cycle that must not continue
+/// (force pull, where the local database has already been cleared).
+class _FetchFailedFatally implements Exception {
+  _FetchFailedFatally(this.table, this.cause);
+
+  final String table;
+  final Object cause;
+
+  @override
+  String toString() => '_FetchFailedFatally($table): $cause';
 }

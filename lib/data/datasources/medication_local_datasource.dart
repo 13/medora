@@ -146,11 +146,16 @@ class MedicationLocalDatasource {
     }
   }
 
+  /// Marks the row for deletion: pending push plus a local tombstone stamp
+  /// (spec §4.6).
   Future<void> markDeleted(String id) async {
     final db = await _db;
     await db.update(
       'medications',
-      {'sync_status': SyncStatus.pendingDelete},
+      {
+        'sync_status': SyncStatus.pendingDelete,
+        'deleted_at': DateTime.now().toIso8601String(),
+      },
       where: 'id = ?',
       whereArgs: [id],
     );
@@ -250,6 +255,7 @@ class MedicationLocalDatasource {
       'created_at': m.createdAt?.toIso8601String() ??
           DateTime.now().toIso8601String(),
       'updated_at': m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
     };
   }

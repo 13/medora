@@ -638,6 +638,29 @@ class AppLocalizationsDe extends AppLocalizations {
       'Synchronisierung fehlgeschlagen — tippen zum Wiederholen';
 
   @override
+  String get syncPartial => 'Mit Fehlern abgeschlossen';
+
+  @override
+  String get syncNever => 'Noch nicht synchronisiert';
+
+  @override
+  String lastSyncSummary(
+    String time,
+    int pushed,
+    int pulled,
+    int deleted,
+    int failed,
+  ) {
+    return 'Letzte Synchronisierung $time: $pushed gesendet, $pulled empfangen, $deleted gelöscht, $failed fehlgeschlagen';
+  }
+
+  @override
+  String get syncFailedItems => 'Fehlgeschlagene Einträge';
+
+  @override
+  String get ok => 'OK';
+
+  @override
   String get advanced => 'Erweitert';
 
   @override
@@ -1194,7 +1217,20 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get forcePullConfirm =>
-      'Dies wird alle Ihre lokalen Daten mit Daten aus Supabase überschreiben. Nicht synchronisierte lokale Änderungen gehen verloren. Fortfahren?';
+      'Dies ersetzt alles auf diesem Gerät durch die Daten aus Supabase. Lokale Änderungen, die noch nicht hochgeladen wurden, gehen unwiderruflich verloren. Fortfahren?';
+
+  @override
+  String get foreignDataTitle => 'Daten eines anderen Kontos';
+
+  @override
+  String get foreignDataBody =>
+      'Auf diesem Gerät liegen Daten, die unter einem anderen Konto gespeichert wurden. Sollen sie in dieses Konto hochgeladen und zusammengeführt oder vom Gerät gelöscht werden?';
+
+  @override
+  String get foreignDataMerge => 'Hochladen und zusammenführen';
+
+  @override
+  String get foreignDataDelete => 'Lokale Daten löschen';
 
   @override
   String get continueLabel => 'Fortfahren';

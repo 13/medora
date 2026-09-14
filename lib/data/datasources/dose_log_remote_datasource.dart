@@ -13,8 +13,22 @@ class DoseLogRemoteDatasource {
   Future<List<DoseLogModel>> getDoseLogs() async {
     final response = await _client
         .from(AppConstants.doseLogsTable)
-        .select('*, prescriptions(id, medications(name)) ');
+        .select('*, prescriptions(id, medications(name)) ')
+        .isFilter('deleted_at', null);
 
+    return (response as List)
+        .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
+  Future<List<DoseLogModel>> getDoseLogsSince(DateTime? since) async {
+    final base = _client
+        .from(AppConstants.doseLogsTable)
+        .select('*, prescriptions(id, medications(name))');
+    final filtered =
+        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final response = await filtered.order('updated_at');
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
         .toList();
@@ -29,7 +43,8 @@ class DoseLogRemoteDatasource {
         .from(AppConstants.doseLogsTable)
         .select('*, prescriptions(id, medications(name))')
         .gte('scheduled_time', startOfDay.toIso8601String())
-        .lt('scheduled_time', endOfDay.toIso8601String());
+        .lt('scheduled_time', endOfDay.toIso8601String())
+        .isFilter('deleted_at', null);
 
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
@@ -59,11 +74,11 @@ class DoseLogRemoteDatasource {
   Future<void> updateDoseLogStatus(String id, String status, {DateTime? takenTime}) async {
     final Map<String, dynamic> updateData = {
       'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
-    
+
     if (takenTime != null) {
-      updateData['taken_time'] = takenTime.toIso8601String();
+      updateData['taken_time'] = takenTime.toUtc().toIso8601String();
     } else if (status == 'pending') {
       updateData['taken_time'] = null;
     }
@@ -75,10 +90,13 @@ class DoseLogRemoteDatasource {
   }
 
   /// Delete a dose log from remote.
+  /// Soft delete (tombstone). The row stays on the server with `deleted_at`
+  /// set so other devices pull the deletion; see spec §4.6.
   Future<void> deleteDoseLog(String id) async {
+    final now = DateTime.now().toUtc().toIso8601String();
     await _client
         .from(AppConstants.doseLogsTable)
-        .delete()
+        .update({'deleted_at': now, 'updated_at': now})
         .eq('id', id);
   }
 }

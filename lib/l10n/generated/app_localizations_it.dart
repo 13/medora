@@ -632,6 +632,29 @@ class AppLocalizationsIt extends AppLocalizations {
   String get syncError => 'Sincronizzazione fallita — tocca per riprovare';
 
   @override
+  String get syncPartial => 'Completata con alcuni errori';
+
+  @override
+  String get syncNever => 'Non ancora sincronizzato';
+
+  @override
+  String lastSyncSummary(
+    String time,
+    int pushed,
+    int pulled,
+    int deleted,
+    int failed,
+  ) {
+    return 'Ultima sincronizzazione $time: $pushed inviati, $pulled ricevuti, $deleted eliminati, $failed falliti';
+  }
+
+  @override
+  String get syncFailedItems => 'Elementi non riusciti';
+
+  @override
+  String get ok => 'OK';
+
+  @override
   String get advanced => 'Avanzate';
 
   @override
@@ -1188,7 +1211,20 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get forcePullConfirm =>
-      'Questo sovrascriverà tutti i tuoi dati locali con i dati da Supabase. Qualsiasi modifica locale non sincronizzata andrà persa. Continuare?';
+      'Questa operazione sostituisce tutto ciò che è su questo dispositivo con i dati di Supabase. Le modifiche locali non ancora caricate andranno perse in modo irreversibile. Continuare?';
+
+  @override
+  String get foreignDataTitle => 'Dati di un altro account';
+
+  @override
+  String get foreignDataBody =>
+      'Questo dispositivo contiene dati salvati con un altro account. Vuoi caricarli e unirli a questo account oppure eliminarli dal dispositivo?';
+
+  @override
+  String get foreignDataMerge => 'Carica e unisci';
+
+  @override
+  String get foreignDataDelete => 'Elimina i dati locali';
 
   @override
   String get continueLabel => 'Continua';

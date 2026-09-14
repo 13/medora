@@ -6,6 +6,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/sync_cursor_store.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -69,6 +70,21 @@ void main() {
       expect(await db.query(t), isEmpty, reason: t);
     }
     expect(prefs.getInt('aifa_count'), 5);
+    expect(prefs.getString('theme_mode'), 'dark');
+  });
+
+  test('wipe removes sync pull cursors but keeps other prefs', () async {
+    SharedPreferences.setMockInitialValues({
+      'sync.last_pull_at.medications': '2026-01-01T00:00:00.000Z',
+      'theme_mode': 'dark',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final photos = PhotoStorage(rootDirectory: () async => throw StateError('no fs'));
+    final port = _Port();
+
+    await LocalDataWiper(database: AppDatabase.instance, photos: photos, reminders: port, prefs: prefs).wipe();
+
+    expect(prefs.getString('${SyncCursorStore.keyPrefix}medications'), isNull);
     expect(prefs.getString('theme_mode'), 'dark');
   });
 }

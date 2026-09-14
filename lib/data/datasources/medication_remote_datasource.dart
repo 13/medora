@@ -17,8 +17,20 @@ class MedicationRemoteDatasource {
     final response = await _client
         .from(AppConstants.medicationsTable)
         .select()
+        .isFilter('deleted_at', null)
         .order('name');
 
+    return (response as List)
+        .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
+  Future<List<MedicationModel>> getMedicationsSince(DateTime? since) async {
+    final base = _client.from(AppConstants.medicationsTable).select();
+    final filtered =
+        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final response = await filtered.order('updated_at');
     return (response as List)
         .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
         .toList();
@@ -41,6 +53,7 @@ class MedicationRemoteDatasource {
         .from(AppConstants.medicationsTable)
         .select()
         .or('name.ilike.%$query%,active_ingredients.ilike.%$query%')
+        .isFilter('deleted_at', null)
         .order('name');
 
     return (response as List)
@@ -71,10 +84,13 @@ class MedicationRemoteDatasource {
   }
 
   /// Delete a medication.
+  /// Soft delete (tombstone). The row stays on the server with `deleted_at`
+  /// set so other devices pull the deletion; see spec §4.6.
   Future<void> deleteMedication(String id) async {
+    final now = DateTime.now().toUtc().toIso8601String();
     await _client
         .from(AppConstants.medicationsTable)
-        .delete()
+        .update({'deleted_at': now, 'updated_at': now})
         .eq('id', id);
   }
 
