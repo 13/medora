@@ -3,11 +3,11 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/family.dart';
 import 'package:medora/domain/entities/family_member.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/family_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -63,8 +63,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.people_outline,
-                size: 80, color: context.colors.outline),
+            Icon(Icons.people_outline, size: 80, color: context.colors.outline),
             const SizedBox(height: 16),
             Text(
               l10n.noFamilyGroup,
@@ -107,7 +106,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
     final nameCtrl = TextEditingController();
     final displayCtrl = TextEditingController();
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.createFamily),
@@ -142,10 +141,9 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
                   displayCtrl.text.trim().isEmpty) {
                 return;
               }
-              ref.read(currentFamilyProvider.notifier).createFamily(
-                    nameCtrl.text.trim(),
-                    displayCtrl.text.trim(),
-                  );
+              ref
+                  .read(currentFamilyProvider.notifier)
+                  .createFamily(nameCtrl.text.trim(), displayCtrl.text.trim());
               Navigator.pop(ctx);
             },
             child: Text(l10n.create),
@@ -160,7 +158,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
     final codeCtrl = TextEditingController();
     final displayCtrl = TextEditingController();
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.joinFamily),
@@ -196,7 +194,9 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
                   displayCtrl.text.trim().isEmpty) {
                 return;
               }
-              ref.read(currentFamilyProvider.notifier).joinFamily(
+              ref
+                  .read(currentFamilyProvider.notifier)
+                  .joinFamily(
                     codeCtrl.text.trim().toUpperCase(),
                     displayCtrl.text.trim(),
                   );
@@ -233,7 +233,11 @@ class _FamilyDetailView extends ConsumerWidget {
                 CircleAvatar(
                   radius: 32,
                   backgroundColor: context.colors.primary,
-                  child: Icon(Icons.people, size: 32, color: context.colors.onPrimary),
+                  child: Icon(
+                    Icons.people,
+                    size: 32,
+                    color: context.colors.onPrimary,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -270,11 +274,15 @@ class _FamilyDetailView extends ConsumerWidget {
                     Expanded(
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
                           color: context.colors.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: context.colors.outlineVariant),
+                          border: Border.all(
+                            color: context.colors.outlineVariant,
+                          ),
                         ),
                         child: Text(
                           (family.inviteCode as String?) ?? '------',
@@ -307,9 +315,7 @@ class _FamilyDetailView extends ConsumerWidget {
                         final code = family.inviteCode as String?;
                         if (code != null) {
                           SharePlus.instance.share(
-                            ShareParams(
-                              text: l10n.joinMedoraFamily(code),
-                            ),
+                            ShareParams(text: l10n.joinMedoraFamily(code)),
                           );
                         }
                       },
@@ -318,9 +324,8 @@ class _FamilyDetailView extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () => ref
-                      .read(currentFamilyProvider.notifier)
-                      .regenerateCode(),
+                  onPressed: () =>
+                      ref.read(currentFamilyProvider.notifier).regenerateCode(),
                   child: Text(l10n.generateNewCode),
                 ),
               ],
@@ -332,17 +337,17 @@ class _FamilyDetailView extends ConsumerWidget {
         // Members
         Text(
           l10n.members,
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
 
         AsyncValueView<List<FamilyMember>>(
           value: membersAsync,
           compact: true,
-          onRetry: () async => ref.invalidate(familyMembersProvider(family.id as String)),
+          onRetry: () async =>
+              ref.invalidate(familyMembersProvider(family.id as String)),
           emptyWhen: (members) => members.isEmpty,
           empty: Card(
             child: Padding(
@@ -370,19 +375,25 @@ class _FamilyDetailView extends ConsumerWidget {
                     ),
                     title: Text(m.displayName ?? l10n.unknown),
                     subtitle: Text(
-                        m.role == FamilyRole.owner ? l10n.owner : l10n.member),
+                      m.role == FamilyRole.owner ? l10n.owner : l10n.member,
+                    ),
                     trailing: m.role == FamilyRole.owner
                         ? Icon(Icons.star, color: context.medora.warning)
                         : IconButton(
-                            icon: Icon(Icons.remove_circle_outline,
-                                color: context.colors.error),
+                            icon: Icon(
+                              Icons.remove_circle_outline,
+                              color: context.colors.error,
+                            ),
                             onPressed: () async {
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: Text(l10n.removeMember),
                                   content: Text(
-                                      l10n.removeMemberConfirm(m.displayName ?? l10n.unknown)),
+                                    l10n.removeMemberConfirm(
+                                      m.displayName ?? l10n.unknown,
+                                    ),
+                                  ),
                                   actions: [
                                     TextButton(
                                       onPressed: () =>
@@ -390,21 +401,23 @@ class _FamilyDetailView extends ConsumerWidget {
                                       child: Text(l10n.cancel),
                                     ),
                                     TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(ctx, true),
-                                      child: Text(l10n.remove,
-                                          style:
-                                              TextStyle(color: context.colors.error)),
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: Text(
+                                        l10n.remove,
+                                        style: TextStyle(
+                                          color: context.colors.error,
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                               );
                               if (confirm == true) {
-                                final repo =
-                                    ref.read(familyRepositoryProvider);
+                                final repo = ref.read(familyRepositoryProvider);
                                 await repo.removeMember(m.id);
                                 ref.invalidate(
-                                    familyMembersProvider(family.id as String));
+                                  familyMembersProvider(family.id as String),
+                                );
                               }
                             },
                           ),
@@ -432,14 +445,16 @@ class _FamilyDetailView extends ConsumerWidget {
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, true),
-                    child: Text(l10n.leave,
-                        style: TextStyle(color: context.colors.error)),
+                    child: Text(
+                      l10n.leave,
+                      style: TextStyle(color: context.colors.error),
+                    ),
                   ),
                 ],
               ),
             );
             if (confirm == true) {
-              ref.read(currentFamilyProvider.notifier).leaveFamily();
+              await ref.read(currentFamilyProvider.notifier).leaveFamily();
             }
           },
           style: OutlinedButton.styleFrom(
@@ -453,4 +468,3 @@ class _FamilyDetailView extends ConsumerWidget {
     );
   }
 }
-

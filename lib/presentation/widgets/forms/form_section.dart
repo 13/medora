@@ -44,8 +44,7 @@ class FormSection extends StatefulWidget {
 }
 
 class _FormSectionState extends State<FormSection> {
-  late bool _expanded =
-      widget.controller?.value ?? widget.initiallyExpanded;
+  late bool _expanded = widget.controller?.value ?? widget.initiallyExpanded;
 
   @override
   void initState() {
@@ -99,8 +98,9 @@ class _FormSectionState extends State<FormSection> {
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: context.text.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: context.text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   if (!_expanded && widget.summary != null) ...[
@@ -108,8 +108,9 @@ class _FormSectionState extends State<FormSection> {
                       child: Text(
                         widget.summary!,
                         overflow: TextOverflow.ellipsis,
-                        style: context.text.bodySmall
-                            ?.copyWith(color: context.colors.onSurfaceVariant),
+                        style: context.text.bodySmall?.copyWith(
+                          color: context.colors.onSurfaceVariant,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),

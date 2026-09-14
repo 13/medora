@@ -7,9 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 
 class DoseMaintenanceService {
-  DoseMaintenanceService({required DoseLogRepository doses, DateTime Function()? now})
-      : _doses = doses,
-        _now = now ?? DateTime.now;
+  DoseMaintenanceService({required this._doses, DateTime Function()? now})
+    : _now = now ?? DateTime.now;
 
   final DoseLogRepository _doses;
   final DateTime Function() _now;

@@ -12,8 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class PhotoStorage {
-  PhotoStorage({required Future<Directory> Function() rootDirectory})
-      : _rootDirectory = rootDirectory;
+  PhotoStorage({required this._rootDirectory});
 
   /// Production storage rooted at the app documents directory.
   factory PhotoStorage.appDocuments() =>

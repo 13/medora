@@ -11,7 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:medora/core/app_config.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
-import 'package:medora/data/local/db_setup.dart' if (dart.library.html) 'package:medora/data/local/db_setup_web.dart';
+import 'package:medora/data/local/db_setup.dart'
+    if (dart.library.html) 'package:medora/data/local/db_setup_web.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -26,15 +27,16 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
 
   // Cloud is optional: this is a no-op when no dart-defines are present.
-  await _initSafe('Supabase', () => SupabaseConfig.initialize(AppConfig.fromEnvironment()));
+  await _initSafe(
+    'Supabase',
+    () => SupabaseConfig.initialize(AppConfig.fromEnvironment()),
+  );
 
   _initServicesInBackground();
 
   runApp(
     ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(prefs),
-      ],
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
       child: const MedoraApp(),
     ),
   );
@@ -61,14 +63,32 @@ Future<void> _initSafe(String name, Future<dynamic> Function() init) async {
 }
 
 /// Root application widget.
-class MedoraApp extends ConsumerWidget {
+class MedoraApp extends ConsumerStatefulWidget {
   const MedoraApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MedoraApp> createState() => _MedoraAppState();
+}
+
+class _MedoraAppState extends ConsumerState<MedoraApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Notification taps navigate through the router and reminder strings are
+    // looked up from the chosen locale — neither keeps a BuildContext alive.
+    // Installed once, not on every build: assigning the router flushes a
+    // pending notification route, which must not happen mid-build.
+    ReminderService.router = ref.read(appRouterProvider);
+    // Read lazily so the resolver always sees the current locale.
+    ReminderService.localeResolver = () => ref.read(localeProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
     final colorScheme = ref.watch(colorSchemeProvider);
+    final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
       title: 'Medora',
@@ -80,17 +100,16 @@ class MedoraApp extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       localeResolutionCallback: (device, supported) {
-        final resolved = locale ??
-            supported.firstWhere((s) => s.languageCode == device?.languageCode, orElse: () => supported.first);
+        final resolved =
+            locale ??
+            supported.firstWhere(
+              (s) => s.languageCode == device?.languageCode,
+              orElse: () => supported.first,
+            );
         Intl.defaultLocale = resolved.toLanguageTag();
         return resolved;
       },
-      routerConfig: ref.watch(appRouterProvider),
-      builder: (context, child) {
-        // Set navigation context for notification handling
-        ReminderService.setNavigationContext(context);
-        return child ?? const SizedBox.shrink();
-      },
+      routerConfig: router,
     );
   }
 }

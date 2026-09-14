@@ -54,7 +54,7 @@ class FakeRemoteTable {
   }
 
   List<Map<String, dynamic>> all() =>
-      rows.values.map((r) => Map<String, dynamic>.from(r)).toList();
+      rows.values.map(Map<String, dynamic>.from).toList();
 
   /// Live rows only — mirrors the `.isFilter('deleted_at', null)` the
   /// non-delta remote getters apply. Delta pulls use [since] and still see
@@ -83,7 +83,8 @@ class FakeRemoteTable {
 }
 
 class FakeMedicationRemote implements MedicationRemoteDatasource {
-  FakeMedicationRemote(DateTime Function() clock) : table = FakeRemoteTable(clock);
+  FakeMedicationRemote(DateTime Function() clock)
+    : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
 
   @override
@@ -99,11 +100,14 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   Future<List<MedicationModel>> searchMedications(String query) async =>
       (await getMedications()).where((m) => m.name.contains(query)).toList();
   @override
-  Future<void> addMedication(MedicationModel model) async => table.upsert(model.toJson());
+  Future<void> addMedication(MedicationModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> updateMedication(MedicationModel model) async => table.upsert(model.toJson());
+  Future<void> updateMedication(MedicationModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> upsertMedication(MedicationModel model) async => table.upsert(model.toJson());
+  Future<void> upsertMedication(MedicationModel model) async =>
+      table.upsert(model.toJson());
   @override
   Future<void> deleteMedication(String id) async => table.tombstone(id);
   @override
@@ -114,7 +118,8 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
 }
 
 class FakeTreatmentRemote implements TreatmentRemoteDatasource {
-  FakeTreatmentRemote(DateTime Function() clock) : table = FakeRemoteTable(clock);
+  FakeTreatmentRemote(DateTime Function() clock)
+    : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
 
   @override
@@ -130,11 +135,14 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   Future<TreatmentModel> getTreatmentById(String id) async =>
       TreatmentModel.fromJson(table.rows[id]!);
   @override
-  Future<void> addTreatment(TreatmentModel model) async => table.upsert(model.toJson());
+  Future<void> addTreatment(TreatmentModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> updateTreatment(TreatmentModel model) async => table.upsert(model.toJson());
+  Future<void> updateTreatment(TreatmentModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> upsertTreatment(TreatmentModel model) async => table.upsert(model.toJson());
+  Future<void> upsertTreatment(TreatmentModel model) async =>
+      table.upsert(model.toJson());
   @override
   Future<void> deleteTreatment(String id) async => table.tombstone(id);
   @override
@@ -143,18 +151,23 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
 }
 
 class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
-  FakePrescriptionRemote(DateTime Function() clock) : table = FakeRemoteTable(clock);
+  FakePrescriptionRemote(DateTime Function() clock)
+    : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
 
   @override
   Future<List<PrescriptionModel>> getPrescriptions() async =>
       table.live().map(PrescriptionModel.fromJson).toList();
   @override
-  Future<List<PrescriptionModel>> getPrescriptionsSince(DateTime? since) async =>
-      table.since(since).map(PrescriptionModel.fromJson).toList();
+  Future<List<PrescriptionModel>> getPrescriptionsSince(
+    DateTime? since,
+  ) async => table.since(since).map(PrescriptionModel.fromJson).toList();
   @override
-  Future<List<PrescriptionModel>> getPrescriptionsByTreatment(String treatmentId) async =>
-      (await getPrescriptions()).where((p) => p.treatmentId == treatmentId).toList();
+  Future<List<PrescriptionModel>> getPrescriptionsByTreatment(
+    String treatmentId,
+  ) async => (await getPrescriptions())
+      .where((p) => p.treatmentId == treatmentId)
+      .toList();
   @override
   Future<List<PrescriptionModel>> getActivePrescriptions() async =>
       (await getPrescriptions()).where((p) => p.isActive).toList();
@@ -162,11 +175,14 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   Future<PrescriptionModel> getPrescriptionById(String id) async =>
       PrescriptionModel.fromJson(table.rows[id]!);
   @override
-  Future<void> addPrescription(PrescriptionModel model) async => table.upsert(model.toJson());
+  Future<void> addPrescription(PrescriptionModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> updatePrescription(PrescriptionModel model) async => table.upsert(model.toJson());
+  Future<void> updatePrescription(PrescriptionModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> upsertPrescription(PrescriptionModel model) async => table.upsert(model.toJson());
+  Future<void> upsertPrescription(PrescriptionModel model) async =>
+      table.upsert(model.toJson());
   @override
   Future<void> deletePrescription(String id) async => table.tombstone(id);
   @override
@@ -190,7 +206,8 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   @override
   Future<List<DoseLogModel>> getTodaysDoseLogs() async => getDoseLogs();
   @override
-  Future<void> addDoseLog(DoseLogModel model) async => table.upsert(model.toJson());
+  Future<void> addDoseLog(DoseLogModel model) async =>
+      table.upsert(model.toJson());
   @override
   Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
     for (final m in models) {
@@ -199,22 +216,26 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   }
 
   @override
-  Future<void> upsertDoseLog(DoseLogModel model) async => table.upsert(model.toJson());
+  Future<void> upsertDoseLog(DoseLogModel model) async =>
+      table.upsert(model.toJson());
   @override
-  Future<void> updateDoseLogStatus(String id, String status, {DateTime? takenTime}) async =>
-      table.upsert({
-        ...table.rows[id]!,
-        'status': status,
-        'taken_time': takenTime?.toUtc().toIso8601String(),
-      });
+  Future<void> updateDoseLogStatus(
+    String id,
+    String status, {
+    DateTime? takenTime,
+  }) async => table.upsert({
+    ...table.rows[id]!,
+    'status': status,
+    'taken_time': takenTime?.toUtc().toIso8601String(),
+  });
   @override
   Future<void> deleteDoseLog(String id) async => table.tombstone(id);
 }
 
 class FakeFamilyRemote implements FamilyRemoteDatasource {
   FakeFamilyRemote(DateTime Function() clock, {this.currentUserId = 'user-a'})
-      : families = FakeRemoteTable(clock),
-        members = FakeRemoteTable(clock);
+    : families = FakeRemoteTable(clock),
+      members = FakeRemoteTable(clock);
   final FakeRemoteTable families;
   final FakeRemoteTable members;
   String currentUserId;
@@ -226,7 +247,8 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
   }
 
   @override
-  Future<void> upsertFamily(FamilyModel family) async => families.upsert(family.toJson());
+  Future<void> upsertFamily(FamilyModel family) async =>
+      families.upsert(family.toJson());
   @override
   Future<FamilyModel?> getFamilyByInviteCode(String code) async {
     final matches = families.all().where((r) => r['invite_code'] == code);
@@ -246,7 +268,8 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
   }
 
   @override
-  Future<void> upsertMember(FamilyMemberModel member) async => members.upsert(member.toJson());
+  Future<void> upsertMember(FamilyMemberModel member) async =>
+      members.upsert(member.toJson());
   @override
   Future<List<FamilyMemberModel>> getMembers(String familyId) async => members
       .all()
@@ -254,7 +277,8 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
       .map(FamilyMemberModel.fromJson)
       .toList();
   @override
-  Future<void> removeMember(String memberId) async => members.hardDelete(memberId);
+  Future<void> removeMember(String memberId) async =>
+      members.hardDelete(memberId);
   @override
   Future<FamilyMemberModel?> getCurrentMembership() async {
     final matches = members.all().where((r) => r['user_id'] == currentUserId);
@@ -268,10 +292,13 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
   }
 
   @override
-  Future<void> deleteFamily(String familyId) async => families.hardDelete(familyId);
+  Future<void> deleteFamily(String familyId) async =>
+      families.hardDelete(familyId);
   @override
   Future<({FamilyModel family, FamilyMemberModel member})> joinFamily(
-      String inviteCode, String displayName) async {
+    String inviteCode,
+    String displayName,
+  ) async {
     final family = await getFamilyByInviteCode(inviteCode);
     if (family == null) throw StateError('Invalid invite code');
     final member = FamilyMemberModel(
@@ -282,6 +309,9 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
       role: 'member',
     );
     members.upsert(member.toJson());
-    return (family: family, member: FamilyMemberModel.fromJson(members.rows[member.id]!));
+    return (
+      family: family,
+      member: FamilyMemberModel.fromJson(members.rows[member.id]!),
+    );
   }
 }

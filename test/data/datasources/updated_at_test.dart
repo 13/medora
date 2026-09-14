@@ -18,19 +18,32 @@ void main() {
 
   final remoteStamp = DateTime.utc(2025, 12, 24, 10, 30);
 
-  test('medication upsert preserves an explicit updatedAt (remote pull)', () async {
-    final ds = MedicationLocalDatasource();
-    await ds.upsert(
-      MedicationModel(id: 'm1', name: 'Aspirin', quantity: 1, updatedAt: remoteStamp),
-      syncStatus: SyncStatus.synced,
-    );
-    expect((await ds.getMedicationById('m1'))!.updatedAt, remoteStamp);
-  });
+  test(
+    'medication upsert preserves an explicit updatedAt (remote pull)',
+    () async {
+      final ds = MedicationLocalDatasource();
+      await ds.upsert(
+        MedicationModel(
+          id: 'm1',
+          name: 'Aspirin',
+          quantity: 1,
+          updatedAt: remoteStamp,
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      expect((await ds.getMedicationById('m1'))!.updatedAt, remoteStamp);
+    },
+  );
 
   test('treatment upsert preserves an explicit updatedAt', () async {
     final ds = TreatmentLocalDatasource();
     await ds.upsert(
-      TreatmentModel(id: 't1', name: 'Flu', startDate: DateTime(2026, 3, 1), updatedAt: remoteStamp),
+      TreatmentModel(
+        id: 't1',
+        name: 'Flu',
+        startDate: DateTime(2026, 3),
+        updatedAt: remoteStamp,
+      ),
       syncStatus: SyncStatus.synced,
     );
     expect((await ds.getTreatmentById('t1'))!.updatedAt, remoteStamp);
@@ -56,9 +69,14 @@ void main() {
   });
 
   test('repository add/update stamps updatedAt with now', () async {
-    final repo = MedicationRepositoryImpl(localDatasource: MedicationLocalDatasource(), remoteDatasource: null);
+    final repo = MedicationRepositoryImpl(
+      localDatasource: MedicationLocalDatasource(),
+      remoteDatasource: null,
+    );
     final before = DateTime.now().subtract(const Duration(seconds: 1));
-    await repo.addMedication(const Medication(id: 'm2', name: 'Moment', quantity: 3));
+    await repo.addMedication(
+      const Medication(id: 'm2', name: 'Moment', quantity: 3),
+    );
     final added = (await repo.getMedicationById('m2')).dataOrNull!;
     expect(added.updatedAt, isNotNull);
     expect(added.updatedAt!.isAfter(before), isTrue);

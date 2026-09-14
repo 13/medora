@@ -84,10 +84,12 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> addMedication(Medication medication) async {
     try {
-      final model = MedicationModel.fromDomain(medication.copyWith(
-        updatedAt: DateTime.now(),
-        createdAt: medication.createdAt ?? DateTime.now(),
-      ));
+      final model = MedicationModel.fromDomain(
+        medication.copyWith(
+          updatedAt: DateTime.now(),
+          createdAt: medication.createdAt ?? DateTime.now(),
+        ),
+      );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
       _syncInBackground((r) => r.addMedication(model), model.id);
       return Result.success(medication);
@@ -100,7 +102,8 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<Medication>> updateMedication(Medication medication) async {
     try {
       final model = MedicationModel.fromDomain(
-          medication.copyWith(updatedAt: DateTime.now()));
+        medication.copyWith(updatedAt: DateTime.now()),
+      );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground((r) => r.updateMedication(model), model.id);
       return Result.success(medication);
@@ -156,7 +159,10 @@ class MedicationRepositoryImpl implements MedicationRepository {
         createdAt: existing.createdAt,
         updatedAt: DateTime.now(),
       );
-      await localDatasource.upsert(updated, syncStatus: SyncStatus.pendingUpdate);
+      await localDatasource.upsert(
+        updated,
+        syncStatus: SyncStatus.pendingUpdate,
+      );
       _syncInBackground((r) => r.updateQuantity(id, delta), id);
       return Result.success(updated.toDomain());
     } catch (e, st) {

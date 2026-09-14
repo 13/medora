@@ -44,7 +44,10 @@ void main() {
   test('concurrent runs are coalesced', () async {
     var maintenanceRuns = 0;
     final tasks = AppStartupTasks(
-      maintenance: () async { maintenanceRuns++; await Future<void>.delayed(const Duration(milliseconds: 20)); },
+      maintenance: () async {
+        maintenanceRuns++;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      },
       reminders: () async {},
       sync: () async {},
       syncDelay: Duration.zero,
@@ -54,23 +57,26 @@ void main() {
     expect(maintenanceRuns, 1);
   });
 
-  test('sync is skipped when the last sync was within minSyncInterval', () async {
-    var syncs = 0;
-    var clock = DateTime(2026, 3, 1, 9);
-    final tasks = AppStartupTasks(
-      maintenance: () async {},
-      reminders: () async {},
-      sync: () async => syncs++,
-      syncDelay: Duration.zero,
-      minSyncInterval: const Duration(minutes: 5),
-      now: () => clock,
-    );
-    await tasks.run();
-    clock = clock.add(const Duration(minutes: 1));
-    await tasks.run();
-    expect(syncs, 1);
-    clock = clock.add(const Duration(minutes: 5));
-    await tasks.run();
-    expect(syncs, 2);
-  });
+  test(
+    'sync is skipped when the last sync was within minSyncInterval',
+    () async {
+      var syncs = 0;
+      var clock = DateTime(2026, 3, 1, 9);
+      final tasks = AppStartupTasks(
+        maintenance: () async {},
+        reminders: () async {},
+        sync: () async => syncs++,
+        syncDelay: Duration.zero,
+        minSyncInterval: const Duration(minutes: 5),
+        now: () => clock,
+      );
+      await tasks.run();
+      clock = clock.add(const Duration(minutes: 1));
+      await tasks.run();
+      expect(syncs, 1);
+      clock = clock.add(const Duration(minutes: 5));
+      await tasks.run();
+      expect(syncs, 2);
+    },
+  );
 }

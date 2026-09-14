@@ -22,8 +22,10 @@ class FamilyLocalDatasource {
   /// Every pull would then silently destroy local membership state, including
   /// rows still waiting to be pushed. Update-then-insert keeps the row
   /// identity, so nothing cascades.
-  Future<void> upsertFamily(FamilyModel family,
-      {required String syncStatus}) async {
+  Future<void> upsertFamily(
+    FamilyModel family, {
+    required String syncStatus,
+  }) async {
     final db = await _db;
     final values = {
       'id': family.id,
@@ -31,14 +33,22 @@ class FamilyLocalDatasource {
       'invite_code': family.inviteCode,
       'owner_id': family.ownerId,
       'created_at':
-          family.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+          family.createdAt?.toIso8601String() ??
+          DateTime.now().toIso8601String(),
       'sync_status': syncStatus,
     };
-    final updated = await db.update('families', values,
-        where: 'id = ?', whereArgs: [family.id]);
+    final updated = await db.update(
+      'families',
+      values,
+      where: 'id = ?',
+      whereArgs: [family.id],
+    );
     if (updated == 0) {
-      await db.insert('families', values,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+        'families',
+        values,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
   }
 
@@ -51,10 +61,12 @@ class FamilyLocalDatasource {
 
   Future<FamilyModel?> getFirstFamily() async {
     final db = await _db;
-    final rows = await db.query('families',
-        where: 'sync_status != ?',
-        whereArgs: [SyncStatus.pendingDelete],
-        limit: 1);
+    final rows = await db.query(
+      'families',
+      where: 'sync_status != ?',
+      whereArgs: [SyncStatus.pendingDelete],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return _familyFromRow(rows.first);
   }
@@ -67,40 +79,43 @@ class FamilyLocalDatasource {
 
   // ── Family Members ─────────────────────────────────────────
 
-  Future<void> upsertMember(FamilyMemberModel member,
-      {required String syncStatus}) async {
+  Future<void> upsertMember(
+    FamilyMemberModel member, {
+    required String syncStatus,
+  }) async {
     final db = await _db;
-    await db.insert(
-      'family_members',
-      {
-        'id': member.id,
-        'family_id': member.familyId,
-        'user_id': member.userId,
-        'display_name': member.displayName,
-        'role': member.role,
-        'joined_at':
-            member.joinedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
-        'sync_status': syncStatus,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('family_members', {
+      'id': member.id,
+      'family_id': member.familyId,
+      'user_id': member.userId,
+      'display_name': member.displayName,
+      'role': member.role,
+      'joined_at':
+          member.joinedAt?.toIso8601String() ??
+          DateTime.now().toIso8601String(),
+      'sync_status': syncStatus,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<List<FamilyMemberModel>> getMembers(String familyId) async {
     final db = await _db;
-    final rows = await db.query('family_members',
-        where: 'family_id = ? AND sync_status != ?',
-        whereArgs: [familyId, SyncStatus.pendingDelete],
-        orderBy: 'joined_at ASC');
+    final rows = await db.query(
+      'family_members',
+      where: 'family_id = ? AND sync_status != ?',
+      whereArgs: [familyId, SyncStatus.pendingDelete],
+      orderBy: 'joined_at ASC',
+    );
     return rows.map(_memberFromRow).toList();
   }
 
   Future<FamilyMemberModel?> getCurrentMembership() async {
     final db = await _db;
-    final rows = await db.query('family_members',
-        where: 'sync_status != ?',
-        whereArgs: [SyncStatus.pendingDelete],
-        limit: 1);
+    final rows = await db.query(
+      'family_members',
+      where: 'sync_status != ?',
+      whereArgs: [SyncStatus.pendingDelete],
+      limit: 1,
+    );
     if (rows.isEmpty) return null;
     return _memberFromRow(rows.first);
   }
@@ -114,8 +129,12 @@ class FamilyLocalDatasource {
   /// remotely and then hard-deletes it locally.
   Future<void> markMemberDeleted(String memberId) async {
     final db = await _db;
-    await db.update('family_members', {'sync_status': SyncStatus.pendingDelete},
-        where: 'id = ?', whereArgs: [memberId]);
+    await db.update(
+      'family_members',
+      {'sync_status': SyncStatus.pendingDelete},
+      where: 'id = ?',
+      whereArgs: [memberId],
+    );
   }
 
   Future<void> hardDeleteMember(String memberId) async {
@@ -125,18 +144,24 @@ class FamilyLocalDatasource {
 
   Future<void> markFamilyDeleted(String familyId) async {
     final db = await _db;
-    await db.update('families', {'sync_status': SyncStatus.pendingDelete},
-        where: 'id = ?', whereArgs: [familyId]);
+    await db.update(
+      'families',
+      {'sync_status': SyncStatus.pendingDelete},
+      where: 'id = ?',
+      whereArgs: [familyId],
+    );
   }
 
   /// Removes synced members of [familyId] whose ids are not in [keepIds]
   /// (pending rows are left for the push phase).
   Future<void> deleteMembersNotIn(String familyId, Set<String> keepIds) async {
     final db = await _db;
-    final rows = await db.query('family_members',
-        columns: ['id'],
-        where: 'family_id = ? AND sync_status = ?',
-        whereArgs: [familyId, SyncStatus.synced]);
+    final rows = await db.query(
+      'family_members',
+      columns: ['id'],
+      where: 'family_id = ? AND sync_status = ?',
+      whereArgs: [familyId, SyncStatus.synced],
+    );
     for (final row in rows) {
       final id = row['id'] as String;
       if (!keepIds.contains(id)) {
@@ -172,4 +197,3 @@ class FamilyLocalDatasource {
     );
   }
 }
-

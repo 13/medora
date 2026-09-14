@@ -5,10 +5,7 @@
 library;
 
 class AppConfig {
-  const AppConfig({
-    required this.supabaseUrl,
-    required this.supabaseAnonKey,
-  });
+  const AppConfig({required this.supabaseUrl, required this.supabaseAnonKey});
 
   /// Read from compile-time environment. Both default to empty strings.
   factory AppConfig.fromEnvironment() {

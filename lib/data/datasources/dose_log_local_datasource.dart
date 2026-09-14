@@ -31,7 +31,8 @@ class DoseLogLocalDatasource {
   ''';
 
   Future<List<DoseLogModel>> getDoseLogsByPrescription(
-      String prescriptionId) async {
+    String prescriptionId,
+  ) async {
     final db = await _db;
     final rows = await db.rawQuery(
       '$_joinQuery WHERE d.prescription_id = ? AND d.sync_status != ? ORDER BY d.scheduled_time ASC',
@@ -78,7 +79,9 @@ class DoseLogLocalDatasource {
   }
 
   Future<List<DoseLogModel>> getDoseLogsByDateRange(
-      DateTime start, DateTime end) async {
+    DateTime start,
+    DateTime end,
+  ) async {
     final db = await _db;
     // Apply the same rule as [getTodaysDoseLogs]: non-pending rows are
     // always included; pending rows only for active prescriptions/
@@ -89,14 +92,21 @@ class DoseLogLocalDatasource {
         AND d.sync_status != ?
         AND $_pendingOnlyIfActive
         ORDER BY d.scheduled_time ASC''',
-      [start.toIso8601String(), end.toIso8601String(), SyncStatus.pendingDelete],
+      [
+        start.toIso8601String(),
+        end.toIso8601String(),
+        SyncStatus.pendingDelete,
+      ],
     );
     return _dedupeById(rows).map(_fromRow).toList();
   }
 
   /// Pending doses with scheduled_time in [start, end), for active
   /// prescriptions/treatments and non-archived medications, earliest first.
-  Future<List<DoseLogModel>> getPendingBetween(DateTime start, DateTime end) async {
+  Future<List<DoseLogModel>> getPendingBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
     final db = await _db;
     final rows = await db.rawQuery(
       '''$_joinQuery
@@ -107,7 +117,11 @@ class DoseLogLocalDatasource {
         AND (t.id IS NULL OR t.is_active = 1)
         AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
         ORDER BY d.scheduled_time ASC''',
-      [start.toIso8601String(), end.toIso8601String(), SyncStatus.pendingDelete],
+      [
+        start.toIso8601String(),
+        end.toIso8601String(),
+        SyncStatus.pendingDelete,
+      ],
     );
     return _dedupeById(rows).map(_fromRow).toList();
   }
@@ -132,16 +146,25 @@ class DoseLogLocalDatasource {
     final db = await _db;
     final row = _toRow(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT issues
-    final updated = await db.update('dose_logs', row,
-        where: 'id = ?', whereArgs: [model.id]);
+    final updated = await db.update(
+      'dose_logs',
+      row,
+      where: 'id = ?',
+      whereArgs: [model.id],
+    );
     if (updated == 0) {
-      await db.insert('dose_logs', row,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+        'dose_logs',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
   }
 
-  Future<void> upsertBatch(List<DoseLogModel> models,
-      {required String syncStatus}) async {
+  Future<void> upsertBatch(
+    List<DoseLogModel> models, {
+    required String syncStatus,
+  }) async {
     final db = await _db;
     // Optimize: Use a single transaction and direct insert if possible
     await db.transaction((txn) async {
@@ -151,8 +174,11 @@ class DoseLogLocalDatasource {
         // Use insert with ConflictAlgorithm.replace or manual logic.
         // Since generateDoseLogsForPrescription handles the existence check,
         // we can just use insert here.
-        batch.insert('dose_logs', row,
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        batch.insert(
+          'dose_logs',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       }
       await batch.commit(noResult: true);
     });
@@ -183,14 +209,21 @@ class DoseLogLocalDatasource {
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
     final db = await _db;
-    return db.query('dose_logs',
-        where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    return db.query(
+      'dose_logs',
+      where: 'sync_status != ?',
+      whereArgs: [SyncStatus.synced],
+    );
   }
 
   Future<void> markSynced(String id) async {
     final db = await _db;
-    await db.update('dose_logs', {'sync_status': SyncStatus.synced},
-        where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'dose_logs',
+      {'sync_status': SyncStatus.synced},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   /// Marks the row for deletion: pending push plus a local tombstone stamp
@@ -249,7 +282,12 @@ class DoseLogLocalDatasource {
                AND (t.id IS NULL OR t.is_active = 1)
                AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
            )''',
-      [SyncStatus.pendingUpdate, DateTime.now().toIso8601String(), cutoff.toIso8601String(), SyncStatus.pendingDelete],
+      [
+        SyncStatus.pendingUpdate,
+        DateTime.now().toIso8601String(),
+        cutoff.toIso8601String(),
+        SyncStatus.pendingDelete,
+      ],
     );
   }
 
@@ -261,8 +299,7 @@ class DoseLogLocalDatasource {
       takenTime: row['taken_time'] != null
           ? DateTime.tryParse(row['taken_time'] as String)?.toLocal()
           : null,
-      status:
-          DoseStatus.fromString(row['status'] as String? ?? 'pending'),
+      status: DoseStatus.fromString(row['status'] as String? ?? 'pending'),
       notes: row['notes'] as String?,
       createdAt: row['created_at'] != null
           ? DateTime.tryParse(row['created_at'] as String)?.toLocal()

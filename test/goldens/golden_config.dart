@@ -18,7 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_reminder_port.dart';
 
-final goldenNow = DateTime(2026, 3, 4, 15, 0); // Wednesday
+final goldenNow = DateTime(2026, 3, 4, 15); // Wednesday
 final goldenToday = DateTime(2026, 3, 4);
 
 final goldenMedications = <Medication>[
@@ -36,12 +36,10 @@ final goldenMedications = <Medication>[
     quantity: 1,
     quantityUnit: 'tablets',
     minimumStockLevel: 3,
-    // Far future on purpose: Medication.isExpiringSoon/isExpired read the
-    // real DateTime.now() (they bypass nowProvider), so a near-future date
-    // would flip the Home golden's Expiring Soon card to a populated,
-    // daily-changing state once "today" caught up. These goldens only cover
-    // the empty Expiring Soon state.
-    expiryDate: DateTime(2099, 1, 1),
+    // 16 days after [goldenNow]. Expiry now runs off the injected clock
+    // (nowProvider), so this stays put instead of drifting with the real
+    // date: the Home goldens cover the *populated* Expiring Soon card.
+    expiryDate: DateTime(2026, 3, 20),
     category: 'painkiller',
   ),
   Medication(
@@ -49,7 +47,7 @@ final goldenMedications = <Medication>[
     name: 'Bentelan',
     quantity: 8,
     quantityUnit: 'tablets',
-    expiryDate: DateTime(2025, 12, 1),
+    expiryDate: DateTime(2025, 12),
     category: 'other',
   ),
 ];
@@ -65,39 +63,39 @@ final goldenTreatments = <Treatment>[
 ];
 
 List<DoseLog> goldenDoses() => [
-      DoseLog(
-        id: 'd1',
-        prescriptionId: 'p1',
-        scheduledTime: goldenToday.add(const Duration(hours: 8)),
-        status: DoseStatus.taken,
-        takenTime: goldenToday.add(const Duration(hours: 8, minutes: 5)),
-        medicationName: 'Tachipirina 1000',
-        dosageAmount: 1,
-        medicationUnit: 'tablets',
-        treatmentName: 'Influenza',
-        patientTags: const ['Ben'],
-      ),
-      DoseLog(
-        id: 'd2',
-        prescriptionId: 'p1',
-        scheduledTime: goldenToday.add(const Duration(hours: 14)),
-        medicationName: 'Tachipirina 1000',
-        dosageAmount: 1,
-        medicationUnit: 'tablets',
-        treatmentName: 'Influenza',
-        patientTags: const ['Ben'],
-      ),
-      DoseLog(
-        id: 'd3',
-        prescriptionId: 'p1',
-        scheduledTime: goldenToday.add(const Duration(hours: 20)),
-        medicationName: 'Tachipirina 1000',
-        dosageAmount: 1,
-        medicationUnit: 'tablets',
-        treatmentName: 'Influenza',
-        patientTags: const ['Ben'],
-      ),
-    ];
+  DoseLog(
+    id: 'd1',
+    prescriptionId: 'p1',
+    scheduledTime: goldenToday.add(const Duration(hours: 8)),
+    status: DoseStatus.taken,
+    takenTime: goldenToday.add(const Duration(hours: 8, minutes: 5)),
+    medicationName: 'Tachipirina 1000',
+    dosageAmount: 1,
+    medicationUnit: 'tablets',
+    treatmentName: 'Influenza',
+    patientTags: const ['Ben'],
+  ),
+  DoseLog(
+    id: 'd2',
+    prescriptionId: 'p1',
+    scheduledTime: goldenToday.add(const Duration(hours: 14)),
+    medicationName: 'Tachipirina 1000',
+    dosageAmount: 1,
+    medicationUnit: 'tablets',
+    treatmentName: 'Influenza',
+    patientTags: const ['Ben'],
+  ),
+  DoseLog(
+    id: 'd3',
+    prescriptionId: 'p1',
+    scheduledTime: goldenToday.add(const Duration(hours: 20)),
+    medicationName: 'Tachipirina 1000',
+    dosageAmount: 1,
+    medicationUnit: 'tablets',
+    treatmentName: 'Influenza',
+    patientTags: const ['Ben'],
+  ),
+];
 
 /// Pumps [home] at 412×915 @1x with fixed data and clock. Golden files live
 /// next to the test.
@@ -111,7 +109,9 @@ Future<void> pumpGolden(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
+  final previousLocale = Intl.defaultLocale;
   Intl.defaultLocale = 'en';
+  addTearDown(() => Intl.defaultLocale = previousLocale);
   SharedPreferences.setMockInitialValues({'onboarding_seen': true});
   final prefs = await SharedPreferences.getInstance();
 
@@ -136,8 +136,9 @@ Future<void> pumpGolden(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightThemeFrom(const Color(0xFF2E7D6F)),
         darkTheme: AppTheme.darkThemeFrom(const Color(0xFF2E7D6F)),
-        themeMode:
-            brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+        themeMode: brightness == Brightness.dark
+            ? ThemeMode.dark
+            : ThemeMode.light,
         locale: const Locale('en'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,

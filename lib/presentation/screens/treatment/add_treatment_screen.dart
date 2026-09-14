@@ -19,8 +19,7 @@ class AddTreatmentScreen extends ConsumerStatefulWidget {
   final String? treatmentId;
 
   @override
-  ConsumerState<AddTreatmentScreen> createState() =>
-      _AddTreatmentScreenState();
+  ConsumerState<AddTreatmentScreen> createState() => _AddTreatmentScreenState();
 }
 
 class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
@@ -32,7 +31,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
 
   List<String> _patientTags = [];
   List<String> _symptomTags = [];
-  DateTime _startDate = DateTime.now();
+  late DateTime _startDate;
   DateTime? _endDate;
   bool _isLoading = false;
   bool _isEditMode = false;
@@ -41,6 +40,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
   @override
   void initState() {
     super.initState();
+    _startDate = ref.read(nowProvider)();
     _nameController = TextEditingController();
     _notesController = TextEditingController();
     _isEditMode = widget.treatmentId != null;
@@ -67,9 +67,9 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
       failure: (msg) {
         if (mounted) {
           final l10n = AppLocalizations.of(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.errorWithDetails(msg))),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(msg))));
         }
       },
     );
@@ -212,9 +212,11 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
                 onPressed: _isLoading ? null : _saveTreatment,
                 child: _isLoading
                     ? const CircularProgressIndicator()
-                    : Text(_isEditMode
-                        ? l10n.updateTreatment
-                        : l10n.createTreatment),
+                    : Text(
+                        _isEditMode
+                            ? l10n.updateTreatment
+                            : l10n.createTreatment,
+                      ),
               ),
             ),
           ],
@@ -249,17 +251,17 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
             .read(treatmentListProvider.notifier)
             .updateTreatment(treatment);
       } else {
-        await ref
-            .read(treatmentListProvider.notifier)
-            .addTreatment(treatment);
+        await ref.read(treatmentListProvider.notifier).addTreatment(treatment);
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isEditMode
-                ? l10n.treatmentUpdatedSuccessfully
-                : l10n.treatmentCreatedSuccessfully),
+            content: Text(
+              _isEditMode
+                  ? l10n.treatmentUpdatedSuccessfully
+                  : l10n.treatmentCreatedSuccessfully,
+            ),
           ),
         );
         context.pop();

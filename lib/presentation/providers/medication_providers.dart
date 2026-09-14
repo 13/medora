@@ -3,14 +3,14 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/medication.dart';
-import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 
 /// Provider for the full medication list.
 final medicationListProvider =
     AsyncNotifierProvider<MedicationListNotifier, List<Medication>>(
-  MedicationListNotifier.new,
-);
+      MedicationListNotifier.new,
+    );
 
 class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   @override
@@ -101,8 +101,9 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
 }
 
 /// Provider for archived medications.
-final archivedMedicationsProvider =
-    FutureProvider<List<Medication>>((ref) async {
+final archivedMedicationsProvider = FutureProvider<List<Medication>>((
+  ref,
+) async {
   final repo = ref.watch(medicationRepositoryProvider);
   final result = await repo.getArchivedMedications();
   return result.when(
@@ -116,27 +117,30 @@ final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
   // Watch the medication list to trigger updates
   final meds = await ref.watch(medicationListProvider.future);
 
-  return meds.where((m) =>
-    !m.isArchived && m.isExpiringSoon(days: 30) && !m.isExpired
-  ).toList();
+  final now = ref.watch(nowProvider)();
+
+  return meds
+      .where(
+        (m) => !m.isArchived && m.isExpiringSoon(now: now) && !m.expiredAt(now),
+      )
+      .toList();
 });
 
 /// Provider for low stock medications.
 final lowStockProvider = FutureProvider<List<Medication>>((ref) async {
   // Watch the medication list to trigger updates
   final meds = await ref.watch(medicationListProvider.future);
-  
-  return meds.where((m) => 
-    !m.isArchived && 
-    m.quantity <= m.minimumStockLevel
-  ).toList();
+
+  return meds
+      .where((m) => !m.isArchived && m.quantity <= m.minimumStockLevel)
+      .toList();
 });
 
 /// Provider for medication search query.
 final medicationSearchQueryProvider =
     NotifierProvider<MedicationSearchQueryNotifier, String>(
-  MedicationSearchQueryNotifier.new,
-);
+      MedicationSearchQueryNotifier.new,
+    );
 
 class MedicationSearchQueryNotifier extends Notifier<String> {
   @override

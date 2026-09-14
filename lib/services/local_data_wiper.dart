@@ -11,14 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalDataWiper {
   LocalDataWiper({
-    required AppDatabase database,
-    required PhotoStorage photos,
-    required ReminderPort reminders,
-    required SharedPreferences prefs,
-  })  : _database = database,
-        _photos = photos,
-        _reminders = reminders,
-        _prefs = prefs;
+    required this._database,
+    required this._photos,
+    required this._reminders,
+    required this._prefs,
+  });
 
   final AppDatabase _database;
   final PhotoStorage _photos;
@@ -43,7 +40,11 @@ class LocalDataWiper {
       }
     }
     await _prefs.reload();
-    for (final key in _prefs.getKeys().where((k) => k.startsWith(SyncCursorStore.keyPrefix)).toList()) {
+    for (final key
+        in _prefs
+            .getKeys()
+            .where((k) => k.startsWith(SyncCursorStore.keyPrefix))
+            .toList()) {
       await _prefs.remove(key);
     }
     // No rows left, so this device no longer holds anyone's data.

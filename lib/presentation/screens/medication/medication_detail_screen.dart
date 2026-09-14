@@ -1,15 +1,17 @@
 /// Medora - Medication Detail Screen
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
@@ -24,9 +26,7 @@ class MedicationDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final medsAsync = ref.watch(medicationListProvider);
-    final med = medsAsync.value
-        ?.where((m) => m.id == medicationId)
-        .firstOrNull;
+    final med = medsAsync.value?.where((m) => m.id == medicationId).firstOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -36,8 +36,7 @@ class MedicationDetailScreen extends ConsumerWidget {
             : [
                 IconButton(
                   icon: const Icon(Icons.edit),
-                  onPressed: () =>
-                      context.push('/medications/${med.id}/edit'),
+                  onPressed: () => context.push('/medications/${med.id}/edit'),
                 ),
                 PopupMenuButton(
                   itemBuilder: (ctx) => [
@@ -45,46 +44,52 @@ class MedicationDetailScreen extends ConsumerWidget {
                       value: med.isArchived ? 'unarchive' : 'archive',
                       child: ListTile(
                         leading: Icon(
-                          med.isArchived
-                              ? Icons.unarchive
-                              : Icons.archive,
+                          med.isArchived ? Icons.unarchive : Icons.archive,
                           color: context.colors.onSurfaceVariant,
                         ),
                         title: Text(
-                          med.isArchived
-                              ? l10n.unarchive
-                              : l10n.archive,
+                          med.isArchived ? l10n.unarchive : l10n.archive,
                         ),
                       ),
                     ),
                     PopupMenuItem(
                       value: 'delete',
                       child: ListTile(
-                        leading: Icon(Icons.delete, color: context.colors.error),
-                        title: Text(l10n.delete,
-                            style: TextStyle(color: context.colors.error)),
+                        leading: Icon(
+                          Icons.delete,
+                          color: context.colors.error,
+                        ),
+                        title: Text(
+                          l10n.delete,
+                          style: TextStyle(color: context.colors.error),
+                        ),
                       ),
                     ),
                   ],
                   onSelected: (value) async {
                     if (value == 'archive') {
-                      ref
-                          .read(medicationListProvider.notifier)
-                          .archiveMedication(med.id);
+                      // Fire and forget: pop immediately, the list provider
+                      // refreshes itself when the write lands.
+                      unawaited(
+                        ref
+                            .read(medicationListProvider.notifier)
+                            .archiveMedication(med.id),
+                      );
                       if (context.mounted) context.pop();
                     } else if (value == 'unarchive') {
-                      ref
-                          .read(medicationListProvider.notifier)
-                          .unarchiveMedication(med.id);
+                      // Fire and forget: pop immediately (see above).
+                      unawaited(
+                        ref
+                            .read(medicationListProvider.notifier)
+                            .unarchiveMedication(med.id),
+                      );
                       if (context.mounted) context.pop();
                     } else if (value == 'delete') {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
                           title: Text(l10n.deleteMedication),
-                          content: Text(
-                            l10n.deleteMedicationConfirm(med.name),
-                          ),
+                          content: Text(l10n.deleteMedicationConfirm(med.name)),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),
@@ -92,16 +97,21 @@ class MedicationDetailScreen extends ConsumerWidget {
                             ),
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, true),
-                              child: Text(l10n.delete,
-                                  style: TextStyle(color: context.colors.error)),
+                              child: Text(
+                                l10n.delete,
+                                style: TextStyle(color: context.colors.error),
+                              ),
                             ),
                           ],
                         ),
                       );
                       if (confirm == true && context.mounted) {
-                        ref
-                            .read(medicationListProvider.notifier)
-                            .deleteMedication(med.id);
+                        // Fire and forget: pop immediately (see above).
+                        unawaited(
+                          ref
+                              .read(medicationListProvider.notifier)
+                              .deleteMedication(med.id),
+                        );
                         context.pop();
                       }
                     }
@@ -111,9 +121,12 @@ class MedicationDetailScreen extends ConsumerWidget {
       ),
       body: AsyncValueView<List<Medication>>(
         value: medsAsync,
-        onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
+        onRetry: () async =>
+            ref.read(medicationListProvider.notifier).refresh(),
         data: (medications) {
-          final med = medications.where((m) => m.id == medicationId).firstOrNull;
+          final med = medications
+              .where((m) => m.id == medicationId)
+              .firstOrNull;
           if (med == null) {
             return EmptyStateWidget(
               icon: Icons.error_outline,
@@ -127,7 +140,10 @@ class MedicationDetailScreen extends ConsumerWidget {
               // Status badges
               Row(
                 children: [
-                  ExpiryBadge(expiryDate: med.expiryDate),
+                  ExpiryBadge(
+                    expiryDate: med.expiryDate,
+                    now: ref.watch(nowProvider)(),
+                  ),
                   const SizedBox(width: 8),
                   StockIndicator(
                     quantity: med.quantity,
@@ -168,8 +184,8 @@ class MedicationDetailScreen extends ConsumerWidget {
                           IconButton.filled(
                             onPressed: med.quantity > 0
                                 ? () => ref
-                                    .read(medicationListProvider.notifier)
-                                    .updateQuantity(med.id, -1)
+                                      .read(medicationListProvider.notifier)
+                                      .updateQuantity(med.id, -1)
                                 : null,
                             icon: const Icon(Icons.remove),
                           ),
@@ -207,7 +223,8 @@ class MedicationDetailScreen extends ConsumerWidget {
                             ? med.activeIngredients.join(', ')
                             : '—',
                       ),
-                      if (med.description != null && med.description!.isNotEmpty)
+                      if (med.description != null &&
+                          med.description!.isNotEmpty)
                         _DetailRow(
                           label: l10n.medicationDescription,
                           value: med.description!,
@@ -218,16 +235,14 @@ class MedicationDetailScreen extends ConsumerWidget {
                             ? AppConstants.categoryLabel(l10n, med.category!)
                             : '—',
                       ),
-                      if (med.manufacturer != null && med.manufacturer!.isNotEmpty)
+                      if (med.manufacturer != null &&
+                          med.manufacturer!.isNotEmpty)
                         _DetailRow(
                           label: l10n.manufacturerLabel,
                           value: med.manufacturer!,
                         ),
                       if (med.form != null && med.form!.isNotEmpty)
-                        _DetailRow(
-                          label: l10n.formLabel,
-                          value: med.form!,
-                        ),
+                        _DetailRow(label: l10n.formLabel, value: med.form!),
                       if (med.atcCode != null && med.atcCode!.isNotEmpty)
                         _DetailRow(
                           label: l10n.atcCodeLabel,
@@ -285,7 +300,11 @@ class MedicationDetailScreen extends ConsumerWidget {
                                   spacing: 4,
                                   runSpacing: 4,
                                   children: med.patientTags.map((t) {
-                                    return TagChip(label: t, icon: Icons.person, fontSize: 12);
+                                    return TagChip(
+                                      label: t,
+                                      icon: Icons.person,
+                                      fontSize: 12,
+                                    );
                                   }).toList(),
                                 ),
                               ),
@@ -304,7 +323,10 @@ class MedicationDetailScreen extends ConsumerWidget {
                       _DetailRow(
                         label: l10n.storageLocation,
                         value: med.storageLocation != null
-                            ? AppConstants.storageLabel(l10n, med.storageLocation!)
+                            ? AppConstants.storageLabel(
+                                l10n,
+                                med.storageLocation!,
+                              )
                             : '—',
                       ),
                       _DetailRow(
@@ -344,62 +366,66 @@ class MedicationDetailScreen extends ConsumerWidget {
 
               // Photo (at bottom)
               if (!kIsWeb)
-                ref.watch(resolvedPhotoProvider(med.imagePath)).maybeWhen(
-                  data: (file) {
-                    if (file == null) return const SizedBox.shrink();
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 16),
-                        GestureDetector(
-                          onTap: () {
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => Dialog(
-                                backgroundColor: Colors.transparent,
-                                child: GestureDetector(
-                                  onTap: () => Navigator.pop(ctx),
+                ref
+                    .watch(resolvedPhotoProvider(med.imagePath))
+                    .maybeWhen(
+                      data: (file) {
+                        if (file == null) return const SizedBox.shrink();
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 16),
+                            GestureDetector(
+                              onTap: () {
+                                showDialog<void>(
+                                  context: context,
+                                  builder: (ctx) => Dialog(
+                                    backgroundColor: Colors.transparent,
+                                    child: GestureDetector(
+                                      onTap: () => Navigator.pop(ctx),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: Image.file(
+                                          file,
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Hero(
+                                tag: 'med_photo_${med.id}',
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(16),
                                     child: Image.file(
                                       file,
-                                      fit: BoxFit.contain,
+                                      height: 200,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
                                     ),
                                   ),
                                 ),
                               ),
-                            );
-                          },
-                          child: Hero(
-                            tag: 'med_photo_${med.id}',
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Image.file(
-                                  file,
-                                  height: 200,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
                             ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                  orElse: () => const SizedBox.shrink(),
-                ),
+                          ],
+                        );
+                      },
+                      orElse: () => const SizedBox.shrink(),
+                    ),
             ],
           );
         },
@@ -431,9 +457,7 @@ class _DetailRow extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );

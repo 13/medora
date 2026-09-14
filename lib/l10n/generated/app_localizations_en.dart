@@ -1291,6 +1291,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get unlockMedora => 'Unlock Medora';
 
   @override
+  String get biometricNotEnrolled =>
+      'No biometrics or device lock set up — add one in system settings';
+
+  @override
+  String get biometricLockedOut => 'Too many attempts — try again later';
+
+  @override
+  String get biometricNotAvailable =>
+      'Biometric unlock is not available on this device';
+
+  @override
+  String get biometricFailed => 'Unlock failed';
+
+  @override
+  String get disableAppLock => 'Turn off app lock';
+
+  @override
   String get cloudRequiredForFamily =>
       'Family sharing needs cloud sync. Turn it on in Settings.';
 

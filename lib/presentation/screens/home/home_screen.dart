@@ -2,19 +2,20 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:medora/core/constants.dart';
-import 'package:medora/core/platform_capabilities.dart';
-import 'package:medora/domain/entities/medication.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
-import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
@@ -119,6 +120,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
     final l10n = AppLocalizations.of(context);
     final dosesAsync = ref.watch(todaysDoseLogsProvider);
     final nextDose = ref.watch(nextDueDoseProvider);
+    final now = ref.watch(nowProvider)();
 
     return Card(
       color: context.colors.primaryContainer,
@@ -131,12 +133,14 @@ class _NowCardState extends ConsumerState<_NowCard> {
           loading: SizedBox(
             height: 72,
             child: Center(
-              child: CircularProgressIndicator(color: context.colors.onPrimaryContainer),
+              child: CircularProgressIndicator(
+                color: context.colors.onPrimaryContainer,
+              ),
             ),
           ),
           data: (doses) {
             if (nextDose != null) {
-              return _buildNextDose(context, l10n, nextDose);
+              return _buildNextDose(context, l10n, nextDose, now);
             }
             if (doses.isNotEmpty) {
               return _buildAllDone(context, l10n);
@@ -148,7 +152,12 @@ class _NowCardState extends ConsumerState<_NowCard> {
     );
   }
 
-  Widget _buildNextDose(BuildContext context, AppLocalizations l10n, DoseLog dose) {
+  Widget _buildNextDose(
+    BuildContext context,
+    AppLocalizations l10n,
+    DoseLog dose,
+    DateTime now,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -165,10 +174,12 @@ class _NowCardState extends ConsumerState<_NowCard> {
             Expanded(
               child: Text(
                 dose.medicationName ?? '',
-                style: context.text.headlineSmall?.copyWith(color: context.colors.onPrimaryContainer),
+                style: context.text.headlineSmall?.copyWith(
+                  color: context.colors.onPrimaryContainer,
+                ),
               ),
             ),
-            if (dose.isOverdue) ...[
+            if (dose.isOverdueAt(now)) ...[
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -198,13 +209,17 @@ class _NowCardState extends ConsumerState<_NowCard> {
         Row(
           children: [
             FilledButton.icon(
-              onPressed: _busy ? null : () => _handleTake(context, l10n, dose.id),
+              onPressed: _busy
+                  ? null
+                  : () => _handleTake(context, l10n, dose.id),
               icon: const Icon(Icons.check),
               label: Text(l10n.take),
             ),
             const SizedBox(width: 8),
             TextButton(
-              onPressed: _busy ? null : () => _handleSkip(context, l10n, dose.id),
+              onPressed: _busy
+                  ? null
+                  : () => _handleSkip(context, l10n, dose.id),
               child: Text(l10n.skip),
             ),
           ],
@@ -221,7 +236,9 @@ class _NowCardState extends ConsumerState<_NowCard> {
         Expanded(
           child: Text(
             l10n.allDosesDone,
-            style: context.text.titleMedium?.copyWith(color: context.colors.onPrimaryContainer),
+            style: context.text.titleMedium?.copyWith(
+              color: context.colors.onPrimaryContainer,
+            ),
           ),
         ),
       ],
@@ -234,7 +251,9 @@ class _NowCardState extends ConsumerState<_NowCard> {
       children: [
         Text(
           l10n.noDosesScheduled,
-          style: context.text.titleMedium?.copyWith(color: context.colors.onPrimaryContainer),
+          style: context.text.titleMedium?.copyWith(
+            color: context.colors.onPrimaryContainer,
+          ),
         ),
         const SizedBox(height: 4),
         Align(
@@ -248,7 +267,11 @@ class _NowCardState extends ConsumerState<_NowCard> {
     );
   }
 
-  Future<void> _handleTake(BuildContext context, AppLocalizations l10n, String id) async {
+  Future<void> _handleTake(
+    BuildContext context,
+    AppLocalizations l10n,
+    String id,
+  ) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     // Captured before the SnackBar is shown: the shell swaps tabs by index,
@@ -274,14 +297,20 @@ class _NowCardState extends ConsumerState<_NowCard> {
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(e.toString()))));
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _handleSkip(BuildContext context, AppLocalizations l10n, String id) async {
+  Future<void> _handleSkip(
+    BuildContext context,
+    AppLocalizations l10n,
+    String id,
+  ) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     // See _handleTake: the action object must outlive this widget.
@@ -304,7 +333,9 @@ class _NowCardState extends ConsumerState<_NowCard> {
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(e.toString()))));
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -387,7 +418,9 @@ class _StatTile extends StatelessWidget {
                 Text(
                   label,
                   textAlign: TextAlign.center,
-                  style: context.text.labelMedium?.copyWith(color: context.colors.onSurfaceVariant),
+                  style: context.text.labelMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -412,7 +445,9 @@ class _TodayProgress extends ConsumerWidget {
         final total = doses.length;
         if (total == 0) return const SizedBox.shrink();
         final taken = doses.where((d) => d.status == DoseStatus.taken).length;
-        final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+        final pending = doses
+            .where((d) => d.status == DoseStatus.pending)
+            .length;
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
@@ -430,7 +465,9 @@ class _TodayProgress extends ConsumerWidget {
               const SizedBox(height: 6),
               Text(
                 l10n.dosesProgress(taken, total, pending),
-                style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+                style: context.text.bodySmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -459,15 +496,12 @@ class _SectionHeader extends StatelessWidget {
           child: Text(
             title,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
         ),
-        TextButton(
-          onPressed: onSeeAll,
-          child: Text(l10n.seeAll),
-        ),
+        TextButton(onPressed: onSeeAll, child: Text(l10n.seeAll)),
       ],
     );
   }
@@ -480,6 +514,7 @@ class _ExpiringSoonCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final expiringAsync = ref.watch(expiringSoonProvider);
+    final now = ref.watch(nowProvider)();
 
     return AsyncValueView<List<Medication>>(
       value: expiringAsync,
@@ -497,7 +532,7 @@ class _ExpiringSoonCard extends ConsumerWidget {
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
-              final days = med.expiryDate?.difference(DateTime.now()).inDays;
+              final days = med.daysUntilExpiry(now);
               return ListTile(
                 leading: Icon(
                   Icons.warning_amber_rounded,
@@ -508,13 +543,18 @@ class _ExpiringSoonCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (med.expiryDate != null)
-                      Text(med.expiryDate!.formatted, style: const TextStyle(fontSize: 12)),
+                      Text(
+                        med.expiryDate!.formatted,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     if (med.patientTags.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Wrap(
                         spacing: 4,
                         runSpacing: 4,
-                        children: med.patientTags.map((t) => TagChip(label: t, fontSize: 10)).toList(),
+                        children: med.patientTags
+                            .map((t) => TagChip(label: t, fontSize: 10))
+                            .toList(),
                       ),
                     ],
                   ],
@@ -533,7 +573,10 @@ class _ExpiringSoonCard extends ConsumerWidget {
                     ),
                     Text(
                       l10n.daysLabel,
-                      style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: context.colors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -582,13 +625,18 @@ class _LowStockCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (med.category != null)
-                      Text(AppConstants.categoryLabel(l10n, med.category!), style: const TextStyle(fontSize: 12)),
+                      Text(
+                        AppConstants.categoryLabel(l10n, med.category!),
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     if (med.patientTags.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Wrap(
                         spacing: 4,
                         runSpacing: 4,
-                        children: med.patientTags.map((t) => TagChip(label: t, fontSize: 10)).toList(),
+                        children: med.patientTags
+                            .map((t) => TagChip(label: t, fontSize: 10))
+                            .toList(),
                       ),
                     ],
                   ],
@@ -607,7 +655,10 @@ class _LowStockCard extends ConsumerWidget {
                     ),
                     Text(
                       l10n.leftLabel,
-                      style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: context.colors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -665,17 +716,27 @@ class _ActiveTreatmentTile extends StatelessWidget {
 
     return ListTile(
       leading: Icon(Icons.healing, color: context.colors.primary),
-      title: Text(treatment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+      title: Text(
+        treatment.name,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l10n.startedOn(treatment.startDate.formatted), style: const TextStyle(fontSize: 12)),
+          Text(
+            l10n.startedOn(treatment.startDate.formatted),
+            style: const TextStyle(fontSize: 12),
+          ),
           if (treatment.patientTags.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(
               spacing: 4,
               runSpacing: 4,
-              children: treatment.patientTags.map((t) => TagChip(label: t, fontSize: 10, icon: Icons.person)).toList(),
+              children: treatment.patientTags
+                  .map(
+                    (t) => TagChip(label: t, fontSize: 10, icon: Icons.person),
+                  )
+                  .toList(),
             ),
           ],
         ],

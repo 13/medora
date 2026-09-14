@@ -3,6 +3,8 @@
 /// Tracks each scheduled medication dose and its status.
 library;
 
+import 'package:medora/core/clock.dart';
+
 /// Possible statuses for a dose.
 enum DoseStatus {
   pending,
@@ -77,8 +79,8 @@ class DoseLog {
       final unit = (dosageUnit != null && dosageUnit!.isNotEmpty)
           ? dosageUnit
           : ((medicationUnit != null && medicationUnit!.isNotEmpty)
-              ? medicationUnit
-              : null);
+                ? medicationUnit
+                : null);
       if (unit != null) return '$amount $unit';
       // No unit — fall back to raw dosage text (e.g. "20 Tropfen")
       return (dosage != null && dosage!.isNotEmpty) ? dosage : amount;
@@ -86,10 +88,14 @@ class DoseLog {
     return dosage;
   }
 
-  /// Returns true if this dose is overdue (pending and past scheduled time).
-  bool get isOverdue =>
-      status == DoseStatus.pending &&
-      scheduledTime.isBefore(DateTime.now());
+  /// Returns true if this dose was overdue at [now] (pending and past its
+  /// scheduled time).
+  bool isOverdueAt(DateTime now) =>
+      status == DoseStatus.pending && scheduledTime.isBefore(now);
+
+  /// Returns true if this dose is overdue, per the system clock.
+  /// Prefer [isOverdueAt] wherever a clock is available.
+  bool get isOverdue => isOverdueAt(systemNow());
 
   DoseLog copyWith({
     String? id,

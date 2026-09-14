@@ -3,12 +3,12 @@ library;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -36,7 +36,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   @override
   void initState() {
     super.initState();
-    _endDate = DateTime.now();
+    _endDate = ref.read(nowProvider)();
     _startDate = _endDate.subtract(const Duration(days: 30));
   }
 
@@ -55,8 +55,11 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Icon(Icons.download_outlined,
-                      color: context.colors.onPrimaryContainer, size: 32),
+                  Icon(
+                    Icons.download_outlined,
+                    color: context.colors.onPrimaryContainer,
+                    size: 32,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -72,7 +75,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         ),
                         Text(
                           l10n.chooseWhatToExport,
-                          style: TextStyle(fontSize: 13, color: context.colors.onPrimaryContainer),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: context.colors.onPrimaryContainer,
+                          ),
                         ),
                       ],
                     ),
@@ -86,10 +92,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           // Data selection
           Text(
             l10n.include,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           CheckboxListTile(
@@ -116,10 +121,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           if (_includeDoseLogs) ...[
             Text(
               l10n.doseLogDateRange,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Row(
@@ -154,7 +158,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         context: context,
                         initialDate: _endDate,
                         firstDate: _startDate,
-                        lastDate: DateTime.now(),
+                        lastDate: ref.read(nowProvider)(),
                       );
                       if (picked != null) setState(() => _endDate = picked);
                     },
@@ -177,10 +181,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           // Format selection
           Text(
             l10n.format,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           SegmentedButton<ExportFormat>(
@@ -205,7 +208,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           SizedBox(
             height: 50,
             child: ElevatedButton.icon(
-              onPressed: _isExporting ||
+              onPressed:
+                  _isExporting ||
                       (!_includeMedications &&
                           !_includeTreatments &&
                           !_includeDoseLogs)
@@ -215,7 +219,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.share),
               label: Text(_isExporting ? l10n.exporting : l10n.exportAndShare),
             ),
@@ -229,9 +234,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     final l10n = AppLocalizations.of(context);
 
     if (kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.exportNotSupportedOnWeb)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.exportNotSupportedOnWeb)));
       return;
     }
 
@@ -284,7 +289,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         final files = <XFile>[];
 
         if (medications != null && medications.isNotEmpty) {
-          final f = await exportService.exportMedicationsCSV(medications, labels);
+          final f = await exportService.exportMedicationsCSV(
+            medications,
+            labels,
+          );
           if (f != null) files.add(XFile(f.path));
         }
         if (treatments != null && treatments.isNotEmpty) {
@@ -297,13 +305,11 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         }
 
         if (files.isNotEmpty) {
-          await SharePlus.instance.share(
-            ShareParams(files: files),
-          );
+          await SharePlus.instance.share(ShareParams(files: files));
         } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(l10n.noDataToExport)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l10n.noDataToExport)));
         }
       }
     } catch (e) {
@@ -317,6 +323,5 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     }
   }
 }
-
 
 enum ExportFormat { pdf, csv }

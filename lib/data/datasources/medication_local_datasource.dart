@@ -21,7 +21,7 @@ class MedicationLocalDatasource {
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'name ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   /// Get only archived medications.
@@ -33,7 +33,7 @@ class MedicationLocalDatasource {
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'name ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   /// Archive a medication.
@@ -68,7 +68,11 @@ class MedicationLocalDatasource {
 
   Future<MedicationModel?> getMedicationById(String id) async {
     final db = await _db;
-    final rows = await db.query('medications', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
@@ -79,17 +83,17 @@ class MedicationLocalDatasource {
     final rows = await db.query(
       'medications',
       where:
-          "(name LIKE ? OR description LIKE ? OR active_ingredients LIKE ? OR notes LIKE ?) AND sync_status != ?",
+          '(name LIKE ? OR description LIKE ? OR active_ingredients LIKE ? OR notes LIKE ?) AND sync_status != ?',
       whereArgs: [
         '%$query%',
         '%$query%',
         '%$query%',
         '%$query%',
-        SyncStatus.pendingDelete
+        SyncStatus.pendingDelete,
       ],
       orderBy: 'name ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   Future<List<MedicationModel>> getExpiringSoon({int days = 30}) async {
@@ -107,7 +111,7 @@ class MedicationLocalDatasource {
       ],
       orderBy: 'expiry_date ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   Future<List<MedicationModel>> getLowStock() async {
@@ -119,7 +123,7 @@ class MedicationLocalDatasource {
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'quantity ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   Future<MedicationModel?> getMedicationByBarcode(String barcode) async {
@@ -133,16 +137,26 @@ class MedicationLocalDatasource {
     return _fromRow(rows.first);
   }
 
-  Future<void> upsert(MedicationModel model, {required String syncStatus}) async {
+  Future<void> upsert(
+    MedicationModel model, {
+    required String syncStatus,
+  }) async {
     final db = await _db;
     final row = _toRow(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
     // which would CASCADE-DELETE prescriptions and dose_logs.
-    final updated = await db.update('medications', row,
-        where: 'id = ?', whereArgs: [model.id]);
+    final updated = await db.update(
+      'medications',
+      row,
+      where: 'id = ?',
+      whereArgs: [model.id],
+    );
     if (updated == 0) {
-      await db.insert('medications', row,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+        'medications',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
   }
 
@@ -166,7 +180,7 @@ class MedicationLocalDatasource {
     await db.delete('medications', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<Map<String, dynamic>> > getPendingChanges() async {
+  Future<List<Map<String, dynamic>>> getPendingChanges() async {
     final db = await _db;
     return db.query(
       'medications',
@@ -199,7 +213,8 @@ class MedicationLocalDatasource {
       name: row['name'] as String,
       description: row['description'] as String?,
       activeIngredients: MedicationModel.parseTags(
-          row['active_ingredients'] ?? row['active_ingredient']),
+        row['active_ingredients'] ?? row['active_ingredient'],
+      ),
       category: row['category'] as String?,
       manufacturer: row['manufacturer'] as String?,
       form: row['form'] as String?,
@@ -252,9 +267,10 @@ class MedicationLocalDatasource {
       'image_path': m.imagePath,
       'notes': m.notes,
       'is_archived': m.isArchived ? 1 : 0,
-      'created_at': m.createdAt?.toIso8601String() ??
-          DateTime.now().toIso8601String(),
-      'updated_at': m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'created_at':
+          m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'updated_at':
+          m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
     };

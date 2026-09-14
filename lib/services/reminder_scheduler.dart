@@ -16,14 +16,11 @@ import 'package:medora/services/reminder_port.dart';
 
 class ReminderScheduler {
   ReminderScheduler({
-    required ReminderPort port,
-    required DoseLogRepository doses,
-    required bool Function() remindersEnabled,
+    required this._port,
+    required this._doses,
+    required this._remindersEnabled,
     DateTime Function()? now,
-  })  : _port = port,
-        _doses = doses,
-        _remindersEnabled = remindersEnabled,
-        _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now;
 
   static const horizon = Duration(days: 7);
   static const maxNotifications = 60; // iOS allows 64 pending
@@ -36,6 +33,13 @@ class ReminderScheduler {
 
   bool _running = false;
   bool _rerunRequested = false;
+
+  /// The error from the most recent reconcile attempt, or null when the
+  /// last attempt succeeded. A failed attempt keeps the previous snapshot
+  /// and notification set untouched — this is purely for callers that want
+  /// to surface "reminders may be out of date" somewhere.
+  Object? get lastError => _lastError;
+  Object? _lastError;
 
   /// Returns the number of doses that received notifications.
   ///
@@ -69,40 +73,72 @@ class ReminderScheduler {
     if (!_remindersEnabled()) {
       await _port.cancelAll();
       _scheduled = {};
+      _lastError = null;
       return 0;
     }
     final now = _now();
-    final result = await _doses.getPendingDoseLogsBetween(now, now.add(horizon));
-    final pending = result.when(success: (d) => d, failure: (msg) {
-      debugPrint('Reminders: could not load pending doses: $msg');
-      return null;
-    });
-    if (pending == null) return _scheduled?.length ?? 0;
+    final result = await _doses.getPendingDoseLogsBetween(
+      now,
+      now.add(horizon),
+    );
+    final pending = result.when(
+      success: (d) => d,
+      failure: (msg) {
+        debugPrint('Reminders: could not load pending doses: $msg');
+        return null;
+      },
+    );
+    if (pending == null) {
+      _lastError = StateError('could not load pending doses');
+      return _scheduled?.length ?? 0;
+    }
 
-    final limit = maxNotifications ~/ notificationsPerDose;
+    const limit = maxNotifications ~/ notificationsPerDose;
     final desired = pending.take(limit).toList();
     final desiredMap = {for (final d in desired) d.id: d.scheduledTime};
     final previous = _scheduled;
 
-    if (previous == null) {
-      await _port.cancelAll();
-      for (final dose in desired) {
-        await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
-      }
-    } else {
-      for (final id in previous.keys) {
-        if (!desiredMap.containsKey(id) || desiredMap[id] != previous[id]) {
-          await _port.cancelForDose(id);
+    try {
+      if (previous == null) {
+        await _port.cancelAll();
+        for (final dose in desired) {
+          await _port.scheduleForDose(
+            dose: dose,
+            medicationName: dose.medicationName ?? 'Medication',
+          );
+        }
+      } else {
+        for (final id in previous.keys) {
+          if (!desiredMap.containsKey(id) || desiredMap[id] != previous[id]) {
+            await _port.cancelForDose(id);
+          }
+        }
+        for (final dose in desired) {
+          if (!previous.containsKey(dose.id) ||
+              previous[dose.id] != dose.scheduledTime) {
+            await _port.scheduleForDose(
+              dose: dose,
+              medicationName: dose.medicationName ?? 'Medication',
+            );
+          }
         }
       }
-      for (final dose in desired) {
-        if (!previous.containsKey(dose.id) || previous[dose.id] != dose.scheduledTime) {
-          await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
-        }
-      }
+    } catch (e) {
+      // Whatever was already scheduled/cancelled up to the failure stands;
+      // the previous snapshot is kept so the next reconcile still diffs
+      // correctly rather than assuming a state we never fully reached.
+      debugPrint(
+        'Reminders: reconcile failed talking to the notification port: $e',
+      );
+      _lastError = e;
+      return _scheduled?.length ?? 0;
     }
+
     _scheduled = desiredMap;
-    debugPrint('Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)');
+    _lastError = null;
+    debugPrint(
+      'Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)',
+    );
     return desiredMap.length;
   }
 }

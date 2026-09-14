@@ -12,18 +12,15 @@ import 'package:medora/presentation/providers/providers.dart';
 
 final currentFamilyProvider =
     AsyncNotifierProvider<CurrentFamilyNotifier, Family?>(
-  CurrentFamilyNotifier.new,
-);
+      CurrentFamilyNotifier.new,
+    );
 
 class CurrentFamilyNotifier extends AsyncNotifier<Family?> {
   @override
   Future<Family?> build() async {
     final repo = ref.watch(familyRepositoryProvider);
     final result = await repo.getCurrentFamily();
-    return result.when(
-      success: (family) => family,
-      failure: (_, [_]) => null,
-    );
+    return result.when(success: (family) => family, failure: (_, [_]) => null);
   }
 
   Future<void> createFamily(String name, String displayName) async {
@@ -31,7 +28,7 @@ class CurrentFamilyNotifier extends AsyncNotifier<Family?> {
     final repo = ref.read(familyRepositoryProvider);
     final result = await repo.createFamily(name, displayName);
     state = result.when(
-      success: (family) => AsyncValue.data(family),
+      success: AsyncValue.data,
       failure: (msg, [_]) => AsyncValue.error(msg, StackTrace.current),
     );
   }
@@ -41,7 +38,7 @@ class CurrentFamilyNotifier extends AsyncNotifier<Family?> {
     final repo = ref.read(familyRepositoryProvider);
     final result = await repo.joinFamily(inviteCode, displayName);
     state = result.when(
-      success: (family) => AsyncValue.data(family),
+      success: AsyncValue.data,
       failure: (msg, [_]) => AsyncValue.error(msg, StackTrace.current),
     );
   }
@@ -77,10 +74,6 @@ final familyMembersProvider = FutureProvider.family<List<FamilyMember>, String>(
   (ref, familyId) async {
     final repo = ref.watch(familyRepositoryProvider);
     final result = await repo.getFamilyMembers(familyId);
-    return result.when(
-      success: (members) => members,
-      failure: (_, [_]) => [],
-    );
+    return result.when(success: (members) => members, failure: (_, [_]) => []);
   },
 );
-

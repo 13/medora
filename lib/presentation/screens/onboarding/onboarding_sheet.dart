@@ -74,8 +74,10 @@ class _OnboardingSheetState extends State<OnboardingSheet> {
     // Capped at 300 (the usual portrait size) but shrinks further on a short
     // viewport (landscape phones), so the sheet stays scrollable-but-visible
     // instead of forcing a 300px PageView into e.g. a 360px-tall screen.
-    final pageViewHeight =
-        math.min(300.0, MediaQuery.sizeOf(context).height * 0.45);
+    final pageViewHeight = math.min(
+      300.0,
+      MediaQuery.sizeOf(context).height * 0.45,
+    );
 
     return SafeArea(
       child: Padding(
@@ -133,7 +135,9 @@ class _OnboardingSheetState extends State<OnboardingSheet> {
                   const Spacer(),
                   FilledButton(
                     onPressed: () => _next(pages.length),
-                    child: Text(isLast ? l10n.onboardingDone : l10n.onboardingNext),
+                    child: Text(
+                      isLast ? l10n.onboardingDone : l10n.onboardingNext,
+                    ),
                   ),
                 ],
               ),
@@ -187,15 +191,17 @@ class _OnboardingPage extends StatelessWidget {
                 Text(
                   title,
                   textAlign: TextAlign.center,
-                  style: context.text.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: context.text.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   body,
                   textAlign: TextAlign.center,
-                  style: context.text.bodyMedium
-                      ?.copyWith(color: context.colors.onSurfaceVariant),
+                  style: context.text.bodyMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

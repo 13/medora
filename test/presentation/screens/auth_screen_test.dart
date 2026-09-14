@@ -9,27 +9,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../helpers/pump_app.dart';
 
 void main() {
-  testWidgets('unconfigured build shows only the local-only path and selecting it sets AppMode.localOnly',
-      (tester) async {
-    SupabaseConfig.resetForTest();
-    SharedPreferences.setMockInitialValues({'app_mode': 'cloud'});
-    final prefs = await SharedPreferences.getInstance();
+  testWidgets(
+    'unconfigured build shows only the local-only path and selecting it sets AppMode.localOnly',
+    (tester) async {
+      SupabaseConfig.resetForTest();
+      SharedPreferences.setMockInitialValues({'app_mode': 'cloud'});
+      final prefs = await SharedPreferences.getInstance();
 
-    final container = await pumpMedoraApp(
-      tester,
-      const AuthScreen(),
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-    );
-    await tester.pumpAndSettle();
+      final container = await pumpMedoraApp(
+        tester,
+        const AuthScreen(),
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      );
+      await tester.pumpAndSettle();
 
-    expect(container.read(appModeProvider), AppMode.cloud);
-    expect(find.text('Use Medora on this device'), findsOneWidget);
-    expect(find.byType(TextFormField), findsNothing); // no cloud form without config
+      expect(container.read(appModeProvider), AppMode.cloud);
+      expect(find.text('Use Medora on this device'), findsOneWidget);
+      expect(
+        find.byType(TextFormField),
+        findsNothing,
+      ); // no cloud form without config
 
-    await tester.tap(find.text('Use Medora on this device'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Use Medora on this device'));
+      await tester.pumpAndSettle();
 
-    expect(container.read(appModeProvider), AppMode.localOnly);
-    expect(prefs.getString('app_mode'), 'localOnly');
-  });
+      expect(container.read(appModeProvider), AppMode.localOnly);
+      expect(prefs.getString('app_mode'), 'localOnly');
+    },
+  );
 }

@@ -11,7 +11,9 @@ enum AppMode { localOnly, cloud }
 
 const _kAppMode = 'app_mode';
 
-final appModeProvider = NotifierProvider<AppModeNotifier, AppMode>(AppModeNotifier.new);
+final appModeProvider = NotifierProvider<AppModeNotifier, AppMode>(
+  AppModeNotifier.new,
+);
 
 class AppModeNotifier extends Notifier<AppMode> {
   @override

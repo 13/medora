@@ -21,14 +21,24 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.desktop),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+    platformCapabilitiesProvider.overrideWithValue(
+      PlatformCapabilities.desktop,
+    ),
+  ];
 
-  testWidgets('shows three sections and saves a medication with just a name', (tester) async {
-    final c = await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
+  testWidgets('shows three sections and saves a medication with just a name', (
+    tester,
+  ) async {
+    final c = await pumpMedoraApp(
+      tester,
+      const AddMedicationScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(FormSection), findsNWidgets(3));
@@ -36,7 +46,10 @@ void main() {
     expect(find.text('Stock & storage'), findsOneWidget);
     expect(find.text('Details'), findsOneWidget);
 
-    await tester.enterText(find.widgetWithText(TextFormField, 'Medication Name *').first, 'Moment');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Medication Name *').first,
+      'Moment',
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
     await tester.pumpAndSettle();
 
@@ -44,46 +57,72 @@ void main() {
     expect(list.map((m) => m.name), ['Moment']);
   });
 
-  testWidgets('empty name shows the validator and keeps Basics expanded', (tester) async {
-    await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
+  testWidgets('empty name shows the validator and keeps Basics expanded', (
+    tester,
+  ) async {
+    await pumpMedoraApp(
+      tester,
+      const AddMedicationScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
     await tester.pumpAndSettle();
     expect(find.text('Please enter a medication name'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Medication Name *'), findsOneWidget); // still visible ⇒ section expanded
+    expect(
+      find.widgetWithText(TextFormField, 'Medication Name *'),
+      findsOneWidget,
+    ); // still visible ⇒ section expanded
   });
 
-  testWidgets('collapsing Basics does not bypass validation and the section reopens on error', (tester) async {
-    final c = await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'collapsing Basics does not bypass validation and the section reopens on error',
+    (tester) async {
+      final c = await pumpMedoraApp(
+        tester,
+        const AddMedicationScreen(),
+        overrides: await overrides(),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Basics'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Basics'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Please enter a medication name'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Medication Name *'), findsOneWidget);
+      expect(find.text('Please enter a medication name'), findsOneWidget);
+      expect(
+        find.widgetWithText(TextFormField, 'Medication Name *'),
+        findsOneWidget,
+      );
 
-    // Collapse Basics again (now auto-expanded from the error above), then
-    // save again: the section must still reopen and show the error, proving
-    // the manual collapse wrote back into the controller.
-    await tester.tap(find.text('Basics'));
-    await tester.pumpAndSettle();
+      // Collapse Basics again (now auto-expanded from the error above), then
+      // save again: the section must still reopen and show the error, proving
+      // the manual collapse wrote back into the controller.
+      await tester.tap(find.text('Basics'));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Please enter a medication name'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Medication Name *'), findsOneWidget);
+      expect(find.text('Please enter a medication name'), findsOneWidget);
+      expect(
+        find.widgetWithText(TextFormField, 'Medication Name *'),
+        findsOneWidget,
+      );
 
-    final list = await c.read(medicationListProvider.future);
-    expect(list, isEmpty);
-  });
+      final list = await c.read(medicationListProvider.future);
+      expect(list, isEmpty);
+    },
+  );
 
   testWidgets('collapsed Stock section shows a summary', (tester) async {
-    await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const AddMedicationScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     expect(find.textContaining('min 0'), findsOneWidget);

@@ -25,8 +25,9 @@ class TreatmentRemoteDatasource {
   /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
   Future<List<TreatmentModel>> getTreatmentsSince(DateTime? since) async {
     final base = _client.from(AppConstants.treatmentsTable).select();
-    final filtered =
-        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final filtered = since == null
+        ? base
+        : base.gt('updated_at', since.toUtc().toIso8601String());
     final response = await filtered.order('updated_at');
     return (response as List)
         .map((json) => TreatmentModel.fromJson(json as Map<String, dynamic>))
@@ -58,9 +59,7 @@ class TreatmentRemoteDatasource {
 
   /// Add a new treatment.
   Future<void> addTreatment(TreatmentModel model) async {
-    await _client
-        .from(AppConstants.treatmentsTable)
-        .insert(model.toJson());
+    await _client.from(AppConstants.treatmentsTable).insert(model.toJson());
   }
 
   /// Update a treatment.
@@ -73,9 +72,7 @@ class TreatmentRemoteDatasource {
 
   /// Upsert a treatment (insert or update).
   Future<void> upsertTreatment(TreatmentModel model) async {
-    await _client
-        .from(AppConstants.treatmentsTable)
-        .upsert(model.toJson());
+    await _client.from(AppConstants.treatmentsTable).upsert(model.toJson());
   }
 
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`

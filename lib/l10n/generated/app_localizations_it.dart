@@ -1300,6 +1300,23 @@ class AppLocalizationsIt extends AppLocalizations {
   String get unlockMedora => 'Sblocca Medora';
 
   @override
+  String get biometricNotEnrolled =>
+      'Nessun dato biometrico o blocco schermo configurato — impostalo nelle impostazioni di sistema';
+
+  @override
+  String get biometricLockedOut => 'Troppi tentativi — riprova più tardi';
+
+  @override
+  String get biometricNotAvailable =>
+      'Lo sblocco biometrico non è disponibile su questo dispositivo';
+
+  @override
+  String get biometricFailed => 'Sblocco non riuscito';
+
+  @override
+  String get disableAppLock => 'Disattiva il blocco dell\'app';
+
+  @override
   String get cloudRequiredForFamily =>
       'La condivisione familiare richiede la sincronizzazione cloud. Attivala nelle Impostazioni.';
 

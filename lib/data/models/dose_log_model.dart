@@ -1,8 +1,8 @@
 /// Medora - Dose Log Model
 library;
 
-import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/domain/entities/dose_log.dart';
 
 class DoseLogModel {
   const DoseLogModel({

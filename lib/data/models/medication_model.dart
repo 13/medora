@@ -76,7 +76,11 @@ class MedicationModel {
         } catch (_) {}
       }
       // Fallback: comma-separated
-      return raw.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      return raw
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
     }
     return [];
   }
@@ -88,7 +92,9 @@ class MedicationModel {
       userId: json['user_id'] as String?,
       name: json['name'] as String,
       description: json['description'] as String?,
-      activeIngredients: parseTags(json['active_ingredients'] ?? json['active_ingredient']),
+      activeIngredients: parseTags(
+        json['active_ingredients'] ?? json['active_ingredient'],
+      ),
       category: json['category'] as String?,
       manufacturer: json['manufacturer'] as String?,
       form: json['form'] as String?,
@@ -130,7 +136,9 @@ class MedicationModel {
       userId: map['user_id'] as String?,
       name: map['name'] as String,
       description: map['description'] as String?,
-      activeIngredients: parseTags(map['active_ingredients'] ?? map['active_ingredient']),
+      activeIngredients: parseTags(
+        map['active_ingredients'] ?? map['active_ingredient'],
+      ),
       category: map['category'] as String?,
       manufacturer: map['manufacturer'] as String?,
       form: map['form'] as String?,

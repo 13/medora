@@ -74,7 +74,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     refreshListenable: refresh,
     redirect: (context, state) {
       final mode = ref.read(appModeProvider);
-      final hasSession = ref.read(authStateProvider).value?.session != null ||
+      final hasSession =
+          ref.read(authStateProvider).value?.session != null ||
           SupabaseConfig.isAuthenticated;
       return computeRedirect(
         mode: mode,
@@ -90,10 +91,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => BiometricGate(child: child),
         routes: [
-          GoRoute(path: AppRoutes.home, builder: (_, _) => const MainShellScreen(initialIndex: 0)),
-          GoRoute(path: AppRoutes.medications, builder: (_, _) => const MainShellScreen(initialIndex: 1)),
-          GoRoute(path: AppRoutes.treatments, builder: (_, _) => const MainShellScreen(initialIndex: 2)),
-          GoRoute(path: AppRoutes.doses, builder: (_, _) => const MainShellScreen(initialIndex: 3)),
+          GoRoute(
+            path: AppRoutes.home,
+            builder: (_, _) => const MainShellScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.medications,
+            builder: (_, _) => const MainShellScreen(initialIndex: 1),
+          ),
+          GoRoute(
+            path: AppRoutes.treatments,
+            builder: (_, _) => const MainShellScreen(initialIndex: 2),
+          ),
+          GoRoute(
+            path: AppRoutes.doses,
+            builder: (_, _) => const MainShellScreen(initialIndex: 3),
+          ),
           GoRoute(
             path: AppRoutes.addMedication,
             builder: (_, state) => AddMedicationScreen(
@@ -103,38 +116,60 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.editMedication,
-            builder: (_, state) => AddMedicationScreen(medicationId: state.pathParameters['id']),
+            builder: (_, state) =>
+                AddMedicationScreen(medicationId: state.pathParameters['id']),
           ),
           GoRoute(
             path: AppRoutes.medicationDetail,
-            builder: (_, state) => MedicationDetailScreen(medicationId: state.pathParameters['id']!),
+            builder: (_, state) => MedicationDetailScreen(
+              medicationId: state.pathParameters['id']!,
+            ),
           ),
-          GoRoute(path: AppRoutes.addTreatment, builder: (_, _) => const AddTreatmentScreen()),
+          GoRoute(
+            path: AppRoutes.addTreatment,
+            builder: (_, _) => const AddTreatmentScreen(),
+          ),
           GoRoute(
             path: AppRoutes.editTreatment,
-            builder: (_, state) => AddTreatmentScreen(treatmentId: state.pathParameters['id']),
+            builder: (_, state) =>
+                AddTreatmentScreen(treatmentId: state.pathParameters['id']),
           ),
           GoRoute(
             path: AppRoutes.treatmentDetail,
-            builder: (_, state) => TreatmentDetailScreen(treatmentId: state.pathParameters['id']!),
+            builder: (_, state) =>
+                TreatmentDetailScreen(treatmentId: state.pathParameters['id']!),
           ),
-          GoRoute(path: AppRoutes.doseHistory, builder: (_, _) => const DoseHistoryScreen()),
+          GoRoute(
+            path: AppRoutes.doseHistory,
+            builder: (_, _) => const DoseHistoryScreen(),
+          ),
           GoRoute(
             path: AppRoutes.scanner,
             builder: (context, state) {
-              final caps = ProviderScope.containerOf(context).read(platformCapabilitiesProvider);
+              final caps = ProviderScope.containerOf(
+                context,
+              ).read(platformCapabilitiesProvider);
               if (!caps.hasCamera) return const _UnavailableScreen();
               return BarcodeScannerScreen(
-                returnBarcodeOnly: state.uri.queryParameters['returnOnly'] == 'true',
+                returnBarcodeOnly:
+                    state.uri.queryParameters['returnOnly'] == 'true',
               );
             },
           ),
-          GoRoute(path: AppRoutes.settings, builder: (_, _) => const SettingsScreen()),
-          GoRoute(path: AppRoutes.family, builder: (_, _) => const FamilyScreen()),
+          GoRoute(
+            path: AppRoutes.settings,
+            builder: (_, _) => const SettingsScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.family,
+            builder: (_, _) => const FamilyScreen(),
+          ),
           GoRoute(
             path: AppRoutes.export,
             builder: (context, state) {
-              final caps = ProviderScope.containerOf(context).read(platformCapabilitiesProvider);
+              final caps = ProviderScope.containerOf(
+                context,
+              ).read(platformCapabilitiesProvider);
               if (!caps.hasFileShare) return const _UnavailableScreen();
               return const ExportScreen();
             },

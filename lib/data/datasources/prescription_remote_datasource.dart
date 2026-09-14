@@ -18,10 +18,7 @@ class PrescriptionRemoteDatasource {
         .order('start_time');
 
     return (response as List)
-        .map(
-          (json) =>
-              PrescriptionModel.fromJson(json as Map<String, dynamic>),
-        )
+        .map((json) => PrescriptionModel.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
@@ -30,8 +27,9 @@ class PrescriptionRemoteDatasource {
     final base = _client
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)');
-    final filtered =
-        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final filtered = since == null
+        ? base
+        : base.gt('updated_at', since.toUtc().toIso8601String());
     final response = await filtered.order('updated_at');
     return (response as List)
         .map((json) => PrescriptionModel.fromJson(json as Map<String, dynamic>))
@@ -49,10 +47,7 @@ class PrescriptionRemoteDatasource {
         .order('start_time');
 
     return (response as List)
-        .map(
-          (json) =>
-              PrescriptionModel.fromJson(json as Map<String, dynamic>),
-        )
+        .map((json) => PrescriptionModel.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
@@ -65,10 +60,7 @@ class PrescriptionRemoteDatasource {
         .order('start_time');
 
     return (response as List)
-        .map(
-          (json) =>
-              PrescriptionModel.fromJson(json as Map<String, dynamic>),
-        )
+        .map((json) => PrescriptionModel.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
@@ -84,9 +76,7 @@ class PrescriptionRemoteDatasource {
 
   /// Add a new prescription.
   Future<void> addPrescription(PrescriptionModel model) async {
-    await _client
-        .from(AppConstants.prescriptionsTable)
-        .insert(model.toJson());
+    await _client.from(AppConstants.prescriptionsTable).insert(model.toJson());
   }
 
   /// Update a prescription.
@@ -99,9 +89,7 @@ class PrescriptionRemoteDatasource {
 
   /// Upsert a prescription (insert or update).
   Future<void> upsertPrescription(PrescriptionModel model) async {
-    await _client
-        .from(AppConstants.prescriptionsTable)
-        .upsert(model.toJson());
+    await _client.from(AppConstants.prescriptionsTable).upsert(model.toJson());
   }
 
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`

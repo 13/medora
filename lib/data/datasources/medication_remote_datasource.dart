@@ -28,8 +28,9 @@ class MedicationRemoteDatasource {
   /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
   Future<List<MedicationModel>> getMedicationsSince(DateTime? since) async {
     final base = _client.from(AppConstants.medicationsTable).select();
-    final filtered =
-        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final filtered = since == null
+        ? base
+        : base.gt('updated_at', since.toUtc().toIso8601String());
     final response = await filtered.order('updated_at');
     return (response as List)
         .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
@@ -63,9 +64,7 @@ class MedicationRemoteDatasource {
 
   /// Add a new medication.
   Future<void> addMedication(MedicationModel model) async {
-    await _client
-        .from(AppConstants.medicationsTable)
-        .insert(model.toJson());
+    await _client.from(AppConstants.medicationsTable).insert(model.toJson());
   }
 
   /// Update a medication.
@@ -78,9 +77,7 @@ class MedicationRemoteDatasource {
 
   /// Upsert a medication (insert or update).
   Future<void> upsertMedication(MedicationModel model) async {
-    await _client
-        .from(AppConstants.medicationsTable)
-        .upsert(model.toJson());
+    await _client.from(AppConstants.medicationsTable).upsert(model.toJson());
   }
 
   /// Delete a medication.

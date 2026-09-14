@@ -31,4 +31,3 @@ abstract class PrescriptionRepository {
   /// Reactivate a deactivated prescription.
   Future<Result<void>> reactivatePrescription(String id);
 }
-

@@ -30,13 +30,22 @@ class PlatformCapabilities {
   final bool hasBiometrics;
 
   static const web = PlatformCapabilities(
-    hasCamera: false, hasLocalNotifications: false, hasFileShare: false, hasBiometrics: false,
+    hasCamera: false,
+    hasLocalNotifications: false,
+    hasFileShare: false,
+    hasBiometrics: false,
   );
   static const mobile = PlatformCapabilities(
-    hasCamera: true, hasLocalNotifications: true, hasFileShare: true, hasBiometrics: true,
+    hasCamera: true,
+    hasLocalNotifications: true,
+    hasFileShare: true,
+    hasBiometrics: true,
   );
   static const desktop = PlatformCapabilities(
-    hasCamera: false, hasLocalNotifications: false, hasFileShare: true, hasBiometrics: false,
+    hasCamera: false,
+    hasLocalNotifications: false,
+    hasFileShare: true,
+    hasBiometrics: false,
   );
 
   factory PlatformCapabilities.detect() {
@@ -54,8 +63,14 @@ class PlatformCapabilities {
       other.hasBiometrics == hasBiometrics;
 
   @override
-  int get hashCode => Object.hash(hasCamera, hasLocalNotifications, hasFileShare, hasBiometrics);
+  int get hashCode => Object.hash(
+    hasCamera,
+    hasLocalNotifications,
+    hasFileShare,
+    hasBiometrics,
+  );
 }
 
-final platformCapabilitiesProvider =
-    Provider<PlatformCapabilities>((ref) => PlatformCapabilities.detect());
+final platformCapabilitiesProvider = Provider<PlatformCapabilities>(
+  (ref) => PlatformCapabilities.detect(),
+);

@@ -58,8 +58,9 @@ class _TagInputFieldState extends State<TagInputField> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final remainingSuggestions =
-        widget.suggestions.where((s) => !widget.tags.contains(s)).toList();
+    final remainingSuggestions = widget.suggestions
+        .where((s) => !widget.tags.contains(s))
+        .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -79,7 +80,8 @@ class _TagInputFieldState extends State<TagInputField> {
                   deleteIcon: const Icon(Icons.cancel),
                   onDeleted: () {
                     widget.onChanged(
-                        widget.tags.where((t) => t != tag).toList());
+                      widget.tags.where((t) => t != tag).toList(),
+                    );
                   },
                   backgroundColor: Colors.transparent,
                   side: BorderSide.none,

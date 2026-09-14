@@ -12,13 +12,21 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/home/home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/failing_dose_repo.dart';
+import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
 
 void main() {
+  final now = DateTime.now();
+  // Noon anchor, not midnight: getTodaysDoseLogs/DoseMaintenanceService key
+  // off the real wall clock (by design), not nowProvider, so every seed
+  // below must stay on the same calendar day as DateTime.now() no matter
+  // what hour the suite runs at — noon plus/minus a few minutes never
+  // crosses into "yesterday" between 00:00 and 02:00.
+  final today = DateTime(now.year, now.month, now.day, 12);
+
   setUp(() async {
     await setUpTestDatabase();
     SharedPreferences.setMockInitialValues({});
@@ -26,35 +34,57 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.desktop),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+    platformCapabilitiesProvider.overrideWithValue(
+      PlatformCapabilities.desktop,
+    ),
+    nowProvider.overrideWithValue(() => today),
+  ];
 
-  testWidgets('Now card shows the next due dose and Take → Undo works', (tester) async {
+  testWidgets('Now card shows the next due dose and Take → Undo works', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Tachipirina');
-    final overdue = DateTime.now().subtract(const Duration(minutes: 10));
+    final s = await seedPrescription(db);
+    final overdue = today.subtract(const Duration(minutes: 10));
     await seedDoseLog(db, s.prescriptionId, overdue);
     await db.insert('medications', {
-      'id': 'exp', 'name': 'Expiring', 'quantity': 3,
-      'expiry_date': DateTime.now().add(const Duration(days: 5)).toIso8601String().split('T').first,
+      'id': 'exp',
+      'name': 'Expiring',
+      'quantity': 3,
+      'expiry_date': DateTime.now()
+          .add(const Duration(days: 5))
+          .toIso8601String()
+          .split('T')
+          .first,
     });
 
-    final c = await pumpMedoraApp(tester, const HomeScreen(), overrides: await overrides());
+    final c = await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Next dose'), findsOneWidget);
     expect(find.text('Tachipirina'), findsOneWidget);
     expect(find.text('Overdue'), findsOneWidget);
     // Expiring stat tile shows 1
-    final expiringTile = find.ancestor(of: find.text('Expiring'), matching: find.byType(InkWell)).first;
-    expect(find.descendant(of: expiringTile, matching: find.text('1')), findsOneWidget);
+    final expiringTile = find
+        .ancestor(of: find.text('Expiring'), matching: find.byType(InkWell))
+        .first;
+    expect(
+      find.descendant(of: expiringTile, matching: find.text('1')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(FilledButton, 'Take'));
     await tester.pumpAndSettle();
-    expect(find.text('Taken'), findsOneWidget);          // snackbar
+    expect(find.text('Taken'), findsOneWidget); // snackbar
     expect(find.text('Undo'), findsOneWidget);
     expect(c.read(nextDueDoseProvider), isNull);
     expect(find.text('All doses done for today'), findsOneWidget);
@@ -65,40 +95,53 @@ void main() {
     expect(c.read(nextDueDoseProvider)?.medicationName, 'Tachipirina');
   });
 
-  testWidgets('Take resets busy state and reports failure when markDoseTaken fails', (tester) async {
-    final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Tachipirina');
-    final overdue = DateTime.now().subtract(const Duration(minutes: 10));
-    await seedDoseLog(db, s.prescriptionId, overdue);
+  testWidgets(
+    'Take resets busy state and reports failure when markDoseTaken fails',
+    (tester) async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      final overdue = today.subtract(const Duration(minutes: 10));
+      await seedDoseLog(db, s.prescriptionId, overdue);
 
-    final inner = DoseLogRepositoryImpl(
-      localDatasource: DoseLogLocalDatasource(),
-      remoteDatasource: null,
-      prescriptionLocal: PrescriptionLocalDatasource(),
-    );
-    final failingOverrides = [
-      ...await overrides(),
-      doseLogRepositoryProvider.overrideWithValue(FailingTakeRepo(inner)),
-    ];
+      final inner = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        remoteDatasource: null,
+        prescriptionLocal: PrescriptionLocalDatasource(),
+      );
+      final failingOverrides = [
+        ...await overrides(),
+        doseLogRepositoryProvider.overrideWithValue(FailingTakeRepo(inner)),
+      ];
 
-    final c = await pumpMedoraApp(tester, const HomeScreen(), overrides: failingOverrides);
-    await tester.pumpAndSettle();
+      final c = await pumpMedoraApp(
+        tester,
+        const HomeScreen(),
+        overrides: failingOverrides,
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Tachipirina'), findsOneWidget);
+      expect(find.text('Tachipirina'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Take'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Take'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Something went wrong'), findsOneWidget);
-    expect(
-      tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Take')).onPressed,
-      isNotNull,
-    );
-    expect(c.read(nextDueDoseProvider)?.medicationName, 'Tachipirina');
-  });
+      expect(find.text('Something went wrong'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Take'))
+            .onPressed,
+        isNotNull,
+      );
+      expect(c.read(nextDueDoseProvider)?.medicationName, 'Tachipirina');
+    },
+  );
 
   testWidgets('empty state suggests adding a treatment', (tester) async {
-    await pumpMedoraApp(tester, const HomeScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
     expect(find.text('No doses scheduled for today'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Add Treatment'), findsOneWidget);
@@ -112,8 +155,12 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Tachipirina');
-    await seedDoseLog(db, s.prescriptionId, DateTime.now().subtract(const Duration(minutes: 10)));
+    final s = await seedPrescription(db);
+    await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.subtract(const Duration(minutes: 10)),
+    );
 
     await pumpMedoraApp(
       tester,
@@ -128,8 +175,11 @@ void main() {
 
     // Scroll the section headers into view: at 2.0x the Now card alone
     // fills the viewport, and an overflowing Row only throws once painted.
-    await tester.scrollUntilVisible(find.text('Active Treatments'), 200,
-        scrollable: find.byType(Scrollable).first);
+    await tester.scrollUntilVisible(
+      find.text('Active Treatments'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);

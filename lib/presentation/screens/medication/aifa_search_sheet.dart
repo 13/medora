@@ -32,10 +32,9 @@ Future<AifaSearchResult?> showAifaSearchSheet(BuildContext context) {
               padding: const EdgeInsets.all(16),
               child: Text(
                 l10n.searchAifaByName,
-                style: Theme.of(ctx)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(
+                  ctx,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
             Padding(
@@ -78,8 +77,9 @@ Future<AifaSearchResult?> showAifaSearchSheet(BuildContext context) {
                   if (query.trim().length < 2) return;
                   setSheetState(() => isSearching = true);
                   try {
-                    final r =
-                        await AifaCacheService.instance.searchByName(query.trim());
+                    final r = await AifaCacheService.instance.searchByName(
+                      query.trim(),
+                    );
                     setSheetState(() {
                       results = r;
                       isSearching = false;
@@ -121,7 +121,6 @@ Future<AifaSearchResult?> showAifaResultsPicker(
     context: context,
     isScrollControlled: true,
     builder: (ctx) => DraggableScrollableSheet(
-      initialChildSize: 0.5,
       minChildSize: 0.3,
       maxChildSize: 0.85,
       expand: false,
@@ -132,14 +131,15 @@ Future<AifaSearchResult?> showAifaResultsPicker(
             padding: const EdgeInsets.all(16),
             child: Text(
               title,
-              style: Theme.of(ctx)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(
+                ctx,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           const Divider(height: 1),
-          Expanded(child: _resultList(results, scrollController: scrollController)),
+          Expanded(
+            child: _resultList(results, scrollController: scrollController),
+          ),
         ],
       ),
     ),
@@ -177,18 +177,28 @@ Widget _resultTile(BuildContext context, AifaSearchResult r) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (r.description.isNotEmpty)
-          Text(r.description,
-              style: const TextStyle(fontSize: 12),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
+          Text(
+            r.description,
+            style: const TextStyle(fontSize: 12),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
         if (r.activeIngredient != null)
-          Text(r.activeIngredient!,
-              style:
-                  TextStyle(fontSize: 11, color: context.colors.onSurfaceVariant)),
+          Text(
+            r.activeIngredient!,
+            style: TextStyle(
+              fontSize: 11,
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
         if (r.manufacturer != null)
-          Text(r.manufacturer!,
-              style:
-                  TextStyle(fontSize: 11, color: context.colors.onSurfaceVariant)),
+          Text(
+            r.manufacturer!,
+            style: TextStyle(
+              fontSize: 11,
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
       ],
     ),
     trailing: const Icon(Icons.chevron_right),

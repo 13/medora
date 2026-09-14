@@ -3,15 +3,19 @@
 /// Manages local notifications for medication dose reminders.
 library;
 
+import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/reminder_text.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:go_router/go_router.dart';
 
 /// Service for scheduling and managing medication reminders.
 class ReminderService implements ReminderPort {
@@ -25,12 +29,45 @@ class ReminderService implements ReminderPort {
 
   bool _isInitialized = false;
 
-  // Store navigation callback
-  static BuildContext? _navigationContext;
+  /// The app's router, assigned once from `main.dart`. A router is not bound
+  /// to a widget's lifecycle (a [BuildContext] is), so keeping it in a static
+  /// cannot leave a disposed element behind.
+  ///
+  /// A notification can be tapped before `main.dart` has finished building
+  /// the router (e.g. a cold start from a notification). Assigning `null`
+  /// clears any pending route along with the router — that reads as
+  /// "detached", not "remember this for later" — while assigning a router
+  /// flushes a pending route recorded by [handleNotificationTap] in the
+  /// meantime.
+  static GoRouter? get router => _router;
+
+  static set router(GoRouter? value) {
+    _router = value;
+    if (value == null) {
+      _pendingRoute = null;
+      return;
+    }
+    final pending = _pendingRoute;
+    if (pending != null) {
+      _pendingRoute = null;
+      // The router is installed from `initState`, so navigating straight
+      // away would run during a build; defer it by a microtask.
+      scheduleMicrotask(() => value.go(pending));
+    }
+  }
+
+  static GoRouter? _router;
+  static String? _pendingRoute;
+
+  /// Resolves the user's chosen locale. Services must not import presentation
+  /// code, so `main.dart` installs this seam next to [router]; `null` (or no
+  /// seam at all) means "follow the platform locale".
+  static Locale? Function()? localeResolver;
 
   /// Whether the current platform supports scheduled local notifications
   /// (mobile only; web and desktop plugins cannot schedule).
-  static bool get _supported => PlatformCapabilities.detect().hasLocalNotifications;
+  static bool get _supported =>
+      PlatformCapabilities.detect().hasLocalNotifications;
 
   /// Initialize the notification service.
   Future<void> initialize() async {
@@ -41,15 +78,10 @@ class ReminderService implements ReminderPort {
     // This significantly reduces startup time and memory usage.
     tz.initializeTimeZones();
 
-    const androidSettings =
-        AndroidInitializationSettings('ic_stat_notify');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+    const androidSettings = AndroidInitializationSettings('ic_stat_notify');
+    const iosSettings = DarwinInitializationSettings();
 
-    final settings = InitializationSettings(
+    const settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
@@ -62,17 +94,55 @@ class ReminderService implements ReminderPort {
     _isInitialized = true;
   }
 
-  void _onNotificationResponse(NotificationResponse response) {
-    // Navigate to doses screen when notification is tapped
-    if (_navigationContext != null && _navigationContext!.mounted) {
-      _navigationContext!.go('/doses');
+  void _onNotificationResponse(NotificationResponse response) =>
+      handleNotificationTap(response.payload);
+
+  /// Navigate to the doses screen when a notification is tapped. When
+  /// [router] has not been assigned yet (e.g. a cold start from a
+  /// notification, before `main.dart` finishes building the router), the
+  /// route is remembered and applied as soon as [router] is set.
+  @visibleForTesting
+  void handleNotificationTap(String? payload) {
+    const route = '/doses';
+    final currentRouter = router;
+    if (currentRouter == null) {
+      _pendingRoute = route;
+      return;
     }
+    currentRouter.go(route);
   }
 
-  /// Set the navigation context for handling notification taps.
-  /// Call this from the main app widget.
-  static void setNavigationContext(BuildContext context) {
-    _navigationContext = context;
+  /// Localizations for the app's current locale, or `null` when it is not one
+  /// of the supported locales (callers then use the English fallback text).
+  @visibleForTesting
+  static AppLocalizations? resolveLocalizations() {
+    // An explicit preference is authoritative; only "system default" (null)
+    // falls through to the platform locale.
+    final locale = localeResolver?.call() ?? PlatformDispatcher.instance.locale;
+    for (final supported in AppLocalizations.supportedLocales) {
+      if (supported.languageCode == locale.languageCode) {
+        return lookupAppLocalizations(supported);
+      }
+    }
+    return null;
+  }
+
+  /// Title for a dose reminder fired [minutesBefore] minutes ahead of time.
+  @visibleForTesting
+  static String reminderTitle({
+    required String medicationName,
+    required int minutesBefore,
+    AppLocalizations? l10n,
+  }) {
+    final strings = l10n ?? resolveLocalizations();
+    if (strings == null) {
+      return minutesBefore == 0
+          ? 'Time for $medicationName'
+          : 'Reminder: $medicationName in $minutesBefore min';
+    }
+    return minutesBefore == 0
+        ? strings.notificationReminderTimeFor(medicationName)
+        : strings.notificationReminderInMinutes(medicationName, minutesBefore);
   }
 
   /// Stable 31-bit notification id base for a dose (FNV-1a over the id,
@@ -100,8 +170,10 @@ class ReminderService implements ReminderPort {
   }
 
   @override
-  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) =>
-      scheduleRemindersForDose(dose: dose, medicationName: medicationName);
+  Future<void> scheduleForDose({
+    required DoseLog dose,
+    required String medicationName,
+  }) => scheduleRemindersForDose(dose: dose, medicationName: medicationName);
 
   /// Schedule reminders for a dose.
   Future<void> scheduleRemindersForDose({
@@ -116,29 +188,25 @@ class ReminderService implements ReminderPort {
     final baseId = notificationBaseId(dose.id);
     final offsets = [60, 0];
 
-    // Get localization from the stored context
-    final l10n = _navigationContext != null && _navigationContext!.mounted
-        ? AppLocalizations.of(_navigationContext!)
-        : null;
+    // Resolve strings without a BuildContext — a background notification has
+    // no widget tree to read from.
+    final l10n = resolveLocalizations();
 
     for (var i = 0; i < offsets.length; i++) {
-      final scheduledTime = dose.scheduledTime.subtract(Duration(minutes: offsets[i]));
+      final scheduledTime = dose.scheduledTime.subtract(
+        Duration(minutes: offsets[i]),
+      );
       if (scheduledTime.isBefore(now)) continue;
 
-      String title;
-      if (l10n != null) {
-        title = offsets[i] == 0 
-            ? l10n.notificationReminderTimeFor(medicationName) 
-            : l10n.notificationReminderInMinutes(medicationName, offsets[i]);
-      } else {
-        title = offsets[i] == 0 
-            ? 'Time for $medicationName' 
-            : 'Reminder: $medicationName in ${offsets[i]} min';
-      }
+      final title = reminderTitle(
+        medicationName: medicationName,
+        minutesBefore: offsets[i],
+        l10n: l10n,
+      );
 
       String body;
       if (l10n != null) {
-        body = l10n.notificationReminderBody(dose.displayDosage ?? "");
+        body = reminderBody(l10n, dose);
       } else {
         body = '${dose.displayDosage ?? ""} — Tap to log your dose';
       }
@@ -169,7 +237,9 @@ class ReminderService implements ReminderPort {
     final androidDetails = AndroidNotificationDetails(
       'medora_dose_reminders',
       l10n?.notificationChannelName ?? 'Dose Reminders',
-      channelDescription: l10n?.notificationChannelDescription ?? 'Reminders for scheduled medication doses',
+      channelDescription:
+          l10n?.notificationChannelDescription ??
+          'Reminders for scheduled medication doses',
       importance: Importance.max,
       priority: Priority.high,
       ticker: l10n?.notificationTicker ?? 'Medication Reminder',
@@ -208,7 +278,10 @@ class ReminderService implements ReminderPort {
   Future<bool> requestPermissions() async {
     if (!_supported) return true;
 
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidPlugin != null) {
       return await androidPlugin.requestNotificationsPermission() ?? false;
     }

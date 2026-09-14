@@ -3,21 +3,23 @@
 /// Central place for all Riverpod providers that wire up the app.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/supabase_config.dart';
-import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
+import 'package:medora/data/datasources/family_local_datasource.dart';
+import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
-import 'package:medora/data/datasources/family_local_datasource.dart';
-import 'package:medora/data/datasources/family_remote_datasource.dart';
+import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
@@ -29,7 +31,11 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
+import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
@@ -39,10 +45,6 @@ import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
-import 'package:medora/presentation/providers/medication_providers.dart';
-import 'package:medora/presentation/providers/settings_providers.dart';
-import 'package:medora/presentation/providers/treatment_providers.dart';
-import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
@@ -59,8 +61,8 @@ final treatmentLocalDatasourceProvider = Provider<TreatmentLocalDatasource>(
 
 final prescriptionLocalDatasourceProvider =
     Provider<PrescriptionLocalDatasource>(
-  (ref) => PrescriptionLocalDatasource(),
-);
+      (ref) => PrescriptionLocalDatasource(),
+    );
 
 final doseLogLocalDatasourceProvider = Provider<DoseLogLocalDatasource>(
   (ref) => DoseLogLocalDatasource(),
@@ -84,7 +86,9 @@ final supabaseClientProvider = Provider<SupabaseClient?>((ref) {
 // Remote Datasource Providers (nullable)
 // ============================================================
 
-final medicationDatasourceProvider = Provider<MedicationRemoteDatasource?>((ref) {
+final medicationDatasourceProvider = Provider<MedicationRemoteDatasource?>((
+  ref,
+) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : MedicationRemoteDatasource(client);
 });
@@ -94,7 +98,9 @@ final treatmentDatasourceProvider = Provider<TreatmentRemoteDatasource?>((ref) {
   return client == null ? null : TreatmentRemoteDatasource(client);
 });
 
-final prescriptionDatasourceProvider = Provider<PrescriptionRemoteDatasource?>((ref) {
+final prescriptionDatasourceProvider = Provider<PrescriptionRemoteDatasource?>((
+  ref,
+) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : PrescriptionRemoteDatasource(client);
 });
@@ -153,14 +159,16 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
 // Service Providers
 // ============================================================
 
-final reminderPortProvider = Provider<ReminderPort>((ref) => ReminderService.instance);
+final reminderPortProvider = Provider<ReminderPort>(
+  (ref) => ReminderService.instance,
+);
 
 final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
   // reconcile() can still be mid-flight (it's fired via `unawaited`) after
   // the container is disposed (e.g. test teardown); cache the last-known
   // value and guard against reading a disposed Ref rather than throwing.
   var lastEnabled = ref.read(remindersEnabledProvider);
-  return ReminderScheduler(
+  final scheduler = ReminderScheduler(
     port: ref.watch(reminderPortProvider),
     doses: ref.watch(doseLogRepositoryProvider),
     remindersEnabled: () {
@@ -168,25 +176,41 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
       return lastEnabled;
     },
   );
+
+  // Notification text is baked in when a notification is scheduled, and the
+  // scheduler's diff only looks at id + time — so after a language change up
+  // to 30 queued reminders would keep speaking the old language for a week.
+  // Drop the snapshot and re-schedule everything in the new language.
+  ref.listen(localeProvider, (previous, next) {
+    if (previous == next) return;
+    scheduler.reset();
+    unawaited(scheduler.reconcile());
+  });
+
+  return scheduler;
 });
 
 final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
 );
 
-final photoStorageProvider = Provider<PhotoStorage>((ref) => PhotoStorage.appDocuments());
+final photoStorageProvider = Provider<PhotoStorage>(
+  (ref) => PhotoStorage.appDocuments(),
+);
 
 /// Resolved photo file for a stored image name (null when absent/missing).
 final resolvedPhotoProvider = FutureProvider.family<File?, String?>(
   (ref, stored) => ref.watch(photoStorageProvider).resolve(stored),
 );
 
-final localDataWiperProvider = Provider<LocalDataWiper>((ref) => LocalDataWiper(
-      database: AppDatabase.instance,
-      photos: ref.watch(photoStorageProvider),
-      reminders: ref.watch(reminderPortProvider),
-      prefs: ref.watch(sharedPreferencesProvider),
-    ));
+final localDataWiperProvider = Provider<LocalDataWiper>(
+  (ref) => LocalDataWiper(
+    database: AppDatabase.instance,
+    photos: ref.watch(photoStorageProvider),
+    reminders: ref.watch(reminderPortProvider),
+    prefs: ref.watch(sharedPreferencesProvider),
+  ),
+);
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(
@@ -222,9 +246,9 @@ final connectivityStreamProvider = StreamProvider<bool>((ref) {
 /// Stream provider for sync state.
 final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   final syncService = ref.watch(syncServiceProvider);
-  
+
   // Listen to the sync state and trigger UI refreshes on success.
-  // Using a manual listener on the stream instead of listenSelf 
+  // Using a manual listener on the stream instead of listenSelf
   // to avoid compatibility issues with certain Ref types.
   final subscription = syncService.stateStream.listen((state) {
     if (state == SyncState.success || state == SyncState.partial) {
@@ -236,7 +260,7 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
     }
   });
 
-  ref.onDispose(() => subscription.cancel());
+  ref.onDispose(subscription.cancel);
 
   return syncService.stateStream;
 });
@@ -256,23 +280,28 @@ final doseMaintenanceProvider = Provider<DoseMaintenanceService>(
 );
 
 /// Delay before the startup sync; tests override this with Duration.zero.
-final syncStartupDelayProvider = Provider<Duration>((_) => const Duration(seconds: 2));
+final syncStartupDelayProvider = Provider<Duration>(
+  (_) => const Duration(seconds: 2),
+);
 
 /// Injectable clock. Screens/providers that need "now" read
 /// `ref.read(nowProvider)()`; tests and goldens override it.
-final nowProvider = Provider<DateTime Function()>((_) => DateTime.now);
+final nowProvider = Provider<Now>((_) => systemNow);
 
 final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
   return AppStartupTasks(
     maintenance: () async {
       final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
-      final changed = await ref.read(doseMaintenanceProvider).markOverdueAsMissed(grace: grace);
+      final changed = await ref
+          .read(doseMaintenanceProvider)
+          .markOverdueAsMissed(grace: grace);
       if (changed > 0) {
         await ref.read(todaysDoseLogsProvider.notifier).refresh();
         ref.read(doseDataVersionProvider.notifier).bump();
       }
     },
-    reminders: () => ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
+    reminders: () =>
+        ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
     sync: () async {
       if (ref.read(appModeProvider) == AppMode.cloud) {
         await ref.read(syncServiceProvider).syncAll();

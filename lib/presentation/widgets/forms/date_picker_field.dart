@@ -15,6 +15,7 @@ class DatePickerField extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.date,
+    required this.now,
     required this.onDateSelected,
     this.firstDate,
     this.lastDate,
@@ -23,6 +24,10 @@ class DatePickerField extends StatelessWidget {
   final String label;
   final IconData icon;
   final DateTime? date;
+
+  /// "Now" injected by the owning screen (`ref.watch(nowProvider)()`), used
+  /// as the picker's initial date when no date is selected yet.
+  final DateTime now;
   final ValueChanged<DateTime?> onDateSelected;
   final DateTime? firstDate;
   final DateTime? lastDate;
@@ -34,7 +39,7 @@ class DatePickerField extends StatelessWidget {
       onTap: () async {
         final picked = await showDatePicker(
           context: context,
-          initialDate: date ?? DateTime.now(),
+          initialDate: date ?? now,
           firstDate: firstDate ?? DateTime(2000),
           lastDate: lastDate ?? DateTime(2100),
         );
@@ -55,9 +60,7 @@ class DatePickerField extends StatelessWidget {
         ),
         child: Text(
           date?.formatted ?? l10n.selectDate,
-          style: TextStyle(
-            color: date != null ? null : context.colors.outline,
-          ),
+          style: TextStyle(color: date != null ? null : context.colors.outline),
         ),
       ),
     );

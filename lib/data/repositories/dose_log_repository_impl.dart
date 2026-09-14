@@ -28,10 +28,12 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
 
   @override
   Future<Result<List<DoseLog>>> getDoseLogsByPrescription(
-      String prescriptionId) async {
+    String prescriptionId,
+  ) async {
     try {
-      final models =
-          await localDatasource.getDoseLogsByPrescription(prescriptionId);
+      final models = await localDatasource.getDoseLogsByPrescription(
+        prescriptionId,
+      );
       return Result.success(models.map((m) => m.toDomain()).toList());
     } catch (e, st) {
       return Result.failure('Failed to load dose logs: $e', st);
@@ -50,7 +52,9 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
 
   @override
   Future<Result<List<DoseLog>>> getDoseLogsByDateRange(
-      DateTime start, DateTime end) async {
+    DateTime start,
+    DateTime end,
+  ) async {
     try {
       final models = await localDatasource.getDoseLogsByDateRange(start, end);
       return Result.success(models.map((m) => m.toDomain()).toList());
@@ -60,7 +64,10 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   @override
-  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end) async {
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
     try {
       final models = await localDatasource.getPendingBetween(start, end);
       return Result.success(models.map((m) => m.toDomain()).toList());
@@ -72,7 +79,9 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   @override
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
     try {
-      return Result.success(await localDatasource.markOverduePendingAsMissed(cutoff));
+      return Result.success(
+        await localDatasource.markOverduePendingAsMissed(cutoff),
+      );
     } catch (e, st) {
       return Result.failure('Failed to mark overdue doses: $e', st);
     }
@@ -120,7 +129,11 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         syncStatus: SyncStatus.pendingUpdate,
       );
       _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(id, status, takenTime: clearTakenTime ? null : takenTime),
+        (r) => r.updateDoseLogStatus(
+          id,
+          status,
+          takenTime: clearTakenTime ? null : takenTime,
+        ),
         id,
       );
       final updated = await localDatasource.getDoseLogById(id);
@@ -135,10 +148,12 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       _changeStatus(id, 'taken', takenTime: DateTime.now());
 
   @override
-  Future<Result<DoseLog>> markDoseSkipped(String id) => _changeStatus(id, 'skipped');
+  Future<Result<DoseLog>> markDoseSkipped(String id) =>
+      _changeStatus(id, 'skipped');
 
   @override
-  Future<Result<DoseLog>> markDoseMissed(String id) => _changeStatus(id, 'missed');
+  Future<Result<DoseLog>> markDoseMissed(String id) =>
+      _changeStatus(id, 'missed');
 
   @override
   Future<Result<DoseLog>> markDosePending(String id) =>
@@ -146,12 +161,16 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
 
   @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
-      String prescriptionId) async {
+    String prescriptionId,
+  ) async {
     try {
-      final prescription =
-          await prescriptionLocal.getPrescriptionById(prescriptionId);
+      final prescription = await prescriptionLocal.getPrescriptionById(
+        prescriptionId,
+      );
       if (prescription == null) {
-        debugPrint('⚠ generateDoseLogs: Prescription $prescriptionId not found in local DB');
+        debugPrint(
+          '⚠ generateDoseLogs: Prescription $prescriptionId not found in local DB',
+        );
         return const Result.failure('Prescription not found');
       }
 
@@ -159,13 +178,16 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final scheduledTimes = entity.scheduledDoseTimes;
 
       if (scheduledTimes.isEmpty) {
-        debugPrint('⚠ generateDoseLogs: No scheduled times generated for prescription $prescriptionId');
+        debugPrint(
+          '⚠ generateDoseLogs: No scheduled times generated for prescription $prescriptionId',
+        );
         return const Result.success([]);
       }
 
       // Check for existing dose logs to avoid duplicates.
-      final existingModels =
-          await localDatasource.getDoseLogsByPrescription(prescriptionId);
+      final existingModels = await localDatasource.getDoseLogsByPrescription(
+        prescriptionId,
+      );
       final existingTimes = existingModels
           .map((m) => _truncateToMinute(m.scheduledTime))
           .toSet();
@@ -177,29 +199,39 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         if (!existingTimes.contains(timeString)) {
           // Use deterministic ID (v5) to avoid duplicates across devices.
           // Seed with prescriptionId and truncated scheduled time.
-          final deterministicId = _uuid.v5(Namespace.url.value, '$prescriptionId-$timeString');
-          
-          newDoseLogs.add(DoseLogModel(
-            id: deterministicId,
-            prescriptionId: prescriptionId,
-            scheduledTime: time,
-            status: DoseStatus.pending,
-            createdAt: now,
-            updatedAt: now,
-          ));
+          final deterministicId = _uuid.v5(
+            Namespace.url.value,
+            '$prescriptionId-$timeString',
+          );
+
+          newDoseLogs.add(
+            DoseLogModel(
+              id: deterministicId,
+              prescriptionId: prescriptionId,
+              scheduledTime: time,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
         }
       }
 
       if (newDoseLogs.isEmpty) {
-        debugPrint('✅ generateDoseLogs: All ${scheduledTimes.length} dose logs already exist for prescription $prescriptionId');
+        debugPrint(
+          '✅ generateDoseLogs: All ${scheduledTimes.length} dose logs already exist for prescription $prescriptionId',
+        );
         return Result.success(existingModels.map((m) => m.toDomain()).toList());
       }
 
-      debugPrint('✅ generateDoseLogs: Creating ${newDoseLogs.length} new dose logs '
-          '(${existingModels.length} already exist) for prescription $prescriptionId');
+      debugPrint(
+        '✅ generateDoseLogs: Creating ${newDoseLogs.length} new dose logs '
+        '(${existingModels.length} already exist) for prescription $prescriptionId',
+      );
 
-      await localDatasource.upsertBatch(newDoseLogs,
-          syncStatus: SyncStatus.pendingCreate);
+      await localDatasource.upsertBatch(
+        newDoseLogs,
+        syncStatus: SyncStatus.pendingCreate,
+      );
 
       // Remote sync in background — don't block
       _syncRemoteBatchInBackground(newDoseLogs);
@@ -216,7 +248,8 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   /// Deletes old pending doses and creates new ones.
   @override
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
-      String prescriptionId) async {
+    String prescriptionId,
+  ) async {
     try {
       // Delete only pending (not yet taken/skipped/missed) dose logs
       await localDatasource.deletePendingByPrescription(prescriptionId);
