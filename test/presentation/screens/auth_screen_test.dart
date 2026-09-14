@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/supabase_config.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -10,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   testWidgets('unconfigured build shows only the local-only path and selecting it sets AppMode.localOnly',
       (tester) async {
+    SupabaseConfig.resetForTest();
     SharedPreferences.setMockInitialValues({'app_mode': 'cloud'});
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(

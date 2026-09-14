@@ -333,8 +333,8 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
     if (ok != true) return;
-    await ref.read(authControllerProvider.notifier).signOut();
     await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
+    await ref.read(authControllerProvider.notifier).signOut();
   }
 
   void _showForceSyncDialog(BuildContext context, WidgetRef ref, bool isPush) {

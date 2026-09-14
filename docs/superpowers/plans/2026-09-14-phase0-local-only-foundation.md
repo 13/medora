@@ -1868,8 +1868,8 @@ Add the helper method to `SettingsScreen`:
       ),
     );
     if (ok != true) return;
-    await ref.read(authControllerProvider.notifier).signOut();
     await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
+    await ref.read(authControllerProvider.notifier).signOut();
   }
 ```
 
