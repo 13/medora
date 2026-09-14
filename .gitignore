@@ -15,6 +15,7 @@ build/
 # Miscellaneous
 *.class
 *.lock
+!pubspec.lock
 *.log
 *.pyc
 *.swp
@@ -133,6 +134,7 @@ app.*.symbols
 !/dev/ci/**/Gemfile.lock# Miscellaneous
 *.class
 *.lock
+!pubspec.lock
 *.log
 *.pyc
 *.swp
