@@ -99,6 +99,41 @@ class FamilyLocalDatasource {
     await db.delete('family_members', where: 'id = ?', whereArgs: [memberId]);
   }
 
+  /// Marks the member row as a pending deletion; the next push removes it
+  /// remotely and then hard-deletes it locally.
+  Future<void> markMemberDeleted(String memberId) async {
+    final db = await _db;
+    await db.update('family_members', {'sync_status': SyncStatus.pendingDelete},
+        where: 'id = ?', whereArgs: [memberId]);
+  }
+
+  Future<void> hardDeleteMember(String memberId) async {
+    final db = await _db;
+    await db.delete('family_members', where: 'id = ?', whereArgs: [memberId]);
+  }
+
+  Future<void> markFamilyDeleted(String familyId) async {
+    final db = await _db;
+    await db.update('families', {'sync_status': SyncStatus.pendingDelete},
+        where: 'id = ?', whereArgs: [familyId]);
+  }
+
+  /// Removes synced members of [familyId] whose ids are not in [keepIds]
+  /// (pending rows are left for the push phase).
+  Future<void> deleteMembersNotIn(String familyId, Set<String> keepIds) async {
+    final db = await _db;
+    final rows = await db.query('family_members',
+        columns: ['id'],
+        where: 'family_id = ? AND sync_status = ?',
+        whereArgs: [familyId, SyncStatus.synced]);
+    for (final row in rows) {
+      final id = row['id'] as String;
+      if (!keepIds.contains(id)) {
+        await db.delete('family_members', where: 'id = ?', whereArgs: [id]);
+      }
+    }
+  }
+
   // ── Row mappers ────────────────────────────────────────────
 
   FamilyModel _familyFromRow(Map<String, dynamic> row) {

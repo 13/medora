@@ -6,6 +6,8 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/models/family_member_model.dart';
+import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
@@ -425,6 +427,48 @@ void main() {
       h.doses.table.failIds.add(doseId);
       await h.service.syncAll();
       expect((await localRow('dose_logs', doseId))?['status'], 'pending');
+    });
+  });
+
+  group('family sync', () {
+    test('pushes pending members and removes pending_delete members remotely', () async {
+      final h = Harness();
+      final local = FamilyLocalDatasource();
+      await local.upsertFamily(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a'), syncStatus: SyncStatus.pendingCreate);
+      await local.upsertMember(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'owner'), syncStatus: SyncStatus.pendingCreate);
+      await local.upsertMember(const FamilyMemberModel(id: 'gone', familyId: 'f1', userId: 'user-b', role: 'member'), syncStatus: SyncStatus.synced);
+      h.family.members.seed(const FamilyMemberModel(id: 'gone', familyId: 'f1', userId: 'user-b', role: 'member').toJson());
+      await local.markMemberDeleted('gone');
+      await h.service.syncAll();
+      expect(h.family.families.rows['f1'], isNotNull);
+      expect(h.family.members.rows['me'], isNotNull);
+      expect(h.family.members.rows['gone'], isNull);
+      expect(await localRow('family_members', 'gone'), isNull);
+    });
+
+    test('pull removes local synced members that no longer exist remotely', () async {
+      final h = Harness();
+      h.family.families.seed(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a').toJson());
+      h.family.members.seed(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'owner').toJson());
+      await FamilyLocalDatasource().upsertFamily(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a'), syncStatus: SyncStatus.synced);
+      await FamilyLocalDatasource().upsertMember(const FamilyMemberModel(id: 'stale', familyId: 'f1', userId: 'user-z', role: 'member'), syncStatus: SyncStatus.synced);
+      await h.service.syncAll();
+      expect(await localRow('family_members', 'stale'), isNull);
+      expect(await localRow('family_members', 'me'), isNotNull);
+    });
+
+    test('a pending_delete family is dropped locally after its members are pushed', () async {
+      final h = Harness();
+      final local = FamilyLocalDatasource();
+      await local.upsertFamily(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'owner'), syncStatus: SyncStatus.synced);
+      await local.upsertMember(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'member'), syncStatus: SyncStatus.synced);
+      h.family.members.seed(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'member').toJson());
+      await local.markMemberDeleted('me');
+      await local.markFamilyDeleted('f1');
+      await h.service.syncAll();
+      expect(h.family.members.rows['me'], isNull);
+      expect(await localRow('families', 'f1'), isNull);
+      expect(await localRow('family_members', 'me'), isNull);
     });
   });
 }

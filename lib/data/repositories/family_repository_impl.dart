@@ -18,10 +18,12 @@ class FamilyRepositoryImpl implements FamilyRepository {
   FamilyRepositoryImpl({
     required this.localDatasource,
     required this.remoteDatasource,
-  });
+    bool Function()? isOnline,
+  }) : _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline);
 
   final FamilyLocalDatasource localDatasource;
   final FamilyRemoteDatasource? remoteDatasource;
+  final bool Function() _isOnline;
 
   static const _uuid = Uuid();
 
@@ -57,7 +59,7 @@ class FamilyRepositoryImpl implements FamilyRepository {
           syncStatus: SyncStatus.pendingCreate);
 
       final remote = remoteDatasource;
-      if (remote != null && ConnectivityService.instance.isOnline) {
+      if (remote != null && _isOnline()) {
         try {
           await remote.createFamily(family);
           await remote.addMember(member);
@@ -82,33 +84,18 @@ class FamilyRepositoryImpl implements FamilyRepository {
       if (remote == null) {
         return const Result.failure('Cloud sync is required for family sharing');
       }
-      if (!ConnectivityService.instance.isOnline) {
+      if (!_isOnline()) {
         return const Result.failure(
             'Internet connection required to join a family');
       }
 
-      final family = await remote.getFamilyByInviteCode(inviteCode);
-      if (family == null) {
-        return const Result.failure('Invalid invite code');
-      }
-
-      final memberId = _uuid.v4();
-      final member = FamilyMemberModel(
-        id: memberId,
-        familyId: family.id,
-        userId: SupabaseConfig.currentUserId,
-        displayName: displayName,
-        role: 'member',
-        joinedAt: DateTime.now(),
-      );
-
-      await remote.addMember(member);
-      await localDatasource.upsertFamily(family,
+      final joined = await remote.joinFamily(inviteCode, displayName);
+      await localDatasource.upsertFamily(joined.family,
           syncStatus: SyncStatus.synced);
-      await localDatasource.upsertMember(member,
+      await localDatasource.upsertMember(joined.member,
           syncStatus: SyncStatus.synced);
 
-      return Result.success(family.toDomain());
+      return Result.success(joined.family.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to join family: $e', st);
     }
@@ -118,16 +105,28 @@ class FamilyRepositoryImpl implements FamilyRepository {
   Future<Result<void>> leaveFamily(String familyId) async {
     try {
       final membership = await localDatasource.getCurrentMembership();
+      final remote = remoteDatasource;
+      if (remote == null) {
+        // Local-only mode: nothing to push, so drop the rows outright.
+        if (membership != null) {
+          await localDatasource.removeMember(membership.id);
+        }
+        await localDatasource.deleteFamily(familyId);
+        return const Result.success(null);
+      }
       if (membership != null) {
-        await localDatasource.removeMember(membership.id);
-        final remote = remoteDatasource;
-        if (remote != null && ConnectivityService.instance.isOnline) {
-          try {
-            await remote.removeMember(membership.id);
-          } catch (_) {}
+        await localDatasource.markMemberDeleted(membership.id);
+      }
+      await localDatasource.markFamilyDeleted(familyId);
+      if (_isOnline() && membership != null) {
+        try {
+          await remote.removeMember(membership.id);
+          await localDatasource.hardDeleteMember(membership.id);
+          await localDatasource.deleteFamily(familyId);
+        } catch (_) {
+          // Left pending; the next sync pushes it.
         }
       }
-      await localDatasource.deleteFamily(familyId);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to leave family: $e', st);
@@ -162,7 +161,7 @@ class FamilyRepositoryImpl implements FamilyRepository {
       if (remote == null) {
         return const Result.failure('Cloud sync is required for family sharing');
       }
-      if (!ConnectivityService.instance.isOnline) {
+      if (!_isOnline()) {
         return const Result.failure(
             'Internet connection required to regenerate code');
       }
@@ -190,12 +189,20 @@ class FamilyRepositoryImpl implements FamilyRepository {
   @override
   Future<Result<void>> removeMember(String memberId) async {
     try {
-      await localDatasource.removeMember(memberId);
       final remote = remoteDatasource;
-      if (remote != null && ConnectivityService.instance.isOnline) {
+      if (remote == null) {
+        // Local-only mode: nothing to push, so drop the row outright.
+        await localDatasource.removeMember(memberId);
+        return const Result.success(null);
+      }
+      await localDatasource.markMemberDeleted(memberId);
+      if (_isOnline()) {
         try {
           await remote.removeMember(memberId);
-        } catch (_) {}
+          await localDatasource.hardDeleteMember(memberId);
+        } catch (_) {
+          // Left pending; the next sync pushes it.
+        }
       }
       return const Result.success(null);
     } catch (e, st) {

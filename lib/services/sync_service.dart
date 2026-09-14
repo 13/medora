@@ -23,6 +23,7 @@ import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
@@ -204,7 +205,31 @@ class SyncService {
       return true;
     });
 
-    // Task 5 inserts the family_members batch here.
+    await _pushBatch('family_members', report, where, whereArgs, (row) async {
+      final model = FamilyMemberModel.fromJson(row);
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
+        await familyRemote!.removeMember(model.id);
+        await familyLocal.hardDeleteMember(model.id);
+      } else {
+        await familyRemote!.upsertMember(model);
+        await db.update('family_members', {'sync_status': SyncStatus.synced},
+            where: 'id = ?', whereArgs: [model.id]);
+      }
+      return true;
+    });
+
+    // Families the user left: drop locally once their member rows are gone.
+    await _pushBatch('families', report, 'sync_status = ?', [SyncStatus.pendingDelete],
+        (row) async {
+      final id = row['id'] as String;
+      final remaining = await db.query('family_members',
+          columns: ['id'],
+          where: 'family_id = ? AND sync_status = ?',
+          whereArgs: [id, SyncStatus.pendingDelete]);
+      if (remaining.isNotEmpty) return false; // member removal still pending
+      await familyLocal.deleteFamily(id);
+      return true;
+    });
 
     await _pushBatch('medications', report, where, whereArgs, (row) async {
       final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
@@ -389,7 +414,10 @@ class SyncService {
         await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);
         report.pulled++;
       }
-      // Task 5: remove local synced members missing remotely.
+      // Members that vanished remotely are dropped locally (pending local
+      // rows are left alone — the next push decides their fate).
+      await familyLocal.deleteMembersNotIn(
+          family.id, members.map((m) => m.id).toSet());
     } catch (e) {
       report.failures.add(SyncFailure('families', '*', 'pull: $e'));
     }
