@@ -21,17 +21,27 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.desktop),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+    platformCapabilitiesProvider.overrideWithValue(
+      PlatformCapabilities.desktop,
+    ),
+  ];
 
-  testWidgets('swipe → Archive shows an Undo snackbar that restores the item', (tester) async {
+  testWidgets('swipe → Archive shows an Undo snackbar that restores the item', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     await db.insert('medications', {'id': 'a', 'name': 'Alpha', 'quantity': 1});
     await db.insert('medications', {'id': 'b', 'name': 'Beta', 'quantity': 1});
-    final c = await pumpMedoraApp(tester, const MedicationListScreen(), overrides: await overrides());
+    final c = await pumpMedoraApp(
+      tester,
+      const MedicationListScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     await tester.drag(find.text('Alpha'), const Offset(-300, 0));
@@ -42,15 +52,28 @@ void main() {
     // The "Archived" filter chip is always on screen, so scope the check to
     // the SnackBar to confirm it's the archive confirmation, not the chip.
     expect(
-      find.descendant(of: find.byType(SnackBar), matching: find.text('Archived')),
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Archived'),
+      ),
       findsOneWidget,
     );
     expect(find.text('Alpha'), findsNothing);
-    expect((await c.read(medicationListProvider.future)).firstWhere((m) => m.id == 'a').isArchived, isTrue);
+    expect(
+      (await c.read(
+        medicationListProvider.future,
+      )).firstWhere((m) => m.id == 'a').isArchived,
+      isTrue,
+    );
 
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(find.text('Alpha'), findsOneWidget);
-    expect((await c.read(medicationListProvider.future)).firstWhere((m) => m.id == 'a').isArchived, isFalse);
+    expect(
+      (await c.read(
+        medicationListProvider.future,
+      )).firstWhere((m) => m.id == 'a').isArchived,
+      isFalse,
+    );
   });
 }

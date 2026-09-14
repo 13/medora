@@ -36,7 +36,8 @@ class AppDatabase {
   }
 
   Future<Database> _initDatabase() async {
-    final path = debugPathOverride ??
+    final path =
+        debugPathOverride ??
         (kIsWeb ? 'medora.db' : join(await getDatabasesPath(), 'medora.db'));
 
     return databaseFactory.openDatabase(
@@ -73,17 +74,21 @@ class AppDatabase {
   }
 
   static Future<void> _createLedger(Database db) => db.execute(
-        'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)',
-      );
+    'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)',
+  );
 
   static Future<void> _record(Database db, int version) => db.insert(
-        'schema_migrations',
-        {'version': version, 'applied_at': DateTime.now().toIso8601String()},
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+    'schema_migrations',
+    {'version': version, 'applied_at': DateTime.now().toIso8601String()},
+    conflictAlgorithm: ConflictAlgorithm.ignore,
+  );
 
   static Future<List<int>> _applied(Database db) async {
-    final rows = await db.query('schema_migrations', columns: ['version'], orderBy: 'version');
+    final rows = await db.query(
+      'schema_migrations',
+      columns: ['version'],
+      orderBy: 'version',
+    );
     return rows.map((r) => r['version'] as int).toList();
   }
 
@@ -204,16 +209,36 @@ class AppDatabase {
     ''');
 
     // Indexes
-    await db.execute('CREATE INDEX idx_local_med_barcode ON medications(barcode)');
-    await db.execute('CREATE INDEX idx_local_med_expiry ON medications(expiry_date)');
-    await db.execute('CREATE INDEX idx_local_med_sync ON medications(sync_status)');
-    await db.execute('CREATE INDEX idx_local_treat_active ON treatments(is_active)');
-    await db.execute('CREATE INDEX idx_local_treat_sync ON treatments(sync_status)');
-    await db.execute('CREATE INDEX idx_local_presc_treatment ON prescriptions(treatment_id)');
-    await db.execute('CREATE INDEX idx_local_presc_sync ON prescriptions(sync_status)');
-    await db.execute('CREATE INDEX idx_local_dose_presc ON dose_logs(prescription_id)');
-    await db.execute('CREATE INDEX idx_local_dose_sched ON dose_logs(scheduled_time)');
-    await db.execute('CREATE INDEX idx_local_dose_sync ON dose_logs(sync_status)');
+    await db.execute(
+      'CREATE INDEX idx_local_med_barcode ON medications(barcode)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_med_expiry ON medications(expiry_date)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_med_sync ON medications(sync_status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_treat_active ON treatments(is_active)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_treat_sync ON treatments(sync_status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_presc_treatment ON prescriptions(treatment_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_presc_sync ON prescriptions(sync_status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_dose_presc ON dose_logs(prescription_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_dose_sched ON dose_logs(scheduled_time)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_local_dose_sync ON dose_logs(sync_status)',
+    );
   }
 
   Future<void> clearAllData() async {

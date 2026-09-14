@@ -232,7 +232,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
               icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off),
               onPressed: () async {
                 await _cameraController?.setFlashMode(
-                    _torchOn ? FlashMode.off : FlashMode.torch);
+                  _torchOn ? FlashMode.off : FlashMode.torch,
+                );
                 setState(() => _torchOn = !_torchOn);
               },
             ),
@@ -250,10 +251,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                     child: FittedBox(
                       fit: BoxFit.cover,
                       child: SizedBox(
-                        width:
-                            _cameraController!.value.previewSize!.height,
-                        height:
-                            _cameraController!.value.previewSize!.width,
+                        width: _cameraController!.value.previewSize!.height,
+                        height: _cameraController!.value.previewSize!.width,
                         child: CameraPreview(_cameraController!),
                       ),
                     ),
@@ -269,7 +268,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 6),
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.54), // scrim
                         borderRadius: BorderRadius.circular(20),
@@ -287,16 +288,21 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(l10n.lookingUpBarcode,
-                                    style: const TextStyle(
-                                        color: Color(0xFFFFFFFF), // on scrim
-                                        fontSize: 13)),
+                                Text(
+                                  l10n.lookingUpBarcode,
+                                  style: const TextStyle(
+                                    color: Color(0xFFFFFFFF), // on scrim
+                                    fontSize: 13,
+                                  ),
+                                ),
                               ],
                             )
                           : Text(
                               l10n.pointCameraAtBarcode,
                               style: const TextStyle(
-                                  color: Color(0xFFFFFFFF), fontSize: 13), // on scrim
+                                color: Color(0xFFFFFFFF),
+                                fontSize: 13,
+                              ), // on scrim
                             ),
                     ),
                   ),
@@ -315,12 +321,17 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                 children: [
                   // Header
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       children: [
-                        Icon(Icons.text_fields,
-                            size: 18, color: context.colors.onSurfaceVariant),
+                        Icon(
+                          Icons.text_fields,
+                          size: 18,
+                          color: context.colors.onSurfaceVariant,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           l10n.ocrDetectedCodes,
@@ -351,24 +362,30 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                             child: Text(
                               l10n.ocrScanning,
                               style: TextStyle(
-                                  color: context.colors.outline, fontSize: 14),
+                                color: context.colors.outline,
+                                fontSize: 14,
+                              ),
                             ),
                           )
                         : ListView.builder(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
                             itemCount: _detectedTexts.length,
                             itemBuilder: (context, index) {
                               final text = _detectedTexts[index];
-                              final isAic = _aicCodes.any((code) =>
-                                  text.contains(code) ||
-                                  text.replaceAll(
-                                          RegExp(r'[^0-9]'), '') ==
-                                      code);
+                              final isAic = _aicCodes.any(
+                                (code) =>
+                                    text.contains(code) ||
+                                    text.replaceAll(RegExp(r'[^0-9]'), '') ==
+                                        code,
+                              );
 
                               return Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 2,
+                                ),
                                 child: Material(
                                   color: isAic
                                       ? context.colors.primaryContainer
@@ -381,18 +398,22 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                         : () => _onTextSelected(text),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 8),
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
                                       child: Row(
                                         children: [
                                           if (isAic)
                                             Padding(
                                               padding: const EdgeInsets.only(
-                                                  right: 8),
+                                                right: 8,
+                                              ),
                                               child: Icon(
                                                 Icons.medication,
                                                 size: 16,
                                                 color: context
-                                                    .colors.onPrimaryContainer,
+                                                    .colors
+                                                    .onPrimaryContainer,
                                               ),
                                             ),
                                           Expanded(
@@ -404,15 +425,18 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                                     ? FontWeight.w600
                                                     : FontWeight.normal,
                                                 color: isAic
-                                                    ? context.colors
-                                                        .onPrimaryContainer
+                                                    ? context
+                                                          .colors
+                                                          .onPrimaryContainer
                                                     : null,
                                               ),
                                             ),
                                           ),
-                                          Icon(Icons.chevron_right,
-                                              size: 18,
-                                              color: context.colors.outline),
+                                          Icon(
+                                            Icons.chevron_right,
+                                            size: 18,
+                                            color: context.colors.outline,
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -437,7 +461,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   void _onTextSelected(String text) {
     // Try to extract an AIC code from the text
     final codes = BarcodeLookupDatasource.extractCodes(text);
-    final code = codes.isNotEmpty ? codes.first : text.replaceAll(RegExp(r'[^0-9A-Za-z]'), '');
+    final code = codes.isNotEmpty
+        ? codes.first
+        : text.replaceAll(RegExp(r'[^0-9A-Za-z]'), '');
     _handleCode(code);
   }
 
@@ -464,9 +490,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       setState(() => _isSearching = false);
 
       if (results.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.barcodeNotFound)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
         // Resume scanning
         setState(() => _isPaused = false);
         return;
@@ -483,9 +509,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           _isSearching = false;
           _isPaused = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.barcodeNotFound)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
       }
     }
   }
@@ -524,15 +550,17 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                   Expanded(
                     child: Text(
                       l10n.selectMedication,
-                      style: Theme.of(ctx)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                      style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   Text(
                     '${results.length} ${l10n.results}',
-                    style: TextStyle(color: ctx.colors.onSurfaceVariant, fontSize: 13),
+                    style: TextStyle(
+                      color: ctx.colors.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -548,8 +576,11 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: ctx.colors.primaryContainer,
-                      child: Icon(Icons.medication,
-                          color: ctx.colors.onPrimaryContainer, size: 20),
+                      child: Icon(
+                        Icons.medication,
+                        color: ctx.colors.onPrimaryContainer,
+                        size: 20,
+                      ),
                     ),
                     title: Text(
                       r.name,
@@ -560,18 +591,28 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(r.description,
-                            style: const TextStyle(fontSize: 12),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis),
+                        Text(
+                          r.description,
+                          style: const TextStyle(fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         if (r.activeIngredient != null)
-                          Text(r.activeIngredient!,
-                              style: TextStyle(
-                                  fontSize: 11, color: ctx.colors.onSurfaceVariant)),
+                          Text(
+                            r.activeIngredient!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: ctx.colors.onSurfaceVariant,
+                            ),
+                          ),
                         if (r.manufacturer != null)
-                          Text(r.manufacturer!,
-                              style: TextStyle(
-                                  fontSize: 11, color: ctx.colors.onSurfaceVariant)),
+                          Text(
+                            r.manufacturer!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: ctx.colors.onSurfaceVariant,
+                            ),
+                          ),
                       ],
                     ),
                     trailing: const Icon(Icons.chevron_right),
@@ -595,14 +636,11 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   Future<void> _selectResult(AifaSearchResult result, String code) async {
     final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.autoFilledFromBarcode)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.autoFilledFromBarcode)));
     context.pop();
-    context.push(
-      '${AppRoutes.addMedication}?barcode=$code',
-      extra: result,
-    );
+    context.push('${AppRoutes.addMedication}?barcode=$code', extra: result);
   }
 
   void _showManualEntryDialog(BuildContext context) {
@@ -643,4 +681,3 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     );
   }
 }
-

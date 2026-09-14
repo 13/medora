@@ -36,46 +36,57 @@ class _SlowRepo implements DoseLogRepository {
   }
 
   @override
-  Future<Result<List<DoseLog>>> getDoseLogsByPrescription(String prescriptionId) =>
-      inner.getDoseLogsByPrescription(prescriptionId);
+  Future<Result<List<DoseLog>>> getDoseLogsByPrescription(
+    String prescriptionId,
+  ) => inner.getDoseLogsByPrescription(prescriptionId);
 
   @override
   Future<Result<DoseLog>> getDoseLogById(String id) => inner.getDoseLogById(id);
 
   @override
-  Future<Result<List<DoseLog>>> getTodaysDoseLogs() => inner.getTodaysDoseLogs();
+  Future<Result<List<DoseLog>>> getTodaysDoseLogs() =>
+      inner.getTodaysDoseLogs();
 
   @override
-  Future<Result<List<DoseLog>>> getDoseLogsByDateRange(DateTime start, DateTime end) =>
-      inner.getDoseLogsByDateRange(start, end);
+  Future<Result<List<DoseLog>>> getDoseLogsByDateRange(
+    DateTime start,
+    DateTime end,
+  ) => inner.getDoseLogsByDateRange(start, end);
 
   @override
-  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end) =>
-      inner.getPendingDoseLogsBetween(start, end);
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(
+    DateTime start,
+    DateTime end,
+  ) => inner.getPendingDoseLogsBetween(start, end);
 
   @override
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) =>
       inner.markOverduePendingAsMissed(cutoff);
 
   @override
-  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) => inner.addDoseLog(doseLog);
+  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) =>
+      inner.addDoseLog(doseLog);
 
   @override
-  Future<Result<DoseLog>> markDoseSkipped(String id) => inner.markDoseSkipped(id);
+  Future<Result<DoseLog>> markDoseSkipped(String id) =>
+      inner.markDoseSkipped(id);
 
   @override
   Future<Result<DoseLog>> markDoseMissed(String id) => inner.markDoseMissed(id);
 
   @override
-  Future<Result<DoseLog>> markDosePending(String id) => inner.markDosePending(id);
+  Future<Result<DoseLog>> markDosePending(String id) =>
+      inner.markDosePending(id);
 
   @override
-  Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(String prescriptionId) =>
-      inner.generateDoseLogsForPrescription(prescriptionId);
+  Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
+    String prescriptionId,
+  ) => inner.generateDoseLogsForPrescription(prescriptionId);
 
   @override
-  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(String prescriptionId) =>
-      inner.regenerateDoseLogsForPrescription(prescriptionId);
+  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
+    String prescriptionId,
+  ) => inner.regenerateDoseLogsForPrescription(prescriptionId);
 }
 
 void main() {
@@ -89,21 +100,43 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.desktop),
-        nowProvider.overrideWithValue(() => fixedNow),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+    platformCapabilitiesProvider.overrideWithValue(
+      PlatformCapabilities.desktop,
+    ),
+    nowProvider.overrideWithValue(() => fixedNow),
+  ];
 
-  testWidgets('groups by time of day, navigates days, take + undo', (tester) async {
+  testWidgets('groups by time of day, navigates days, take + undo', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db, medicationName: 'Brufen');
-    final morning = await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));   // overdue
-    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 20)));                    // evening
-    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(days: 1, hours: 8)));            // tomorrow
+    final morning = await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(hours: 8)),
+    ); // overdue
+    await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(hours: 20)),
+    ); // evening
+    await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(days: 1, hours: 8)),
+    ); // tomorrow
 
-    final c = await pumpMedoraApp(tester, const DoseScheduleScreen(), overrides: await overrides());
+    final c = await pumpMedoraApp(
+      tester,
+      const DoseScheduleScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Morning'), findsOneWidget);
@@ -127,21 +160,39 @@ void main() {
       find.descendant(of: find.byType(SnackBar), matching: find.text('Taken')),
       findsOneWidget,
     );
-    final taken = (await c.read(dosesForDayProvider(today).future)).firstWhere((d) => d.id == morning);
+    final taken = (await c.read(
+      dosesForDayProvider(today).future,
+    )).firstWhere((d) => d.id == morning);
     expect(taken.status, DoseStatus.taken);
 
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
-    final undone = (await c.read(dosesForDayProvider(today).future)).firstWhere((d) => d.id == morning);
+    final undone = (await c.read(
+      dosesForDayProvider(today).future,
+    )).firstWhere((d) => d.id == morning);
     expect(undone.status, DoseStatus.pending);
   });
 
-  testWidgets('Take all due appears with two due doses and takes both', (tester) async {
+  testWidgets('Take all due appears with two due doses and takes both', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
-    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));
-    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 12)));
-    final c = await pumpMedoraApp(tester, const DoseScheduleScreen(), overrides: await overrides());
+    await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(hours: 8)),
+    );
+    await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(hours: 12)),
+    );
+    final c = await pumpMedoraApp(
+      tester,
+      const DoseScheduleScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Take all due'));
@@ -150,70 +201,103 @@ void main() {
     expect(doses.every((d) => d.status == DoseStatus.taken), isTrue);
   });
 
-  testWidgets('Skip shows an undo snackbar and undo restores pending', (tester) async {
+  testWidgets('Skip shows an undo snackbar and undo restores pending', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db, medicationName: 'Brufen');
-    final id = await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));
+    final id = await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(hours: 8)),
+    );
 
-    final c = await pumpMedoraApp(tester, const DoseScheduleScreen(), overrides: await overrides());
+    final c = await pumpMedoraApp(
+      tester,
+      const DoseScheduleScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Skip'));
     await tester.pumpAndSettle();
     expect(
-      find.descendant(of: find.byType(SnackBar), matching: find.text('Skipped')),
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Skipped'),
+      ),
       findsOneWidget,
     );
-    final skipped = (await c.read(dosesForDayProvider(today).future)).firstWhere((d) => d.id == id);
+    final skipped = (await c.read(
+      dosesForDayProvider(today).future,
+    )).firstWhere((d) => d.id == id);
     expect(skipped.status, DoseStatus.skipped);
 
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
-    final undone = (await c.read(dosesForDayProvider(today).future)).firstWhere((d) => d.id == id);
+    final undone = (await c.read(
+      dosesForDayProvider(today).future,
+    )).firstWhere((d) => d.id == id);
     expect(undone.status, DoseStatus.pending);
   });
 
-  testWidgets('busy dose disables its Take button while the action is in flight', (tester) async {
-    final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Brufen');
-    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));
+  testWidgets(
+    'busy dose disables its Take button while the action is in flight',
+    (tester) async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, medicationName: 'Brufen');
+      await seedDoseLog(
+        db,
+        s.prescriptionId,
+        today.add(const Duration(hours: 8)),
+      );
 
-    final completer = Completer<void>();
-    await pumpMedoraApp(
-      tester,
-      const DoseScheduleScreen(),
-      overrides: [
-        ...await overrides(),
-        doseLogRepositoryProvider.overrideWith(
-          (ref) => _SlowRepo(
-            DoseLogRepositoryImpl(
-              localDatasource: ref.watch(doseLogLocalDatasourceProvider),
-              remoteDatasource: ref.watch(doseLogDatasourceProvider),
-              prescriptionLocal: ref.watch(prescriptionLocalDatasourceProvider),
+      final completer = Completer<void>();
+      await pumpMedoraApp(
+        tester,
+        const DoseScheduleScreen(),
+        overrides: [
+          ...await overrides(),
+          doseLogRepositoryProvider.overrideWith(
+            (ref) => _SlowRepo(
+              DoseLogRepositoryImpl(
+                localDatasource: ref.watch(doseLogLocalDatasourceProvider),
+                remoteDatasource: ref.watch(doseLogDatasourceProvider),
+                prescriptionLocal: ref.watch(
+                  prescriptionLocalDatasourceProvider,
+                ),
+              ),
+              completer,
             ),
-            completer,
           ),
-        ),
-      ],
-    );
-    await tester.pumpAndSettle();
+        ],
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Take').first);
-    await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Take').first);
+      await tester.pump();
 
-    final button = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Take').first);
-    expect(button.onPressed, isNull);
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Take').first,
+      );
+      expect(button.onPressed, isNull);
 
-    completer.complete();
-    await tester.pumpAndSettle();
-  });
+      completer.complete();
+      await tester.pumpAndSettle();
+    },
+  );
 
-  testWidgets('dose cards render the localized unit label, never the raw key',
-      (tester) async {
+  testWidgets('dose cards render the localized unit label, never the raw key', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     // seedPrescription stores quantity_unit 'tablets' + dosage_amount 1.
     final s = await seedPrescription(db, medicationName: 'Brufen');
-    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));
+    await seedDoseLog(
+      db,
+      s.prescriptionId,
+      today.add(const Duration(hours: 8)),
+    );
 
     await pumpMedoraApp(
       tester,

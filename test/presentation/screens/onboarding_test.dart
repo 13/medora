@@ -20,20 +20,27 @@ void main() {
   /// Overrides sharing the currently cached [SharedPreferences] instance, so
   /// a second pump sees what the first pump wrote.
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider
-            .overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider
-            .overrideWithValue(PlatformCapabilities.desktop),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+    platformCapabilitiesProvider.overrideWithValue(
+      PlatformCapabilities.desktop,
+    ),
+  ];
 
-  testWidgets('first launch shows the onboarding and marks it seen', (tester) async {
+  testWidgets('first launch shows the onboarding and marks it seen', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
 
-    final container =
-        await pumpMedoraApp(tester, const MainShellScreen(), overrides: await overrides());
+    final container = await pumpMedoraApp(
+      tester,
+      const MainShellScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     // Page 1
@@ -46,8 +53,10 @@ void main() {
 
     // Page 2
     expect(
-      find.text('Group medicines into a treatment with a schedule for who '
-          'takes what and when.'),
+      find.text(
+        'Group medicines into a treatment with a schedule for who '
+        'takes what and when.',
+      ),
       findsOneWidget,
     );
 
@@ -66,10 +75,16 @@ void main() {
     expect(container.read(onboardingSeenProvider), isTrue);
   });
 
-  testWidgets('onboarding does not come back on the next launch', (tester) async {
+  testWidgets('onboarding does not come back on the next launch', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
 
-    await pumpMedoraApp(tester, const MainShellScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const MainShellScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(OnboardingSheet), findsOneWidget);
 
@@ -78,16 +93,26 @@ void main() {
     expect(find.byType(OnboardingSheet), findsNothing);
 
     // Second launch, same persisted preferences.
-    await pumpMedoraApp(tester, const MainShellScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const MainShellScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(OnboardingSheet), findsNothing);
   });
 
-  testWidgets('swiping the sheet away also marks onboarding seen', (tester) async {
+  testWidgets('swiping the sheet away also marks onboarding seen', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
 
-    await pumpMedoraApp(tester, const MainShellScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const MainShellScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(OnboardingSheet), findsOneWidget);
 
@@ -98,57 +123,69 @@ void main() {
     expect(prefs.getBool('onboarding_seen'), isTrue);
   });
 
-  testWidgets('onboarding is skipped when it has already been seen', (tester) async {
+  testWidgets('onboarding is skipped when it has already been seen', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({'onboarding_seen': true});
 
-    await pumpMedoraApp(tester, const MainShellScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const MainShellScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(OnboardingSheet), findsNothing);
   });
 
-  testWidgets('onboarding sheet does not overflow at a short landscape viewport', (tester) async {
-    tester.view.physicalSize = const Size(800, 360);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'onboarding sheet does not overflow at a short landscape viewport',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 360);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await _pumpOpenSheet(tester);
+      await _pumpOpenSheet(tester);
 
-    expect(find.byType(OnboardingSheet), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      expect(find.byType(OnboardingSheet), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('onboarding sheet does not overflow at 2x text scale and stays usable', (tester) async {
-    tester.view.physicalSize = const Size(412, 915);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+  testWidgets(
+    'onboarding sheet does not overflow at 2x text scale and stays usable',
+    (tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    await _pumpOpenSheet(tester);
+      await _pumpOpenSheet(tester);
 
-    // Page 1
-    expect(find.byType(OnboardingSheet), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      // Page 1
+      expect(find.byType(OnboardingSheet), findsOneWidget);
+      expect(tester.takeException(), isNull);
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
+      await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
 
-    // Page 2
-    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
+      // Page 2
+      await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
 
-    // Page 3 — last page: Done.
-    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
+      // Page 3 — last page: Done.
+      await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
 
-    expect(find.byType(OnboardingSheet), findsNothing);
-  });
+      expect(find.byType(OnboardingSheet), findsNothing);
+    },
+  );
 }
 
 /// Pumps just the onboarding sheet (not the whole [MainShellScreen]/app), so

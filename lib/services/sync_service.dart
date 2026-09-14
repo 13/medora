@@ -63,11 +63,12 @@ class SyncService {
     Stream<bool>? onlineStream,
     DateTime Function()? now,
     this.onFirstSuccessfulSync,
-  })  : _cursors = cursors ?? SyncCursorStore.inMemory(),
-        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
-        _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
-        _onlineStream = onlineStream ?? ConnectivityService.instance.onlineStream,
-        _now = now ?? DateTime.now;
+  }) : _cursors = cursors ?? SyncCursorStore.inMemory(),
+       _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
+       _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
+       _onlineStream =
+           onlineStream ?? ConnectivityService.instance.onlineStream,
+       _now = now ?? DateTime.now;
 
   final MedicationLocalDatasource medicationLocal;
   final MedicationRemoteDatasource? medicationRemote;
@@ -142,22 +143,27 @@ class SyncService {
   /// or null when the cycle was skipped (local-only, offline, signed out, or
   /// already syncing).
   Future<SyncReport?> syncAll() => _run('sync', (report) async {
-        await _pushPendingChanges(report);
-        await _pullAll(report, force: false);
-      });
+    await _pushPendingChanges(report);
+    await _pullAll(report, force: false);
+  });
 
   /// Push ALL local rows regardless of sync_status.
-  Future<SyncReport?> forcePush() =>
-      _run('force push', (report) => _pushPendingChanges(report, forceAll: true));
+  Future<SyncReport?> forcePush() => _run(
+    'force push',
+    (report) => _pushPendingChanges(report, forceAll: true),
+  );
 
   /// Wipe local rows and pull everything again.
   Future<SyncReport?> forcePull() => _run('force pull', (report) async {
-        await _cursors.clear();
-        await AppDatabase.instance.clearAllData();
-        await _pullAll(report, force: true);
-      });
+    await _cursors.clear();
+    await AppDatabase.instance.clearAllData();
+    await _pullAll(report, force: true);
+  });
 
-  Future<SyncReport?> _run(String label, Future<void> Function(SyncReport) body) async {
+  Future<SyncReport?> _run(
+    String label,
+    Future<void> Function(SyncReport) body,
+  ) async {
     if (!isAvailable) {
       debugPrint('Sync: $label skipped (local-only mode)');
       return null;
@@ -196,20 +202,25 @@ class SyncService {
       }
     }
     _lastReport = report;
-    debugPrint('Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
-        'deleted ${report.deleted}, failed ${report.failures.length}');
-    _setState(report.fatal != null
-        ? SyncState.error
-        : report.hasFailures
-            ? SyncState.partial
-            : SyncState.success);
+    debugPrint(
+      'Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
+      'deleted ${report.deleted}, failed ${report.failures.length}',
+    );
+    _setState(
+      report.fatal != null
+          ? SyncState.error
+          : report.hasFailures
+          ? SyncState.partial
+          : SyncState.success,
+    );
     _returnToIdleLater();
     return report;
   }
 
   void _returnToIdleLater() {
     Future<void>.delayed(const Duration(seconds: 2), () {
-      if (_currentState == SyncState.success || _currentState == SyncState.partial) {
+      if (_currentState == SyncState.success ||
+          _currentState == SyncState.partial) {
         _setState(SyncState.idle);
       }
     });
@@ -217,7 +228,10 @@ class SyncService {
 
   // ── Push ───────────────────────────────────────────────────
 
-  Future<void> _pushPendingChanges(SyncReport report, {bool forceAll = false}) async {
+  Future<void> _pushPendingChanges(
+    SyncReport report, {
+    bool forceAll = false,
+  }) async {
     final db = await AppDatabase.instance.database;
     final userId = _currentUserId();
     if (userId == null) return;
@@ -227,11 +241,16 @@ class SyncService {
 
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
     await _pushBatch('families', report, where, whereArgs, (row) async {
-      if (row['sync_status'] == SyncStatus.pendingDelete) return false; // Task 5
+      if (row['sync_status'] == SyncStatus.pendingDelete)
+        return false; // Task 5
       final model = FamilyModel.fromJson(row);
       await familyRemote!.upsertFamily(model);
-      await db.update('families', {'sync_status': SyncStatus.synced},
-          where: 'id = ?', whereArgs: [model.id]);
+      await db.update(
+        'families',
+        {'sync_status': SyncStatus.synced},
+        where: 'id = ?',
+        whereArgs: [model.id],
+      );
       return true;
     });
 
@@ -242,24 +261,35 @@ class SyncService {
         await familyLocal.hardDeleteMember(model.id);
       } else {
         await familyRemote!.upsertMember(model);
-        await db.update('family_members', {'sync_status': SyncStatus.synced},
-            where: 'id = ?', whereArgs: [model.id]);
+        await db.update(
+          'family_members',
+          {'sync_status': SyncStatus.synced},
+          where: 'id = ?',
+          whereArgs: [model.id],
+        );
       }
       return true;
     });
 
     // Families the user left: drop locally once their member rows are gone.
-    await _pushBatch('families', report, 'sync_status = ?', [SyncStatus.pendingDelete],
-        (row) async {
-      final id = row['id'] as String;
-      final remaining = await db.query('family_members',
+    await _pushBatch(
+      'families',
+      report,
+      'sync_status = ?',
+      [SyncStatus.pendingDelete],
+      (row) async {
+        final id = row['id'] as String;
+        final remaining = await db.query(
+          'family_members',
           columns: ['id'],
           where: 'family_id = ? AND sync_status = ?',
-          whereArgs: [id, SyncStatus.pendingDelete]);
-      if (remaining.isNotEmpty) return false; // member removal still pending
-      await familyLocal.deleteFamily(id);
-      return true;
-    });
+          whereArgs: [id, SyncStatus.pendingDelete],
+        );
+        if (remaining.isNotEmpty) return false; // member removal still pending
+        await familyLocal.deleteFamily(id);
+        return true;
+      },
+    );
 
     await _pushBatch('medications', report, where, whereArgs, (row) async {
       final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
@@ -433,7 +463,10 @@ class SyncService {
       if (u != null && (newest == null || u.isAfter(newest))) newest = u;
     }
     if (newest != null && !anyFailure) {
-      await _cursors.setLastPullAt(table, newest.subtract(const Duration(seconds: 1)));
+      await _cursors.setLastPullAt(
+        table,
+        newest.subtract(const Duration(seconds: 1)),
+      );
     }
   }
 
@@ -460,7 +493,9 @@ class SyncService {
       // Members that vanished remotely are dropped locally (pending local
       // rows are left alone — the next push decides their fate).
       await familyLocal.deleteMembersNotIn(
-          family.id, members.map((m) => m.id).toSet());
+        family.id,
+        members.map((m) => m.id).toSet(),
+      );
     } catch (e) {
       report.failures.add(SyncFailure('families', '*', 'pull: $e'));
       if (failFast) throw _FetchFailedFatally('families', e);
@@ -470,33 +505,49 @@ class SyncService {
   /// True when the local row exists and still has unpushed changes.
   Future<bool> _isLocallyPending(String table, String id) async {
     final db = await AppDatabase.instance.database;
-    final rows = await db.query(table,
-        columns: ['id'],
-        where: 'id = ? AND sync_status != ?',
-        whereArgs: [id, SyncStatus.synced],
-        limit: 1);
+    final rows = await db.query(
+      table,
+      columns: ['id'],
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.synced],
+      limit: 1,
+    );
     return rows.isNotEmpty;
   }
 
   // ── Merge helpers (last-write-wins for locally pending rows) ──
 
-  Future<void> _safeUpsertMedication(MedicationModel m, {bool force = false}) async {
-    if (!force && await _localPendingIsNewer('medications', m.id, m.updatedAt)) return;
+  Future<void> _safeUpsertMedication(
+    MedicationModel m, {
+    bool force = false,
+  }) async {
+    if (!force && await _localPendingIsNewer('medications', m.id, m.updatedAt))
+      return;
     await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
   }
 
-  Future<void> _safeUpsertTreatment(TreatmentModel t, {bool force = false}) async {
-    if (!force && await _localPendingIsNewer('treatments', t.id, t.updatedAt)) return;
+  Future<void> _safeUpsertTreatment(
+    TreatmentModel t, {
+    bool force = false,
+  }) async {
+    if (!force && await _localPendingIsNewer('treatments', t.id, t.updatedAt))
+      return;
     await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
   }
 
-  Future<void> _safeUpsertPrescription(PrescriptionModel p, {bool force = false}) async {
-    if (!force && await _localPendingIsNewer('prescriptions', p.id, p.updatedAt)) return;
+  Future<void> _safeUpsertPrescription(
+    PrescriptionModel p, {
+    bool force = false,
+  }) async {
+    if (!force &&
+        await _localPendingIsNewer('prescriptions', p.id, p.updatedAt))
+      return;
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
   }
 
   Future<void> _safeUpsertDoseLog(DoseLogModel d, {bool force = false}) async {
-    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) return;
+    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt))
+      return;
     await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
   }
 
@@ -504,17 +555,24 @@ class SyncService {
   /// the remote row (so the remote row must not overwrite it). A local
   /// tombstone waiting to be pushed always wins over a live remote row — a
   /// pull must never resurrect a row the user deleted.
-  Future<bool> _localPendingIsNewer(String table, String id, DateTime? remoteUpdatedAt) async {
+  Future<bool> _localPendingIsNewer(
+    String table,
+    String id,
+    DateTime? remoteUpdatedAt,
+  ) async {
     final db = await AppDatabase.instance.database;
-    final rows = await db.query(table,
-        columns: ['updated_at', 'sync_status'],
-        where: 'id = ? AND sync_status != ?',
-        whereArgs: [id, SyncStatus.synced]);
+    final rows = await db.query(
+      table,
+      columns: ['updated_at', 'sync_status'],
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.synced],
+    );
     if (rows.isEmpty) return false;
     if (rows.first['sync_status'] == SyncStatus.pendingDelete) return true;
     final localRaw = rows.first['updated_at'] as String?;
     final local = localRaw == null ? null : DateTime.tryParse(localRaw);
-    if (local == null || remoteUpdatedAt == null) return true; // keep local when unsure
+    if (local == null || remoteUpdatedAt == null)
+      return true; // keep local when unsure
     return !remoteUpdatedAt.toUtc().isAfter(local.toUtc());
   }
 

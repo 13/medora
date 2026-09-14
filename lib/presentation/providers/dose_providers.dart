@@ -11,8 +11,7 @@ import 'package:medora/presentation/providers/providers.dart';
 
 /// Counter that is incremented whenever dose statuses change.
 /// Providers that depend on this (e.g. dose history) will auto-refetch.
-final doseDataVersionProvider =
-    NotifierProvider<DoseDataVersionNotifier, int>(
+final doseDataVersionProvider = NotifierProvider<DoseDataVersionNotifier, int>(
   DoseDataVersionNotifier.new,
 );
 
@@ -52,21 +51,22 @@ DateTime dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
 /// Doses for the calendar day containing [day] (local). Queries the
 /// repository by date range and re-fetches when [doseDataVersionProvider]
 /// changes (also for today, so a fixed test clock works).
-final dosesForDayProvider = FutureProvider.family<List<DoseLog>, DateTime>(
-  (ref, day) async {
-    ref.watch(doseDataVersionProvider);
-    final key = dayKey(day);
-    final repo = ref.watch(doseLogRepositoryProvider);
-    final result = await repo.getDoseLogsByDateRange(
-      key,
-      DateTime(key.year, key.month, key.day + 1),
-    );
-    return result.when(
-      success: (data) => data,
-      failure: (msg) => throw Exception(msg),
-    );
-  },
-);
+final dosesForDayProvider = FutureProvider.family<List<DoseLog>, DateTime>((
+  ref,
+  day,
+) async {
+  ref.watch(doseDataVersionProvider);
+  final key = dayKey(day);
+  final repo = ref.watch(doseLogRepositoryProvider);
+  final result = await repo.getDoseLogsByDateRange(
+    key,
+    DateTime(key.year, key.month, key.day + 1),
+  );
+  return result.when(
+    success: (data) => data,
+    failure: (msg) => throw Exception(msg),
+  );
+});
 
 /// The next pending dose to act on: the earliest pending dose today, else
 /// null. "Earliest pending" already covers the old "<= now + 2h" case — if
@@ -160,7 +160,11 @@ class DoseActions {
 }
 
 /// If the prescription has autoDiminish enabled, decrease medication stock.
-Future<void> _autoDiminish(Ref ref, String doseLogId, {bool reverse = false}) async {
+Future<void> _autoDiminish(
+  Ref ref,
+  String doseLogId, {
+  bool reverse = false,
+}) async {
   try {
     final repo = ref.read(doseLogRepositoryProvider);
     final doseResult = await repo.getDoseLogById(doseLogId);
@@ -168,18 +172,23 @@ Future<void> _autoDiminish(Ref ref, String doseLogId, {bool reverse = false}) as
     if (dose == null) return;
 
     final prescRepo = ref.read(prescriptionRepositoryProvider);
-    final prescResult =
-        await prescRepo.getPrescriptionById(dose.prescriptionId);
+    final prescResult = await prescRepo.getPrescriptionById(
+      dose.prescriptionId,
+    );
     final prescription = prescResult.dataOrNull;
     if (prescription == null || !prescription.autoDiminish) return;
 
     // Parse numeric amount from dosageAmount or dosage text
-    final amount = prescription.dosageAmount?.round() ??
+    final amount =
+        prescription.dosageAmount?.round() ??
         _parseDosageAmount(prescription.dosage);
     if (amount <= 0) return;
 
     final medNotifier = ref.read(medicationListProvider.notifier);
-    await medNotifier.updateQuantity(prescription.medicationId, reverse ? amount : -amount);
+    await medNotifier.updateQuantity(
+      prescription.medicationId,
+      reverse ? amount : -amount,
+    );
   } catch (_) {
     // Non-critical: don't fail the dose marking
   }
@@ -197,8 +206,8 @@ int _parseDosageAmount(String dosage) {
 /// Provider for today's dose logs.
 final todaysDoseLogsProvider =
     AsyncNotifierProvider<TodaysDoseLogsNotifier, List<DoseLog>>(
-  TodaysDoseLogsNotifier.new,
-);
+      TodaysDoseLogsNotifier.new,
+    );
 
 class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
   @override
@@ -254,8 +263,9 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
         if (p.endTime.isBefore(today)) continue;
 
         // Check how many doses SHOULD exist today
-        final scheduledToday = p.scheduledDoseTimes.where((t) =>
-            !t.isBefore(today) && t.isBefore(tomorrow)).toList();
+        final scheduledToday = p.scheduledDoseTimes
+            .where((t) => !t.isBefore(today) && t.isBefore(tomorrow))
+            .toList();
 
         if (scheduledToday.isEmpty) continue;
 
@@ -263,9 +273,11 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
         final todayLogs = logsByPrescription[p.id] ?? [];
 
         if (todayLogs.length < scheduledToday.length) {
-          debugPrint('⚠ Missing dose logs for prescription ${p.id} '
-              '(${p.medicationName ?? "unknown"}): '
-              'has ${todayLogs.length}, expected ${scheduledToday.length}. Generating missing...');
+          debugPrint(
+            '⚠ Missing dose logs for prescription ${p.id} '
+            '(${p.medicationName ?? "unknown"}): '
+            'has ${todayLogs.length}, expected ${scheduledToday.length}. Generating missing...',
+          );
           needsGeneration.add(p.id);
         }
       }
@@ -273,7 +285,9 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       // Generate all missing dose logs in parallel
       if (needsGeneration.isNotEmpty) {
         await Future.wait(
-          needsGeneration.map((id) => doseRepo.generateDoseLogsForPrescription(id))
+          needsGeneration.map(
+            (id) => doseRepo.generateDoseLogsForPrescription(id),
+          ),
         );
 
         // Refresh the state after generation
@@ -298,8 +312,9 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
 /// The day currently selected on the Doses tab (midnight-normalized).
 /// Defaults to today (per [nowProvider]).
-final selectedDoseDayProvider =
-    NotifierProvider<SelectedDoseDay, DateTime>(SelectedDoseDay.new);
+final selectedDoseDayProvider = NotifierProvider<SelectedDoseDay, DateTime>(
+  SelectedDoseDay.new,
+);
 
 class SelectedDoseDay extends Notifier<DateTime> {
   @override
@@ -327,13 +342,12 @@ class SelectedDoseDay extends Notifier<DateTime> {
 
 /// Provider for dose logs by prescription.
 final doseLogsByPrescriptionProvider =
-    FutureProvider.family<List<DoseLog>, String>(
-  (ref, prescriptionId) async {
-    final repo = ref.watch(doseLogRepositoryProvider);
-    final result = await repo.getTodaysDoseLogs();
-    return result.when(
-      success: (data) => data.where((d) => d.prescriptionId == prescriptionId).toList(),
-      failure: (msg) => throw Exception(msg),
-    );
-  },
-);
+    FutureProvider.family<List<DoseLog>, String>((ref, prescriptionId) async {
+      final repo = ref.watch(doseLogRepositoryProvider);
+      final result = await repo.getTodaysDoseLogs();
+      return result.when(
+        success: (data) =>
+            data.where((d) => d.prescriptionId == prescriptionId).toList(),
+        failure: (msg) => throw Exception(msg),
+      );
+    });

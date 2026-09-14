@@ -14,4 +14,3 @@ abstract class FamilyRepository {
   Future<Result<String>> regenerateInviteCode(String familyId);
   Future<Result<void>> removeMember(String memberId);
 }
-

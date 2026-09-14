@@ -100,15 +100,13 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                 _FilterChip(
                   label: l10n.active,
                   selected: _filter == TreatmentFilter.active,
-                  onTap: () =>
-                      setState(() => _filter = TreatmentFilter.active),
+                  onTap: () => setState(() => _filter = TreatmentFilter.active),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
                   label: l10n.ended,
                   selected: _filter == TreatmentFilter.ended,
-                  onTap: () =>
-                      setState(() => _filter = TreatmentFilter.ended),
+                  onTap: () => setState(() => _filter = TreatmentFilter.ended),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
@@ -125,7 +123,8 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
           Expanded(
             child: AsyncValueView<List<Treatment>>(
               value: treatmentsAsync,
-              onRetry: () async => ref.read(treatmentListProvider.notifier).refresh(),
+              onRetry: () async =>
+                  ref.read(treatmentListProvider.notifier).refresh(),
               emptyWhen: (treatments) => treatments.isEmpty,
               empty: EmptyStateWidget(
                 icon: Icons.healing_outlined,
@@ -141,11 +140,18 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search_off,
-                            size: 48, color: context.colors.outline),
+                        Icon(
+                          Icons.search_off,
+                          size: 48,
+                          color: context.colors.outline,
+                        ),
                         const SizedBox(height: 8),
-                        Text(l10n.noResults,
-                            style: TextStyle(color: context.colors.onSurfaceVariant)),
+                        Text(
+                          l10n.noResults,
+                          style: TextStyle(
+                            color: context.colors.onSurfaceVariant,
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -194,9 +200,12 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.pop(ctx, true),
-                                        child: Text(l10n.delete,
-                                            style: TextStyle(
-                                                color: context.colors.error)),
+                                        child: Text(
+                                          l10n.delete,
+                                          style: TextStyle(
+                                            color: context.colors.error,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -240,15 +249,14 @@ class _TreatmentTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final prescriptionsAsync = ref.watch(prescriptionsByTreatmentProvider(treatment.id));
+    final prescriptionsAsync = ref.watch(
+      prescriptionsByTreatmentProvider(treatment.id),
+    );
 
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: context.colors.primaryContainer,
-        child: Icon(
-          Icons.healing,
-          color: context.colors.onPrimaryContainer,
-        ),
+        child: Icon(Icons.healing, color: context.colors.onPrimaryContainer),
       ),
       title: Text(
         treatment.name,
@@ -267,8 +275,12 @@ class _TreatmentTile extends ConsumerWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (treatment.patientName != null)
-                    ...treatment.patientTags.map((t) => TagChip(label: t, icon: Icons.person)),
-                  ...treatment.symptomTags.take(3).map((s) => TagChip(label: s)),
+                    ...treatment.patientTags.map(
+                      (t) => TagChip(label: t, icon: Icons.person),
+                    ),
+                  ...treatment.symptomTags
+                      .take(3)
+                      .map((s) => TagChip(label: s)),
                 ],
               ),
             ),
@@ -280,7 +292,9 @@ class _TreatmentTile extends ConsumerWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: treatment.isActive
                         ? context.medora.successContainer
@@ -301,7 +315,10 @@ class _TreatmentTile extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Text(
                   l10n.startedOn(treatment.startDate.shortFormatted),
-                  style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 12),
+                  style: TextStyle(
+                    color: context.colors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -323,7 +340,10 @@ class _TreatmentTile extends ConsumerWidget {
             ),
             Text(
               l10n.prescriptions,
-              style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: 10,
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           ],
         ),

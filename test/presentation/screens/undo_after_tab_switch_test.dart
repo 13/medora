@@ -29,13 +29,19 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.desktop),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+    platformCapabilitiesProvider.overrideWithValue(
+      PlatformCapabilities.desktop,
+    ),
+  ];
 
-  testWidgets('Undo still works after the SnackBar outlives its tab', (tester) async {
+  testWidgets('Undo still works after the SnackBar outlives its tab', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db, medicationName: 'Tachipirina');
     final doseId = await seedDoseLog(
@@ -44,7 +50,11 @@ void main() {
       DateTime.now().subtract(const Duration(minutes: 10)),
     );
 
-    await pumpMedoraApp(tester, const MainShellScreen(), overrides: await overrides());
+    await pumpMedoraApp(
+      tester,
+      const MainShellScreen(),
+      overrides: await overrides(),
+    );
     await tester.pumpAndSettle();
 
     // Take the dose from the Home "Now" card.
@@ -53,7 +63,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Undo'), findsOneWidget);
     expect(
-      (await db.query('dose_logs', where: 'id = ?', whereArgs: [doseId])).single['status'],
+      (await db.query(
+        'dose_logs',
+        where: 'id = ?',
+        whereArgs: [doseId],
+      )).single['status'],
       'taken',
     );
 
@@ -68,7 +82,11 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-      (await db.query('dose_logs', where: 'id = ?', whereArgs: [doseId])).single['status'],
+      (await db.query(
+        'dose_logs',
+        where: 'id = ?',
+        whereArgs: [doseId],
+      )).single['status'],
       'pending',
     );
   });

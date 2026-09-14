@@ -30,14 +30,14 @@ class TreatmentDetailScreen extends ConsumerStatefulWidget {
       _TreatmentDetailScreenState();
 }
 
-class _TreatmentDetailScreenState
-    extends ConsumerState<TreatmentDetailScreen> {
+class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final treatmentsAsync = ref.watch(treatmentListProvider);
-    final prescriptionsAsync =
-        ref.watch(prescriptionsByTreatmentProvider(widget.treatmentId));
+    final prescriptionsAsync = ref.watch(
+      prescriptionsByTreatmentProvider(widget.treatmentId),
+    );
     final treatment = treatmentsAsync.value
         ?.where((t) => t.id == widget.treatmentId)
         .firstOrNull;
@@ -57,90 +57,98 @@ class _TreatmentDetailScreenState
                 PopupMenuButton<String>(
                   onSelected: (value) async {
                     switch (value) {
-                    case 'end':
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
+                      case 'end':
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text(l10n.endTreatment),
+                            content: Text(
+                              l10n.endTreatmentConfirm(treatment.name),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: Text(l10n.cancel),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: Text(l10n.endTreatment),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          ref
+                              .read(treatmentListProvider.notifier)
+                              .endTreatment(treatment.id);
+                        }
+                      case 'delete':
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: Text(l10n.deleteTreatment),
+                            content: Text(
+                              l10n.deleteTreatmentConfirm(treatment.name),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: Text(l10n.cancel),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: Text(
+                                  l10n.delete,
+                                  style: TextStyle(color: context.colors.error),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true && context.mounted) {
+                          ref
+                              .read(treatmentListProvider.notifier)
+                              .deleteTreatment(treatment.id);
+                          if (context.mounted) context.pop();
+                        }
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    if (treatment.isActive)
+                      PopupMenuItem(
+                        value: 'end',
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.stop_circle,
+                            color: context.medora.warning,
+                          ),
                           title: Text(l10n.endTreatment),
-                          content: Text(
-                            l10n.endTreatmentConfirm(treatment.name),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: Text(l10n.cancel),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: Text(l10n.endTreatment),
-                            ),
-                          ],
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
                         ),
-                      );
-                      if (confirm == true) {
-                        ref
-                            .read(treatmentListProvider.notifier)
-                            .endTreatment(treatment.id);
-                      }
-                    case 'delete':
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(l10n.deleteTreatment),
-                          content: Text(
-                            l10n.deleteTreatmentConfirm(treatment.name),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: Text(l10n.cancel),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: Text(l10n.delete,
-                                  style: TextStyle(color: context.colors.error)),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirm == true && context.mounted) {
-                        ref
-                            .read(treatmentListProvider.notifier)
-                            .deleteTreatment(treatment.id);
-                        if (context.mounted) context.pop();
-                      }
-                  }
-                },
-                itemBuilder: (ctx) => [
-                  if (treatment.isActive)
+                      ),
                     PopupMenuItem(
-                      value: 'end',
+                      value: 'delete',
                       child: ListTile(
-                        leading: Icon(Icons.stop_circle,
-                            color: context.medora.warning),
-                        title: Text(l10n.endTreatment),
+                        leading: Icon(
+                          Icons.delete,
+                          color: context.colors.error,
+                        ),
+                        title: Text(l10n.deleteTreatment),
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      leading: Icon(Icons.delete, color: context.colors.error),
-                      title: Text(l10n.deleteTreatment),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
       ),
       body: AsyncValueView<List<Treatment>>(
         value: treatmentsAsync,
         data: (treatments) {
-          final treatment =
-              treatments.where((t) => t.id == widget.treatmentId).firstOrNull;
+          final treatment = treatments
+              .where((t) => t.id == widget.treatmentId)
+              .firstOrNull;
           if (treatment == null) {
             return EmptyStateWidget(
               icon: Icons.error_outline,
@@ -185,23 +193,35 @@ class _TreatmentDetailScreenState
                       ),
                       const SizedBox(height: 12),
                       if (treatment.patientTags.isNotEmpty) ...[
-                        Text(l10n.treatmentPatientTags,
-                            style: TextStyle(
-                                color: context.colors.onSurfaceVariant, fontSize: 12)),
+                        Text(
+                          l10n.treatmentPatientTags,
+                          style: TextStyle(
+                            color: context.colors.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Wrap(
                           spacing: 6,
                           runSpacing: 4,
                           children: treatment.patientTags.map((t) {
-                            return TagChip(label: t, icon: Icons.person, fontSize: 12);
+                            return TagChip(
+                              label: t,
+                              icon: Icons.person,
+                              fontSize: 12,
+                            );
                           }).toList(),
                         ),
                         const SizedBox(height: 12),
                       ],
                       if (treatment.symptomTags.isNotEmpty) ...[
-                        Text(l10n.treatmentSymptomTags,
-                            style: TextStyle(
-                                color: context.colors.onSurfaceVariant, fontSize: 12)),
+                        Text(
+                          l10n.treatmentSymptomTags,
+                          style: TextStyle(
+                            color: context.colors.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Wrap(
                           spacing: 6,
@@ -218,10 +238,13 @@ class _TreatmentDetailScreenState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(l10n.startDate,
-                                    style: TextStyle(
-                                        color: context.colors.onSurfaceVariant,
-                                        fontSize: 12)),
+                                Text(
+                                  l10n.startDate,
+                                  style: TextStyle(
+                                    color: context.colors.onSurfaceVariant,
+                                    fontSize: 12,
+                                  ),
+                                ),
                                 Text(treatment.startDate.formatted),
                               ],
                             ),
@@ -230,12 +253,16 @@ class _TreatmentDetailScreenState
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(l10n.endDate,
-                                    style: TextStyle(
-                                        color: context.colors.onSurfaceVariant,
-                                        fontSize: 12)),
-                                Text(treatment.endDate
-                                    .formattedOr(l10n.ongoing)),
+                                Text(
+                                  l10n.endDate,
+                                  style: TextStyle(
+                                    color: context.colors.onSurfaceVariant,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  treatment.endDate.formattedOr(l10n.ongoing),
+                                ),
                               ],
                             ),
                           ),
@@ -244,9 +271,13 @@ class _TreatmentDetailScreenState
                       if (treatment.notes != null &&
                           treatment.notes!.isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        Text(l10n.notes,
-                            style: TextStyle(
-                                color: context.colors.onSurfaceVariant, fontSize: 12)),
+                        Text(
+                          l10n.notes,
+                          style: TextStyle(
+                            color: context.colors.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(height: 4),
                         Text(treatment.notes!),
                       ],
@@ -262,14 +293,17 @@ class _TreatmentDetailScreenState
                 children: [
                   Text(
                     l10n.prescriptions,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   if (treatment.isActive)
                     TextButton.icon(
-                      onPressed: () => showPrescriptionSheet(context, ref, treatmentId: widget.treatmentId),
+                      onPressed: () => showPrescriptionSheet(
+                        context,
+                        ref,
+                        treatmentId: widget.treatmentId,
+                      ),
                       icon: const Icon(Icons.add, size: 18),
                       label: Text(l10n.add),
                     ),
@@ -281,21 +315,29 @@ class _TreatmentDetailScreenState
                 value: prescriptionsAsync,
                 compact: true,
                 onRetry: () async => ref.invalidate(
-                    prescriptionsByTreatmentProvider(widget.treatmentId)),
+                  prescriptionsByTreatmentProvider(widget.treatmentId),
+                ),
                 emptyWhen: (prescriptions) => prescriptions.isEmpty,
                 empty: Card(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       children: [
-                        Icon(Icons.medication_outlined,
-                            size: 48, color: context.colors.outline),
+                        Icon(
+                          Icons.medication_outlined,
+                          size: 48,
+                          color: context.colors.outline,
+                        ),
                         const SizedBox(height: 8),
                         Text(l10n.noPrescriptionsYet),
                         if (treatment.isActive) ...[
                           const SizedBox(height: 8),
                           TextButton(
-                            onPressed: () => showPrescriptionSheet(context, ref, treatmentId: widget.treatmentId),
+                            onPressed: () => showPrescriptionSheet(
+                              context,
+                              ref,
+                              treatmentId: widget.treatmentId,
+                            ),
                             child: Text(l10n.addPrescription),
                           ),
                         ],
@@ -313,47 +355,50 @@ class _TreatmentDetailScreenState
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
                           color: context.colors.error,
-                          child: Icon(Icons.delete,
-                              color: context.colors.onError),
+                          child: Icon(
+                            Icons.delete,
+                            color: context.colors.onError,
+                          ),
                         ),
                         confirmDismiss: (_) async {
                           return await showDialog<bool>(
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title: Text(l10n.deletePrescription),
-                              content: Text(
-                                  l10n.deletePrescriptionConfirm),
+                              content: Text(l10n.deletePrescriptionConfirm),
                               actions: [
                                 TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(ctx, false),
+                                  onPressed: () => Navigator.pop(ctx, false),
                                   child: Text(l10n.cancel),
                                 ),
                                 TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(ctx, true),
-                                  child: Text(l10n.delete,
-                                      style: TextStyle(
-                                          color: context.colors.error)),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: Text(
+                                    l10n.delete,
+                                    style: TextStyle(
+                                      color: context.colors.error,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
                           );
                         },
                         onDismissed: (_) async {
-                          final repo =
-                              ref.read(prescriptionRepositoryProvider);
+                          final repo = ref.read(prescriptionRepositoryProvider);
                           await repo.deletePrescription(p.id);
                           ref.invalidate(
-                              prescriptionsByTreatmentProvider(
-                                  widget.treatmentId));
+                            prescriptionsByTreatmentProvider(
+                              widget.treatmentId,
+                            ),
+                          );
                           ref.invalidateDoseData();
-                          unawaited(ref.read(reminderSchedulerProvider).reconcile());
+                          unawaited(
+                            ref.read(reminderSchedulerProvider).reconcile(),
+                          );
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content:
-                                      Text(l10n.prescriptionDeleted)),
+                              SnackBar(content: Text(l10n.prescriptionDeleted)),
                             );
                           }
                         },
@@ -361,13 +406,17 @@ class _TreatmentDetailScreenState
                           child: ListTile(
                             leading: CircleAvatar(
                               backgroundColor: context.colors.primary,
-                              child: Icon(Icons.medication,
-                                  color: context.colors.onPrimary, size: 20),
+                              child: Icon(
+                                Icons.medication,
+                                color: context.colors.onPrimary,
+                                size: 20,
+                              ),
                             ),
                             title: Text(
                               p.medicationName ?? l10n.unknownMedication,
                               style: const TextStyle(
-                                  fontWeight: FontWeight.w600),
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,19 +425,33 @@ class _TreatmentDetailScreenState
                                 if (!p.isActive)
                                   Container(
                                     margin: const EdgeInsets.only(top: 4),
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: context.colors.surfaceContainerHighest,
+                                      color: context
+                                          .colors
+                                          .surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: Text(l10n.done, style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant)),
+                                    child: Text(
+                                      l10n.done,
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: context.colors.onSurfaceVariant,
+                                      ),
+                                    ),
                                   ),
                                 if (p.notes != null && p.notes!.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
                                       p.notes!,
-                                      style: TextStyle(fontSize: 11, color: context.colors.onSurfaceVariant),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: context.colors.onSurfaceVariant,
+                                      ),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -410,7 +473,10 @@ class _TreatmentDetailScreenState
                                   PopupMenuItem(
                                     value: 'deactivate',
                                     child: ListTile(
-                                      leading: const Icon(Icons.pause_circle_outline, size: 20),
+                                      leading: const Icon(
+                                        Icons.pause_circle_outline,
+                                        size: 20,
+                                      ),
                                       title: Text(l10n.deactivatePrescription),
                                       dense: true,
                                       contentPadding: EdgeInsets.zero,
@@ -420,8 +486,17 @@ class _TreatmentDetailScreenState
                                   PopupMenuItem(
                                     value: 'reactivate',
                                     child: ListTile(
-                                      leading: Icon(Icons.play_circle_outline, size: 20, color: context.medora.success),
-                                      title: Text(l10n.reactivatePrescription, style: TextStyle(color: context.medora.success)),
+                                      leading: Icon(
+                                        Icons.play_circle_outline,
+                                        size: 20,
+                                        color: context.medora.success,
+                                      ),
+                                      title: Text(
+                                        l10n.reactivatePrescription,
+                                        style: TextStyle(
+                                          color: context.medora.success,
+                                        ),
+                                      ),
                                       dense: true,
                                       contentPadding: EdgeInsets.zero,
                                     ),
@@ -429,8 +504,17 @@ class _TreatmentDetailScreenState
                                 PopupMenuItem(
                                   value: 'delete',
                                   child: ListTile(
-                                    leading: Icon(Icons.delete, size: 20, color: context.colors.error),
-                                    title: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
+                                    leading: Icon(
+                                      Icons.delete,
+                                      size: 20,
+                                      color: context.colors.error,
+                                    ),
+                                    title: Text(
+                                      l10n.delete,
+                                      style: TextStyle(
+                                        color: context.colors.error,
+                                      ),
+                                    ),
                                     dense: true,
                                     contentPadding: EdgeInsets.zero,
                                   ),
@@ -438,23 +522,48 @@ class _TreatmentDetailScreenState
                               ],
                               onSelected: (action) async {
                                 if (action == 'edit') {
-                                  showPrescriptionSheet(context, ref, treatmentId: widget.treatmentId, existing: p);
+                                  showPrescriptionSheet(
+                                    context,
+                                    ref,
+                                    treatmentId: widget.treatmentId,
+                                    existing: p,
+                                  );
                                 } else if (action == 'deactivate') {
-                                  final repo = ref.read(prescriptionRepositoryProvider);
+                                  final repo = ref.read(
+                                    prescriptionRepositoryProvider,
+                                  );
                                   await repo.deactivatePrescription(p.id);
-                                  ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
+                                  ref.invalidate(
+                                    prescriptionsByTreatmentProvider(
+                                      widget.treatmentId,
+                                    ),
+                                  );
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(l10n.prescriptionDeactivated)),
+                                      SnackBar(
+                                        content: Text(
+                                          l10n.prescriptionDeactivated,
+                                        ),
+                                      ),
                                     );
                                   }
                                 } else if (action == 'reactivate') {
-                                  final repo = ref.read(prescriptionRepositoryProvider);
+                                  final repo = ref.read(
+                                    prescriptionRepositoryProvider,
+                                  );
                                   await repo.reactivatePrescription(p.id);
-                                  ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
+                                  ref.invalidate(
+                                    prescriptionsByTreatmentProvider(
+                                      widget.treatmentId,
+                                    ),
+                                  );
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(l10n.prescriptionReactivated)),
+                                      SnackBar(
+                                        content: Text(
+                                          l10n.prescriptionReactivated,
+                                        ),
+                                      ),
                                     );
                                   }
                                 } else if (action == 'delete') {
@@ -462,36 +571,65 @@ class _TreatmentDetailScreenState
                                     context: context,
                                     builder: (ctx) => AlertDialog(
                                       title: Text(l10n.deletePrescription),
-                                      content: Text(l10n.deletePrescriptionConfirm),
+                                      content: Text(
+                                        l10n.deletePrescriptionConfirm,
+                                      ),
                                       actions: [
                                         TextButton(
-                                          onPressed: () => Navigator.pop(ctx, false),
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
                                           child: Text(l10n.cancel),
                                         ),
                                         TextButton(
-                                          onPressed: () => Navigator.pop(ctx, true),
-                                          child: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: Text(
+                                            l10n.delete,
+                                            style: TextStyle(
+                                              color: context.colors.error,
+                                            ),
+                                          ),
                                         ),
                                       ],
                                     ),
                                   );
                                   if (confirm == true) {
-                                    final repo = ref.read(prescriptionRepositoryProvider);
+                                    final repo = ref.read(
+                                      prescriptionRepositoryProvider,
+                                    );
                                     await repo.deletePrescription(p.id);
-                                    ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
+                                    ref.invalidate(
+                                      prescriptionsByTreatmentProvider(
+                                        widget.treatmentId,
+                                      ),
+                                    );
                                     ref.invalidateDoseData();
-                                    unawaited(ref.read(reminderSchedulerProvider).reconcile());
+                                    unawaited(
+                                      ref
+                                          .read(reminderSchedulerProvider)
+                                          .reconcile(),
+                                    );
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(l10n.prescriptionDeleted)),
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            l10n.prescriptionDeleted,
+                                          ),
+                                        ),
                                       );
                                     }
                                   }
                                 }
                               },
                             ),
-                            onTap: () => showPrescriptionSheet(context, ref,
-                                treatmentId: widget.treatmentId, existing: p),
+                            onTap: () => showPrescriptionSheet(
+                              context,
+                              ref,
+                              treatmentId: widget.treatmentId,
+                              existing: p,
+                            ),
                           ),
                         ),
                       );
@@ -510,17 +648,21 @@ class _TreatmentDetailScreenState
     final dosageText = prescriptionDosageLabel(l10n, p);
     if (p.scheduleType == 'times_per_day') {
       final times = p.scheduleTimes ?? [];
-      final labels = times.map((t) {
-        final h = int.tryParse(t.split(':').first) ?? 0;
-        if (h < 11) return l10n.morning;
-        if (h < 15) return l10n.noon;
-        if (h < 20) return l10n.evening;
-        return l10n.beforeSleep;
-      }).join(', ');
+      final labels = times
+          .map((t) {
+            final h = int.tryParse(t.split(':').first) ?? 0;
+            if (h < 11) return l10n.morning;
+            if (h < 15) return l10n.noon;
+            if (h < 20) return l10n.evening;
+            return l10n.beforeSleep;
+          })
+          .join(', ');
       return '$dosageText · $labels · ${p.durationDays} ${l10n.durationDaysLabel}';
     }
     return l10n.prescriptionSummary(
-        dosageText, p.intervalHours, p.durationDays);
+      dosageText,
+      p.intervalHours,
+      p.durationDays,
+    );
   }
-
 }

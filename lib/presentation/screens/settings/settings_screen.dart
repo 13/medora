@@ -43,7 +43,8 @@ class SettingsScreen extends ConsumerWidget {
     final appVersionAsync = ref.watch(appVersionProvider);
     final caps = ref.watch(platformCapabilitiesProvider);
 
-    final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
+    final isOnline =
+        connectivityAsync.value ?? ConnectivityService.instance.isOnline;
     final syncState = syncAsync.value ?? SyncState.idle;
     final lastReport = ref.watch(syncLastReportProvider);
 
@@ -116,7 +117,8 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: Text(l10n.receiveDoseReminders),
                 value: remindersEnabled,
                 onChanged: (value) async {
-                  if (value) await ReminderService.instance.requestPermissions();
+                  if (value)
+                    await ReminderService.instance.requestPermissions();
                   await ref.read(remindersEnabledProvider.notifier).set(value);
                   if (value) ref.read(reminderSchedulerProvider).reset();
                   await ref.read(reminderSchedulerProvider).reconcile();
@@ -161,19 +163,27 @@ class SettingsScreen extends ConsumerWidget {
                 title: Text(l10n.missedGracePeriod),
                 subtitle: Text(l10n.missedGracePeriodDesc),
                 trailing: DropdownButton<int>(
-                  value: kMissedGraceOptions.contains(graceMinutes) ? graceMinutes : 120,
+                  value: kMissedGraceOptions.contains(graceMinutes)
+                      ? graceMinutes
+                      : 120,
                   underline: const SizedBox.shrink(),
                   items: [
                     for (final m in kMissedGraceOptions)
                       DropdownMenuItem(
                         value: m,
-                        child: Text(m < 60 ? l10n.minutesShort(m) : l10n.hoursShort(m ~/ 60)),
+                        child: Text(
+                          m < 60
+                              ? l10n.minutesShort(m)
+                              : l10n.hoursShort(m ~/ 60),
+                        ),
                       ),
                   ],
                   onChanged: (v) async {
                     if (v == null) return;
                     await ref.read(missedGraceMinutesProvider.notifier).set(v);
-                    await ref.read(appStartupTasksProvider).run(includeSync: false);
+                    await ref
+                        .read(appStartupTasksProvider)
+                        .run(includeSync: false);
                   },
                 ),
               ),
@@ -190,7 +200,8 @@ class SettingsScreen extends ConsumerWidget {
                   title: Text(l10n.fingerprintUnlock),
                   subtitle: Text(l10n.fingerprintUnlockDesc),
                   value: biometricsEnabled,
-                  onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
+                  onChanged: (value) =>
+                      ref.read(biometricsEnabledProvider.notifier).set(value),
                 ),
               ],
             ),
@@ -227,43 +238,52 @@ class SettingsScreen extends ConsumerWidget {
                 leading: Icon(
                   !cloudAvailable
                       ? Icons.cloud_off
-                      : appMode == AppMode.cloud ? Icons.cloud_done : Icons.phone_android,
+                      : appMode == AppMode.cloud
+                      ? Icons.cloud_done
+                      : Icons.phone_android,
                 ),
                 title: Text(
                   !cloudAvailable
                       ? l10n.cloudSyncUnavailable
                       : appMode == AppMode.cloud
-                          ? l10n.cloudSyncOn(user?.email ?? '')
-                          : l10n.cloudSyncOff,
+                      ? l10n.cloudSyncOn(user?.email ?? '')
+                      : l10n.cloudSyncOff,
                 ),
                 trailing: !cloudAvailable
                     ? null
                     : appMode == AppMode.cloud
-                        ? TextButton(
-                            onPressed: () => _confirmTurnOffCloud(context, ref, l10n),
-                            child: Text(l10n.turnOff),
-                          )
-                        : FilledButton.tonal(
-                            onPressed: () => _turnOnCloud(context, ref, l10n),
-                            child: Text(l10n.turnOn),
-                          ),
+                    ? TextButton(
+                        onPressed: () =>
+                            _confirmTurnOffCloud(context, ref, l10n),
+                        child: Text(l10n.turnOff),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: () => _turnOnCloud(context, ref, l10n),
+                        child: Text(l10n.turnOn),
+                      ),
               ),
               if (appMode == AppMode.cloud) ...[
                 ListTile(
                   leading: Icon(
                     isOnline ? Icons.cloud_done : Icons.cloud_off,
-                    color: isOnline ? context.medora.success : context.medora.warning,
+                    color: isOnline
+                        ? context.medora.success
+                        : context.medora.warning,
                   ),
                   title: Text(isOnline ? l10n.online : l10n.offline),
-                  subtitle: Text(isOnline
-                      ? l10n.connectedSyncsAutomatically
-                      : l10n.usingLocalData),
+                  subtitle: Text(
+                    isOnline
+                        ? l10n.connectedSyncsAutomatically
+                        : l10n.usingLocalData,
+                  ),
                   trailing: Container(
                     width: 12,
                     height: 12,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: isOnline ? context.medora.success : context.medora.warning,
+                      color: isOnline
+                          ? context.medora.success
+                          : context.medora.warning,
                     ),
                   ),
                 ),
@@ -289,8 +309,9 @@ class SettingsScreen extends ConsumerWidget {
                   dense: true,
                   leading: const Icon(Icons.history),
                   title: Text(_lastSyncText(l10n, lastReport)),
-                  trailing:
-                      (lastReport?.hasFailures ?? false) ? const Icon(Icons.chevron_right) : null,
+                  trailing: (lastReport?.hasFailures ?? false)
+                      ? const Icon(Icons.chevron_right)
+                      : null,
                   onTap: (lastReport?.hasFailures ?? false)
                       ? () => _showSyncFailures(context, l10n, lastReport!)
                       : null,
@@ -303,9 +324,15 @@ class SettingsScreen extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: (syncState == SyncState.syncing || !isOnline)
+                            onPressed:
+                                (syncState == SyncState.syncing || !isOnline)
                                 ? null
-                                : () => _showForceSyncDialog(context, ref, l10n, true),
+                                : () => _showForceSyncDialog(
+                                    context,
+                                    ref,
+                                    l10n,
+                                    true,
+                                  ),
                             icon: const Icon(Icons.upload_outlined, size: 18),
                             label: Text(l10n.forcePush),
                             style: OutlinedButton.styleFrom(
@@ -317,9 +344,15 @@ class SettingsScreen extends ConsumerWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: (syncState == SyncState.syncing || !isOnline)
+                            onPressed:
+                                (syncState == SyncState.syncing || !isOnline)
                                 ? null
-                                : () => _showForceSyncDialog(context, ref, l10n, false),
+                                : () => _showForceSyncDialog(
+                                    context,
+                                    ref,
+                                    l10n,
+                                    false,
+                                  ),
                             icon: const Icon(Icons.download_outlined, size: 18),
                             label: Text(l10n.forcePull),
                             style: OutlinedButton.styleFrom(
@@ -340,9 +373,14 @@ class SettingsScreen extends ConsumerWidget {
             title: l10n.dangerZone,
             children: [
               ListTile(
-                leading: Icon(Icons.delete_forever, color: context.colors.error),
-                title: Text(l10n.deleteAllData,
-                    style: TextStyle(color: context.colors.error)),
+                leading: Icon(
+                  Icons.delete_forever,
+                  color: context.colors.error,
+                ),
+                title: Text(
+                  l10n.deleteAllData,
+                  style: TextStyle(color: context.colors.error),
+                ),
                 subtitle: Text(l10n.deleteAllDataDesc),
                 onTap: () => _showDeleteAllDialog(context, ref, l10n),
               ),
@@ -356,10 +394,9 @@ class SettingsScreen extends ConsumerWidget {
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: Text(l10n.appVersion),
-                subtitle: Text(appVersionAsync.maybeWhen(
-                  data: (v) => v,
-                  orElse: () => '…',
-                )),
+                subtitle: Text(
+                  appVersionAsync.maybeWhen(data: (v) => v, orElse: () => '…'),
+                ),
               ),
             ],
           ),
@@ -369,19 +406,32 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmTurnOffCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+  Future<void> _confirmTurnOffCloud(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.turnOffCloudSync),
         content: Text(l10n.turnOffCloudSyncChoice),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'wipe'),
-            child: Text(l10n.wipeLocalData, style: TextStyle(color: context.colors.error)),
+            child: Text(
+              l10n.wipeLocalData,
+              style: TextStyle(color: context.colors.error),
+            ),
           ),
-          FilledButton(onPressed: () => Navigator.pop(ctx, 'keep'), child: Text(l10n.keepLocalData)),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'keep'),
+            child: Text(l10n.keepLocalData),
+          ),
         ],
       ),
     );
@@ -406,7 +456,11 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _turnOnCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+  Future<void> _turnOnCloud(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
     try {
       await ref.read(appModeProvider.notifier).set(AppMode.cloud);
     } catch (e) {
@@ -417,7 +471,12 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
-  void _showForceSyncDialog(BuildContext context, WidgetRef ref, AppLocalizations l10n, bool isPush) {
+  void _showForceSyncDialog(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+    bool isPush,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -439,7 +498,9 @@ class SettingsScreen extends ConsumerWidget {
             },
             child: Text(
               l10n.continueAction,
-              style: TextStyle(color: isPush ? context.medora.warning : context.colors.primary),
+              style: TextStyle(
+                color: isPush ? context.medora.warning : context.colors.primary,
+              ),
             ),
           ),
         ],
@@ -496,23 +557,23 @@ class SettingsScreen extends ConsumerWidget {
                         // Try to delete remote data first
                         final client = SupabaseConfig.clientOrNull;
                         if (client != null && SupabaseConfig.isAuthenticated) {
-                            // Delete in FK order: dose_logs → prescriptions → treatments → medications
-                            await client
-                                .from(AppConstants.doseLogsTable)
-                                .delete()
-                                .neq('id', '');
-                            await client
-                                .from(AppConstants.prescriptionsTable)
-                                .delete()
-                                .neq('id', '');
-                            await client
-                                .from(AppConstants.treatmentsTable)
-                                .delete()
-                                .neq('id', '');
-                            await client
-                                .from(AppConstants.medicationsTable)
-                                .delete()
-                                .neq('id', '');
+                          // Delete in FK order: dose_logs → prescriptions → treatments → medications
+                          await client
+                              .from(AppConstants.doseLogsTable)
+                              .delete()
+                              .neq('id', '');
+                          await client
+                              .from(AppConstants.prescriptionsTable)
+                              .delete()
+                              .neq('id', '');
+                          await client
+                              .from(AppConstants.treatmentsTable)
+                              .delete()
+                              .neq('id', '');
+                          await client
+                              .from(AppConstants.medicationsTable)
+                              .delete()
+                              .neq('id', '');
                         }
                         // If remote deletion is successful, delete local data
                         ref.read(reminderSchedulerProvider).reset();
@@ -532,7 +593,11 @@ class SettingsScreen extends ConsumerWidget {
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(l10n.deleteDataFailed(e.toString()))),
+                            SnackBar(
+                              content: Text(
+                                l10n.deleteDataFailed(e.toString()),
+                              ),
+                            ),
                           );
                         }
                       }
@@ -569,19 +634,20 @@ class SettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 l10n.language,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
             ...options.map((opt) {
-              final isSelected = current?.languageCode == opt.locale?.languageCode &&
+              final isSelected =
+                  current?.languageCode == opt.locale?.languageCode &&
                   (opt.locale != null || current == null);
               return ListTile(
                 title: Text(opt.label),
-                trailing:
-                    isSelected ? Icon(Icons.check, color: context.colors.primary) : null,
+                trailing: isSelected
+                    ? Icon(Icons.check, color: context.colors.primary)
+                    : null,
                 onTap: () {
                   ref.read(localeProvider.notifier).set(opt.locale);
                   Navigator.pop(ctx);
@@ -646,11 +712,20 @@ class SettingsScreen extends ConsumerWidget {
   String _lastSyncText(AppLocalizations l10n, SyncReport? r) {
     final finished = r?.finishedAt;
     if (r == null || finished == null) return l10n.syncNever;
-    return l10n.lastSyncSummary(finished.dateTimeFormatted, r.pushed, r.pulled,
-        r.deleted, r.failures.length);
+    return l10n.lastSyncSummary(
+      finished.dateTimeFormatted,
+      r.pushed,
+      r.pulled,
+      r.deleted,
+      r.failures.length,
+    );
   }
 
-  void _showSyncFailures(BuildContext context, AppLocalizations l10n, SyncReport r) {
+  void _showSyncFailures(
+    BuildContext context,
+    AppLocalizations l10n,
+    SyncReport r,
+  ) {
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -707,10 +782,9 @@ class SettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Text(
                 l10n.colorScheme,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),
             Padding(
@@ -737,31 +811,37 @@ class SettingsScreen extends ConsumerWidget {
                             shape: BoxShape.circle,
                             border: isSelected
                                 ? Border.all(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface,
-                                    width: 3)
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                    width: 3,
+                                  )
                                 : null,
                             boxShadow: isSelected
                                 ? [
                                     BoxShadow(
-                                      color:
-                                          scheme.color.withValues(alpha: 0.4),
+                                      color: scheme.color.withValues(
+                                        alpha: 0.4,
+                                      ),
                                       blurRadius: 8,
                                       spreadRadius: 2,
-                                    )
+                                    ),
                                   ]
                                 : null,
                           ),
                           child: isSelected
-                              ? Icon(Icons.check,
+                              ? Icon(
+                                  Icons.check,
                                   // on user-chosen swatch
-                                  color: ThemeData.estimateBrightnessForColor(
-                                              scheme.color) ==
+                                  color:
+                                      ThemeData.estimateBrightnessForColor(
+                                            scheme.color,
+                                          ) ==
                                           Brightness.dark
                                       ? const Color(0xFFFFFFFF)
                                       : const Color(0xFF000000),
-                                  size: 22)
+                                  size: 22,
+                                )
                               : null,
                         ),
                         const SizedBox(height: 4),
@@ -802,10 +882,7 @@ class _ColorDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(
-          color: Theme.of(context).dividerColor,
-          width: 1,
-        ),
+        border: Border.all(color: Theme.of(context).dividerColor, width: 1),
       ),
     );
   }
@@ -862,9 +939,9 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
           _lastSync = DateTime.now();
           _count = count;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.aifaSyncSuccess(count))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.aifaSyncSuccess(count))));
       }
     } catch (e) {
       if (mounted) {
@@ -872,9 +949,9 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
           _isSyncing = false;
           _statusMessage = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.aifaSyncError)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.aifaSyncError)));
       }
     }
   }
@@ -886,8 +963,8 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
     final subtitle = _isSyncing
         ? _statusMessage ?? l10n.aifaSyncing
         : _lastSync != null
-            ? '${l10n.aifaLastSync(_formatDate(_lastSync!))} · $_count'
-            : l10n.aifaNeverSynced;
+        ? '${l10n.aifaLastSync(_formatDate(_lastSync!))} · $_count'
+        : l10n.aifaNeverSynced;
 
     return ListTile(
       leading: const Icon(Icons.storage_outlined),
@@ -946,13 +1023,13 @@ class _SettingsGroup extends StatelessWidget {
   final List<Widget> children;
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SectionTitle(title),
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(children: children),
-          ),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _SectionTitle(title),
+      Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(children: children),
+      ),
+    ],
+  );
 }

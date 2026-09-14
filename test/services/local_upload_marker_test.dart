@@ -18,10 +18,10 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   LocalUploadMarker makeMarker({SyncCursorStore? cursors}) => LocalUploadMarker(
-        database: AppDatabase.instance,
-        cursors: cursors ?? SyncCursorStore.inMemory(),
-        prefs: prefs,
-      );
+    database: AppDatabase.instance,
+    cursors: cursors ?? SyncCursorStore.inMemory(),
+    prefs: prefs,
+  );
 
   test('flips every synced row to pending_update and clears cursors', () async {
     final db = await AppDatabase.instance.database;
@@ -33,9 +33,18 @@ void main() {
     final n = await makeMarker(cursors: cursors).markAllForUpload('user-a');
 
     expect(n, 4);
-    for (final table in ['medications', 'treatments', 'prescriptions', 'dose_logs']) {
+    for (final table in [
+      'medications',
+      'treatments',
+      'prescriptions',
+      'dose_logs',
+    ]) {
       final rows = await db.query(table, columns: ['sync_status']);
-      expect(rows.map((r) => r['sync_status']), everyElement(SyncStatus.pendingUpdate), reason: table);
+      expect(
+        rows.map((r) => r['sync_status']),
+        everyElement(SyncStatus.pendingUpdate),
+        reason: table,
+      );
     }
     expect(await cursors.lastPullAt('medications'), isNull);
   });
@@ -43,9 +52,18 @@ void main() {
   test('pending_delete rows are left alone', () async {
     final db = await AppDatabase.instance.database;
     final seeded = await seedPrescription(db);
-    await db.update('medications', {'sync_status': SyncStatus.pendingDelete}, where: 'id = ?', whereArgs: [seeded.medicationId]);
+    await db.update(
+      'medications',
+      {'sync_status': SyncStatus.pendingDelete},
+      where: 'id = ?',
+      whereArgs: [seeded.medicationId],
+    );
     await makeMarker().markAllForUpload('user-a');
-    final row = (await db.query('medications', where: 'id = ?', whereArgs: [seeded.medicationId])).single;
+    final row = (await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: [seeded.medicationId],
+    )).single;
     expect(row['sync_status'], SyncStatus.pendingDelete);
   });
 
@@ -73,11 +91,18 @@ void main() {
 
     await makeMarker().markAllForUpload('user-a');
 
-    Future<Object?> status(String id) async =>
-        (await db.query('family_members', columns: ['sync_status'], where: 'id = ?', whereArgs: [id])).single['sync_status'];
+    Future<Object?> status(String id) async => (await db.query(
+      'family_members',
+      columns: ['sync_status'],
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single['sync_status'];
     expect(await status('me'), SyncStatus.pendingUpdate);
-    expect(await status('them'), SyncStatus.synced,
-        reason: 'another member\'s row is theirs to push, not ours');
+    expect(
+      await status('them'),
+      SyncStatus.synced,
+      reason: 'another member\'s row is theirs to push, not ours',
+    );
   });
 
   group('data owner', () {
@@ -89,11 +114,14 @@ void main() {
       expect(prefs.getString(LocalUploadMarker.ownerKey), 'user-a');
     });
 
-    test('unknown owner is not foreign data (first sign-in claims it)', () async {
-      final db = await AppDatabase.instance.database;
-      await seedPrescription(db);
-      expect(await makeMarker().hasDataFromAnotherAccount('user-a'), isFalse);
-    });
+    test(
+      'unknown owner is not foreign data (first sign-in claims it)',
+      () async {
+        final db = await AppDatabase.instance.database;
+        await seedPrescription(db);
+        expect(await makeMarker().hasDataFromAnotherAccount('user-a'), isFalse);
+      },
+    );
 
     test('the same account signing back in is not foreign data', () async {
       final db = await AppDatabase.instance.database;
@@ -111,11 +139,14 @@ void main() {
       expect(await marker.hasDataFromAnotherAccount('user-b'), isTrue);
     });
 
-    test('another account with no rows left behind is not foreign data', () async {
-      final marker = makeMarker();
-      await marker.setOwner('user-a');
-      expect(await marker.hasDataFromAnotherAccount('user-b'), isFalse);
-    });
+    test(
+      'another account with no rows left behind is not foreign data',
+      () async {
+        final marker = makeMarker();
+        await marker.setOwner('user-a');
+        expect(await marker.hasDataFromAnotherAccount('user-b'), isFalse);
+      },
+    );
 
     test('family rows alone are enough to count as foreign data', () async {
       final db = await AppDatabase.instance.database;

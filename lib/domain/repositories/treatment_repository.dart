@@ -26,4 +26,3 @@ abstract class TreatmentRepository {
   /// End a treatment (set isActive to false, set endDate).
   Future<Result<Treatment>> endTreatment(String id);
 }
-

@@ -21,11 +21,12 @@ String? dosageLabel(AppLocalizations l10n, DoseLog dose) {
   final unitKey = (dose.dosageUnit != null && dose.dosageUnit!.isNotEmpty)
       ? dose.dosageUnit!
       : ((dose.medicationUnit != null && dose.medicationUnit!.isNotEmpty)
-          ? dose.medicationUnit!
-          : null);
+            ? dose.medicationUnit!
+            : null);
   if (amount != null && unitKey != null) {
-    final formatted =
-        amount % 1 == 0 ? amount.toInt().toString() : amount.toString();
+    final formatted = amount % 1 == 0
+        ? amount.toInt().toString()
+        : amount.toString();
     return '$formatted ${AppConstants.unitLabel(l10n, unitKey)}';
   }
   return dose.displayDosage;
@@ -42,8 +43,9 @@ String prescriptionDosageLabel(
   final amount = prescription.dosageAmount;
   final unitKey = prescription.dosageUnit ?? medicationUnit;
   if (amount != null && unitKey != null && unitKey.isNotEmpty) {
-    final formatted =
-        amount % 1 == 0 ? amount.toInt().toString() : amount.toString();
+    final formatted = amount % 1 == 0
+        ? amount.toInt().toString()
+        : amount.toString();
     return '$formatted ${AppConstants.unitLabel(l10n, unitKey)}';
   }
   return prescription.displayDosage(medicationUnit: medicationUnit);

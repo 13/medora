@@ -45,17 +45,23 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   Future<List<Override>> overrides() async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(FakePort()),
+  ];
 
-  testWidgets('a failed Take reports the error instead of closing silently',
-      (tester) async {
+  testWidgets('a failed Take reports the error instead of closing silently', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
     final doseId = await seedDoseLog(
-        db, s.prescriptionId, DateTime.now().add(const Duration(hours: 1)));
+      db,
+      s.prescriptionId,
+      DateTime.now().add(const Duration(hours: 1)),
+    );
 
     await pumpMedoraApp(
       tester,
@@ -70,11 +76,13 @@ void main() {
       overrides: [
         ...await overrides(),
         doseLogRepositoryProvider.overrideWithValue(
-          FailingTakeRepo(DoseLogRepositoryImpl(
-            localDatasource: DoseLogLocalDatasource(),
-            remoteDatasource: null,
-            prescriptionLocal: PrescriptionLocalDatasource(),
-          )),
+          FailingTakeRepo(
+            DoseLogRepositoryImpl(
+              localDatasource: DoseLogLocalDatasource(),
+              remoteDatasource: null,
+              prescriptionLocal: PrescriptionLocalDatasource(),
+            ),
+          ),
         ),
       ],
     );
@@ -88,18 +96,25 @@ void main() {
 
     expect(find.text('Something went wrong'), findsOneWidget);
     expect(
-      (await db.query('dose_logs', where: 'id = ?', whereArgs: [doseId]))
-          .single['status'],
+      (await db.query(
+        'dose_logs',
+        where: 'id = ?',
+        whereArgs: [doseId],
+      )).single['status'],
       'pending',
     );
   });
 
-  testWidgets('a successful Skip closes the sheet without an error',
-      (tester) async {
+  testWidgets('a successful Skip closes the sheet without an error', (
+    tester,
+  ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
     final doseId = await seedDoseLog(
-        db, s.prescriptionId, DateTime.now().add(const Duration(hours: 1)));
+      db,
+      s.prescriptionId,
+      DateTime.now().add(const Duration(hours: 1)),
+    );
 
     await pumpMedoraApp(
       tester,
@@ -122,8 +137,11 @@ void main() {
     expect(find.text('Something went wrong'), findsNothing);
     expect(find.widgetWithText(OutlinedButton, 'Skip'), findsNothing);
     expect(
-      (await db.query('dose_logs', where: 'id = ?', whereArgs: [doseId]))
-          .single['status'],
+      (await db.query(
+        'dose_logs',
+        where: 'id = ?',
+        whereArgs: [doseId],
+      )).single['status'],
       'skipped',
     );
   });

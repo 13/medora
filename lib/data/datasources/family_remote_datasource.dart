@@ -30,14 +30,23 @@ class FamilyRemoteDatasource {
   /// Joins via the `join_family` RPC (security definer; see the 2026-09-14
   /// migration) so a non-owner can join without a SELECT policy on families.
   Future<({FamilyModel family, FamilyMemberModel member})> joinFamily(
-      String inviteCode, String displayName) async {
-    final response = await _client.rpc('join_family', params: {
-      'p_invite_code': inviteCode,
-      'p_display_name': displayName,
-    }) as Map<String, dynamic>;
+    String inviteCode,
+    String displayName,
+  ) async {
+    final response =
+        await _client.rpc(
+              'join_family',
+              params: {
+                'p_invite_code': inviteCode,
+                'p_display_name': displayName,
+              },
+            )
+            as Map<String, dynamic>;
     return (
       family: FamilyModel.fromJson(response['family'] as Map<String, dynamic>),
-      member: FamilyMemberModel.fromJson(response['member'] as Map<String, dynamic>),
+      member: FamilyMemberModel.fromJson(
+        response['member'] as Map<String, dynamic>,
+      ),
     );
   }
 
@@ -103,7 +112,8 @@ class FamilyRemoteDatasource {
     final newCode = _generateCode();
     await _client
         .from('families')
-        .update({'invite_code': newCode}).eq('id', familyId);
+        .update({'invite_code': newCode})
+        .eq('id', familyId);
     return newCode;
   }
 
@@ -120,4 +130,3 @@ class FamilyRemoteDatasource {
     }).join();
   }
 }
-

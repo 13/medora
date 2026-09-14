@@ -38,11 +38,11 @@ class AifaSearchResult {
 
   /// Display-friendly subtitle.
   String get subtitle => [
-        if (activeIngredient != null && activeIngredient!.isNotEmpty)
-          activeIngredient,
-        if (manufacturer != null && manufacturer!.isNotEmpty) manufacturer,
-        if (form != null && form!.isNotEmpty) form,
-      ].join(' · ');
+    if (activeIngredient != null && activeIngredient!.isNotEmpty)
+      activeIngredient,
+    if (manufacturer != null && manufacturer!.isNotEmpty) manufacturer,
+    if (form != null && form!.isNotEmpty) form,
+  ].join(' · ');
 
   bool get hasData => name.isNotEmpty;
 }
@@ -51,7 +51,7 @@ class AifaSearchResult {
 
 class BarcodeLookupDatasource {
   BarcodeLookupDatasource({http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 
@@ -106,25 +106,29 @@ class BarcodeLookupDatasource {
       final groupCode = fields[1].trim();
 
       // Match: exact full code, or group code prefix
-      final matches = fullCode == searchCode ||
+      final matches =
+          fullCode == searchCode ||
           groupCode == searchCode ||
           fullCode.startsWith(searchCode) ||
           searchCode.startsWith(groupCode);
 
       if (!matches) continue;
 
-      results.add(AifaSearchResult(
-        code: fullCode,
-        groupCode: groupCode,
-        name: _titleCase(fields[3].trim()),
-        description: fields[4].trim(),
-        manufacturer: fields[6].trim().isNotEmpty ? fields[6].trim() : null,
-        status: fields[7].trim().isNotEmpty ? fields[7].trim() : null,
-        form: fields[9].trim().isNotEmpty ? fields[9].trim() : null,
-        atcCode: fields[10].trim().isNotEmpty ? fields[10].trim() : null,
-        activeIngredient:
-            fields[11].trim().isNotEmpty ? _titleCase(fields[11].trim()) : null,
-      ));
+      results.add(
+        AifaSearchResult(
+          code: fullCode,
+          groupCode: groupCode,
+          name: _titleCase(fields[3].trim()),
+          description: fields[4].trim(),
+          manufacturer: fields[6].trim().isNotEmpty ? fields[6].trim() : null,
+          status: fields[7].trim().isNotEmpty ? fields[7].trim() : null,
+          form: fields[9].trim().isNotEmpty ? fields[9].trim() : null,
+          atcCode: fields[10].trim().isNotEmpty ? fields[10].trim() : null,
+          activeIngredient: fields[11].trim().isNotEmpty
+              ? _titleCase(fields[11].trim())
+              : null,
+        ),
+      );
     }
 
     // Sort: exact match first, then by name
@@ -142,9 +146,11 @@ class BarcodeLookupDatasource {
     if (text.isEmpty) return text;
     return text
         .split(' ')
-        .map((w) => w.isNotEmpty
-            ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
-            : '')
+        .map(
+          (w) => w.isNotEmpty
+              ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
+              : '',
+        )
         .join(' ');
   }
 }

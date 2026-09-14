@@ -14,7 +14,10 @@ class FakePort implements ReminderPort {
   Future<void> cancelForDose(String doseId) async => cancelledDoses.add(doseId);
 
   @override
-  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) async {
+  Future<void> scheduleForDose({
+    required DoseLog dose,
+    required String medicationName,
+  }) async {
     scheduled.add(dose);
   }
 }

@@ -13,10 +13,13 @@ class AppTheme {
 
   /// Build light theme with the given color seed.
   static ThemeData lightThemeFrom(Color seedColor) {
-    final textTheme = Typography.material2021(platform: TargetPlatform.android)
-        .black
-        .apply(fontFamily: 'Inter');
-    final scheme = ColorScheme.fromSeed(seedColor: seedColor, brightness: Brightness.light);
+    final textTheme = Typography.material2021(
+      platform: TargetPlatform.android,
+    ).black.apply(fontFamily: 'Inter');
+    final scheme = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.light,
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -43,15 +46,10 @@ class AppTheme {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
       chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         side: BorderSide.none,
       ),
-      dividerTheme: const DividerThemeData(
-        space: 1,
-        thickness: 0.5,
-      ),
+      dividerTheme: const DividerThemeData(space: 1, thickness: 0.5),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 2,
         height: 65,
@@ -73,9 +71,7 @@ class AppTheme {
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -91,10 +87,13 @@ class AppTheme {
 
   /// Build dark theme with the given color seed.
   static ThemeData darkThemeFrom(Color seedColor) {
-    final textTheme = Typography.material2021(platform: TargetPlatform.android)
-        .white
-        .apply(fontFamily: 'Inter');
-    final scheme = ColorScheme.fromSeed(seedColor: seedColor, brightness: Brightness.dark);
+    final textTheme = Typography.material2021(
+      platform: TargetPlatform.android,
+    ).white.apply(fontFamily: 'Inter');
+    final scheme = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.dark,
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -112,15 +111,10 @@ class AppTheme {
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
       chipTheme: ChipThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         side: BorderSide.none,
       ),
-      dividerTheme: const DividerThemeData(
-        space: 1,
-        thickness: 0.5,
-      ),
+      dividerTheme: const DividerThemeData(space: 1, thickness: 0.5),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 2,
         height: 65,
@@ -141,9 +135,7 @@ class AppTheme {
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }

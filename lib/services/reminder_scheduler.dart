@@ -20,10 +20,10 @@ class ReminderScheduler {
     required DoseLogRepository doses,
     required bool Function() remindersEnabled,
     DateTime Function()? now,
-  })  : _port = port,
-        _doses = doses,
-        _remindersEnabled = remindersEnabled,
-        _now = now ?? DateTime.now;
+  }) : _port = port,
+       _doses = doses,
+       _remindersEnabled = remindersEnabled,
+       _now = now ?? DateTime.now;
 
   static const horizon = Duration(days: 7);
   static const maxNotifications = 60; // iOS allows 64 pending
@@ -72,11 +72,17 @@ class ReminderScheduler {
       return 0;
     }
     final now = _now();
-    final result = await _doses.getPendingDoseLogsBetween(now, now.add(horizon));
-    final pending = result.when(success: (d) => d, failure: (msg) {
-      debugPrint('Reminders: could not load pending doses: $msg');
-      return null;
-    });
+    final result = await _doses.getPendingDoseLogsBetween(
+      now,
+      now.add(horizon),
+    );
+    final pending = result.when(
+      success: (d) => d,
+      failure: (msg) {
+        debugPrint('Reminders: could not load pending doses: $msg');
+        return null;
+      },
+    );
     if (pending == null) return _scheduled?.length ?? 0;
 
     final limit = maxNotifications ~/ notificationsPerDose;
@@ -87,7 +93,10 @@ class ReminderScheduler {
     if (previous == null) {
       await _port.cancelAll();
       for (final dose in desired) {
-        await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
+        await _port.scheduleForDose(
+          dose: dose,
+          medicationName: dose.medicationName ?? 'Medication',
+        );
       }
     } else {
       for (final id in previous.keys) {
@@ -96,13 +105,19 @@ class ReminderScheduler {
         }
       }
       for (final dose in desired) {
-        if (!previous.containsKey(dose.id) || previous[dose.id] != dose.scheduledTime) {
-          await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
+        if (!previous.containsKey(dose.id) ||
+            previous[dose.id] != dose.scheduledTime) {
+          await _port.scheduleForDose(
+            dose: dose,
+            medicationName: dose.medicationName ?? 'Medication',
+          );
         }
       }
     }
     _scheduled = desiredMap;
-    debugPrint('Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)');
+    debugPrint(
+      'Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)',
+    );
     return desiredMap.length;
   }
 }

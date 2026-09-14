@@ -15,12 +15,12 @@ class AppStartupTasks {
     required Duration syncDelay,
     required Duration minSyncInterval,
     DateTime Function()? now,
-  })  : _maintenance = maintenance,
-        _reminders = reminders,
-        _sync = sync,
-        _syncDelay = syncDelay,
-        _minSyncInterval = minSyncInterval,
-        _now = now ?? DateTime.now;
+  }) : _maintenance = maintenance,
+       _reminders = reminders,
+       _sync = sync,
+       _syncDelay = syncDelay,
+       _minSyncInterval = minSyncInterval,
+       _now = now ?? DateTime.now;
 
   final Future<void> Function() _maintenance;
   final Future<void> Function() _reminders;
@@ -43,7 +43,8 @@ class AppStartupTasks {
   Future<void> _runOnce(bool includeSync) async {
     await _guard('maintenance', _maintenance);
     await _guard('reminders', _reminders);
-    final shouldSync = includeSync &&
+    final shouldSync =
+        includeSync &&
         (_lastSyncAt == null ||
             _now().difference(_lastSyncAt!) >= _minSyncInterval);
     if (shouldSync) {

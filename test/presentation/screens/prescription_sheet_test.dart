@@ -40,10 +40,11 @@ class _Host extends ConsumerWidget {
           onPressed: () async {
             Prescription? existing;
             if (existingPrescriptionId != null) {
-              existing = (await ref
-                      .read(prescriptionRepositoryProvider)
-                      .getPrescriptionById(existingPrescriptionId!))
-                  .dataOrNull;
+              existing =
+                  (await ref
+                          .read(prescriptionRepositoryProvider)
+                          .getPrescriptionById(existingPrescriptionId!))
+                      .dataOrNull;
             }
             if (!context.mounted) return;
             await showPrescriptionSheet(
@@ -188,10 +189,7 @@ void main() {
 
       await pumpMedoraApp(
         tester,
-        _Host(
-          treatmentId: seeded.treatmentId,
-          pickTime: (_, _) async => null,
-        ),
+        _Host(treatmentId: seeded.treatmentId, pickTime: (_, _) async => null),
         overrides: await overrides(),
       );
 
@@ -227,10 +225,7 @@ void main() {
 
       await pumpMedoraApp(
         tester,
-        _Host(
-          treatmentId: seeded.treatmentId,
-          pickTime: (_, _) async => null,
-        ),
+        _Host(treatmentId: seeded.treatmentId, pickTime: (_, _) async => null),
         overrides: await overrides(),
       );
 
@@ -268,10 +263,7 @@ void main() {
 
       await pumpMedoraApp(
         tester,
-        _Host(
-          treatmentId: seeded.treatmentId,
-          pickTime: (_, _) async => null,
-        ),
+        _Host(treatmentId: seeded.treatmentId, pickTime: (_, _) async => null),
         overrides: await overrides(),
       );
 
@@ -294,50 +286,60 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(
-          find.byKey(const Key('dosageFreeTextField')), '20 gocce');
+        find.byKey(const Key('dosageFreeTextField')),
+        '20 gocce',
+      );
       await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
       await tester.pumpAndSettle();
 
-      final rows = await db.query('prescriptions',
-          where: 'treatment_id = ? AND id != ?',
-          whereArgs: [seeded.treatmentId, seeded.prescriptionId]);
+      final rows = await db.query(
+        'prescriptions',
+        where: 'treatment_id = ? AND id != ?',
+        whereArgs: [seeded.treatmentId, seeded.prescriptionId],
+      );
       expect(rows.single['dosage'], '20 gocce');
       expect(rows.single['dosage_amount'], isNull);
     },
   );
 
-  testWidgets('medication dropdown keeps an archived medication that is already selected',
-      (tester) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'medication dropdown keeps an archived medication that is already selected',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    final db = await AppDatabase.instance.database;
-    final seeded = await seedPrescription(db);
-    await db.update('medications', {'is_archived': 1},
-        where: 'id = ?', whereArgs: [seeded.medicationId]);
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      await db.update(
+        'medications',
+        {'is_archived': 1},
+        where: 'id = ?',
+        whereArgs: [seeded.medicationId],
+      );
 
-    await pumpMedoraApp(
-      tester,
-      _Host(
-        treatmentId: seeded.treatmentId,
-        pickTime: (_, _) async => null,
-        existingPrescriptionId: seeded.prescriptionId,
-      ),
-      overrides: await overrides(),
-    );
+      await pumpMedoraApp(
+        tester,
+        _Host(
+          treatmentId: seeded.treatmentId,
+          pickTime: (_, _) async => null,
+          existingPrescriptionId: seeded.prescriptionId,
+        ),
+        overrides: await overrides(),
+      );
 
-    await tester.tap(find.text('Open'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
 
-    // Editing a prescription whose medication was archived: the archived
-    // medication must still be offered, otherwise the dropdown's
-    // initialValue matches no item and the selection is silently lost.
-    expect(find.textContaining('Tachipirina'), findsWidgets);
-    final dropdown = tester.widget<DropdownButtonFormField<String>>(
-      find.byKey(const Key('medicationDropdown')),
-    );
-    expect(dropdown.initialValue, seeded.medicationId);
-  });
+      // Editing a prescription whose medication was archived: the archived
+      // medication must still be offered, otherwise the dropdown's
+      // initialValue matches no item and the selection is silently lost.
+      expect(find.textContaining('Tachipirina'), findsWidgets);
+      final dropdown = tester.widget<DropdownButtonFormField<String>>(
+        find.byKey(const Key('medicationDropdown')),
+      );
+      expect(dropdown.initialValue, seeded.medicationId);
+    },
+  );
 }

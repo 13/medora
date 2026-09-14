@@ -18,12 +18,14 @@ final authStateProvider = StreamProvider<AuthState>((ref) {
 /// The signed-in Supabase user, or null.
 final currentUserProvider = Provider<User?>((ref) {
   final authState = ref.watch(authStateProvider).value;
-  return authState?.session?.user ?? SupabaseConfig.clientOrNull?.auth.currentUser;
+  return authState?.session?.user ??
+      SupabaseConfig.clientOrNull?.auth.currentUser;
 });
 
 /// Global provider for biometric lock state.
-final isBiometricLockedProvider =
-    NotifierProvider<BiometricLockNotifier, bool>(BiometricLockNotifier.new);
+final isBiometricLockedProvider = NotifierProvider<BiometricLockNotifier, bool>(
+  BiometricLockNotifier.new,
+);
 
 class BiometricLockNotifier extends Notifier<bool> {
   @override

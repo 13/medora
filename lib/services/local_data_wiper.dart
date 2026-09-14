@@ -15,10 +15,10 @@ class LocalDataWiper {
     required PhotoStorage photos,
     required ReminderPort reminders,
     required SharedPreferences prefs,
-  })  : _database = database,
-        _photos = photos,
-        _reminders = reminders,
-        _prefs = prefs;
+  }) : _database = database,
+       _photos = photos,
+       _reminders = reminders,
+       _prefs = prefs;
 
   final AppDatabase _database;
   final PhotoStorage _photos;
@@ -43,7 +43,11 @@ class LocalDataWiper {
       }
     }
     await _prefs.reload();
-    for (final key in _prefs.getKeys().where((k) => k.startsWith(SyncCursorStore.keyPrefix)).toList()) {
+    for (final key
+        in _prefs
+            .getKeys()
+            .where((k) => k.startsWith(SyncCursorStore.keyPrefix))
+            .toList()) {
       await _prefs.remove(key);
     }
     // No rows left, so this device no longer holds anyone's data.

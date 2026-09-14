@@ -55,9 +55,7 @@ class DatePickerField extends StatelessWidget {
         ),
         child: Text(
           date?.formatted ?? l10n.selectDate,
-          style: TextStyle(
-            color: date != null ? null : context.colors.outline,
-          ),
+          style: TextStyle(color: date != null ? null : context.colors.outline),
         ),
       ),
     );

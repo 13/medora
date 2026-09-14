@@ -22,10 +22,12 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
 
   @override
   Future<Result<List<Prescription>>> getPrescriptionsByTreatment(
-      String treatmentId) async {
+    String treatmentId,
+  ) async {
     try {
-      final models =
-          await localDatasource.getPrescriptionsByTreatment(treatmentId);
+      final models = await localDatasource.getPrescriptionsByTreatment(
+        treatmentId,
+      );
       return Result.success(models.map((m) => m.toDomain()).toList());
     } catch (e, st) {
       return Result.failure('Failed to load prescriptions: $e', st);
@@ -54,7 +56,9 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   }
 
   @override
-  Future<Result<Prescription>> addPrescription(Prescription prescription) async {
+  Future<Result<Prescription>> addPrescription(
+    Prescription prescription,
+  ) async {
     try {
       final now = DateTime.now();
       final updated = prescription.copyWith(createdAt: now, updatedAt: now);
@@ -69,7 +73,8 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
 
   @override
   Future<Result<Prescription>> updatePrescription(
-      Prescription prescription) async {
+    Prescription prescription,
+  ) async {
     try {
       final now = DateTime.now();
       final updated = prescription.copyWith(updatedAt: now);

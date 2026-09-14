@@ -106,8 +106,9 @@ class PrescriptionModel {
       'auto_diminish': autoDiminish,
       'notes': notes,
       'schedule_type': scheduleType,
-      'schedule_times':
-          scheduleTimes != null ? jsonEncode(scheduleTimes) : null,
+      'schedule_times': scheduleTimes != null
+          ? jsonEncode(scheduleTimes)
+          : null,
       'updated_at': updatedAt?.toUtc().toIso8601String(),
       if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
     };
@@ -166,10 +167,12 @@ class PrescriptionModel {
       'auto_diminish': autoDiminish ? 1 : 0,
       'notes': notes,
       'created_at': createdAt?.toIso8601String(),
-      'updated_at': updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'updated_at':
+          updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'schedule_type': scheduleType,
-      'schedule_times':
-          scheduleTimes != null ? jsonEncode(scheduleTimes) : null,
+      'schedule_times': scheduleTimes != null
+          ? jsonEncode(scheduleTimes)
+          : null,
       'deleted_at': deletedAt?.toIso8601String(),
     };
   }

@@ -43,9 +43,11 @@ class AifaCacheService {
           )
         ''');
         await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_aifa_group ON aifa_medications(group_code)');
+          'CREATE INDEX IF NOT EXISTS idx_aifa_group ON aifa_medications(group_code)',
+        );
         await db.execute(
-            'CREATE INDEX IF NOT EXISTS idx_aifa_name ON aifa_medications(name)');
+          'CREATE INDEX IF NOT EXISTS idx_aifa_name ON aifa_medications(name)',
+        );
       },
     );
     return _database!;
@@ -84,7 +86,9 @@ class AifaCacheService {
         .timeout(const Duration(seconds: 60));
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to download AIFA database: ${response.statusCode}');
+      throw Exception(
+        'Failed to download AIFA database: ${response.statusCode}',
+      );
     }
 
     onProgress?.call('Parsing…');
@@ -105,21 +109,17 @@ class AifaCacheService {
         final fields = line.split(';');
         if (fields.length < 12) continue;
 
-        batch.insert(
-          'aifa_medications',
-          {
-            'code': fields[0].trim(),
-            'group_code': fields[1].trim(),
-            'name': fields[3].trim(),
-            'description': fields[4].trim(),
-            'manufacturer': fields[6].trim(),
-            'status': fields[7].trim(),
-            'form': fields[9].trim(),
-            'atc_code': fields[10].trim(),
-            'active_ingredient': fields[11].trim(),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        batch.insert('aifa_medications', {
+          'code': fields[0].trim(),
+          'group_code': fields[1].trim(),
+          'name': fields[3].trim(),
+          'description': fields[4].trim(),
+          'manufacturer': fields[6].trim(),
+          'status': fields[7].trim(),
+          'form': fields[9].trim(),
+          'atc_code': fields[10].trim(),
+          'active_ingredient': fields[11].trim(),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
         count++;
 
         // Commit in batches of 5000 to avoid memory issues
@@ -134,7 +134,9 @@ class AifaCacheService {
     });
 
     // Get actual count
-    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM aifa_medications');
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM aifa_medications',
+    );
     final count = Sqflite.firstIntValue(result) ?? 0;
 
     // Store sync metadata
@@ -169,19 +171,24 @@ class AifaCacheService {
       limit: 50,
     );
 
-    return rows.map((row) => AifaSearchResult(
-      code: row['code'] as String,
-      groupCode: row['group_code'] as String,
-      name: _titleCase(row['name'] as String),
-      description: row['description'] as String? ?? '',
-      manufacturer: _nonEmpty(row['manufacturer'] as String?),
-      status: _nonEmpty(row['status'] as String?),
-      form: _nonEmpty(row['form'] as String?),
-      atcCode: _nonEmpty(row['atc_code'] as String?),
-      activeIngredient: _nonEmpty(row['active_ingredient'] as String?) != null
-          ? _titleCase(row['active_ingredient'] as String)
-          : null,
-    )).toList();
+    return rows
+        .map(
+          (row) => AifaSearchResult(
+            code: row['code'] as String,
+            groupCode: row['group_code'] as String,
+            name: _titleCase(row['name'] as String),
+            description: row['description'] as String? ?? '',
+            manufacturer: _nonEmpty(row['manufacturer'] as String?),
+            status: _nonEmpty(row['status'] as String?),
+            form: _nonEmpty(row['form'] as String?),
+            atcCode: _nonEmpty(row['atc_code'] as String?),
+            activeIngredient:
+                _nonEmpty(row['active_ingredient'] as String?) != null
+                ? _titleCase(row['active_ingredient'] as String)
+                : null,
+          ),
+        )
+        .toList();
   }
 
   /// Search the local AIFA cache by medication name or active ingredient.
@@ -196,25 +203,31 @@ class AifaCacheService {
 
     final rows = await db.query(
       'aifa_medications',
-      where: 'UPPER(name) LIKE ? OR UPPER(active_ingredient) LIKE ? OR UPPER(description) LIKE ?',
+      where:
+          'UPPER(name) LIKE ? OR UPPER(active_ingredient) LIKE ? OR UPPER(description) LIKE ?',
       whereArgs: [term, term, term],
       orderBy: "CASE WHEN UPPER(name) LIKE '$term' THEN 0 ELSE 1 END, name",
       limit: 50,
     );
 
-    return rows.map((row) => AifaSearchResult(
-      code: row['code'] as String,
-      groupCode: row['group_code'] as String,
-      name: _titleCase(row['name'] as String),
-      description: row['description'] as String? ?? '',
-      manufacturer: _nonEmpty(row['manufacturer'] as String?),
-      status: _nonEmpty(row['status'] as String?),
-      form: _nonEmpty(row['form'] as String?),
-      atcCode: _nonEmpty(row['atc_code'] as String?),
-      activeIngredient: _nonEmpty(row['active_ingredient'] as String?) != null
-          ? _titleCase(row['active_ingredient'] as String)
-          : null,
-    )).toList();
+    return rows
+        .map(
+          (row) => AifaSearchResult(
+            code: row['code'] as String,
+            groupCode: row['group_code'] as String,
+            name: _titleCase(row['name'] as String),
+            description: row['description'] as String? ?? '',
+            manufacturer: _nonEmpty(row['manufacturer'] as String?),
+            status: _nonEmpty(row['status'] as String?),
+            form: _nonEmpty(row['form'] as String?),
+            atcCode: _nonEmpty(row['atc_code'] as String?),
+            activeIngredient:
+                _nonEmpty(row['active_ingredient'] as String?) != null
+                ? _titleCase(row['active_ingredient'] as String)
+                : null,
+          ),
+        )
+        .toList();
   }
 
   /// Close the database.
@@ -230,11 +243,11 @@ class AifaCacheService {
     if (text.isEmpty) return text;
     return text
         .split(' ')
-        .map((w) => w.isNotEmpty
-            ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
-            : '')
+        .map(
+          (w) => w.isNotEmpty
+              ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}'
+              : '',
+        )
         .join(' ');
   }
 }
-
-

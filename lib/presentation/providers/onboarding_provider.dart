@@ -11,8 +11,9 @@ const _kOnboardingSeen = 'onboarding_seen';
 /// Whether the first-run onboarding has already been shown. False on a
 /// fresh install; flipped (and persisted) by [OnboardingSeenNotifier.markSeen]
 /// once the sheet is dismissed in any way.
-final onboardingSeenProvider =
-    NotifierProvider<OnboardingSeenNotifier, bool>(OnboardingSeenNotifier.new);
+final onboardingSeenProvider = NotifierProvider<OnboardingSeenNotifier, bool>(
+  OnboardingSeenNotifier.new,
+);
 
 class OnboardingSeenNotifier extends Notifier<bool> {
   @override

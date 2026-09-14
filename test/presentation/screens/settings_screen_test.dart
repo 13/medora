@@ -19,20 +19,42 @@ void main() {
   });
   tearDown(tearDownTestDatabase);
 
-  testWidgets('local-only desktop shows the grouped sections without Security or Advanced', (tester) async {
-    await pumpMedoraApp(tester, const SettingsScreen(), overrides: [
-      sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-      syncStartupDelayProvider.overrideWithValue(Duration.zero),
-      reminderPortProvider.overrideWithValue(FakePort()),
-      platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.desktop),
-    ]);
-    await tester.pumpAndSettle();
+  testWidgets(
+    'local-only desktop shows the grouped sections without Security or Advanced',
+    (tester) async {
+      await pumpMedoraApp(
+        tester,
+        const SettingsScreen(),
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          syncStartupDelayProvider.overrideWithValue(Duration.zero),
+          reminderPortProvider.overrideWithValue(FakePort()),
+          platformCapabilitiesProvider.overrideWithValue(
+            PlatformCapabilities.desktop,
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
 
-    for (final title in ['Appearance', 'Notifications', 'Data', 'Cloud sync', 'Danger Zone', 'About']) {
-      await tester.scrollUntilVisible(find.text(title), 200, scrollable: find.byType(Scrollable).first);
-      expect(find.text(title), findsOneWidget, reason: title);
-    }
-    expect(find.text('Security'), findsNothing);
-    expect(find.text('Advanced'), findsNothing);
-  });
+      for (final title in [
+        'Appearance',
+        'Notifications',
+        'Data',
+        'Cloud sync',
+        'Danger Zone',
+        'About',
+      ]) {
+        await tester.scrollUntilVisible(
+          find.text(title),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text(title), findsOneWidget, reason: title);
+      }
+      expect(find.text('Security'), findsNothing);
+      expect(find.text('Advanced'), findsNothing);
+    },
+  );
 }

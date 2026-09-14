@@ -46,4 +46,3 @@ abstract class MedicationRepository {
   /// Get archived medications.
   Future<Result<List<Medication>>> getArchivedMedications();
 }
-

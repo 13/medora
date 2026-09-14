@@ -345,13 +345,16 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
           items: medications
               .where((m) => !m.isArchived || m.id == _selectedMedicationId)
               .map((m) {
-            return DropdownMenuItem(
-              value: m.id,
-              child: Text(_medLabel(l10n, m), overflow: TextOverflow.ellipsis),
-            );
-          }).toList(),
-          validator: (value) =>
-              value == null ? l10n.selectMedication : null,
+                return DropdownMenuItem(
+                  value: m.id,
+                  child: Text(
+                    _medLabel(l10n, m),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              })
+              .toList(),
+          validator: (value) => value == null ? l10n.selectMedication : null,
           onChanged: (value) {
             setState(() {
               _selectedMedicationId = value;
@@ -439,8 +442,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
               hintText: l10n.dosageHint,
               prefixIcon: const Icon(Icons.medication),
             ),
-            validator: (v) =>
-                (v ?? '').trim().isEmpty ? l10n.required : null,
+            validator: (v) => (v ?? '').trim().isEmpty ? l10n.required : null,
           ),
       ],
     );

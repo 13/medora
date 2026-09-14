@@ -30,7 +30,10 @@ void main() {
   }) async {
     // 'onboarding_seen' keeps the first-run sheet (shown by MainShellScreen)
     // out of these routing assertions.
-    SharedPreferences.setMockInitialValues({'app_mode': mode, 'onboarding_seen': true});
+    SharedPreferences.setMockInitialValues({
+      'app_mode': mode,
+      'onboarding_seen': true,
+    });
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(
       overrides: [
@@ -61,39 +64,75 @@ void main() {
     final container = await pumpApp(tester, mode: 'localOnly');
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byType(AuthScreen), findsNothing);
-    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, '/');
-  });
-
-  testWidgets('cloud mode without a session redirects to /auth, and choosing local-only returns home',
-      (tester) async {
-    final container = await pumpApp(tester, mode: 'cloud');
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byType(AuthScreen), findsOneWidget);
-    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, '/auth');
-
-    await container.read(appModeProvider.notifier).set(AppMode.localOnly);
-    await tester.pump();
-    // The /auth -> / transition is an animated MaterialPage push; AuthScreen
-    // stays mounted mid-transition, so settle the animation before asserting
-    // it is gone (a fixed short pump is not reliably enough).
-    await tester.pumpAndSettle();
-
-    expect(find.byType(AuthScreen), findsNothing);
-    expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, '/');
-  });
-
-  testWidgets('/scanner shows an unavailable screen on a platform without a camera', (tester) async {
-    final container = await pumpApp(
-      tester,
-      mode: 'localOnly',
-      overrides: [platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.web)],
+    expect(
+      container
+          .read(appRouterProvider)
+          .routerDelegate
+          .currentConfiguration
+          .uri
+          .path,
+      '/',
     );
-    await tester.pump(const Duration(milliseconds: 100));
-
-    container.read(appRouterProvider).go('/scanner');
-    await tester.pumpAndSettle();
-
-    expect(find.text('This feature is not available on this device.'), findsOneWidget);
-    expect(find.byType(BarcodeScannerScreen), findsNothing);
   });
+
+  testWidgets(
+    'cloud mode without a session redirects to /auth, and choosing local-only returns home',
+    (tester) async {
+      final container = await pumpApp(tester, mode: 'cloud');
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(AuthScreen), findsOneWidget);
+      expect(
+        container
+            .read(appRouterProvider)
+            .routerDelegate
+            .currentConfiguration
+            .uri
+            .path,
+        '/auth',
+      );
+
+      await container.read(appModeProvider.notifier).set(AppMode.localOnly);
+      await tester.pump();
+      // The /auth -> / transition is an animated MaterialPage push; AuthScreen
+      // stays mounted mid-transition, so settle the animation before asserting
+      // it is gone (a fixed short pump is not reliably enough).
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AuthScreen), findsNothing);
+      expect(
+        container
+            .read(appRouterProvider)
+            .routerDelegate
+            .currentConfiguration
+            .uri
+            .path,
+        '/',
+      );
+    },
+  );
+
+  testWidgets(
+    '/scanner shows an unavailable screen on a platform without a camera',
+    (tester) async {
+      final container = await pumpApp(
+        tester,
+        mode: 'localOnly',
+        overrides: [
+          platformCapabilitiesProvider.overrideWithValue(
+            PlatformCapabilities.web,
+          ),
+        ],
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      container.read(appRouterProvider).go('/scanner');
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('This feature is not available on this device.'),
+        findsOneWidget,
+      );
+      expect(find.byType(BarcodeScannerScreen), findsNothing);
+    },
+  );
 }

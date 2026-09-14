@@ -10,48 +10,59 @@ class FailingTakeRepo implements DoseLogRepository {
   final DoseLogRepository inner;
 
   @override
-  Future<Result<List<DoseLog>>> getDoseLogsByPrescription(String prescriptionId) =>
-      inner.getDoseLogsByPrescription(prescriptionId);
+  Future<Result<List<DoseLog>>> getDoseLogsByPrescription(
+    String prescriptionId,
+  ) => inner.getDoseLogsByPrescription(prescriptionId);
 
   @override
   Future<Result<DoseLog>> getDoseLogById(String id) => inner.getDoseLogById(id);
 
   @override
-  Future<Result<List<DoseLog>>> getTodaysDoseLogs() => inner.getTodaysDoseLogs();
+  Future<Result<List<DoseLog>>> getTodaysDoseLogs() =>
+      inner.getTodaysDoseLogs();
 
   @override
-  Future<Result<List<DoseLog>>> getDoseLogsByDateRange(DateTime start, DateTime end) =>
-      inner.getDoseLogsByDateRange(start, end);
+  Future<Result<List<DoseLog>>> getDoseLogsByDateRange(
+    DateTime start,
+    DateTime end,
+  ) => inner.getDoseLogsByDateRange(start, end);
 
   @override
-  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end) =>
-      inner.getPendingDoseLogsBetween(start, end);
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(
+    DateTime start,
+    DateTime end,
+  ) => inner.getPendingDoseLogsBetween(start, end);
 
   @override
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) =>
       inner.markOverduePendingAsMissed(cutoff);
 
   @override
-  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) => inner.addDoseLog(doseLog);
+  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) =>
+      inner.addDoseLog(doseLog);
 
   @override
-  Future<Result<DoseLog>> markDoseTaken(String id) async => const Result.failure('db down');
+  Future<Result<DoseLog>> markDoseTaken(String id) async =>
+      const Result.failure('db down');
 
   @override
-  Future<Result<DoseLog>> markDoseSkipped(String id) => inner.markDoseSkipped(id);
+  Future<Result<DoseLog>> markDoseSkipped(String id) =>
+      inner.markDoseSkipped(id);
 
   @override
   Future<Result<DoseLog>> markDoseMissed(String id) => inner.markDoseMissed(id);
 
   @override
-  Future<Result<DoseLog>> markDosePending(String id) => inner.markDosePending(id);
+  Future<Result<DoseLog>> markDosePending(String id) =>
+      inner.markDosePending(id);
 
   @override
-  Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(String prescriptionId) =>
-      inner.generateDoseLogsForPrescription(prescriptionId);
+  Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
+    String prescriptionId,
+  ) => inner.generateDoseLogsForPrescription(prescriptionId);
 
   @override
-  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(String prescriptionId) =>
-      inner.regenerateDoseLogsForPrescription(prescriptionId);
+  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
+    String prescriptionId,
+  ) => inner.regenerateDoseLogsForPrescription(prescriptionId);
 }
-

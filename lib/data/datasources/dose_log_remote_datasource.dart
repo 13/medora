@@ -26,8 +26,9 @@ class DoseLogRemoteDatasource {
     final base = _client
         .from(AppConstants.doseLogsTable)
         .select('*, prescriptions(id, medications(name))');
-    final filtered =
-        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final filtered = since == null
+        ? base
+        : base.gt('updated_at', since.toUtc().toIso8601String());
     final response = await filtered.order('updated_at');
     return (response as List)
         .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
@@ -52,9 +53,7 @@ class DoseLogRemoteDatasource {
   }
 
   Future<void> addDoseLog(DoseLogModel model) async {
-    await _client
-        .from(AppConstants.doseLogsTable)
-        .insert(model.toJson());
+    await _client.from(AppConstants.doseLogsTable).insert(model.toJson());
   }
 
   Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
@@ -65,13 +64,15 @@ class DoseLogRemoteDatasource {
   }
 
   Future<void> upsertDoseLog(DoseLogModel model) async {
-    await _client
-        .from(AppConstants.doseLogsTable)
-        .upsert(model.toJson());
+    await _client.from(AppConstants.doseLogsTable).upsert(model.toJson());
   }
 
   /// Update dose log status.
-  Future<void> updateDoseLogStatus(String id, String status, {DateTime? takenTime}) async {
+  Future<void> updateDoseLogStatus(
+    String id,
+    String status, {
+    DateTime? takenTime,
+  }) async {
     final Map<String, dynamic> updateData = {
       'status': status,
       'updated_at': DateTime.now().toUtc().toIso8601String(),

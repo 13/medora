@@ -45,7 +45,11 @@ class AsyncValueView<T> extends StatelessWidget {
         if (emptyWhen?.call(d) == true && empty != null) return empty!;
         return data(d);
       },
-      loading: () => loading ?? (compact ? const Card(child: _CompactLoading()) : const LoadingWidget()),
+      loading: () =>
+          loading ??
+          (compact
+              ? const Card(child: _CompactLoading())
+              : const LoadingWidget()),
       error: (e, _) => _ErrorView(error: e, onRetry: onRetry, compact: compact),
     );
   }
@@ -58,15 +62,15 @@ class _CompactLoading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget bar(double widthFactor) => FractionallySizedBox(
-          widthFactor: widthFactor,
-          child: Container(
-            height: 12,
-            decoration: BoxDecoration(
-              color: context.colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(6),
-            ),
-          ),
-        );
+      widthFactor: widthFactor,
+      child: Container(
+        height: 12,
+        decoration: BoxDecoration(
+          color: context.colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(6),
+        ),
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -86,7 +90,11 @@ class _CompactLoading extends StatelessWidget {
 }
 
 class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.error, required this.onRetry, required this.compact});
+  const _ErrorView({
+    required this.error,
+    required this.onRetry,
+    required this.compact,
+  });
 
   final Object error;
   final Future<void> Function()? onRetry;
@@ -103,9 +111,9 @@ class _ErrorView extends StatelessWidget {
         const SizedBox(height: 8),
         Text(l10n.genericError, textAlign: TextAlign.center),
         Theme(
-          data: Theme.of(context).copyWith(
-            dividerColor: compact ? Colors.transparent : null,
-          ),
+          data: Theme.of(
+            context,
+          ).copyWith(dividerColor: compact ? Colors.transparent : null),
           child: ExpansionTile(
             title: Text(l10n.details),
             tilePadding: EdgeInsets.zero,
@@ -130,18 +138,12 @@ class _ErrorView extends StatelessWidget {
 
     if (!compact) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: content,
-        ),
+        child: Padding(padding: const EdgeInsets.all(24), child: content),
       );
     }
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: content,
-      ),
+      child: Padding(padding: const EdgeInsets.all(16), child: content),
     );
   }
 }

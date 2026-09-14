@@ -30,7 +30,8 @@ class ReminderService implements ReminderPort {
 
   /// Whether the current platform supports scheduled local notifications
   /// (mobile only; web and desktop plugins cannot schedule).
-  static bool get _supported => PlatformCapabilities.detect().hasLocalNotifications;
+  static bool get _supported =>
+      PlatformCapabilities.detect().hasLocalNotifications;
 
   /// Initialize the notification service.
   Future<void> initialize() async {
@@ -41,8 +42,7 @@ class ReminderService implements ReminderPort {
     // This significantly reduces startup time and memory usage.
     tz.initializeTimeZones();
 
-    const androidSettings =
-        AndroidInitializationSettings('ic_stat_notify');
+    const androidSettings = AndroidInitializationSettings('ic_stat_notify');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -100,8 +100,10 @@ class ReminderService implements ReminderPort {
   }
 
   @override
-  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) =>
-      scheduleRemindersForDose(dose: dose, medicationName: medicationName);
+  Future<void> scheduleForDose({
+    required DoseLog dose,
+    required String medicationName,
+  }) => scheduleRemindersForDose(dose: dose, medicationName: medicationName);
 
   /// Schedule reminders for a dose.
   Future<void> scheduleRemindersForDose({
@@ -122,17 +124,19 @@ class ReminderService implements ReminderPort {
         : null;
 
     for (var i = 0; i < offsets.length; i++) {
-      final scheduledTime = dose.scheduledTime.subtract(Duration(minutes: offsets[i]));
+      final scheduledTime = dose.scheduledTime.subtract(
+        Duration(minutes: offsets[i]),
+      );
       if (scheduledTime.isBefore(now)) continue;
 
       String title;
       if (l10n != null) {
-        title = offsets[i] == 0 
-            ? l10n.notificationReminderTimeFor(medicationName) 
+        title = offsets[i] == 0
+            ? l10n.notificationReminderTimeFor(medicationName)
             : l10n.notificationReminderInMinutes(medicationName, offsets[i]);
       } else {
-        title = offsets[i] == 0 
-            ? 'Time for $medicationName' 
+        title = offsets[i] == 0
+            ? 'Time for $medicationName'
             : 'Reminder: $medicationName in ${offsets[i]} min';
       }
 
@@ -169,7 +173,9 @@ class ReminderService implements ReminderPort {
     final androidDetails = AndroidNotificationDetails(
       'medora_dose_reminders',
       l10n?.notificationChannelName ?? 'Dose Reminders',
-      channelDescription: l10n?.notificationChannelDescription ?? 'Reminders for scheduled medication doses',
+      channelDescription:
+          l10n?.notificationChannelDescription ??
+          'Reminders for scheduled medication doses',
       importance: Importance.max,
       priority: Priority.high,
       ticker: l10n?.notificationTicker ?? 'Medication Reminder',
@@ -208,7 +214,10 @@ class ReminderService implements ReminderPort {
   Future<bool> requestPermissions() async {
     if (!_supported) return true;
 
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidPlugin != null) {
       return await androidPlugin.requestNotificationsPermission() ?? false;
     }

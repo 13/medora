@@ -29,7 +29,9 @@ class FamilyRepositoryImpl implements FamilyRepository {
 
   @override
   Future<Result<Family>> createFamily(
-      String name, String ownerDisplayName) async {
+    String name,
+    String ownerDisplayName,
+  ) async {
     try {
       final inviteCode = _generateCode();
       final familyId = _uuid.v4();
@@ -53,20 +55,28 @@ class FamilyRepositoryImpl implements FamilyRepository {
         joinedAt: DateTime.now(),
       );
 
-      await localDatasource.upsertFamily(family,
-          syncStatus: SyncStatus.pendingCreate);
-      await localDatasource.upsertMember(member,
-          syncStatus: SyncStatus.pendingCreate);
+      await localDatasource.upsertFamily(
+        family,
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      await localDatasource.upsertMember(
+        member,
+        syncStatus: SyncStatus.pendingCreate,
+      );
 
       final remote = remoteDatasource;
       if (remote != null && _isOnline()) {
         try {
           await remote.createFamily(family);
           await remote.addMember(member);
-          await localDatasource.upsertFamily(family,
-              syncStatus: SyncStatus.synced);
-          await localDatasource.upsertMember(member,
-              syncStatus: SyncStatus.synced);
+          await localDatasource.upsertFamily(
+            family,
+            syncStatus: SyncStatus.synced,
+          );
+          await localDatasource.upsertMember(
+            member,
+            syncStatus: SyncStatus.synced,
+          );
         } catch (_) {}
       }
 
@@ -78,22 +88,31 @@ class FamilyRepositoryImpl implements FamilyRepository {
 
   @override
   Future<Result<Family>> joinFamily(
-      String inviteCode, String displayName) async {
+    String inviteCode,
+    String displayName,
+  ) async {
     try {
       final remote = remoteDatasource;
       if (remote == null) {
-        return const Result.failure('Cloud sync is required for family sharing');
+        return const Result.failure(
+          'Cloud sync is required for family sharing',
+        );
       }
       if (!_isOnline()) {
         return const Result.failure(
-            'Internet connection required to join a family');
+          'Internet connection required to join a family',
+        );
       }
 
       final joined = await remote.joinFamily(inviteCode, displayName);
-      await localDatasource.upsertFamily(joined.family,
-          syncStatus: SyncStatus.synced);
-      await localDatasource.upsertMember(joined.member,
-          syncStatus: SyncStatus.synced);
+      await localDatasource.upsertFamily(
+        joined.family,
+        syncStatus: SyncStatus.synced,
+      );
+      await localDatasource.upsertMember(
+        joined.member,
+        syncStatus: SyncStatus.synced,
+      );
 
       return Result.success(joined.family.toDomain());
     } catch (e, st) {
@@ -144,8 +163,7 @@ class FamilyRepositoryImpl implements FamilyRepository {
   }
 
   @override
-  Future<Result<List<FamilyMember>>> getFamilyMembers(
-      String familyId) async {
+  Future<Result<List<FamilyMember>>> getFamilyMembers(String familyId) async {
     try {
       final members = await localDatasource.getMembers(familyId);
       return Result.success(members.map((m) => m.toDomain()).toList());
@@ -159,11 +177,14 @@ class FamilyRepositoryImpl implements FamilyRepository {
     try {
       final remote = remoteDatasource;
       if (remote == null) {
-        return const Result.failure('Cloud sync is required for family sharing');
+        return const Result.failure(
+          'Cloud sync is required for family sharing',
+        );
       }
       if (!_isOnline()) {
         return const Result.failure(
-            'Internet connection required to regenerate code');
+          'Internet connection required to regenerate code',
+        );
       }
       final newCode = await remote.regenerateInviteCode(familyId);
       // Update local
@@ -219,4 +240,3 @@ class FamilyRepositoryImpl implements FamilyRepository {
     }).join();
   }
 }
-

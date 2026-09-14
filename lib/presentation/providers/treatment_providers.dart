@@ -8,8 +8,8 @@ import 'package:medora/presentation/providers/providers.dart';
 /// Provider for the full treatment list.
 final treatmentListProvider =
     AsyncNotifierProvider<TreatmentListNotifier, List<Treatment>>(
-  TreatmentListNotifier.new,
-);
+      TreatmentListNotifier.new,
+    );
 
 class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   @override

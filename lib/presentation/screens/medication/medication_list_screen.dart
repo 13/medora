@@ -22,7 +22,8 @@ class MedicationListScreen extends ConsumerStatefulWidget {
   const MedicationListScreen({super.key});
 
   @override
-  ConsumerState<MedicationListScreen> createState() => _MedicationListScreenState();
+  ConsumerState<MedicationListScreen> createState() =>
+      _MedicationListScreenState();
 }
 
 class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
@@ -80,11 +81,11 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
       // Exclude archived from "All" view per user request.
       MedicationFilter.all => filtered.where((m) => !m.isArchived).toList(),
       MedicationFilter.needsAttention => filtered.where((m) {
-          if (m.isArchived) return false;
-          final isLowStock = m.quantity <= m.minimumStockLevel;
-          final isExpired = m.expiryDate?.isPast ?? false;
-          return isLowStock || isExpired || m.isExpiringSoon();
-        }).toList(),
+        if (m.isArchived) return false;
+        final isLowStock = m.quantity <= m.minimumStockLevel;
+        final isExpired = m.expiryDate?.isPast ?? false;
+        return isLowStock || isExpired || m.isExpiringSoon();
+      }).toList(),
       MedicationFilter.archived => filtered.where((m) => m.isArchived).toList(),
     };
   }
@@ -137,13 +138,15 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 _FilterChip(
                   label: '${l10n.lowStock} · ${l10n.expiringSoon}',
                   selected: _filter == MedicationFilter.needsAttention,
-                  onTap: () => setState(() => _filter = MedicationFilter.needsAttention),
+                  onTap: () =>
+                      setState(() => _filter = MedicationFilter.needsAttention),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
                   label: l10n.archived,
                   selected: _filter == MedicationFilter.archived,
-                  onTap: () => setState(() => _filter = MedicationFilter.archived),
+                  onTap: () =>
+                      setState(() => _filter = MedicationFilter.archived),
                 ),
               ],
             ),
@@ -154,7 +157,8 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
           Expanded(
             child: AsyncValueView<List<Medication>>(
               value: medicationsAsync,
-              onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
+              onRetry: () async =>
+                  ref.read(medicationListProvider.notifier).refresh(),
               emptyWhen: (medications) => medications.isEmpty,
               empty: EmptyStateWidget(
                 icon: Icons.inventory_2_outlined,
@@ -170,9 +174,18 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search_off, size: 48, color: context.colors.outline),
+                        Icon(
+                          Icons.search_off,
+                          size: 48,
+                          color: context.colors.outline,
+                        ),
                         const SizedBox(height: 8),
-                        Text(l10n.noResults, style: TextStyle(color: context.colors.onSurfaceVariant)),
+                        Text(
+                          l10n.noResults,
+                          style: TextStyle(
+                            color: context.colors.onSurfaceVariant,
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -187,7 +200,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final med = filtered[index];
-                      // Providing a unique Key is essential for Slidable items 
+                      // Providing a unique Key is essential for Slidable items
                       // to prevent layout errors when items are removed/reordered.
                       return Slidable(
                         key: ValueKey(med.id),
@@ -197,13 +210,16 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                             if (!med.isArchived)
                               SlidableAction(
                                 onPressed: (_) async {
-                                  final messenger = ScaffoldMessenger.of(context);
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
                                   // Captured before the SnackBar is shown: the
                                   // shell swaps tabs by index, so this screen
                                   // (and its `ref`) can be disposed while the
                                   // SnackBar is re-hosted by the messenger.
-                                  final notifier =
-                                      ref.read(medicationListProvider.notifier);
+                                  final notifier = ref.read(
+                                    medicationListProvider.notifier,
+                                  );
                                   final ok = await _guard(
                                     messenger,
                                     l10n,
@@ -218,26 +234,35 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                         onPressed: () => _guard(
                                           messenger,
                                           l10n,
-                                          () => notifier
-                                              .unarchiveMedication(med.id),
+                                          () => notifier.unarchiveMedication(
+                                            med.id,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   );
                                 },
-                                backgroundColor: context.colors.tertiaryContainer,
-                                foregroundColor: context.colors.onTertiaryContainer,
+                                backgroundColor:
+                                    context.colors.tertiaryContainer,
+                                foregroundColor:
+                                    context.colors.onTertiaryContainer,
                                 icon: Icons.archive,
                                 label: l10n.archive,
                               ),
                             if (med.isArchived)
                               SlidableAction(
                                 onPressed: (_) {
-                                  final messenger = ScaffoldMessenger.of(context);
-                                  final notifier =
-                                      ref.read(medicationListProvider.notifier);
-                                  _guard(messenger, l10n,
-                                      () => notifier.unarchiveMedication(med.id));
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
+                                  final notifier = ref.read(
+                                    medicationListProvider.notifier,
+                                  );
+                                  _guard(
+                                    messenger,
+                                    l10n,
+                                    () => notifier.unarchiveMedication(med.id),
+                                  );
                                 },
                                 backgroundColor: context.medora.success,
                                 foregroundColor: context.medora.onSuccess,
@@ -250,26 +275,40 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                   context: context,
                                   builder: (ctx) => AlertDialog(
                                     title: Text(l10n.deleteMedication),
-                                    content: Text(l10n.deleteMedicationConfirm(med.name)),
+                                    content: Text(
+                                      l10n.deleteMedicationConfirm(med.name),
+                                    ),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
                                         child: Text(l10n.cancel),
                                       ),
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, true),
-                                        child: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: Text(
+                                          l10n.delete,
+                                          style: TextStyle(
+                                            color: context.colors.error,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
                                 );
                                 if (confirm == true && context.mounted) {
-                                  final messenger =
-                                      ScaffoldMessenger.of(context);
-                                  final notifier =
-                                      ref.read(medicationListProvider.notifier);
-                                  await _guard(messenger, l10n,
-                                      () => notifier.deleteMedication(med.id));
+                                  final messenger = ScaffoldMessenger.of(
+                                    context,
+                                  );
+                                  final notifier = ref.read(
+                                    medicationListProvider.notifier,
+                                  );
+                                  await _guard(
+                                    messenger,
+                                    l10n,
+                                    () => notifier.deleteMedication(med.id),
+                                  );
                                 }
                               },
                               backgroundColor: context.colors.error,
@@ -314,15 +353,15 @@ class _MedicationTile extends StatelessWidget {
         backgroundColor: isExpired
             ? context.medora.dangerContainer
             : isLowStock
-                ? context.medora.warningContainer
-                : context.colors.primaryContainer,
+            ? context.medora.warningContainer
+            : context.colors.primaryContainer,
         child: Icon(
           Icons.medication,
           color: isExpired
               ? context.medora.onDangerContainer
               : isLowStock
-                  ? context.medora.onWarningContainer
-                  : context.colors.onPrimaryContainer,
+              ? context.medora.onWarningContainer
+              : context.colors.onPrimaryContainer,
         ),
       ),
       title: Text(
@@ -340,7 +379,10 @@ class _MedicationTile extends StatelessWidget {
               child: Wrap(
                 spacing: 4,
                 runSpacing: 4,
-                children: med.symptoms.take(3).map((s) => TagChip(label: s, fontSize: 10)).toList(),
+                children: med.symptoms
+                    .take(3)
+                    .map((s) => TagChip(label: s, fontSize: 10))
+                    .toList(),
               ),
             ),
           Padding(
@@ -353,20 +395,32 @@ class _MedicationTile extends StatelessWidget {
                   isExpired: isExpired,
                 ),
                 if (med.expiryDate != null) ...[
-                  Text(' · ', style: TextStyle(color: context.colors.onSurfaceVariant)),
+                  Text(
+                    ' · ',
+                    style: TextStyle(color: context.colors.onSurfaceVariant),
+                  ),
                   Text(
                     med.expiryDate!.year == now.year
                         ? med.expiryDate!.shortFormatted
                         : med.expiryDate!.formatted,
                     style: TextStyle(
-                      color: isExpired ? context.medora.danger : context.colors.onSurfaceVariant,
+                      color: isExpired
+                          ? context.medora.danger
+                          : context.colors.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   ),
                 ],
                 if (med.isArchived) ...[
-                  Text(' · ', style: TextStyle(color: context.colors.onSurfaceVariant)),
-                  Icon(Icons.archive, size: 12, color: context.colors.onSurfaceVariant),
+                  Text(
+                    ' · ',
+                    style: TextStyle(color: context.colors.onSurfaceVariant),
+                  ),
+                  Icon(
+                    Icons.archive,
+                    size: 12,
+                    color: context.colors.onSurfaceVariant,
+                  ),
                 ],
               ],
             ),
@@ -377,7 +431,9 @@ class _MedicationTile extends StatelessWidget {
               child: Wrap(
                 spacing: 4,
                 runSpacing: 4,
-                children: med.patientTags.map((t) => TagChip(label: t, icon: Icons.person)).toList(),
+                children: med.patientTags
+                    .map((t) => TagChip(label: t, icon: Icons.person))
+                    .toList(),
               ),
             ),
         ],
@@ -391,7 +447,10 @@ class _MedicationTile extends StatelessWidget {
               ),
               child: Text(
                 AppConstants.categoryLabel(l10n, med.category!),
-                style: TextStyle(fontSize: 10, color: context.colors.onSecondaryContainer),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: context.colors.onSecondaryContainer,
+                ),
               ),
             )
           : null,

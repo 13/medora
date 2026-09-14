@@ -69,7 +69,9 @@ class _BiometricGateState extends ConsumerState<BiometricGate>
 
   @override
   Widget build(BuildContext context) {
-    final locked = ref.watch(isBiometricLockedProvider) && ref.watch(biometricsEnabledProvider);
+    final locked =
+        ref.watch(isBiometricLockedProvider) &&
+        ref.watch(biometricsEnabledProvider);
     if (!locked) return widget.child;
 
     final l10n = AppLocalizations.of(context);
@@ -81,7 +83,11 @@ class _BiometricGateState extends ConsumerState<BiometricGate>
             Image.asset(
               'assets/icon/medora_icon.png',
               height: 120,
-              errorBuilder: (_, _, _) => Icon(Icons.lock_outline, size: 80, color: Theme.of(context).colorScheme.primary),
+              errorBuilder: (_, _, _) => Icon(
+                Icons.lock_outline,
+                size: 80,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
             const SizedBox(height: 32),
             FilledButton.icon(

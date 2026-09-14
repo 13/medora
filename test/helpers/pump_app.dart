@@ -11,22 +11,32 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 ///
 /// [locale] drives both the MaterialApp locale and `Intl.defaultLocale`, so
 /// date/number formatting matches the l10n strings.
-Future<ProviderContainer> pumpMedoraApp(WidgetTester tester, Widget home, {List<Override> overrides = const [], Brightness brightness = Brightness.light, Locale locale = const Locale('en')}) async {
+Future<ProviderContainer> pumpMedoraApp(
+  WidgetTester tester,
+  Widget home, {
+  List<Override> overrides = const [],
+  Brightness brightness = Brightness.light,
+  Locale locale = const Locale('en'),
+}) async {
   Intl.defaultLocale = locale.languageCode;
   final container = ProviderContainer(overrides: overrides);
   addTearDown(container.dispose);
-  await tester.pumpWidget(UncontrolledProviderScope(
-    container: container,
-    child: MaterialApp(
-      theme: AppTheme.lightThemeFrom(const Color(0xFF2E7D6F)),
-      darkTheme: AppTheme.darkThemeFrom(const Color(0xFF2E7D6F)),
-      themeMode: brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
-      locale: locale,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: home,
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        theme: AppTheme.lightThemeFrom(const Color(0xFF2E7D6F)),
+        darkTheme: AppTheme.darkThemeFrom(const Color(0xFF2E7D6F)),
+        themeMode: brightness == Brightness.dark
+            ? ThemeMode.dark
+            : ThemeMode.light,
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: home,
+      ),
     ),
-  ));
+  );
   await tester.pump();
   return container;
 }

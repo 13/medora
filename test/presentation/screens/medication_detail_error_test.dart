@@ -18,25 +18,30 @@ class _Failing extends MedicationListNotifier {
 }
 
 void main() {
-  testWidgets('medication detail screen keeps AppBar when medications fail to load', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
-    final overrides = <Override>[
-      sharedPreferencesProvider.overrideWithValue(prefs),
-      syncStartupDelayProvider.overrideWithValue(Duration.zero),
-      reminderPortProvider.overrideWithValue(FakePort()),
-      platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.mobile),
-      medicationListProvider.overrideWith(() => _Failing()),
-    ];
+  testWidgets(
+    'medication detail screen keeps AppBar when medications fail to load',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final overrides = <Override>[
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        syncStartupDelayProvider.overrideWithValue(Duration.zero),
+        reminderPortProvider.overrideWithValue(FakePort()),
+        platformCapabilitiesProvider.overrideWithValue(
+          PlatformCapabilities.mobile,
+        ),
+        medicationListProvider.overrideWith(() => _Failing()),
+      ];
 
-    await pumpMedoraApp(
-      tester,
-      const MedicationDetailScreen(medicationId: 'x'),
-      overrides: overrides,
-    );
-    await tester.pump();
+      await pumpMedoraApp(
+        tester,
+        const MedicationDetailScreen(medicationId: 'x'),
+        overrides: overrides,
+      );
+      await tester.pump();
 
-    expect(find.byType(AppBar), findsOneWidget);
-    expect(find.text('Something went wrong'), findsOneWidget);
-  });
+      expect(find.byType(AppBar), findsOneWidget);
+      expect(find.text('Something went wrong'), findsOneWidget);
+    },
+  );
 }

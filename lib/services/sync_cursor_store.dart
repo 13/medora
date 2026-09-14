@@ -38,7 +38,8 @@ class SyncCursorStore {
     _memory.clear();
     final prefs = _prefs;
     if (prefs == null) return;
-    for (final key in prefs.getKeys().where((k) => k.startsWith(keyPrefix)).toList()) {
+    for (final key
+        in prefs.getKeys().where((k) => k.startsWith(keyPrefix)).toList()) {
       await prefs.remove(key);
     }
   }

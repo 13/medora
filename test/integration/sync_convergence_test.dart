@@ -50,11 +50,16 @@ void main() {
       ),
     );
     final email = 'it-${const Uuid().v4()}@example.com';
-    final res =
-        await client.auth.signUp(email: email, password: 'password-123');
+    final res = await client.auth.signUp(
+      email: email,
+      password: 'password-123',
+    );
     userId = res.user!.id;
-    expect(client.auth.currentSession, isNotNull,
-        reason: 'local Supabase must auto-confirm sign-ups');
+    expect(
+      client.auth.currentSession,
+      isNotNull,
+      reason: 'local Supabase must auto-confirm sign-ups',
+    );
   });
 
   tearDownAll(() async {
@@ -109,90 +114,113 @@ void main() {
   setUp(setUpTestDatabase);
   tearDown(tearDownTestDatabase);
 
-  test('create on A, pull on B, delete on B, gone on A', () async {
-    final id = const Uuid().v4();
+  test(
+    'create on A, pull on B, delete on B, gone on A',
+    () async {
+      final id = const Uuid().v4();
 
-    // Device A creates and pushes.
-    final a = await device();
-    await MedicationLocalDatasource().upsert(
-      MedicationModel(id: id, name: 'Convergence', quantity: 1),
-      syncStatus: SyncStatus.pendingCreate,
-    );
-    final r1 = (await a.syncAll())!;
-    expect(r1.isClean, isTrue, reason: r1.failures.join('\n'));
+      // Device A creates and pushes.
+      final a = await device();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(id: id, name: 'Convergence', quantity: 1),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      final r1 = (await a.syncAll())!;
+      expect(r1.isClean, isTrue, reason: r1.failures.join('\n'));
 
-    // Device B pulls, deletes, pushes the tombstone.
-    final b = await device();
-    final r2 = (await b.syncAll())!;
-    expect(r2.isClean, isTrue, reason: r2.failures.join('\n'));
-    expect(await MedicationLocalDatasource().getMedicationById(id), isNotNull);
-    await MedicationLocalDatasource().markDeleted(id);
-    final r3 = (await b.syncAll())!;
-    expect(r3.isClean, isTrue, reason: r3.failures.join('\n'));
+      // Device B pulls, deletes, pushes the tombstone.
+      final b = await device();
+      final r2 = (await b.syncAll())!;
+      expect(r2.isClean, isTrue, reason: r2.failures.join('\n'));
+      expect(
+        await MedicationLocalDatasource().getMedicationById(id),
+        isNotNull,
+      );
+      await MedicationLocalDatasource().markDeleted(id);
+      final r3 = (await b.syncAll())!;
+      expect(r3.isClean, isTrue, reason: r3.failures.join('\n'));
 
-    // Device A (fresh state again) pulls: tombstone applied.
-    final a2 = await device();
-    final r4 = (await a2.syncAll())!;
-    expect(r4.isClean, isTrue, reason: r4.failures.join('\n'));
-    expect(await MedicationLocalDatasource().getMedicationById(id), isNull);
-  },
-      skip: configured
-          ? false
-          : 'Set SUPABASE_URL and SUPABASE_ANON_KEY dart-defines to run '
-              'against a local Supabase');
+      // Device A (fresh state again) pulls: tombstone applied.
+      final a2 = await device();
+      final r4 = (await a2.syncAll())!;
+      expect(r4.isClean, isTrue, reason: r4.failures.join('\n'));
+      expect(await MedicationLocalDatasource().getMedicationById(id), isNull);
+    },
+    skip: configured
+        ? false
+        : 'Set SUPABASE_URL and SUPABASE_ANON_KEY dart-defines to run '
+              'against a local Supabase',
+  );
 
-  test('B joins A\'s family by invite code and both sync it down', () async {
-    final familyId = const Uuid().v4();
-    final inviteCode = const Uuid().v4().substring(0, 8).toUpperCase();
+  test(
+    'B joins A\'s family by invite code and both sync it down',
+    () async {
+      final familyId = const Uuid().v4();
+      final inviteCode = const Uuid().v4().substring(0, 8).toUpperCase();
 
-    // A creates the family and their own membership row.
-    final aRemote = FamilyRemoteDatasource(client);
-    await aRemote.createFamily(FamilyModel(
-      id: familyId,
-      name: 'Convergence Family',
-      inviteCode: inviteCode,
-      ownerId: userId,
-    ));
-    await aRemote.upsertMember(FamilyMemberModel(
-      id: const Uuid().v4(),
-      familyId: familyId,
-      userId: userId,
-      displayName: 'A',
-      role: 'owner',
-    ));
+      // A creates the family and their own membership row.
+      final aRemote = FamilyRemoteDatasource(client);
+      await aRemote.createFamily(
+        FamilyModel(
+          id: familyId,
+          name: 'Convergence Family',
+          inviteCode: inviteCode,
+          ownerId: userId,
+        ),
+      );
+      await aRemote.upsertMember(
+        FamilyMemberModel(
+          id: const Uuid().v4(),
+          familyId: familyId,
+          userId: userId,
+          displayName: 'A',
+          role: 'owner',
+        ),
+      );
 
-    // B is a different person: second sign-up, second client.
-    final b = await secondAccount();
-    final joined = await FamilyRemoteDatasource(b.client)
-        .joinFamily(inviteCode, 'B');
-    expect(joined.family.id, familyId);
-    expect(joined.member.userId, b.userId);
+      // B is a different person: second sign-up, second client.
+      final b = await secondAccount();
+      final joined = await FamilyRemoteDatasource(
+        b.client,
+      ).joinFamily(inviteCode, 'B');
+      expect(joined.family.id, familyId);
+      expect(joined.member.userId, b.userId);
 
-    // A's device syncs: the owner sees the whole roster.
-    final aDevice = await device();
-    final ra = (await aDevice.syncAll())!;
-    expect(ra.isClean, isTrue, reason: ra.failures.join('\n'));
-    final aMembers = await FamilyLocalDatasource().getMembers(familyId);
-    expect(aMembers.map((m) => m.userId), containsAll([userId, b.userId]),
-        reason: 'the family owner can read every member row');
-    expect(await FamilyLocalDatasource().getFamilyById(familyId), isNotNull);
+      // A's device syncs: the owner sees the whole roster.
+      final aDevice = await device();
+      final ra = (await aDevice.syncAll())!;
+      expect(ra.isClean, isTrue, reason: ra.failures.join('\n'));
+      final aMembers = await FamilyLocalDatasource().getMembers(familyId);
+      expect(
+        aMembers.map((m) => m.userId),
+        containsAll([userId, b.userId]),
+        reason: 'the family owner can read every member row',
+      );
+      expect(await FamilyLocalDatasource().getFamilyById(familyId), isNotNull);
 
-    // B's device syncs: B reaches the family (via is_family_member) and can
-    // read the whole roster. `family_members_select` is
-    // `user_id = auth.uid() OR is_family_member(family_id) OR
-    // is_family_owner(family_id)`, so any member of the family - not only its
-    // owner - sees every membership row (the family screen lists members).
-    final bDevice = await device(as: b.client, asUserId: b.userId);
-    final rb = (await bDevice.syncAll())!;
-    expect(rb.isClean, isTrue, reason: rb.failures.join('\n'));
-    expect(await FamilyLocalDatasource().getFamilyById(familyId), isNotNull,
-        reason: 'a plain member can read the family itself');
-    final bMembers = await FamilyLocalDatasource().getMembers(familyId);
-    expect(bMembers.map((m) => m.userId), containsAll([userId, b.userId]),
-        reason: 'a plain member can read every member row in their family');
-  },
-      skip: configured
-          ? false
-          : 'Set SUPABASE_URL and SUPABASE_ANON_KEY dart-defines to run '
-              'against a local Supabase');
+      // B's device syncs: B reaches the family (via is_family_member) and can
+      // read the whole roster. `family_members_select` is
+      // `user_id = auth.uid() OR is_family_member(family_id) OR
+      // is_family_owner(family_id)`, so any member of the family - not only its
+      // owner - sees every membership row (the family screen lists members).
+      final bDevice = await device(as: b.client, asUserId: b.userId);
+      final rb = (await bDevice.syncAll())!;
+      expect(rb.isClean, isTrue, reason: rb.failures.join('\n'));
+      expect(
+        await FamilyLocalDatasource().getFamilyById(familyId),
+        isNotNull,
+        reason: 'a plain member can read the family itself',
+      );
+      final bMembers = await FamilyLocalDatasource().getMembers(familyId);
+      expect(
+        bMembers.map((m) => m.userId),
+        containsAll([userId, b.userId]),
+        reason: 'a plain member can read every member row in their family',
+      );
+    },
+    skip: configured
+        ? false
+        : 'Set SUPABASE_URL and SUPABASE_ANON_KEY dart-defines to run '
+              'against a local Supabase',
+  );
 }

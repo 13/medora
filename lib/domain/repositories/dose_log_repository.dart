@@ -23,7 +23,10 @@ abstract class DoseLogRepository {
   );
 
   /// Pending doses scheduled in [start, end), earliest first.
-  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end);
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(
+    DateTime start,
+    DateTime end,
+  );
 
   /// Mark pending doses scheduled before [cutoff] as missed; returns the count.
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff);

@@ -43,8 +43,11 @@ class TreatmentModel {
       userId: json['user_id'] as String?,
       name: json['name'] as String,
       patientTags: MedicationModel.parseTags(
-          json['patient_tags'] ?? json['patient_name']),
-      symptomTags: MedicationModel.parseTags(json['symptom_tags'] ?? json['symptoms']),
+        json['patient_tags'] ?? json['patient_name'],
+      ),
+      symptomTags: MedicationModel.parseTags(
+        json['symptom_tags'] ?? json['symptoms'],
+      ),
       startDate: DateTime.parse(json['start_date'] as String),
       endDate: json['end_date'] != null
           ? DateTime.parse(json['end_date'] as String)

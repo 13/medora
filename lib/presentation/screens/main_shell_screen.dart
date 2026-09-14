@@ -44,7 +44,8 @@ class MainShellScreen extends ConsumerStatefulWidget {
   ConsumerState<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends ConsumerState<MainShellScreen> with WidgetsBindingObserver {
+class _MainShellScreenState extends ConsumerState<MainShellScreen>
+    with WidgetsBindingObserver {
   late int _currentIndex;
 
   @override

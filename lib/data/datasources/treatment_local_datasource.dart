@@ -37,23 +37,31 @@ class TreatmentLocalDatasource {
 
   Future<TreatmentModel?> getTreatmentById(String id) async {
     final db = await _db;
-    final rows =
-        await db.query('treatments', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.query('treatments', where: 'id = ?', whereArgs: [id]);
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
 
-  Future<void> upsert(TreatmentModel model,
-      {required String syncStatus}) async {
+  Future<void> upsert(
+    TreatmentModel model, {
+    required String syncStatus,
+  }) async {
     final db = await _db;
     final row = _toRow(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
     // which would CASCADE-DELETE prescriptions and dose_logs.
-    final updated = await db.update('treatments', row,
-        where: 'id = ?', whereArgs: [model.id]);
+    final updated = await db.update(
+      'treatments',
+      row,
+      where: 'id = ?',
+      whereArgs: [model.id],
+    );
     if (updated == 0) {
-      await db.insert('treatments', row,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert(
+        'treatments',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
   }
 
@@ -62,13 +70,14 @@ class TreatmentLocalDatasource {
   Future<void> markDeleted(String id) async {
     final db = await _db;
     await db.update(
-        'treatments',
-        {
-          'sync_status': SyncStatus.pendingDelete,
-          'deleted_at': DateTime.now().toIso8601String(),
-        },
-        where: 'id = ?',
-        whereArgs: [id]);
+      'treatments',
+      {
+        'sync_status': SyncStatus.pendingDelete,
+        'deleted_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> hardDelete(String id) async {
@@ -78,14 +87,21 @@ class TreatmentLocalDatasource {
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
     final db = await _db;
-    return db.query('treatments',
-        where: 'sync_status != ?', whereArgs: [SyncStatus.synced]);
+    return db.query(
+      'treatments',
+      where: 'sync_status != ?',
+      whereArgs: [SyncStatus.synced],
+    );
   }
 
   Future<void> markSynced(String id) async {
     final db = await _db;
-    await db.update('treatments', {'sync_status': SyncStatus.synced},
-        where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'treatments',
+      {'sync_status': SyncStatus.synced},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<void> clearAll() async {
@@ -99,9 +115,11 @@ class TreatmentLocalDatasource {
       userId: row['user_id'] as String?,
       name: row['name'] as String,
       patientTags: MedicationModel.parseTags(
-          row['patient_tags'] ?? row['patient_name']),
+        row['patient_tags'] ?? row['patient_name'],
+      ),
       symptomTags: MedicationModel.parseTags(
-          row['symptom_tags'] ?? row['symptoms']),
+        row['symptom_tags'] ?? row['symptoms'],
+      ),
       startDate: DateTime.parse(row['start_date'] as String),
       endDate: row['end_date'] != null
           ? DateTime.tryParse(row['end_date'] as String)
@@ -130,10 +148,10 @@ class TreatmentLocalDatasource {
       'notes': m.notes,
       'created_at':
           m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
-      'updated_at': m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'updated_at':
+          m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
     };
   }
 }
-

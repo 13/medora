@@ -23,7 +23,8 @@ class ExpiryBadge extends StatelessWidget {
   static DateTime _getCachedNow() {
     final now = DateTime.now();
     // Cache for 1 minute to avoid excessive DateTime.now() calls
-    if (_lastNowCache == null || now.difference(_lastNowCache!).inSeconds > 60) {
+    if (_lastNowCache == null ||
+        now.difference(_lastNowCache!).inSeconds > 60) {
       _lastNowCache = now;
       _lastNow = DateTime(now.year, now.month, now.day);
     }
@@ -44,8 +45,12 @@ class ExpiryBadge extends StatelessWidget {
     final (bg, fg, label) = daysUntilExpiry < 0
         ? (medora.dangerContainer, medora.onDangerContainer, l10n.expired)
         : daysUntilExpiry <= 30
-            ? (medora.warningContainer, medora.onWarningContainer, l10n.expiresInDaysShort(daysUntilExpiry))
-            : (medora.successContainer, medora.onSuccessContainer, l10n.valid);
+        ? (
+            medora.warningContainer,
+            medora.onWarningContainer,
+            l10n.expiresInDaysShort(daysUntilExpiry),
+          )
+        : (medora.successContainer, medora.onSuccessContainer, l10n.valid);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -55,11 +60,7 @@ class ExpiryBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: fg,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -87,17 +88,13 @@ class StockIndicator extends StatelessWidget {
     final (color, icon) = isExpired
         ? (medora.expired, Icons.warning_rounded)
         : isLow
-            ? (medora.lowStock, Icons.warning_rounded)
-            : (medora.inStock, Icons.check_circle_rounded);
+        ? (medora.lowStock, Icons.warning_rounded)
+        : (medora.inStock, Icons.check_circle_rounded);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: color,
-        ),
+        Icon(icon, size: 16, color: color),
         const SizedBox(width: 4),
         Text(
           l10n.quantityLeft(quantity),
@@ -128,10 +125,30 @@ class DoseStatusChip extends StatelessWidget {
     final medora = context.medora;
 
     final (bg, fg, icon, label) = switch (status) {
-      DoseStatus.taken => (medora.successContainer, medora.onSuccessContainer, Icons.check_circle, l10n.taken),
-      DoseStatus.skipped => (medora.warningContainer, medora.onWarningContainer, Icons.skip_next, l10n.skipped),
-      DoseStatus.missed => (medora.dangerContainer, medora.onDangerContainer, Icons.cancel, l10n.missed),
-      DoseStatus.pending => (medora.neutralContainer, medora.onNeutralContainer, Icons.schedule, l10n.pending),
+      DoseStatus.taken => (
+        medora.successContainer,
+        medora.onSuccessContainer,
+        Icons.check_circle,
+        l10n.taken,
+      ),
+      DoseStatus.skipped => (
+        medora.warningContainer,
+        medora.onWarningContainer,
+        Icons.skip_next,
+        l10n.skipped,
+      ),
+      DoseStatus.missed => (
+        medora.dangerContainer,
+        medora.onDangerContainer,
+        Icons.cancel,
+        l10n.missed,
+      ),
+      DoseStatus.pending => (
+        medora.neutralContainer,
+        medora.onNeutralContainer,
+        Icons.schedule,
+        l10n.pending,
+      ),
     };
 
     return Chip(
@@ -161,7 +178,9 @@ class TagChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final color = HSLColor.fromColor(label.toColor).withLightness(isDark ? 0.75 : 0.35).toColor();
+    final color = HSLColor.fromColor(
+      label.toColor,
+    ).withLightness(isDark ? 0.75 : 0.35).toColor();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -230,7 +249,10 @@ void showDoseDetailBottomSheet({
               children: [
                 CircleAvatar(
                   backgroundColor: context.colors.primaryContainer,
-                  child: Icon(Icons.medication, color: context.colors.onPrimaryContainer),
+                  child: Icon(
+                    Icons.medication,
+                    color: context.colors.onPrimaryContainer,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -239,10 +261,18 @@ void showDoseDetailBottomSheet({
                     children: [
                       Text(
                         dose.medicationName ?? l10n.unknownMedication,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       if (dosageLabel(l10n, dose) != null)
-                        Text(dosageLabel(l10n, dose)!, style: TextStyle(color: context.colors.onSurfaceVariant)),
+                        Text(
+                          dosageLabel(l10n, dose)!,
+                          style: TextStyle(
+                            color: context.colors.onSurfaceVariant,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -252,39 +282,85 @@ void showDoseDetailBottomSheet({
             const Divider(height: 24),
 
             // Details
-            DetailRow(icon: Icons.calendar_today, label: l10n.date, value: dateLabel),
-            DetailRow(icon: Icons.schedule, label: l10n.selectTimes, value: dose.scheduledTime.timeFormatted),
+            DetailRow(
+              icon: Icons.calendar_today,
+              label: l10n.date,
+              value: dateLabel,
+            ),
+            DetailRow(
+              icon: Icons.schedule,
+              label: l10n.selectTimes,
+              value: dose.scheduledTime.timeFormatted,
+            ),
             if (dose.treatmentName != null)
-              DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),
+              DetailRow(
+                icon: Icons.medical_services,
+                label: l10n.treatment,
+                value: dose.treatmentName!,
+              ),
             if (dose.patientTags.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    Icon(Icons.person, size: 18, color: context.colors.onSurfaceVariant),
+                    Icon(
+                      Icons.person,
+                      size: 18,
+                      color: context.colors.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 8),
-                    Text('${l10n.patientTagsField}: ', style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13)),
+                    Text(
+                      '${l10n.patientTagsField}: ',
+                      style: TextStyle(
+                        color: context.colors.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
                     Expanded(
                       child: Wrap(
                         spacing: 4,
                         runSpacing: 4,
-                        children: dose.patientTags.map((t) => TagChip(label: t, icon: Icons.person, fontSize: 12)).toList(),
+                        children: dose.patientTags
+                            .map(
+                              (t) => TagChip(
+                                label: t,
+                                icon: Icons.person,
+                                fontSize: 12,
+                              ),
+                            )
+                            .toList(),
                       ),
                     ),
                   ],
                 ),
               ),
-            if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
-              DetailRow(icon: Icons.sticky_note_2, label: l10n.notes, value: dose.prescriptionNotes!),
+            if (dose.prescriptionNotes != null &&
+                dose.prescriptionNotes!.isNotEmpty)
+              DetailRow(
+                icon: Icons.sticky_note_2,
+                label: l10n.notes,
+                value: dose.prescriptionNotes!,
+              ),
             if (dose.takenTime != null)
-              DetailRow(icon: Icons.check_circle, label: l10n.taken, value: dose.takenTime!.timeFormatted),
+              DetailRow(
+                icon: Icons.check_circle,
+                label: l10n.taken,
+                value: dose.takenTime!.timeFormatted,
+              ),
             if (dose.notes != null && dose.notes!.isNotEmpty)
-              DetailRow(icon: Icons.notes, label: l10n.notes, value: dose.notes!),
+              DetailRow(
+                icon: Icons.notes,
+                label: l10n.notes,
+                value: dose.notes!,
+              ),
 
             const SizedBox(height: 16),
 
             // Action buttons
-            _DoseSheetActions(dose: dose, actions: ref.read(doseActionsProvider)),
+            _DoseSheetActions(
+              dose: dose,
+              actions: ref.read(doseActionsProvider),
+            ),
           ],
         ),
       ),
@@ -344,8 +420,9 @@ class _DoseSheetActionsState extends State<_DoseSheetActions> {
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed:
-                  _busy ? null : () => _run(() => widget.actions.skip(dose.id)),
+              onPressed: _busy
+                  ? null
+                  : () => _run(() => widget.actions.skip(dose.id)),
               icon: const Icon(Icons.skip_next),
               label: Text(l10n.skip),
             ),
@@ -353,8 +430,9 @@ class _DoseSheetActionsState extends State<_DoseSheetActions> {
           const SizedBox(width: 12),
           Expanded(
             child: FilledButton.icon(
-              onPressed:
-                  _busy ? null : () => _run(() => widget.actions.take(dose.id)),
+              onPressed: _busy
+                  ? null
+                  : () => _run(() => widget.actions.take(dose.id)),
               icon: const Icon(Icons.check),
               label: Text(l10n.take),
             ),
@@ -371,7 +449,9 @@ class _DoseSheetActionsState extends State<_DoseSheetActions> {
               : () => _run(() => widget.actions.undoTake(dose.id)),
           icon: const Icon(Icons.undo),
           label: Text(l10n.undoTaken),
-          style: OutlinedButton.styleFrom(foregroundColor: context.colors.error),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: context.colors.error,
+          ),
         ),
       );
     }
@@ -395,7 +475,10 @@ class DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelStyle = TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13);
+    final labelStyle = TextStyle(
+      color: context.colors.onSurfaceVariant,
+      fontSize: 13,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -442,8 +525,8 @@ class EmptyStateWidget extends StatelessWidget {
               child: Text(
                 title,
                 style: context.text.bodyMedium?.copyWith(
-                      color: context.colors.onSurfaceVariant,
-                    ),
+                  color: context.colors.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -462,8 +545,8 @@ class EmptyStateWidget extends StatelessWidget {
             Text(
               title,
               style: context.text.titleMedium?.copyWith(
-                    color: context.colors.onSurfaceVariant,
-                  ),
+                color: context.colors.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             if (subtitle != null) ...[
@@ -471,17 +554,14 @@ class EmptyStateWidget extends StatelessWidget {
               Text(
                 subtitle!,
                 style: context.text.bodyMedium?.copyWith(
-                      color: context.colors.outline,
-                    ),
+                  color: context.colors.outline,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: onAction,
-                child: Text(actionLabel!),
-              ),
+              ElevatedButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],
         ),
@@ -515,11 +595,7 @@ class LoadingWidget extends StatelessWidget {
 
 /// Error widget with retry button.
 class ErrorDisplayWidget extends StatelessWidget {
-  const ErrorDisplayWidget({
-    super.key,
-    required this.message,
-    this.onRetry,
-  });
+  const ErrorDisplayWidget({super.key, required this.message, this.onRetry});
 
   final String message;
   final VoidCallback? onRetry;

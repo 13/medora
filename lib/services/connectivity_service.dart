@@ -32,32 +32,38 @@ class ConnectivityService {
       // Default to online if check fails (e.g. DBus issues on Linux)
       _isOnline = true;
     }
-    
+
     _controller.add(_isOnline);
 
-    _connectivity.onConnectivityChanged.listen((result) {
-      final nowOnline = _isConnected(result);
-      if (nowOnline != _isOnline) {
-        _isOnline = nowOnline;
-        _controller.add(_isOnline);
-      }
-    }, onError: (e) {
-      debugPrint('⚠ Connectivity stream error: $e');
-    });
+    _connectivity.onConnectivityChanged.listen(
+      (result) {
+        final nowOnline = _isConnected(result);
+        if (nowOnline != _isOnline) {
+          _isOnline = nowOnline;
+          _controller.add(_isOnline);
+        }
+      },
+      onError: (e) {
+        debugPrint('⚠ Connectivity stream error: $e');
+      },
+    );
   }
 
   bool _isConnected(List<ConnectivityResult> results) {
     // If we're on desktop and get an error or empty list, assume online for now
     // to avoid blocking app functionality.
-    if (results.isEmpty && (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
+    if (results.isEmpty &&
+        (Platform.isLinux || Platform.isWindows || Platform.isMacOS)) {
       return true;
     }
-    
-    return results.any((r) =>
-        r == ConnectivityResult.wifi ||
-        r == ConnectivityResult.mobile ||
-        r == ConnectivityResult.ethernet ||
-        r == ConnectivityResult.vpn);
+
+    return results.any(
+      (r) =>
+          r == ConnectivityResult.wifi ||
+          r == ConnectivityResult.mobile ||
+          r == ConnectivityResult.ethernet ||
+          r == ConnectivityResult.vpn,
+    );
   }
 
   void dispose() {

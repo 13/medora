@@ -17,24 +17,32 @@ class _CloudMode extends AppModeNotifier {
 
 void main() {
   Future<List<Override>> overrides(SyncState state) async => [
-        sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
-        appModeProvider.overrideWith(_CloudMode.new),
-        syncStateStreamProvider.overrideWith((ref) => Stream.value(state)),
-      ];
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    appModeProvider.overrideWith(_CloudMode.new),
+    syncStateStreamProvider.overrideWith((ref) => Stream.value(state)),
+  ];
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('partial state shows the warning label', (tester) async {
-    await pumpMedoraApp(tester, const Scaffold(body: SyncStatusChip()),
-        overrides: await overrides(SyncState.partial));
+    await pumpMedoraApp(
+      tester,
+      const Scaffold(body: SyncStatusChip()),
+      overrides: await overrides(SyncState.partial),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Completed with some errors'), findsOneWidget);
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
   });
 
   testWidgets('idle state offers Sync Now', (tester) async {
-    await pumpMedoraApp(tester, const Scaffold(body: SyncStatusChip()),
-        overrides: await overrides(SyncState.idle));
+    await pumpMedoraApp(
+      tester,
+      const Scaffold(body: SyncStatusChip()),
+      overrides: await overrides(SyncState.idle),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Sync Now'), findsOneWidget);
   });

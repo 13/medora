@@ -21,9 +21,9 @@ class LocalUploadMarker {
     required AppDatabase database,
     required SyncCursorStore cursors,
     required SharedPreferences prefs,
-  })  : _database = database,
-        _cursors = cursors,
-        _prefs = prefs;
+  }) : _database = database,
+       _cursors = cursors,
+       _prefs = prefs;
 
   final AppDatabase _database;
   final SyncCursorStore _cursors;
@@ -32,7 +32,14 @@ class LocalUploadMarker {
   /// Pref holding the id of the account the local rows belong to.
   static const ownerKey = 'sync.owner_user_id';
 
-  static const tables = ['families', 'family_members', 'medications', 'treatments', 'prescriptions', 'dose_logs'];
+  static const tables = [
+    'families',
+    'family_members',
+    'medications',
+    'treatments',
+    'prescriptions',
+    'dose_logs',
+  ];
 
   /// The account the data on this device was last uploaded under, if known.
   String? get ownerUserId => _prefs.getString(ownerKey);
@@ -67,8 +74,12 @@ class LocalUploadMarker {
       count += await db.update(
         table,
         {'sync_status': SyncStatus.pendingUpdate},
-        where: ownRowOnly ? 'sync_status = ? AND user_id = ?' : 'sync_status = ?',
-        whereArgs: ownRowOnly ? [SyncStatus.synced, userId] : [SyncStatus.synced],
+        where: ownRowOnly
+            ? 'sync_status = ? AND user_id = ?'
+            : 'sync_status = ?',
+        whereArgs: ownRowOnly
+            ? [SyncStatus.synced, userId]
+            : [SyncStatus.synced],
       );
     }
     await _cursors.clear();

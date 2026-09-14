@@ -63,7 +63,11 @@ Future<SeededPrescription> seedPrescription(
     'schedule_type': 'fixed_interval',
     'sync_status': 'synced',
   });
-  return SeededPrescription(medicationId: medId, treatmentId: treatId, prescriptionId: prescId);
+  return SeededPrescription(
+    medicationId: medId,
+    treatmentId: treatId,
+    prescriptionId: prescId,
+  );
 }
 
 /// Inserts one dose log and returns its id.

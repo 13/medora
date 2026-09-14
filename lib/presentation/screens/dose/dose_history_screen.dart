@@ -19,18 +19,19 @@ import 'package:medora/presentation/widgets/shared_widgets.dart';
 /// Depends on [doseDataVersionProvider] so it auto-refreshes
 /// when doses are modified (taken/skipped/missed).
 final doseHistoryProvider =
-    FutureProvider.family<List<DoseLog>, ({DateTime start, DateTime end})>(
-  (ref, range) async {
-    // Watch the version counter to trigger refetch when doses change
-    ref.watch(doseDataVersionProvider);
-    final repo = ref.watch(doseLogRepositoryProvider);
-    final result = await repo.getDoseLogsByDateRange(range.start, range.end);
-    return result.when(
-      success: (data) => data,
-      failure: (msg) => throw Exception(msg),
-    );
-  },
-);
+    FutureProvider.family<List<DoseLog>, ({DateTime start, DateTime end})>((
+      ref,
+      range,
+    ) async {
+      // Watch the version counter to trigger refetch when doses change
+      ref.watch(doseDataVersionProvider);
+      final repo = ref.watch(doseLogRepositoryProvider);
+      final result = await repo.getDoseLogsByDateRange(range.start, range.end);
+      return result.when(
+        success: (data) => data,
+        failure: (msg) => throw Exception(msg),
+      );
+    });
 
 class DoseHistoryScreen extends ConsumerStatefulWidget {
   const DoseHistoryScreen({super.key});
@@ -47,7 +48,11 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _endDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    _endDate = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).add(const Duration(days: 1));
     _startDate = _endDate.subtract(const Duration(days: 7));
 
     // Invalidate any cached history data so we get fresh results
@@ -128,7 +133,8 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
                 // Group by date (using ISO date string for correct sorting)
                 final grouped = <String, List<DoseLog>>{};
                 for (final d in doses) {
-                  final key = '${d.scheduledTime.year}-'
+                  final key =
+                      '${d.scheduledTime.year}-'
                       '${d.scheduledTime.month.toString().padLeft(2, '0')}-'
                       '${d.scheduledTime.day.toString().padLeft(2, '0')}';
                   (grouped[key] ??= []).add(d);
@@ -152,13 +158,13 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
                           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                           child: Text(
                             dateLabel,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
+                            style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ),
-                        ...entry.value.map((dose) => _DoseHistoryTile(dose: dose, ref: ref)),
+                        ...entry.value.map(
+                          (dose) => _DoseHistoryTile(dose: dose, ref: ref),
+                        ),
                       ],
                     );
                   },
@@ -232,7 +238,8 @@ class _DoseHistoryTile extends StatelessWidget {
     }
 
     return ListTile(
-      onTap: () => showDoseDetailBottomSheet(context: context, dose: dose, ref: ref),
+      onTap: () =>
+          showDoseDetailBottomSheet(context: context, dose: dose, ref: ref),
       leading: Icon(statusIcon, color: statusColor, size: 28),
       title: Text(
         dose.medicationName ?? '—',
@@ -244,7 +251,10 @@ class _DoseHistoryTile extends StatelessWidget {
           if (dosageLabel(l10n, dose)?.isNotEmpty ?? false)
             Text(
               dosageLabel(l10n, dose)!,
-              style: TextStyle(fontSize: 12, color: context.colors.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: 12,
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           // Treatment and patient info with chips
           if (dose.treatmentName != null || dose.patientTags.isNotEmpty)
@@ -259,7 +269,11 @@ class _DoseHistoryTile extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.medical_services, size: 11, color: context.colors.onSurfaceVariant),
+                        Icon(
+                          Icons.medical_services,
+                          size: 11,
+                          color: context.colors.onSurfaceVariant,
+                        ),
                         const SizedBox(width: 3),
                         Text(
                           dose.treatmentName!,
@@ -271,16 +285,23 @@ class _DoseHistoryTile extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ...dose.patientTags.map((t) => TagChip(label: t, fontSize: 10, icon: Icons.person)),
+                  ...dose.patientTags.map(
+                    (t) => TagChip(label: t, fontSize: 10, icon: Icons.person),
+                  ),
                 ],
               ),
             ),
-          if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
+          if (dose.prescriptionNotes != null &&
+              dose.prescriptionNotes!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 dose.prescriptionNotes!,
-                style: TextStyle(fontSize: 11, color: context.colors.onSurfaceVariant, fontStyle: FontStyle.italic),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: context.colors.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -292,15 +313,25 @@ class _DoseHistoryTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(scheduledTime, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(
+            scheduledTime,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
           Text(
             statusLabel,
-            style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: statusColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           if (takenTimeStr != null)
             Text(
               '@ $takenTimeStr',
-              style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 10),
+              style: TextStyle(
+                color: context.colors.onSurfaceVariant,
+                fontSize: 10,
+              ),
             ),
         ],
       ),

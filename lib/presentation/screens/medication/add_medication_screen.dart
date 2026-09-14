@@ -88,7 +88,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _atcCodeController = TextEditingController();
     _quantityController = TextEditingController(text: '1');
     _minStockController = TextEditingController(
-        text: AppConstants.defaultMinimumStock.toString());
+      text: AppConstants.defaultMinimumStock.toString(),
+    );
     _storageLocationController = TextEditingController();
     _barcodeController = TextEditingController(text: widget.initialBarcode);
     _notesController = TextEditingController();
@@ -215,7 +216,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
         content: Row(
           children: [
             const SizedBox(
-              width: 16, height: 16,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 12),
@@ -233,31 +235,34 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
       if (results.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.barcodeNotFound)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
         return;
       }
 
       // Pick from results
       final selected = results.length == 1
           ? results.first
-          : await showAifaResultsPicker(context, results,
-              title: l10n.selectMedication);
+          : await showAifaResultsPicker(
+              context,
+              results,
+              title: l10n.selectMedication,
+            );
 
       if (selected == null || !mounted) return;
 
       _applyAifaResult(selected);
       setState(() {}); // rebuild
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.autoFilledFromBarcode)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.autoFilledFromBarcode)));
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.barcodeNotFound)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
       }
     }
   }
@@ -315,7 +320,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-            _isEditMode ? l10n.editMedication : l10n.addMedicationButton),
+          _isEditMode ? l10n.editMedication : l10n.addMedicationButton,
+        ),
         actions: [
           if (!_isEditMode) ...[
             IconButton(
@@ -465,8 +471,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     key: ValueKey('loc_${_storageLocationController.text}'),
-                    initialValue: AppConstants.storageLocationKeys.contains(
-                            _storageLocationController.text)
+                    initialValue:
+                        AppConstants.storageLocationKeys.contains(
+                          _storageLocationController.text,
+                        )
                         ? _storageLocationController.text
                         : null,
                     decoration: InputDecoration(
@@ -481,7 +489,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     }).toList(),
                     onChanged: (value) {
                       setState(
-                          () => _storageLocationController.text = value ?? '');
+                        () => _storageLocationController.text = value ?? '',
+                      );
                     },
                   ),
                   const SizedBox(height: 16),
@@ -506,8 +515,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                             icon: const Icon(Icons.search),
                             tooltip: l10n.searchByBarcode,
                             onPressed: _barcodeController.text.trim().isNotEmpty
-                                ? () =>
-                                    _searchBarcode(_barcodeController.text.trim())
+                                ? () => _searchBarcode(
+                                    _barcodeController.text.trim(),
+                                  )
                                 : null,
                           ),
                           // Open camera scanner
@@ -516,10 +526,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                               icon: const Icon(Icons.qr_code_scanner),
                               onPressed: () async {
                                 final barcode = await context.push<String>(
-                                    '${AppRoutes.scanner}?returnOnly=true');
+                                  '${AppRoutes.scanner}?returnOnly=true',
+                                );
                                 if (barcode != null && mounted) {
                                   setState(
-                                      () => _barcodeController.text = barcode);
+                                    () => _barcodeController.text = barcode,
+                                  );
                                   _searchBarcode(barcode);
                                 }
                               },
@@ -644,9 +656,11 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Text(_isEditMode
-                      ? l10n.updateMedication
-                      : l10n.addMedicationButton),
+                  : Text(
+                      _isEditMode
+                          ? l10n.updateMedication
+                          : l10n.addMedicationButton,
+                    ),
             ),
           ),
         ),
@@ -658,8 +672,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.medicationPhoto,
-            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+        Text(
+          l10n.medicationPhoto,
+          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+        ),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _pickImage,
@@ -673,17 +689,22 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             ),
             child: _imagePath == null || kIsWeb
                 ? _photoPlaceholder(l10n)
-                : ref.watch(resolvedPhotoProvider(_imagePath)).maybeWhen(
-                    data: (file) {
-                      if (file == null) return _photoPlaceholder(l10n);
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(file,
-                            fit: BoxFit.cover, width: double.infinity),
-                      );
-                    },
-                    orElse: () => _photoPlaceholder(l10n),
-                  ),
+                : ref
+                      .watch(resolvedPhotoProvider(_imagePath))
+                      .maybeWhen(
+                        data: (file) {
+                          if (file == null) return _photoPlaceholder(l10n);
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              file,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            ),
+                          );
+                        },
+                        orElse: () => _photoPlaceholder(l10n),
+                      ),
           ),
         ),
         if (_imagePath != null) ...[
@@ -692,7 +713,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               onPressed: () async {
-                if (!_isEditMode || _imagePath != _existingMedication?.imagePath) {
+                if (!_isEditMode ||
+                    _imagePath != _existingMedication?.imagePath) {
                   await ref.read(photoStorageProvider).delete(_imagePath);
                 }
                 if (!mounted) return;

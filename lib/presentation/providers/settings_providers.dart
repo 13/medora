@@ -23,8 +23,9 @@ final sharedPreferencesProvider = Provider<SharedPreferences>(
 );
 
 // ── Theme Mode ───────────────────────────────────────────────
-final themeModeProvider =
-    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
+  ThemeModeNotifier.new,
+);
 
 class ThemeModeNotifier extends Notifier<ThemeMode> {
   @override
@@ -46,8 +47,9 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 }
 
 // ── Locale ───────────────────────────────────────────────────
-final localeProvider =
-    NotifierProvider<LocaleNotifier, Locale?>(LocaleNotifier.new);
+final localeProvider = NotifierProvider<LocaleNotifier, Locale?>(
+  LocaleNotifier.new,
+);
 
 class LocaleNotifier extends Notifier<Locale?> {
   @override
@@ -87,7 +89,9 @@ enum AppColorScheme {
 }
 
 final colorSchemeProvider =
-    NotifierProvider<ColorSchemeNotifier, AppColorScheme>(ColorSchemeNotifier.new);
+    NotifierProvider<ColorSchemeNotifier, AppColorScheme>(
+      ColorSchemeNotifier.new,
+    );
 
 class ColorSchemeNotifier extends Notifier<AppColorScheme> {
   @override
@@ -110,7 +114,9 @@ class ColorSchemeNotifier extends Notifier<AppColorScheme> {
 
 // ── Biometrics Setting ───────────────────────────────────────
 final biometricsEnabledProvider =
-    NotifierProvider<BiometricsEnabledNotifier, bool>(BiometricsEnabledNotifier.new);
+    NotifierProvider<BiometricsEnabledNotifier, bool>(
+      BiometricsEnabledNotifier.new,
+    );
 
 class BiometricsEnabledNotifier extends Notifier<bool> {
   @override
@@ -129,7 +135,9 @@ class BiometricsEnabledNotifier extends Notifier<bool> {
 
 // ── Reminders Setting ────────────────────────────────────────
 final remindersEnabledProvider =
-    NotifierProvider<RemindersEnabledNotifier, bool>(RemindersEnabledNotifier.new);
+    NotifierProvider<RemindersEnabledNotifier, bool>(
+      RemindersEnabledNotifier.new,
+    );
 
 class RemindersEnabledNotifier extends Notifier<bool> {
   @override
@@ -151,7 +159,9 @@ const _kMissedGraceMinutes = 'missed_grace_minutes';
 const kMissedGraceOptions = [30, 60, 120, 240];
 
 final missedGraceMinutesProvider =
-    NotifierProvider<MissedGraceMinutesNotifier, int>(MissedGraceMinutesNotifier.new);
+    NotifierProvider<MissedGraceMinutesNotifier, int>(
+      MissedGraceMinutesNotifier.new,
+    );
 
 class MissedGraceMinutesNotifier extends Notifier<int> {
   @override
@@ -162,7 +172,9 @@ class MissedGraceMinutesNotifier extends Notifier<int> {
 
   Future<void> set(int minutes) async {
     state = minutes;
-    await ref.read(sharedPreferencesProvider).setInt(_kMissedGraceMinutes, minutes);
+    await ref
+        .read(sharedPreferencesProvider)
+        .setInt(_kMissedGraceMinutes, minutes);
   }
 }
 

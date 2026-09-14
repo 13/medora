@@ -47,4 +47,3 @@ final class Failure<T> extends Result<T> {
   final String message;
   final StackTrace? stackTrace;
 }
-

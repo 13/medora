@@ -113,9 +113,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     ref.listen(authControllerProvider, (previous, next) {
       if (next is AsyncError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.error.toString())),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error.toString())));
       }
     });
 
@@ -134,20 +134,28 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     child: Image.asset(
                       'assets/icon/medora_icon_pill.png',
                       height: 160,
-                      errorBuilder: (_, _, _) => Icon(Icons.medication, size: 80, color: theme.colorScheme.primary),
+                      errorBuilder: (_, _, _) => Icon(
+                        Icons.medication,
+                        size: 80,
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
                   Text(
                     l10n.appTitle,
-                    style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
 
                   // ── Primary: local-only ──
                   FilledButton.icon(
-                    onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.localOnly),
+                    onPressed: () => ref
+                        .read(appModeProvider.notifier)
+                        .set(AppMode.localOnly),
                     icon: const Icon(Icons.phone_android),
                     label: Text(l10n.useOnThisDevice),
                   ),
@@ -166,7 +174,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         const Expanded(child: Divider()),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(l10n.orSignInForCloud, style: theme.textTheme.bodySmall),
+                          child: Text(
+                            l10n.orSignInForCloud,
+                            style: theme.textTheme.bodySmall,
+                          ),
                         ),
                         const Expanded(child: Divider()),
                       ],
@@ -179,10 +190,15 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         children: [
                           TextFormField(
                             controller: _emailController,
-                            decoration: InputDecoration(labelText: l10n.email, prefixIcon: const Icon(Icons.email)),
+                            decoration: InputDecoration(
+                              labelText: l10n.email,
+                              prefixIcon: const Icon(Icons.email),
+                            ),
                             keyboardType: TextInputType.emailAddress,
                             autofillHints: const [AutofillHints.email],
-                            validator: (v) => (v == null || !v.contains('@')) ? l10n.invalidEmail : null,
+                            validator: (v) => (v == null || !v.contains('@'))
+                                ? l10n.invalidEmail
+                                : null,
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
@@ -191,24 +207,43 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               labelText: l10n.password,
                               prefixIcon: const Icon(Icons.lock),
                               suffixIcon: IconButton(
-                                icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
                               ),
                             ),
                             obscureText: _obscurePassword,
                             autofillHints: const [AutofillHints.password],
-                            validator: (v) => (v == null || v.length < 6) ? l10n.passwordTooShort : null,
+                            validator: (v) => (v == null || v.length < 6)
+                                ? l10n.passwordTooShort
+                                : null,
                           ),
                           const SizedBox(height: 16),
                           OutlinedButton(
                             onPressed: authState.isLoading ? null : _submit,
                             child: authState.isLoading
-                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
                                 : Text(_isSignUp ? l10n.signUp : l10n.signIn),
                           ),
                           TextButton(
-                            onPressed: () => setState(() => _isSignUp = !_isSignUp),
-                            child: Text(_isSignUp ? l10n.alreadyHaveAccount : l10n.dontHaveAccount),
+                            onPressed: () =>
+                                setState(() => _isSignUp = !_isSignUp),
+                            child: Text(
+                              _isSignUp
+                                  ? l10n.alreadyHaveAccount
+                                  : l10n.dontHaveAccount,
+                            ),
                           ),
                         ],
                       ),

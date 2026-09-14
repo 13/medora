@@ -11,7 +11,8 @@ import 'package:intl/intl.dart';
 import 'package:medora/core/app_config.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
-import 'package:medora/data/local/db_setup.dart' if (dart.library.html) 'package:medora/data/local/db_setup_web.dart';
+import 'package:medora/data/local/db_setup.dart'
+    if (dart.library.html) 'package:medora/data/local/db_setup_web.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -26,15 +27,16 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
 
   // Cloud is optional: this is a no-op when no dart-defines are present.
-  await _initSafe('Supabase', () => SupabaseConfig.initialize(AppConfig.fromEnvironment()));
+  await _initSafe(
+    'Supabase',
+    () => SupabaseConfig.initialize(AppConfig.fromEnvironment()),
+  );
 
   _initServicesInBackground();
 
   runApp(
     ProviderScope(
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(prefs),
-      ],
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
       child: const MedoraApp(),
     ),
   );
@@ -80,8 +82,12 @@ class MedoraApp extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       localeResolutionCallback: (device, supported) {
-        final resolved = locale ??
-            supported.firstWhere((s) => s.languageCode == device?.languageCode, orElse: () => supported.first);
+        final resolved =
+            locale ??
+            supported.firstWhere(
+              (s) => s.languageCode == device?.languageCode,
+              orElse: () => supported.first,
+            );
         Intl.defaultLocale = resolved.toLanguageTag();
         return resolved;
       },
