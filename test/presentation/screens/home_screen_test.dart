@@ -19,6 +19,14 @@ import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
 
 void main() {
+  final now = DateTime.now();
+  // Noon anchor, not midnight: getTodaysDoseLogs/DoseMaintenanceService key
+  // off the real wall clock (by design), not nowProvider, so every seed
+  // below must stay on the same calendar day as DateTime.now() no matter
+  // what hour the suite runs at — noon plus/minus a few minutes never
+  // crosses into "yesterday" between 00:00 and 02:00.
+  final today = DateTime(now.year, now.month, now.day, 12);
+
   setUp(() async {
     await setUpTestDatabase();
     SharedPreferences.setMockInitialValues({});
@@ -34,6 +42,7 @@ void main() {
     platformCapabilitiesProvider.overrideWithValue(
       PlatformCapabilities.desktop,
     ),
+    nowProvider.overrideWithValue(() => today),
   ];
 
   testWidgets('Now card shows the next due dose and Take → Undo works', (
@@ -41,7 +50,7 @@ void main() {
   ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
-    final overdue = DateTime.now().subtract(const Duration(minutes: 10));
+    final overdue = today.subtract(const Duration(minutes: 10));
     await seedDoseLog(db, s.prescriptionId, overdue);
     await db.insert('medications', {
       'id': 'exp',
@@ -91,7 +100,7 @@ void main() {
     (tester) async {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db);
-      final overdue = DateTime.now().subtract(const Duration(minutes: 10));
+      final overdue = today.subtract(const Duration(minutes: 10));
       await seedDoseLog(db, s.prescriptionId, overdue);
 
       final inner = DoseLogRepositoryImpl(
@@ -150,7 +159,7 @@ void main() {
     await seedDoseLog(
       db,
       s.prescriptionId,
-      DateTime.now().subtract(const Duration(minutes: 10)),
+      today.subtract(const Duration(minutes: 10)),
     );
 
     await pumpMedoraApp(

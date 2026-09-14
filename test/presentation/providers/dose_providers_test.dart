@@ -26,7 +26,13 @@ final invalidateDoseDataProvider = Provider<void Function()>(
 void main() {
   late ProviderContainer c;
   final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+  // Noon anchor, not midnight: seeds below add/subtract a few hours from
+  // `today`, and getTodaysDoseLogs/DoseMaintenanceService key off the real
+  // wall clock (by design — see their docs), not nowProvider. Anchoring at
+  // noon keeps every seed on the same calendar day as DateTime.now() no
+  // matter what hour the suite runs at, so nothing lands on "yesterday"
+  // between 00:00 and 02:00.
+  final today = DateTime(now.year, now.month, now.day, 12);
   final tomorrow = today.add(const Duration(days: 1));
 
   setUp(() async {
@@ -38,6 +44,7 @@ void main() {
         sharedPreferencesProvider.overrideWithValue(prefs),
         syncStartupDelayProvider.overrideWithValue(Duration.zero),
         reminderPortProvider.overrideWithValue(FakePort()),
+        nowProvider.overrideWithValue(() => today),
       ],
     );
   });
@@ -86,12 +93,12 @@ void main() {
       final soon = await seedDoseLog(
         db,
         s.prescriptionId,
-        now.add(const Duration(minutes: 30)),
+        today.add(const Duration(minutes: 30)),
       );
       await seedDoseLog(
         db,
         s.prescriptionId,
-        now.subtract(const Duration(hours: 5)),
+        today.subtract(const Duration(hours: 5)),
         status: 'taken',
       );
       await c.read(todaysDoseLogsProvider.future);
@@ -109,12 +116,12 @@ void main() {
     final a = await seedDoseLog(
       db,
       s.prescriptionId,
-      now.subtract(const Duration(hours: 2)),
+      today.subtract(const Duration(hours: 2)),
     );
     final b = await seedDoseLog(
       db,
       s.prescriptionId,
-      now.subtract(const Duration(hours: 1)),
+      today.subtract(const Duration(hours: 1)),
     );
     final taken = await c.read(doseActionsProvider).takeAllDue([a, b]);
     expect(taken.length, 2);
@@ -137,17 +144,17 @@ void main() {
       final a = await seedDoseLog(
         db,
         s.prescriptionId,
-        now.subtract(const Duration(hours: 2)),
+        today.subtract(const Duration(hours: 2)),
       );
       final b = await seedDoseLog(
         db,
         s.prescriptionId,
-        now.subtract(const Duration(hours: 1)),
+        today.subtract(const Duration(hours: 1)),
       );
       final alreadyTaken = await seedDoseLog(
         db,
         s.prescriptionId,
-        now.subtract(const Duration(hours: 3)),
+        today.subtract(const Duration(hours: 3)),
         status: 'taken',
       );
 
@@ -209,7 +216,7 @@ void main() {
     final a = await seedDoseLog(
       db,
       s.prescriptionId,
-      now.add(const Duration(hours: 1)),
+      today.add(const Duration(hours: 1)),
     );
     final actions = c.read(doseActionsProvider);
     await actions.take(a);
@@ -231,7 +238,7 @@ void main() {
     final a = await seedDoseLog(
       db,
       s.prescriptionId,
-      now.add(const Duration(hours: 1)),
+      today.add(const Duration(hours: 1)),
     );
 
     final failing = ProviderContainer(
@@ -241,6 +248,7 @@ void main() {
         ),
         syncStartupDelayProvider.overrideWithValue(Duration.zero),
         reminderPortProvider.overrideWithValue(FakePort()),
+        nowProvider.overrideWithValue(() => today),
         doseLogRepositoryProvider.overrideWithValue(
           FailingTakeRepo(
             DoseLogRepositoryImpl(

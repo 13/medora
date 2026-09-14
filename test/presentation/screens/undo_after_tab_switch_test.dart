@@ -22,6 +22,17 @@ import '../../helpers/test_database.dart';
 /// under Riverpod 3 and Undo silently does nothing — the action object has
 /// to be captured before the SnackBar is shown.
 void main() {
+  final now = DateTime.now();
+  // Noon anchor, not midnight: this test pumps MainShellScreen, which runs
+  // AppStartupTasks (and DoseMaintenanceService) on init — those key off
+  // the real wall clock by design, not nowProvider, so a seed more than a
+  // couple hours stale gets swept to "missed" before the test can tap
+  // Take. Anchoring at noon keeps the seed both on the same calendar day
+  // as DateTime.now() (no matter what hour the suite runs at) and inside
+  // the missed-dose grace window relative to the real clock whenever the
+  // suite runs near midnight, which is the case this regression covers.
+  final today = DateTime(now.year, now.month, now.day, 12);
+
   setUp(() async {
     await setUpTestDatabase();
     SharedPreferences.setMockInitialValues({'onboarding_seen': true});
@@ -37,6 +48,7 @@ void main() {
     platformCapabilitiesProvider.overrideWithValue(
       PlatformCapabilities.desktop,
     ),
+    nowProvider.overrideWithValue(() => today),
   ];
 
   testWidgets('Undo still works after the SnackBar outlives its tab', (
@@ -47,7 +59,7 @@ void main() {
     final doseId = await seedDoseLog(
       db,
       s.prescriptionId,
-      DateTime.now().subtract(const Duration(minutes: 10)),
+      today.subtract(const Duration(minutes: 10)),
     );
 
     await pumpMedoraApp(
