@@ -115,6 +115,24 @@ class DoseLogLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
+  /// Pending doses with scheduled_time in [start, end), for active
+  /// prescriptions/treatments and non-archived medications, earliest first.
+  Future<List<DoseLogModel>> getPendingBetween(DateTime start, DateTime end) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      '''$_activeJoinQuery
+        WHERE d.status = 'pending'
+        AND d.scheduled_time >= ? AND d.scheduled_time < ?
+        AND d.sync_status != ?
+        AND (p.is_active IS NULL OR p.is_active = 1)
+        AND (t.id IS NULL OR t.is_active = 1)
+        AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
+        ORDER BY d.scheduled_time ASC''',
+      [start.toIso8601String(), end.toIso8601String(), SyncStatus.pendingDelete],
+    );
+    return rows.map(_fromRow).toList();
+  }
+
   Future<void> upsert(DoseLogModel model, {required String syncStatus}) async {
     final db = await _db;
     final row = _toRow(model, syncStatus);

@@ -8,12 +8,13 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/services/reminder_port.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:go_router/go_router.dart';
 
 /// Service for scheduling and managing medication reminders.
-class ReminderService {
+class ReminderService implements ReminderPort {
   ReminderService._();
 
   static final ReminderService _instance = ReminderService._();
@@ -74,6 +75,24 @@ class ReminderService {
     _navigationContext = context;
   }
 
+  /// Stable 31-bit notification id base for a dose (FNV-1a over the id,
+  /// low 4 bits cleared so per-dose offsets never collide).
+  static int notificationBaseId(String doseId) {
+    var hash = 0x811C9DC5;
+    for (final unit in doseId.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xFFFFFFFF;
+    }
+    return hash & 0x7FFFFFF0;
+  }
+
+  @override
+  Future<void> cancelAll() => cancelAllReminders();
+
+  @override
+  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) =>
+      scheduleRemindersForDose(dose: dose, medicationName: medicationName, cancelFirst: false);
+
   /// Schedule reminders for a dose.
   Future<void> scheduleRemindersForDose({
     required DoseLog dose,
@@ -89,7 +108,7 @@ class ReminderService {
     }
 
     final now = DateTime.now();
-    final baseId = dose.id.hashCode;
+    final baseId = notificationBaseId(dose.id);
     final offsets = [60, 0];
 
     // Get localization from the stored context
@@ -178,7 +197,7 @@ class ReminderService {
   Future<void> cancelRemindersForDose(String doseId) async {
     if (!_supported) return;
     await _ensureInitialized();
-    final baseId = doseId.hashCode;
+    final baseId = notificationBaseId(doseId);
     for (var i = 0; i < 4; i++) {
       await _notifications.cancel(id: baseId + i);
     }

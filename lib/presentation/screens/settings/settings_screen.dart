@@ -157,15 +157,9 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(l10n.receiveDoseReminders),
             value: remindersEnabled,
             onChanged: (value) async {
-              if (value) {
-                await ReminderService.instance.requestPermissions();
-              } else {
-                // If disabling, also clear pending notifications to be thorough
-                await ReminderService.instance.cancelAllReminders();
-              }
+              if (value) await ReminderService.instance.requestPermissions();
               await ref.read(remindersEnabledProvider.notifier).set(value);
-              // Trigger a refresh of dose logs to re-schedule/cancel reminders
-              ref.invalidate(todaysDoseLogsProvider);
+              await ref.read(reminderSchedulerProvider).reconcile();
             },
           ),
           ListTile(

@@ -22,6 +22,9 @@ abstract class DoseLogRepository {
     DateTime end,
   );
 
+  /// Pending doses scheduled in [start, end), earliest first.
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end);
+
   /// Create a new dose log entry.
   Future<Result<DoseLog>> addDoseLog(DoseLog doseLog);
 

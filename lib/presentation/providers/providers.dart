@@ -30,9 +30,12 @@ import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/photo_storage.dart';
+import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -148,6 +151,16 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
 final reminderServiceProvider = Provider<ReminderService>(
   (ref) => ReminderService.instance,
 );
+
+final reminderPortProvider = Provider<ReminderPort>((ref) => ReminderService.instance);
+
+final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
+  return ReminderScheduler(
+    port: ref.watch(reminderPortProvider),
+    doses: ref.watch(doseLogRepositoryProvider),
+    remindersEnabled: () => ref.read(remindersEnabledProvider),
+  );
+});
 
 final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
