@@ -18,12 +18,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalUploadMarker {
   LocalUploadMarker({
-    required AppDatabase database,
-    required SyncCursorStore cursors,
-    required SharedPreferences prefs,
-  }) : _database = database,
-       _cursors = cursors,
-       _prefs = prefs;
+    required this._database,
+    required this._cursors,
+    required this._prefs,
+  });
 
   final AppDatabase _database;
   final SyncCursorStore _cursors;

@@ -16,14 +16,11 @@ import 'package:medora/services/reminder_port.dart';
 
 class ReminderScheduler {
   ReminderScheduler({
-    required ReminderPort port,
-    required DoseLogRepository doses,
-    required bool Function() remindersEnabled,
+    required this._port,
+    required this._doses,
+    required this._remindersEnabled,
     DateTime Function()? now,
-  }) : _port = port,
-       _doses = doses,
-       _remindersEnabled = remindersEnabled,
-       _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now;
 
   static const horizon = Duration(days: 7);
   static const maxNotifications = 60; // iOS allows 64 pending

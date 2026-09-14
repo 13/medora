@@ -11,14 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalDataWiper {
   LocalDataWiper({
-    required AppDatabase database,
-    required PhotoStorage photos,
-    required ReminderPort reminders,
-    required SharedPreferences prefs,
-  }) : _database = database,
-       _photos = photos,
-       _reminders = reminders,
-       _prefs = prefs;
+    required this._database,
+    required this._photos,
+    required this._reminders,
+    required this._prefs,
+  });
 
   final AppDatabase _database;
   final PhotoStorage _photos;

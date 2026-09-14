@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 0.0.9+9
 
 environment:
-  sdk: ^3.11.0
+  sdk: ^3.12.0
 
 dependencies:
   # Sorted alphabetically (sort_pub_dependencies lint).

@@ -9,18 +9,13 @@ import 'package:flutter/foundation.dart';
 
 class AppStartupTasks {
   AppStartupTasks({
-    required Future<void> Function() maintenance,
-    required Future<void> Function() reminders,
-    required Future<void> Function() sync,
-    required Duration syncDelay,
-    required Duration minSyncInterval,
+    required this._maintenance,
+    required this._reminders,
+    required this._sync,
+    required this._syncDelay,
+    required this._minSyncInterval,
     DateTime Function()? now,
-  }) : _maintenance = maintenance,
-       _reminders = reminders,
-       _sync = sync,
-       _syncDelay = syncDelay,
-       _minSyncInterval = minSyncInterval,
-       _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now;
 
   final Future<void> Function() _maintenance;
   final Future<void> Function() _reminders;
