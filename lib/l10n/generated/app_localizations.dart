@@ -2482,6 +2482,36 @@ abstract class AppLocalizations {
   /// **'Unlock Medora'**
   String get unlockMedora;
 
+  /// No description provided for @biometricNotEnrolled.
+  ///
+  /// In en, this message translates to:
+  /// **'No biometrics or device lock set up — add one in system settings'**
+  String get biometricNotEnrolled;
+
+  /// No description provided for @biometricLockedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts — try again later'**
+  String get biometricLockedOut;
+
+  /// No description provided for @biometricNotAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Biometric unlock is not available on this device'**
+  String get biometricNotAvailable;
+
+  /// No description provided for @biometricFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock failed'**
+  String get biometricFailed;
+
+  /// No description provided for @disableAppLock.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off app lock'**
+  String get disableAppLock;
+
   /// No description provided for @cloudRequiredForFamily.
   ///
   /// In en, this message translates to:

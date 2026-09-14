@@ -1306,6 +1306,24 @@ class AppLocalizationsDe extends AppLocalizations {
   String get unlockMedora => 'Medora entsperren';
 
   @override
+  String get biometricNotEnrolled =>
+      'Keine Biometrie und keine Gerätesperre eingerichtet — richte sie in den Systemeinstellungen ein';
+
+  @override
+  String get biometricLockedOut =>
+      'Zu viele Versuche — versuche es später erneut';
+
+  @override
+  String get biometricNotAvailable =>
+      'Biometrische Entsperrung ist auf diesem Gerät nicht verfügbar';
+
+  @override
+  String get biometricFailed => 'Entsperren fehlgeschlagen';
+
+  @override
+  String get disableAppLock => 'App-Sperre ausschalten';
+
+  @override
   String get cloudRequiredForFamily =>
       'Familienfreigabe benötigt Cloud-Sync. Aktiviere ihn in den Einstellungen.';
 
