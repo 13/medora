@@ -3,7 +3,8 @@
 /// Provides offline-first storage for all entities.
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:medora/data/local/migrations.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -23,6 +24,11 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
   static Database? _database;
 
+  /// Test-only: when set, the database opens at this path
+  /// (use [inMemoryDatabasePath] for a throwaway database).
+  @visibleForTesting
+  static String? debugPathOverride;
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -30,31 +36,55 @@ class AppDatabase {
   }
 
   Future<Database> _initDatabase() async {
-    if (kIsWeb) {
-      return await databaseFactory.openDatabase(
-        'medora.db',
-        options: OpenDatabaseOptions(
-          version: 10,
-          onCreate: _onCreate,
-          onUpgrade: _onUpgrade,
-        ),
-      );
-    } else {
-      // Use getDatabasesPath() which is provided by the factory (sqflite or sqflite_ffi)
-      final databasesPath = await getDatabasesPath();
-      final dbPath = join(databasesPath, 'medora.db');
-      
-      return await openDatabase(
-        dbPath,
-        version: 10,
+    final path = debugPathOverride ??
+        (kIsWeb ? 'medora.db' : join(await getDatabasesPath(), 'medora.db'));
+
+    return databaseFactory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: kSchemaVersion,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
-        onCreate: _onCreate,
-        onUpgrade: _onUpgrade,
-      );
-    }
+        onCreate: (db, version) async {
+          await createBaseSchema(db);
+          await _createLedger(db);
+          for (final m in kMigrations) {
+            await m.run(db);
+            await _record(db, m.version);
+          }
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          await _createLedger(db);
+          final applied = (await _applied(db)).toSet();
+          for (final m in kMigrations) {
+            if (m.version <= oldVersion || applied.contains(m.version)) continue;
+            await m.run(db);
+            await _record(db, m.version);
+          }
+        },
+      ),
+    );
   }
 
-  Future<void> _onCreate(Database db, int version) async {
+  static Future<void> _createLedger(Database db) => db.execute(
+        'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)',
+      );
+
+  static Future<void> _record(Database db, int version) => db.insert(
+        'schema_migrations',
+        {'version': version, 'applied_at': DateTime.now().toIso8601String()},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+
+  static Future<List<int>> _applied(Database db) async {
+    final rows = await db.query('schema_migrations', columns: ['version'], orderBy: 'version');
+    return rows.map((r) => r['version'] as int).toList();
+  }
+
+  /// Versions recorded in `schema_migrations`, ascending.
+  Future<List<int>> appliedMigrations() async => _applied(await database);
+
+  /// The base (v10) schema. New columns go into [kMigrations], not here.
+  static Future<void> createBaseSchema(Database db) async {
     await db.execute('''
       CREATE TABLE medications (
         id TEXT PRIMARY KEY,
@@ -179,10 +209,6 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_local_dose_sync ON dose_logs(sync_status)');
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migration logic remains the same...
-  }
-
   Future<void> clearAllData() async {
     final db = await database;
     await db.delete('dose_logs');
@@ -200,4 +226,8 @@ class AppDatabase {
       _database = null;
     }
   }
+
+  /// Test-only: close and forget the cached handle.
+  @visibleForTesting
+  Future<void> reset() => close();
 }
