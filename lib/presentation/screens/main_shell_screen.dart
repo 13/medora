@@ -59,14 +59,15 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> with WidgetsB
     });
   }
 
-  /// On the very first launch, show the onboarding sheet. Any dismissal —
-  /// Done, Skip or a drag-down — completes the sheet's future and marks it
-  /// seen, so it appears exactly once.
+  /// On the very first launch, show the onboarding sheet. Marking it seen
+  /// happens synchronously, right before the sheet opens — not after it
+  /// closes — so a second [MainShellScreen] mounting while the sheet is
+  /// still open cannot show a second one, and an interrupted first run
+  /// (app killed mid-sheet) does not re-show it either.
   Future<void> _maybeShowOnboarding() async {
     if (ref.read(onboardingSeenProvider)) return;
+    unawaited(ref.read(onboardingSeenProvider.notifier).markSeen());
     await showOnboardingSheet(context);
-    if (!mounted) return;
-    await ref.read(onboardingSeenProvider.notifier).markSeen();
   }
 
   @override

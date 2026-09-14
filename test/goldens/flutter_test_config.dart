@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,9 +23,15 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
 
   final flutterRoot = Platform.environment['FLUTTER_ROOT'];
   if (flutterRoot != null && flutterRoot.isNotEmpty) {
-    await _loadFont('MaterialIcons', [
-      '$flutterRoot/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-    ]);
+    final materialIconsPath =
+        '$flutterRoot/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf';
+    if (!File(materialIconsPath).existsSync()) {
+      debugPrint(
+        'golden_config: MaterialIcons font not found at $materialIconsPath — '
+        'icon glyphs will render as boxes in golden output.',
+      );
+    }
+    await _loadFont('MaterialIcons', [materialIconsPath]);
   }
 
   await testMain();

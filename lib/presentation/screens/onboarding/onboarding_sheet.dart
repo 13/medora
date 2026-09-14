@@ -1,9 +1,12 @@
 /// Medora - First-run onboarding sheet
 ///
 /// A three-page modal bottom sheet shown once, on first launch, from
-/// [MainShellScreen]. Dismissal (Done, Skip or drag-down) is the caller's
-/// signal to persist `onboarding_seen`.
+/// [MainShellScreen]. The caller persists `onboarding_seen` synchronously
+/// right before opening the sheet (not on dismissal), so the sheet never
+/// shows twice.
 library;
+
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:medora/core/theme_extensions.dart';
@@ -68,64 +71,74 @@ class _OnboardingSheetState extends State<OnboardingSheet> {
       ),
     ];
     final isLast = _page == pages.length - 1;
+    // Capped at 300 (the usual portrait size) but shrinks further on a short
+    // viewport (landscape phones), so the sheet stays scrollable-but-visible
+    // instead of forcing a 300px PageView into e.g. a 360px-tall screen.
+    final pageViewHeight =
+        math.min(300.0, MediaQuery.sizeOf(context).height * 0.45);
 
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: context.colors.onSurfaceVariant.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            SizedBox(
-              height: 300,
-              child: PageView(
-                controller: _controller,
-                onPageChanged: (i) => setState(() => _page = i),
-                children: pages,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < pages.length; i++)
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: i == _page ? 20 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: i == _page
-                          ? context.colors.primary
-                          : context.colors.outlineVariant,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                if (!isLast)
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(l10n.skip),
-                  ),
-                const Spacer(),
-                FilledButton(
-                  onPressed: () => _next(pages.length),
-                  child: Text(isLast ? l10n.onboardingDone : l10n.onboardingNext),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: context.colors.onSurfaceVariant.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ],
-            ),
-          ],
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: SizedBox(
+                  height: pageViewHeight,
+                  child: PageView(
+                    controller: _controller,
+                    onPageChanged: (i) => setState(() => _page = i),
+                    children: pages,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < pages.length; i++)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: i == _page ? 20 : 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: i == _page
+                            ? context.colors.primary
+                            : context.colors.outlineVariant,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  if (!isLast)
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(l10n.skip),
+                    ),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () => _next(pages.length),
+                    child: Text(isLast ? l10n.onboardingDone : l10n.onboardingNext),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -145,33 +158,50 @@ class _OnboardingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 88,
-          height: 88,
-          decoration: BoxDecoration(
-            color: context.colors.primaryContainer,
-            shape: BoxShape.circle,
+    // The PageView above gives this a fixed height; at a large text scale
+    // (e.g. 2.0x) the title/body can outgrow it, so scroll this page's own
+    // content instead of overflowing. LayoutBuilder + a min-height
+    // ConstrainedBox keeps it centered when it fits.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: context.colors.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 40,
+                    color: context.colors.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: context.text.headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: context.text.bodyMedium
+                      ?.copyWith(color: context.colors.onSurfaceVariant),
+                ),
+              ],
+            ),
           ),
-          child: Icon(icon, size: 40, color: context.colors.onPrimaryContainer),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: context.text.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          body,
-          textAlign: TextAlign.center,
-          style: context.text.bodyMedium
-              ?.copyWith(color: context.colors.onSurfaceVariant),
-        ),
-      ],
+        );
+      },
     );
   }
 }

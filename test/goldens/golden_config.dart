@@ -36,7 +36,12 @@ final goldenMedications = <Medication>[
     quantity: 1,
     quantityUnit: 'tablets',
     minimumStockLevel: 3,
-    expiryDate: DateTime(2027, 1, 1),
+    // Far future on purpose: Medication.isExpiringSoon/isExpired read the
+    // real DateTime.now() (they bypass nowProvider), so a near-future date
+    // would flip the Home golden's Expiring Soon card to a populated,
+    // daily-changing state once "today" caught up. These goldens only cover
+    // the empty Expiring Soon state.
+    expiryDate: DateTime(2099, 1, 1),
     category: 'painkiller',
   ),
   Medication(

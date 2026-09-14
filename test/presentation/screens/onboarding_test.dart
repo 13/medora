@@ -106,4 +106,69 @@ void main() {
 
     expect(find.byType(OnboardingSheet), findsNothing);
   });
+
+  testWidgets('onboarding sheet does not overflow at a short landscape viewport', (tester) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _pumpOpenSheet(tester);
+
+    expect(find.byType(OnboardingSheet), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('onboarding sheet does not overflow at 2x text scale and stays usable', (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await _pumpOpenSheet(tester);
+
+    // Page 1
+    expect(find.byType(OnboardingSheet), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // Page 2
+    await tester.tap(find.widgetWithText(FilledButton, 'Next'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // Page 3 — last page: Done.
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    expect(find.byType(OnboardingSheet), findsNothing);
+  });
+}
+
+/// Pumps just the onboarding sheet (not the whole [MainShellScreen]/app), so
+/// these overflow regression tests stay scoped to the sheet itself rather
+/// than incidentally exercising unrelated screens underneath.
+Future<void> _pumpOpenSheet(WidgetTester tester) async {
+  await pumpMedoraApp(
+    tester,
+    Scaffold(
+      body: Builder(
+        builder: (context) => Center(
+          child: ElevatedButton(
+            onPressed: () => showOnboardingSheet(context),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  await tester.tap(find.text('Open'));
+  await tester.pumpAndSettle();
 }
