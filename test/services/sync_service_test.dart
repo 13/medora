@@ -168,6 +168,19 @@ void main() {
       expect(await localRow('medications', 'm5'), isNull);
     });
 
+    test('a live-row push does not clear an existing remote tombstone', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'm6', name: 'Zombie', quantity: 1).toJson());
+      h.meds.table.tombstone('m6');
+      await MedicationLocalDatasource().upsert(
+        const MedicationModel(id: 'm6', name: 'Zombie', quantity: 1),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      await h.service.syncAll();
+      expect(await localRow('medications', 'm6'), isNull);
+      expect(h.meds.table.rows['m6']?['deleted_at'], isNotNull);
+    });
+
     test('a remotely deleted treatment cascades to local prescriptions and dose logs', () async {
       final h = Harness();
       final db = await AppDatabase.instance.database;

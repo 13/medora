@@ -72,11 +72,11 @@ class DoseLogRemoteDatasource {
   Future<void> updateDoseLogStatus(String id, String status, {DateTime? takenTime}) async {
     final Map<String, dynamic> updateData = {
       'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
-    
+
     if (takenTime != null) {
-      updateData['taken_time'] = takenTime.toIso8601String();
+      updateData['taken_time'] = takenTime.toUtc().toIso8601String();
     } else if (status == 'pending') {
       updateData['taken_time'] = null;
     }

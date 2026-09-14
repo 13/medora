@@ -188,7 +188,7 @@ class MedicationModel {
       'notes': notes,
       'is_archived': isArchived,
       'updated_at': updatedAt?.toUtc().toIso8601String(),
-      'deleted_at': deletedAt?.toUtc().toIso8601String(),
+      if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
     };
   }
 

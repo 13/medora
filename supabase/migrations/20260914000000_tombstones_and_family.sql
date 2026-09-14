@@ -84,6 +84,7 @@ CREATE POLICY "family_members_insert" ON family_members
     EXISTS (SELECT 1 FROM families f WHERE f.id = family_id AND f.owner_id = auth.uid())
   );
 
+DROP POLICY IF EXISTS "family_members_update" ON family_members;
 CREATE POLICY "family_members_update" ON family_members
   FOR UPDATE USING (
     user_id = auth.uid() OR
