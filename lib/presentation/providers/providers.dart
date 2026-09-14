@@ -3,6 +3,7 @@
 /// Central place for all Riverpod providers that wire up the app.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -167,7 +168,7 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
   // the container is disposed (e.g. test teardown); cache the last-known
   // value and guard against reading a disposed Ref rather than throwing.
   var lastEnabled = ref.read(remindersEnabledProvider);
-  return ReminderScheduler(
+  final scheduler = ReminderScheduler(
     port: ref.watch(reminderPortProvider),
     doses: ref.watch(doseLogRepositoryProvider),
     remindersEnabled: () {
@@ -175,6 +176,18 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
       return lastEnabled;
     },
   );
+
+  // Notification text is baked in when a notification is scheduled, and the
+  // scheduler's diff only looks at id + time — so after a language change up
+  // to 30 queued reminders would keep speaking the old language for a week.
+  // Drop the snapshot and re-schedule everything in the new language.
+  ref.listen(localeProvider, (previous, next) {
+    if (previous == next) return;
+    scheduler.reset();
+    unawaited(scheduler.reconcile());
+  });
+
+  return scheduler;
 });
 
 final connectivityServiceProvider = Provider<ConnectivityService>(

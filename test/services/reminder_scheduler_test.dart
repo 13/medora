@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
@@ -8,7 +10,10 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
+import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/services/reminder_scheduler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_reminder_port.dart';
 import '../helpers/seed.dart';
@@ -402,4 +407,90 @@ void main() {
     expect(count, 1);
     expect(scheduler.lastError, isNull);
   });
+
+  group('locale changes', () {
+    test('re-schedule every queued reminder in the new language', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      // The provider-built scheduler uses the real clock, so seed relative
+      // to it rather than to the fixed `now` above.
+      await seedDoseLog(
+        db,
+        s.prescriptionId,
+        DateTime.now().add(const Duration(hours: 2)),
+      );
+
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final port = FakePort();
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reminderPortProvider.overrideWithValue(port),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final scheduler = container.read(reminderSchedulerProvider);
+      expect(await scheduler.reconcile(), 1);
+      expect(port.cancelAllCalls, 1);
+      expect(port.scheduled, hasLength(1));
+
+      // The notification body is built at schedule time from the current
+      // locale, so the queued reminders have to be rebuilt.
+      await container.read(localeProvider.notifier).set(const Locale('de'));
+      await _until(() => port.cancelAllCalls == 2);
+
+      expect(
+        port.cancelAllCalls,
+        2,
+        reason: 'the snapshot is dropped, so the next run cancels everything',
+      );
+      expect(
+        port.scheduled,
+        hasLength(2),
+        reason: 'the dose is scheduled again, now in German',
+      );
+    });
+
+    test('an unchanged locale does not re-schedule', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      await seedDoseLog(
+        db,
+        s.prescriptionId,
+        DateTime.now().add(const Duration(hours: 2)),
+      );
+
+      SharedPreferences.setMockInitialValues({'locale': 'de'});
+      final prefs = await SharedPreferences.getInstance();
+      final port = FakePort();
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          reminderPortProvider.overrideWithValue(port),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await container.read(reminderSchedulerProvider).reconcile();
+      await container.read(localeProvider.notifier).set(const Locale('de'));
+      await _until(() => false, timeout: const Duration(milliseconds: 100));
+
+      expect(port.cancelAllCalls, 1);
+      expect(port.scheduled, hasLength(1));
+    });
+  });
+}
+
+/// Pumps the event queue until [done] or [timeout]; the listener fires and
+/// reconciles asynchronously.
+Future<void> _until(
+  bool Function() done, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!done() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(Duration.zero);
+  }
 }
