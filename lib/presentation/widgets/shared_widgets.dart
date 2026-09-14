@@ -204,9 +204,9 @@ void showDoseDetailBottomSheet({
 
   final String dateLabel;
   if (doseDate == today) {
-    dateLabel = 'Today';
+    dateLabel = l10n.today;
   } else if (doseDate == today.subtract(const Duration(days: 1))) {
-    dateLabel = 'Yesterday';
+    dateLabel = l10n.yesterday;
   } else {
     dateLabel = dose.scheduledTime.formatted;
   }
@@ -247,7 +247,7 @@ void showDoseDetailBottomSheet({
             const Divider(height: 24),
 
             // Details
-            DetailRow(icon: Icons.calendar_today, label: 'Date', value: dateLabel),
+            DetailRow(icon: Icons.calendar_today, label: l10n.date, value: dateLabel),
             DetailRow(icon: Icons.schedule, label: l10n.selectTimes, value: dose.scheduledTime.timeFormatted),
             if (dose.treatmentName != null)
               DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),
@@ -314,7 +314,7 @@ void showDoseDetailBottomSheet({
                     Navigator.pop(ctx);
                   },
                   icon: const Icon(Icons.undo),
-                  label: const Text("Undo Taken"),
+                  label: Text(l10n.undoTaken),
                   style: OutlinedButton.styleFrom(foregroundColor: context.colors.error),
                 ),
               ),

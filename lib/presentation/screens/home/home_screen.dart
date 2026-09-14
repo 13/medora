@@ -40,7 +40,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
     final caps = ref.watch(platformCapabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Text(l10n.dashboard),
         actions: [
           if (caps.hasCamera)
             IconButton(
@@ -311,7 +311,7 @@ class _ExpiringSoonCard extends ConsumerWidget {
       error: (error, stack) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Error: $error'),
+          child: Text(l10n.errorWithDetails(error.toString())),
         ),
       ),
     );
@@ -400,7 +400,7 @@ class _LowStockCard extends ConsumerWidget {
       error: (error, stack) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Error: $error'),
+          child: Text(l10n.errorWithDetails(error.toString())),
         ),
       ),
     );
@@ -448,7 +448,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
       error: (error, stack) => Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Error: $error'),
+          child: Text(l10n.errorWithDetails(error.toString())),
         ),
       ),
     );

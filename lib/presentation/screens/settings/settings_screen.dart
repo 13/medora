@@ -133,11 +133,11 @@ class SettingsScreen extends ConsumerWidget {
 
           // ── Security ───────────────────────────────────────
           if (caps.hasBiometrics) ...[
-            _SectionTitle("Security"),
+            _SectionTitle(l10n.securitySection),
             SwitchListTile(
               secondary: const Icon(Icons.fingerprint),
-              title: const Text("Fingerprint Unlock"),
-              subtitle: const Text("Use biometrics to protect your data"),
+              title: Text(l10n.fingerprintUnlock),
+              subtitle: Text(l10n.fingerprintUnlockDesc),
               value: biometricsEnabled,
               onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
             ),
@@ -400,7 +400,7 @@ class SettingsScreen extends ConsumerWidget {
               }
             },
             child: Text(
-              "Continue",
+              l10n.continueAction,
               style: TextStyle(color: isPush ? context.medora.warning : context.colors.primary),
             ),
           ),
@@ -494,7 +494,7 @@ class SettingsScreen extends ConsumerWidget {
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text("Error deleting data: ${e.toString()}")),
+                            SnackBar(content: Text(l10n.deleteDataFailed(e.toString()))),
                           );
                         }
                       }

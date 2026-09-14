@@ -1072,7 +1072,7 @@ class _TreatmentDetailScreenState
                                     ScaffoldMessenger.of(context)
                                         .showSnackBar(
                                       SnackBar(
-                                          content: Text('Error: $msg')),
+                                          content: Text(l10n.errorWithDetails(msg))),
                                     );
                                   }
                                 },
@@ -1108,7 +1108,7 @@ class _TreatmentDetailScreenState
                                     ScaffoldMessenger.of(context)
                                         .showSnackBar(
                                       SnackBar(
-                                          content: Text('Error: $msg')),
+                                          content: Text(l10n.errorWithDetails(msg))),
                                     );
                                   }
                                 },

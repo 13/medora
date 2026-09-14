@@ -949,7 +949,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
         );
       }
     } finally {

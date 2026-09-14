@@ -1238,4 +1238,87 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get turnOffCloudSyncChoice =>
       'You will be signed out. What should happen to the data stored on this device?';
+
+  @override
+  String get securitySection => 'Security';
+
+  @override
+  String get fingerprintUnlock => 'Fingerprint unlock';
+
+  @override
+  String get fingerprintUnlockDesc => 'Use biometrics to protect your data';
+
+  @override
+  String get undoTaken => 'Undo taken';
+
+  @override
+  String get continueAction => 'Continue';
+
+  @override
+  String get today => 'Today';
+
+  @override
+  String get yesterday => 'Yesterday';
+
+  @override
+  String get tomorrow => 'Tomorrow';
+
+  @override
+  String get date => 'Date';
+
+  @override
+  String get clear => 'Clear';
+
+  @override
+  String get genericError => 'Something went wrong';
+
+  @override
+  String errorWithDetails(String details) {
+    return 'Something went wrong: $details';
+  }
+
+  @override
+  String deleteDataFailed(String details) {
+    return 'Could not delete data: $details';
+  }
+
+  @override
+  String get exportNotSupportedOnWeb =>
+      'Export is not available in the browser yet.';
+
+  @override
+  String get exportReportTitle => 'Medora report';
+
+  @override
+  String get exportSummary => 'Home medicine cabinet summary';
+
+  @override
+  String get exportDoseRecords => 'Dose records';
+
+  @override
+  String get name => 'Name';
+
+  @override
+  String get dosage => 'Dosage';
+
+  @override
+  String get colActiveIngredient => 'Active ingredient';
+
+  @override
+  String get colMinStock => 'Min stock';
+
+  @override
+  String get colScheduled => 'Scheduled';
+
+  @override
+  String get colTaken => 'Taken';
+
+  @override
+  String get colStatus => 'Status';
+
+  @override
+  String get yesLabel => 'Yes';
+
+  @override
+  String get noLabel => 'No';
 }

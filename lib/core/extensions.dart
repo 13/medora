@@ -5,18 +5,20 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 extension DateTimeExtensions on DateTime {
-  /// Format as 'MMM dd, yyyy' (e.g., 'Jan 15, 2026')
-  String get formatted => DateFormat('MMM dd, yyyy').format(this);
+  /// Locale-aware date, e.g. 'Mar 5, 2026' (en) / '05.03.2026' (de).
+  String get formatted => DateFormat.yMMMd().format(this);
 
-  /// Format as 'MMM dd' (e.g., 'Jan 15')
-  String get shortFormatted => DateFormat('MMM dd').format(this);
+  /// Locale-aware short date, e.g. 'Mar 5' (en).
+  String get shortFormatted => DateFormat.MMMd().format(this);
 
-  /// Format as 'HH:mm' (e.g., '14:30')
-  String get timeFormatted => DateFormat('HH:mm').format(this);
+  /// Locale-aware time, e.g. '14:07'.
+  String get timeFormatted => DateFormat.Hm().format(this);
 
-  /// Format as 'MMM dd, yyyy HH:mm'
-  String get dateTimeFormatted =>
-      DateFormat('MMM dd, yyyy HH:mm').format(this);
+  /// Locale-aware date and time.
+  String get dateTimeFormatted => DateFormat.yMMMd().add_Hm().format(this);
+
+  /// Locale-aware short weekday name, e.g. 'Mon'.
+  String get weekdayShort => DateFormat.E().format(this);
 
   /// Returns true if this date is today.
   bool get isToday {

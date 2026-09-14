@@ -1247,4 +1247,88 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get turnOffCloudSyncChoice =>
       'Verrai disconnesso. Cosa fare con i dati salvati su questo dispositivo?';
+
+  @override
+  String get securitySection => 'Sicurezza';
+
+  @override
+  String get fingerprintUnlock => 'Sblocco con impronta';
+
+  @override
+  String get fingerprintUnlockDesc =>
+      'Usa la biometria per proteggere i tuoi dati';
+
+  @override
+  String get undoTaken => 'Annulla assunzione';
+
+  @override
+  String get continueAction => 'Continua';
+
+  @override
+  String get today => 'Oggi';
+
+  @override
+  String get yesterday => 'Ieri';
+
+  @override
+  String get tomorrow => 'Domani';
+
+  @override
+  String get date => 'Data';
+
+  @override
+  String get clear => 'Cancella';
+
+  @override
+  String get genericError => 'Qualcosa è andato storto';
+
+  @override
+  String errorWithDetails(String details) {
+    return 'Qualcosa è andato storto: $details';
+  }
+
+  @override
+  String deleteDataFailed(String details) {
+    return 'Impossibile eliminare i dati: $details';
+  }
+
+  @override
+  String get exportNotSupportedOnWeb =>
+      'L\'esportazione non è ancora disponibile nel browser.';
+
+  @override
+  String get exportReportTitle => 'Rapporto Medora';
+
+  @override
+  String get exportSummary => 'Riepilogo dell\'armadietto dei medicinali';
+
+  @override
+  String get exportDoseRecords => 'Registro delle dosi';
+
+  @override
+  String get name => 'Nome';
+
+  @override
+  String get dosage => 'Dosaggio';
+
+  @override
+  String get colActiveIngredient => 'Principio attivo';
+
+  @override
+  String get colMinStock => 'Scorta minima';
+
+  @override
+  String get colScheduled => 'Programmato';
+
+  @override
+  String get colTaken => 'Assunto';
+
+  @override
+  String get colStatus => 'Stato';
+
+  @override
+  String get yesLabel => 'Sì';
+
+  @override
+  String get noLabel => 'No';
 }

@@ -416,7 +416,7 @@ class _FamilyDetailView extends ConsumerWidget {
             );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('Error: $e'),
+          error: (e, _) => Text(l10n.errorWithDetails(e.toString())),
         ),
 
         const SizedBox(height: 32),

@@ -221,7 +221,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           if (_detectedTexts.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.delete_sweep),
-              tooltip: 'Clear',
+              tooltip: l10n.clear,
               onPressed: () => setState(() {
                 _detectedTexts.clear();
                 _aicCodes.clear();

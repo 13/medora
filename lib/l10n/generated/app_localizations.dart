@@ -2385,6 +2385,162 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You will be signed out. What should happen to the data stored on this device?'**
   String get turnOffCloudSyncChoice;
+
+  /// No description provided for @securitySection.
+  ///
+  /// In en, this message translates to:
+  /// **'Security'**
+  String get securitySection;
+
+  /// No description provided for @fingerprintUnlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Fingerprint unlock'**
+  String get fingerprintUnlock;
+
+  /// No description provided for @fingerprintUnlockDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Use biometrics to protect your data'**
+  String get fingerprintUnlockDesc;
+
+  /// No description provided for @undoTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo taken'**
+  String get undoTaken;
+
+  /// No description provided for @continueAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get continueAction;
+
+  /// No description provided for @today.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get today;
+
+  /// No description provided for @yesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get yesterday;
+
+  /// No description provided for @tomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
+  String get tomorrow;
+
+  /// No description provided for @date.
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get date;
+
+  /// No description provided for @clear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clear;
+
+  /// No description provided for @genericError.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong'**
+  String get genericError;
+
+  /// No description provided for @errorWithDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong: {details}'**
+  String errorWithDetails(String details);
+
+  /// No description provided for @deleteDataFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete data: {details}'**
+  String deleteDataFailed(String details);
+
+  /// No description provided for @exportNotSupportedOnWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Export is not available in the browser yet.'**
+  String get exportNotSupportedOnWeb;
+
+  /// No description provided for @exportReportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Medora report'**
+  String get exportReportTitle;
+
+  /// No description provided for @exportSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Home medicine cabinet summary'**
+  String get exportSummary;
+
+  /// No description provided for @exportDoseRecords.
+  ///
+  /// In en, this message translates to:
+  /// **'Dose records'**
+  String get exportDoseRecords;
+
+  /// No description provided for @name.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get name;
+
+  /// No description provided for @dosage.
+  ///
+  /// In en, this message translates to:
+  /// **'Dosage'**
+  String get dosage;
+
+  /// No description provided for @colActiveIngredient.
+  ///
+  /// In en, this message translates to:
+  /// **'Active ingredient'**
+  String get colActiveIngredient;
+
+  /// No description provided for @colMinStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Min stock'**
+  String get colMinStock;
+
+  /// No description provided for @colScheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get colScheduled;
+
+  /// No description provided for @colTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Taken'**
+  String get colTaken;
+
+  /// No description provided for @colStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get colStatus;
+
+  /// No description provided for @yesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes'**
+  String get yesLabel;
+
+  /// No description provided for @noLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'No'**
+  String get noLabel;
 }
 
 class _AppLocalizationsDelegate

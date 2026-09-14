@@ -1253,4 +1253,88 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get turnOffCloudSyncChoice =>
       'Du wirst abgemeldet. Was soll mit den auf diesem Gerät gespeicherten Daten passieren?';
+
+  @override
+  String get securitySection => 'Sicherheit';
+
+  @override
+  String get fingerprintUnlock => 'Fingerabdruck-Entsperrung';
+
+  @override
+  String get fingerprintUnlockDesc =>
+      'Biometrie zum Schutz deiner Daten verwenden';
+
+  @override
+  String get undoTaken => 'Einnahme rückgängig machen';
+
+  @override
+  String get continueAction => 'Weiter';
+
+  @override
+  String get today => 'Heute';
+
+  @override
+  String get yesterday => 'Gestern';
+
+  @override
+  String get tomorrow => 'Morgen';
+
+  @override
+  String get date => 'Datum';
+
+  @override
+  String get clear => 'Leeren';
+
+  @override
+  String get genericError => 'Etwas ist schiefgelaufen';
+
+  @override
+  String errorWithDetails(String details) {
+    return 'Etwas ist schiefgelaufen: $details';
+  }
+
+  @override
+  String deleteDataFailed(String details) {
+    return 'Daten konnten nicht gelöscht werden: $details';
+  }
+
+  @override
+  String get exportNotSupportedOnWeb =>
+      'Export ist im Browser noch nicht verfügbar.';
+
+  @override
+  String get exportReportTitle => 'Medora-Bericht';
+
+  @override
+  String get exportSummary => 'Zusammenfassung der Hausapotheke';
+
+  @override
+  String get exportDoseRecords => 'Dosenprotokoll';
+
+  @override
+  String get name => 'Name';
+
+  @override
+  String get dosage => 'Dosierung';
+
+  @override
+  String get colActiveIngredient => 'Wirkstoff';
+
+  @override
+  String get colMinStock => 'Mindestbestand';
+
+  @override
+  String get colScheduled => 'Geplant';
+
+  @override
+  String get colTaken => 'Eingenommen';
+
+  @override
+  String get colStatus => 'Status';
+
+  @override
+  String get yesLabel => 'Ja';
+
+  @override
+  String get noLabel => 'Nein';
 }

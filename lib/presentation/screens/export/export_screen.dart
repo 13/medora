@@ -187,12 +187,12 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
             segments: const [
               ButtonSegment(
                 value: ExportFormat.pdf,
-                label: Text('PDF'),
+                label: Text('PDF'), // l10n-exempt: proper noun
                 icon: Icon(Icons.picture_as_pdf),
               ),
               ButtonSegment(
                 value: ExportFormat.csv,
-                label: Text('CSV'),
+                label: Text('CSV'), // l10n-exempt: proper noun
                 icon: Icon(Icons.table_chart),
               ),
             ],
@@ -230,7 +230,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
     if (kIsWeb) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Export is not yet supported on Web.')),
+        SnackBar(content: Text(l10n.exportNotSupportedOnWeb)),
       );
       return;
     }
@@ -266,11 +266,14 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         );
       }
 
+      final labels = ExportLabels.fromL10n(l10n);
+
       if (_format == ExportFormat.pdf) {
         final file = await exportService.exportPDF(
           medications: medications,
           treatments: treatments,
           doseLogs: doseLogs,
+          labels: labels,
         );
         if (file != null) {
           await SharePlus.instance.share(
@@ -281,15 +284,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         final files = <XFile>[];
 
         if (medications != null && medications.isNotEmpty) {
-          final f = await exportService.exportMedicationsCSV(medications);
+          final f = await exportService.exportMedicationsCSV(medications, labels);
           if (f != null) files.add(XFile(f.path));
         }
         if (treatments != null && treatments.isNotEmpty) {
-          final f = await exportService.exportTreatmentsCSV(treatments);
+          final f = await exportService.exportTreatmentsCSV(treatments, labels);
           if (f != null) files.add(XFile(f.path));
         }
         if (doseLogs != null && doseLogs.isNotEmpty) {
-          final f = await exportService.exportDoseLogsCSV(doseLogs);
+          final f = await exportService.exportDoseLogsCSV(doseLogs, labels);
           if (f != null) files.add(XFile(f.path));
         }
 

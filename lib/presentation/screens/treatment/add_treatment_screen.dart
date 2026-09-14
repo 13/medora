@@ -66,8 +66,9 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
       },
       failure: (msg) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $msg')),
+            SnackBar(content: Text(l10n.errorWithDetails(msg))),
           );
         }
       },
@@ -266,7 +267,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
         );
       }
     } finally {
