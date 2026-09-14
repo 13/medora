@@ -11,6 +11,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
@@ -61,7 +62,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
   static String _message(Object e) =>
       e is Exception ? e.toString().replaceFirst('Exception: ', '') : '$e';
 
-  List<Medication> _applyFilter(List<Medication> medications) {
+  List<Medication> _applyFilter(List<Medication> medications, DateTime now) {
     var filtered = medications;
 
     // Apply search query
@@ -83,8 +84,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
       MedicationFilter.needsAttention => filtered.where((m) {
         if (m.isArchived) return false;
         final isLowStock = m.quantity <= m.minimumStockLevel;
-        final isExpired = m.expiryDate?.isPast ?? false;
-        return isLowStock || isExpired || m.isExpiringSoon();
+        return isLowStock || m.expiredAt(now) || m.isExpiringSoon(now: now);
       }).toList(),
       MedicationFilter.archived => filtered.where((m) => m.isArchived).toList(),
     };
@@ -94,6 +94,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final medicationsAsync = ref.watch(medicationListProvider);
+    final now = ref.watch(nowProvider)();
 
     return Scaffold(
       appBar: AppBar(
@@ -168,7 +169,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 onAction: () => context.push(AppRoutes.addMedication),
               ),
               data: (medications) {
-                final filtered = _applyFilter(medications);
+                final filtered = _applyFilter(medications, now);
                 if (filtered.isEmpty) {
                   return Center(
                     child: Column(
@@ -318,7 +319,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                             ),
                           ],
                         ),
-                        child: _MedicationTile(med: med),
+                        child: _MedicationTile(med: med, now: now),
                       );
                     },
                   ),
@@ -338,15 +339,17 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
 }
 
 class _MedicationTile extends StatelessWidget {
-  const _MedicationTile({required this.med});
+  const _MedicationTile({required this.med, required this.now});
   final Medication med;
+
+  /// "Now" injected by the list screen (`ref.watch(nowProvider)()`).
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isLowStock = med.quantity <= med.minimumStockLevel;
-    final isExpired = med.expiryDate?.isPast ?? false;
-    final now = DateTime.now();
+    final isExpired = med.expiredAt(now);
 
     return ListTile(
       leading: CircleAvatar(

@@ -71,6 +71,12 @@ class MedoraApp extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
     final colorScheme = ref.watch(colorSchemeProvider);
+    final router = ref.watch(appRouterProvider);
+
+    // Notification taps navigate through the router and reminder strings are
+    // looked up from the chosen locale — neither keeps a BuildContext alive.
+    ReminderService.router = router;
+    ReminderService.localeResolver = () => locale;
 
     return MaterialApp.router(
       title: 'Medora',
@@ -91,12 +97,7 @@ class MedoraApp extends ConsumerWidget {
         Intl.defaultLocale = resolved.toLanguageTag();
         return resolved;
       },
-      routerConfig: ref.watch(appRouterProvider),
-      builder: (context, child) {
-        // Set navigation context for notification handling
-        ReminderService.setNavigationContext(context);
-        return child ?? const SizedBox.shrink();
-      },
+      routerConfig: router,
     );
   }
 }

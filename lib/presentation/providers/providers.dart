@@ -6,6 +6,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -272,7 +273,7 @@ final syncStartupDelayProvider = Provider<Duration>(
 
 /// Injectable clock. Screens/providers that need "now" read
 /// `ref.read(nowProvider)()`; tests and goldens override it.
-final nowProvider = Provider<DateTime Function()>((_) => DateTime.now);
+final nowProvider = Provider<Now>((_) => systemNow);
 
 final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
   return AppStartupTasks(

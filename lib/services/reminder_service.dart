@@ -3,6 +3,8 @@
 /// Manages local notifications for medication dose reminders.
 library;
 
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
@@ -25,8 +27,15 @@ class ReminderService implements ReminderPort {
 
   bool _isInitialized = false;
 
-  // Store navigation callback
-  static BuildContext? _navigationContext;
+  /// The app's router, assigned once from `main.dart`. A router is not bound
+  /// to a widget's lifecycle (a [BuildContext] is), so keeping it in a static
+  /// cannot leave a disposed element behind.
+  static GoRouter? router;
+
+  /// Resolves the user's chosen locale. Services must not import presentation
+  /// code, so `main.dart` installs this seam next to [router]; `null` (or no
+  /// seam at all) means "follow the platform locale".
+  static Locale? Function()? localeResolver;
 
   /// Whether the current platform supports scheduled local notifications
   /// (mobile only; web and desktop plugins cannot schedule).
@@ -58,17 +67,47 @@ class ReminderService implements ReminderPort {
     _isInitialized = true;
   }
 
-  void _onNotificationResponse(NotificationResponse response) {
-    // Navigate to doses screen when notification is tapped
-    if (_navigationContext != null && _navigationContext!.mounted) {
-      _navigationContext!.go('/doses');
-    }
+  void _onNotificationResponse(NotificationResponse response) =>
+      handleNotificationTap(response.payload);
+
+  /// Navigate to the doses screen when a notification is tapped. A no-op
+  /// until `main.dart` has assigned [router].
+  @visibleForTesting
+  void handleNotificationTap(String? payload) {
+    router?.go('/doses');
   }
 
-  /// Set the navigation context for handling notification taps.
-  /// Call this from the main app widget.
-  static void setNavigationContext(BuildContext context) {
-    _navigationContext = context;
+  /// Localizations for the app's current locale, or `null` when it is not one
+  /// of the supported locales (callers then use the English fallback text).
+  @visibleForTesting
+  static AppLocalizations? resolveLocalizations() {
+    // An explicit preference is authoritative; only "system default" (null)
+    // falls through to the platform locale.
+    final locale = localeResolver?.call() ?? PlatformDispatcher.instance.locale;
+    for (final supported in AppLocalizations.supportedLocales) {
+      if (supported.languageCode == locale.languageCode) {
+        return lookupAppLocalizations(supported);
+      }
+    }
+    return null;
+  }
+
+  /// Title for a dose reminder fired [minutesBefore] minutes ahead of time.
+  @visibleForTesting
+  static String reminderTitle({
+    required String medicationName,
+    required int minutesBefore,
+    AppLocalizations? l10n,
+  }) {
+    final strings = l10n ?? resolveLocalizations();
+    if (strings == null) {
+      return minutesBefore == 0
+          ? 'Time for $medicationName'
+          : 'Reminder: $medicationName in $minutesBefore min';
+    }
+    return minutesBefore == 0
+        ? strings.notificationReminderTimeFor(medicationName)
+        : strings.notificationReminderInMinutes(medicationName, minutesBefore);
   }
 
   /// Stable 31-bit notification id base for a dose (FNV-1a over the id,
@@ -114,10 +153,9 @@ class ReminderService implements ReminderPort {
     final baseId = notificationBaseId(dose.id);
     final offsets = [60, 0];
 
-    // Get localization from the stored context
-    final l10n = _navigationContext != null && _navigationContext!.mounted
-        ? AppLocalizations.of(_navigationContext!)
-        : null;
+    // Resolve strings without a BuildContext — a background notification has
+    // no widget tree to read from.
+    final l10n = resolveLocalizations();
 
     for (var i = 0; i < offsets.length; i++) {
       final scheduledTime = dose.scheduledTime.subtract(
@@ -125,16 +163,11 @@ class ReminderService implements ReminderPort {
       );
       if (scheduledTime.isBefore(now)) continue;
 
-      String title;
-      if (l10n != null) {
-        title = offsets[i] == 0
-            ? l10n.notificationReminderTimeFor(medicationName)
-            : l10n.notificationReminderInMinutes(medicationName, offsets[i]);
-      } else {
-        title = offsets[i] == 0
-            ? 'Time for $medicationName'
-            : 'Reminder: $medicationName in ${offsets[i]} min';
-      }
+      final title = reminderTitle(
+        medicationName: medicationName,
+        minutesBefore: offsets[i],
+        l10n: l10n,
+      );
 
       String body;
       if (l10n != null) {

@@ -15,6 +15,7 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
@@ -119,6 +120,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
     final l10n = AppLocalizations.of(context);
     final dosesAsync = ref.watch(todaysDoseLogsProvider);
     final nextDose = ref.watch(nextDueDoseProvider);
+    final now = ref.watch(nowProvider)();
 
     return Card(
       color: context.colors.primaryContainer,
@@ -138,7 +140,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
           ),
           data: (doses) {
             if (nextDose != null) {
-              return _buildNextDose(context, l10n, nextDose);
+              return _buildNextDose(context, l10n, nextDose, now);
             }
             if (doses.isNotEmpty) {
               return _buildAllDone(context, l10n);
@@ -154,6 +156,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
     BuildContext context,
     AppLocalizations l10n,
     DoseLog dose,
+    DateTime now,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,7 +179,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
                 ),
               ),
             ),
-            if (dose.isOverdue) ...[
+            if (dose.isOverdueAt(now)) ...[
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -511,6 +514,7 @@ class _ExpiringSoonCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final expiringAsync = ref.watch(expiringSoonProvider);
+    final now = ref.watch(nowProvider)();
 
     return AsyncValueView<List<Medication>>(
       value: expiringAsync,
@@ -528,7 +532,7 @@ class _ExpiringSoonCard extends ConsumerWidget {
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
-              final days = med.expiryDate?.difference(DateTime.now()).inDays;
+              final days = med.daysUntilExpiry(now);
               return ListTile(
                 leading: Icon(
                   Icons.warning_amber_rounded,

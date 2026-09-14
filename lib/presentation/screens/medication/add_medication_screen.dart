@@ -317,6 +317,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final caps = ref.watch(platformCapabilitiesProvider);
+    final now = ref.watch(nowProvider)();
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -444,6 +445,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     label: l10n.expiryDate,
                     icon: Icons.event,
                     date: _expiryDate,
+                    now: now,
                     onDateSelected: (date) =>
                         setState(() => _expiryDate = date),
                   ),
@@ -498,6 +500,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     label: l10n.purchaseDate,
                     icon: Icons.shopping_cart,
                     date: _purchaseDate,
+                    now: now,
                     onDateSelected: (date) =>
                         setState(() => _purchaseDate = date),
                   ),

@@ -36,7 +36,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   @override
   void initState() {
     super.initState();
-    _endDate = DateTime.now();
+    _endDate = ref.read(nowProvider)();
     _startDate = _endDate.subtract(const Duration(days: 30));
   }
 
@@ -158,7 +158,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         context: context,
                         initialDate: _endDate,
                         firstDate: _startDate,
-                        lastDate: DateTime.now(),
+                        lastDate: ref.read(nowProvider)(),
                       );
                       if (picked != null) setState(() => _endDate = picked);
                     },

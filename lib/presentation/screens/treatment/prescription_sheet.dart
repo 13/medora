@@ -94,7 +94,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
   void initState() {
     super.initState();
     final existing = widget.existing;
-    final now = DateTime.now();
+    final now = ref.read(nowProvider)();
     _roundedNow = DateTime(now.year, now.month, now.day, now.hour, now.minute);
 
     _dosageAmountController = TextEditingController(

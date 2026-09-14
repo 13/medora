@@ -241,7 +241,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
       if (prescriptions.isEmpty) return;
 
-      final now = DateTime.now();
+      final now = ref.read(nowProvider)();
       final today = DateTime(now.year, now.month, now.day);
       final tomorrow = today.add(const Duration(days: 1));
 

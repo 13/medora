@@ -3,43 +3,35 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 
 /// Badge showing medication expiry status.
 class ExpiryBadge extends StatelessWidget {
-  const ExpiryBadge({super.key, required this.expiryDate});
+  const ExpiryBadge({super.key, required this.expiryDate, required this.now});
 
   final DateTime? expiryDate;
 
-  // Cache computed values as static to avoid recalculation
-  static DateTime? _lastNowCache;
-  static DateTime? _lastNow;
-
-  static DateTime _getCachedNow() {
-    final now = DateTime.now();
-    // Cache for 1 minute to avoid excessive DateTime.now() calls
-    if (_lastNowCache == null ||
-        now.difference(_lastNowCache!).inSeconds > 60) {
-      _lastNowCache = now;
-      _lastNow = DateTime(now.year, now.month, now.day);
-    }
-    return _lastNow!;
-  }
+  /// "Now" injected by the nearest consumer (`ref.watch(nowProvider)()`).
+  /// The badge never reads the wall clock itself, so its rendering is
+  /// deterministic under test and cannot drift between rebuilds.
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
-    if (expiryDate == null) {
+    final expiry = expiryDate;
+    if (expiry == null) {
       return const SizedBox.shrink();
     }
 
     final l10n = AppLocalizations.of(context);
-    final now = _getCachedNow();
-    final daysUntilExpiry = expiryDate!.difference(now).inDays;
+    final daysUntilExpiry = calendarDaysBetween(now, expiry);
     final medora = context.medora;
 
     final (bg, fg, label) = daysUntilExpiry < 0
@@ -218,7 +210,7 @@ void showDoseDetailBottomSheet({
   final l10n = AppLocalizations.of(context);
 
   // Determine date label
-  final now = DateTime.now();
+  final now = ref.read(nowProvider)();
   final today = DateTime(now.year, now.month, now.day);
   final doseDate = DateTime(
     dose.scheduledTime.year,

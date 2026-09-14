@@ -937,7 +937,7 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
         setState(() {
           _isSyncing = false;
           _statusMessage = null;
-          _lastSync = DateTime.now();
+          _lastSync = ref.read(nowProvider)();
           _count = count;
         });
         ScaffoldMessenger.of(

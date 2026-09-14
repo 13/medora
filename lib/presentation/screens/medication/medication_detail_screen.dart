@@ -140,7 +140,10 @@ class MedicationDetailScreen extends ConsumerWidget {
               // Status badges
               Row(
                 children: [
-                  ExpiryBadge(expiryDate: med.expiryDate),
+                  ExpiryBadge(
+                    expiryDate: med.expiryDate,
+                    now: ref.watch(nowProvider)(),
+                  ),
                   const SizedBox(width: 8),
                   StockIndicator(
                     quantity: med.quantity,

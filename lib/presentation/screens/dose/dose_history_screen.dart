@@ -47,7 +47,7 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
+    final now = ref.read(nowProvider)();
     _endDate = DateTime(
       now.year,
       now.month,
@@ -181,7 +181,7 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: ref.read(nowProvider)().add(const Duration(days: 1)),
       initialDateRange: DateTimeRange(
         start: _startDate,
         end: _endDate.subtract(const Duration(days: 1)),

@@ -3,6 +3,7 @@
 /// Core domain entity representing a medication in the inventory.
 library;
 
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/constants.dart';
 
 class Medication {
@@ -60,19 +61,32 @@ class Medication {
   String? get activeIngredient =>
       activeIngredients.isNotEmpty ? activeIngredients.join(', ') : null;
 
-  /// Returns true if the medication is expiring within [days].
-  bool isExpiringSoon({int days = 30}) {
-    if (expiryDate == null) return false;
-    final now = DateTime.now();
-    final diff = expiryDate!.difference(now).inDays;
-    return diff >= 0 && diff <= days;
+  /// Whole days from [now] until the expiry date, or `null` when no expiry
+  /// date is set. Negative once the medication has expired.
+  int? daysUntilExpiry(DateTime now) {
+    final expiry = expiryDate;
+    if (expiry == null) return null;
+    return calendarDaysBetween(now, expiry);
   }
 
-  /// Returns true if the medication has expired.
-  bool get isExpired {
-    if (expiryDate == null) return false;
-    return expiryDate!.isBefore(DateTime.now());
+  /// Returns true if the medication is expiring within [days] of [now]
+  /// (defaults to the system clock when no clock is injected).
+  bool isExpiringSoon({int days = 30, DateTime? now}) {
+    final remaining = daysUntilExpiry(now ?? systemNow());
+    if (remaining == null) return false;
+    return remaining >= 0 && remaining <= days;
   }
+
+  /// Returns true if the medication had expired at [now].
+  bool expiredAt(DateTime now) {
+    final expiry = expiryDate;
+    if (expiry == null) return false;
+    return expiry.isBefore(now);
+  }
+
+  /// Returns true if the medication has expired, per the system clock.
+  /// Prefer [expiredAt] wherever a clock is available.
+  bool get isExpired => expiredAt(systemNow());
 
   /// Returns true if stock is at or below minimum level.
   bool get isLowStock => quantity <= minimumStockLevel;

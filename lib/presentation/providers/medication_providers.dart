@@ -117,8 +117,12 @@ final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
   // Watch the medication list to trigger updates
   final meds = await ref.watch(medicationListProvider.future);
 
+  final now = ref.watch(nowProvider)();
+
   return meds
-      .where((m) => !m.isArchived && m.isExpiringSoon() && !m.isExpired)
+      .where(
+        (m) => !m.isArchived && m.isExpiringSoon(now: now) && !m.expiredAt(now),
+      )
       .toList();
 });
 

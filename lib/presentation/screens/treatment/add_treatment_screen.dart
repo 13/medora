@@ -31,7 +31,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
 
   List<String> _patientTags = [];
   List<String> _symptomTags = [];
-  DateTime _startDate = DateTime.now();
+  late DateTime _startDate;
   DateTime? _endDate;
   bool _isLoading = false;
   bool _isEditMode = false;
@@ -40,6 +40,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
   @override
   void initState() {
     super.initState();
+    _startDate = ref.read(nowProvider)();
     _nameController = TextEditingController();
     _notesController = TextEditingController();
     _isEditMode = widget.treatmentId != null;
