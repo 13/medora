@@ -19,6 +19,28 @@ class FamilyRemoteDatasource {
     return FamilyModel.fromJson(response);
   }
 
+  Future<void> upsertFamily(FamilyModel family) async {
+    await _client.from('families').upsert(family.toJson());
+  }
+
+  Future<void> upsertMember(FamilyMemberModel member) async {
+    await _client.from('family_members').upsert(member.toJson());
+  }
+
+  /// Joins via the `join_family` RPC (security definer; see the 2026-09-14
+  /// migration) so a non-owner can join without a SELECT policy on families.
+  Future<({FamilyModel family, FamilyMemberModel member})> joinFamily(
+      String inviteCode, String displayName) async {
+    final response = await _client.rpc('join_family', params: {
+      'p_invite_code': inviteCode,
+      'p_display_name': displayName,
+    }) as Map<String, dynamic>;
+    return (
+      family: FamilyModel.fromJson(response['family'] as Map<String, dynamic>),
+      member: FamilyMemberModel.fromJson(response['member'] as Map<String, dynamic>),
+    );
+  }
+
   Future<FamilyModel?> getFamilyByInviteCode(String code) async {
     final response = await _client
         .from('families')
@@ -64,10 +86,12 @@ class FamilyRemoteDatasource {
   }
 
   Future<FamilyMemberModel?> getCurrentMembership() async {
-    // In MVP mode without auth, look for the first member record
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) return null;
     final response = await _client
         .from('family_members')
         .select()
+        .eq('user_id', userId)
         .limit(1)
         .maybeSingle();
     if (response == null) return null;

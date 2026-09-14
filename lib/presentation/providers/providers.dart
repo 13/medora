@@ -29,6 +29,7 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
@@ -199,6 +200,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     doseLogRemote: ref.watch(doseLogDatasourceProvider),
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
+    cursors: ref.watch(syncCursorStoreProvider),
   );
   ref.onDispose(service.dispose);
   return service;

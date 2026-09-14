@@ -24,6 +24,7 @@ import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/models/family_model.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/sync_cursor_store.dart';
 
 /// Current state of the sync process.
 enum SyncState { idle, syncing, error, success }
@@ -40,7 +41,16 @@ class SyncService {
     required this.doseLogRemote,
     required this.familyLocal,
     required this.familyRemote,
-  });
+    SyncCursorStore? cursors,
+    bool Function()? isOnline,
+    String? Function()? currentUserId,
+    Stream<bool>? onlineStream,
+    DateTime Function()? now,
+  })  : _cursors = cursors ?? SyncCursorStore.inMemory(),
+        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
+        _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
+        _onlineStream = onlineStream ?? ConnectivityService.instance.onlineStream,
+        _now = now ?? DateTime.now;
 
   final MedicationLocalDatasource medicationLocal;
   final MedicationRemoteDatasource? medicationRemote;
@@ -52,6 +62,16 @@ class SyncService {
   final DoseLogRemoteDatasource? doseLogRemote;
   final FamilyLocalDatasource familyLocal;
   final FamilyRemoteDatasource? familyRemote;
+
+  // Wired now so the seam exists; read by the delta pull in a later task.
+  // ignore: unused_field
+  final SyncCursorStore _cursors;
+  final bool Function() _isOnline;
+  final String? Function() _currentUserId;
+  final Stream<bool> _onlineStream;
+  final DateTime Function() _now;
+
+  bool get _isAuthenticated => _currentUserId() != null;
 
   /// True when every remote datasource exists (cloud mode, configured build).
   bool get isAvailable =>
@@ -71,7 +91,7 @@ class SyncService {
 
   /// Start listening to connectivity and auto-sync when coming online.
   void startAutoSync() {
-    ConnectivityService.instance.onlineStream.listen((isOnline) {
+    _onlineStream.listen((isOnline) {
       if (isOnline) {
         syncAll();
       }
@@ -85,17 +105,17 @@ class SyncService {
       return;
     }
     if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) {
+    if (!_isOnline()) {
       debugPrint('Sync: skipped (offline)');
       return;
     }
-    if (!SupabaseConfig.isAuthenticated) {
+    if (!_isAuthenticated) {
       debugPrint('Sync: skipped (unauthenticated)');
       return;
     }
 
     _setState(SyncState.syncing);
-    debugPrint('Sync: starting full cycle (user: ${SupabaseConfig.currentUserId})...');
+    debugPrint('Sync: starting full cycle (user: ${_currentUserId()})...');
 
     try {
       // 1. Push only PENDING local changes to Supabase
@@ -117,7 +137,7 @@ class SyncService {
       // Dose logs depend on prescriptions
       await _pullDoseLogs();
 
-      _lastSyncTime = DateTime.now();
+      _lastSyncTime = _now();
       debugPrint('Sync: cycle completed successfully at $_lastSyncTime');
       _setState(SyncState.success);
 
@@ -140,11 +160,11 @@ class SyncService {
       return;
     }
     if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) {
+    if (!_isOnline()) {
       debugPrint('Force Push: skipped (offline)');
       return;
     }
-    if (!SupabaseConfig.isAuthenticated) return;
+    if (!_isAuthenticated) return;
 
     _setState(SyncState.syncing);
     debugPrint('Sync: starting FORCE PUSH...');
@@ -166,11 +186,11 @@ class SyncService {
       return;
     }
     if (_currentState == SyncState.syncing) return;
-    if (!ConnectivityService.instance.isOnline) {
+    if (!_isOnline()) {
       debugPrint('Force Pull: skipped (offline)');
       return;
     }
-    if (!SupabaseConfig.isAuthenticated) return;
+    if (!_isAuthenticated) return;
 
     _setState(SyncState.syncing);
     debugPrint('Sync: starting FORCE PULL...');
@@ -199,7 +219,7 @@ class SyncService {
   /// If [forceAll] is true, pushes everything regardless of sync_status.
   Future<void> _pushPendingChanges({bool forceAll = false}) async {
     final db = await AppDatabase.instance.database;
-    final userId = SupabaseConfig.currentUserId;
+    final userId = _currentUserId();
     if (userId == null) return;
 
     final where = forceAll ? null : 'sync_status != ?';

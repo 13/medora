@@ -24,6 +24,17 @@ class MedicationRemoteDatasource {
         .toList();
   }
 
+  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
+  Future<List<MedicationModel>> getMedicationsSince(DateTime? since) async {
+    final base = _client.from(AppConstants.medicationsTable).select();
+    final filtered =
+        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final response = await filtered.order('updated_at');
+    return (response as List)
+        .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Get a single medication by ID.
   Future<MedicationModel> getMedicationById(String id) async {
     final response = await _client

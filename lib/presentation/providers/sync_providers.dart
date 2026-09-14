@@ -1,0 +1,11 @@
+/// Medora - Sync-related providers that must not depend on providers.dart
+/// (app_mode_provider.dart imports this file).
+library;
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
+import 'package:medora/services/sync_cursor_store.dart';
+
+final syncCursorStoreProvider = Provider<SyncCursorStore>(
+  (ref) => SyncCursorStore(ref.watch(sharedPreferencesProvider)),
+);

@@ -20,6 +20,19 @@ class DoseLogRemoteDatasource {
         .toList();
   }
 
+  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
+  Future<List<DoseLogModel>> getDoseLogsSince(DateTime? since) async {
+    final base = _client
+        .from(AppConstants.doseLogsTable)
+        .select('*, prescriptions(id, medications(name))');
+    final filtered =
+        since == null ? base : base.gt('updated_at', since.toUtc().toIso8601String());
+    final response = await filtered.order('updated_at');
+    return (response as List)
+        .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
