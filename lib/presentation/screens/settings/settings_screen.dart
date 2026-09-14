@@ -9,6 +9,7 @@ import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
@@ -33,6 +34,8 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
     final user = ref.watch(currentUserProvider);
+    final appMode = ref.watch(appModeProvider);
+    final cloudAvailable = SupabaseConfig.isConfigured;
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
     final appVersionAsync = ref.watch(appVersionProvider);
@@ -44,16 +47,32 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.settings)),
       body: ListView(
         children: [
-          // ── Account ────────────────────────────────────────
-          _SectionTitle(user?.isAnonymous == true ? "Guest Account" : "Account"),
+          // ── Cloud sync ─────────────────────────────────────
+          _SectionTitle(l10n.cloudSync),
           ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: Text(user?.email ?? (user?.isAnonymous == true ? "Anonymous User" : "Not signed in")),
-            subtitle: Text(user?.id ?? ""),
-            trailing: TextButton(
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-              child: Text(l10n.signOut, style: const TextStyle(color: Colors.red)),
+            leading: Icon(
+              !cloudAvailable
+                  ? Icons.cloud_off
+                  : appMode == AppMode.cloud ? Icons.cloud_done : Icons.phone_android,
             ),
+            title: Text(
+              !cloudAvailable
+                  ? l10n.cloudSyncUnavailable
+                  : appMode == AppMode.cloud
+                      ? l10n.cloudSyncOn(user?.email ?? '')
+                      : l10n.cloudSyncOff,
+            ),
+            trailing: !cloudAvailable
+                ? null
+                : appMode == AppMode.cloud
+                    ? TextButton(
+                        onPressed: () => _confirmTurnOffCloud(context, ref, l10n),
+                        child: Text(l10n.turnOff),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.cloud),
+                        child: Text(l10n.turnOn),
+                      ),
           ),
           const Divider(),
 
@@ -181,87 +200,90 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
 
           // ── Data & Sync ────────────────────────────────────
-          _SectionTitle(l10n.dataAndSync),
-          ListTile(
-            leading: Icon(
-              isOnline ? Icons.cloud_done : Icons.cloud_off,
-              color: isOnline ? AppTheme.successColor : Colors.orange,
-            ),
-            title: Text(isOnline ? l10n.online : l10n.offline),
-            subtitle: Text(isOnline
-                ? l10n.connectedSyncsAutomatically
-                : l10n.usingLocalData),
-            trailing: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
+          if (appMode == AppMode.cloud) ...[
+            _SectionTitle(l10n.dataAndSync),
+            ListTile(
+              leading: Icon(
+                isOnline ? Icons.cloud_done : Icons.cloud_off,
                 color: isOnline ? AppTheme.successColor : Colors.orange,
               ),
+              title: Text(isOnline ? l10n.online : l10n.offline),
+              subtitle: Text(isOnline
+                  ? l10n.connectedSyncsAutomatically
+                  : l10n.usingLocalData),
+              trailing: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isOnline ? AppTheme.successColor : Colors.orange,
+                ),
+              ),
             ),
-          ),
-          ListTile(
-            leading: Icon(
-              _syncIcon(syncState),
-              color: _syncColor(syncState),
+            ListTile(
+              leading: Icon(
+                _syncIcon(syncState),
+                color: _syncColor(syncState),
+              ),
+              title: Text(l10n.syncNow),
+              subtitle: Text(_syncLabel(l10n, syncState)),
+              trailing: syncState == SyncState.syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync),
+              onTap: (syncState == SyncState.syncing || !isOnline)
+                  ? null
+                  : () => ref.read(syncServiceProvider).syncAll(),
             ),
-            title: Text(l10n.syncNow),
-            subtitle: Text(_syncLabel(l10n, syncState)),
-            trailing: syncState == SyncState.syncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.sync),
-            onTap: (syncState == SyncState.syncing || !isOnline)
-                ? null
-                : () => ref.read(syncServiceProvider).syncAll(),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: (syncState == SyncState.syncing || !isOnline)
-                        ? null
-                        : () => _showForceSyncDialog(context, ref, true),
-                    icon: const Icon(Icons.upload_outlined, size: 18),
-                    label: const Text("Force Push"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.orange,
-                      side: const BorderSide(color: Colors.orange),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: (syncState == SyncState.syncing || !isOnline)
+                          ? null
+                          : () => _showForceSyncDialog(context, ref, true),
+                      icon: const Icon(Icons.upload_outlined, size: 18),
+                      label: const Text("Force Push"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: (syncState == SyncState.syncing || !isOnline)
-                        ? null
-                        : () => _showForceSyncDialog(context, ref, false),
-                    icon: const Icon(Icons.download_outlined, size: 18),
-                    label: const Text("Force Pull"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primaryColor,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: (syncState == SyncState.syncing || !isOnline)
+                          ? null
+                          : () => _showForceSyncDialog(context, ref, false),
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: const Text("Force Pull"),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryColor,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const Divider(),
+            const Divider(),
+          ],
 
           // ── Features ───────────────────────────────────────
           _SectionTitle(l10n.features),
-          ListTile(
-            leading: const Icon(Icons.people),
-            title: Text(l10n.familySharing),
-            subtitle: Text(l10n.shareCabinetWithFamily),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push(AppRoutes.family),
-          ),
+          if (appMode == AppMode.cloud)
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: Text(l10n.familySharing),
+              subtitle: Text(l10n.shareCabinetWithFamily),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push(AppRoutes.family),
+            ),
           ListTile(
             leading: const Icon(Icons.download_outlined),
             title: Text(l10n.exportData),
@@ -296,6 +318,23 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmTurnOffCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.turnOffCloudSync),
+        content: Text(l10n.turnOffCloudSyncConfirm),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.turnOff)),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(authControllerProvider.notifier).signOut();
+    await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
   }
 
   void _showForceSyncDialog(BuildContext context, WidgetRef ref, bool isPush) {

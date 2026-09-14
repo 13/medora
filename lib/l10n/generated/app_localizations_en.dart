@@ -12,6 +12,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'Medora';
 
   @override
+  String get appDescription => 'Medora - Home Medicine Cabinet Manager';
+
+  @override
   String get navHome => 'Dashboard';
 
   @override
@@ -1085,9 +1088,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get password => 'Password';
 
   @override
-  String get continueAsGuest => 'Continue as Guest';
-
-  @override
   String get signOut => 'Sign Out';
 
   @override
@@ -1095,9 +1095,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dontHaveAccount => 'Don\'t have an account? Sign Up';
-
-  @override
-  String get useOfflineMode => 'Use Offline Mode';
 
   @override
   String get forcePush => 'Force Push';
@@ -1152,4 +1149,61 @@ class AppLocalizationsEn extends AppLocalizations {
   String notificationReminderBody(String dosage) {
     return '$dosage — Tap to log your dose';
   }
+
+  @override
+  String get useOnThisDevice => 'Use Medora on this device';
+
+  @override
+  String get useOnThisDeviceDesc =>
+      'Your data stays on this device. You can turn on cloud sync later in Settings.';
+
+  @override
+  String get orSignInForCloud => 'Or sign in to sync across devices';
+
+  @override
+  String get cloudSync => 'Cloud sync';
+
+  @override
+  String cloudSyncOn(String email) {
+    return 'On — signed in as $email';
+  }
+
+  @override
+  String get cloudSyncOff => 'Off — data is stored only on this device';
+
+  @override
+  String get cloudSyncUnavailable =>
+      'Unavailable — this build has no cloud configuration';
+
+  @override
+  String get turnOnCloudSync => 'Turn on cloud sync';
+
+  @override
+  String get turnOffCloudSync => 'Turn off cloud sync';
+
+  @override
+  String get turnOffCloudSyncConfirm =>
+      'You will be signed out. Your data stays on this device.';
+
+  @override
+  String get localOnlyMode => 'Local only';
+
+  @override
+  String get unlockMedora => 'Unlock Medora';
+
+  @override
+  String get cloudRequiredForFamily =>
+      'Family sharing needs cloud sync. Turn it on in Settings.';
+
+  @override
+  String get invalidEmail => 'Enter a valid email address';
+
+  @override
+  String get passwordTooShort => 'Password must be at least 6 characters';
+
+  @override
+  String get turnOn => 'Turn on';
+
+  @override
+  String get turnOff => 'Turn off';
 }

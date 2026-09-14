@@ -12,6 +12,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get appTitle => 'Medora';
 
   @override
+  String get appDescription => 'Medora - Hausapotheken-Verwalter';
+
+  @override
   String get navHome => 'Dashboard';
 
   @override
@@ -1098,9 +1101,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get password => 'Passwort';
 
   @override
-  String get continueAsGuest => 'Als Gast fortfahren';
-
-  @override
   String get signOut => 'Abmelden';
 
   @override
@@ -1108,9 +1108,6 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get dontHaveAccount => 'Noch kein Konto? Registrieren';
-
-  @override
-  String get useOfflineMode => 'Offline-Modus nutzen';
 
   @override
   String get forcePush => 'Force Push';
@@ -1165,4 +1162,63 @@ class AppLocalizationsDe extends AppLocalizations {
   String notificationReminderBody(String dosage) {
     return '$dosage — Tippen zum Registrieren';
   }
+
+  @override
+  String get useOnThisDevice => 'Medora auf diesem Gerät verwenden';
+
+  @override
+  String get useOnThisDeviceDesc =>
+      'Deine Daten bleiben auf diesem Gerät. Cloud-Sync kannst du später in den Einstellungen aktivieren.';
+
+  @override
+  String get orSignInForCloud =>
+      'Oder anmelden, um geräteübergreifend zu synchronisieren';
+
+  @override
+  String get cloudSync => 'Cloud-Synchronisierung';
+
+  @override
+  String cloudSyncOn(String email) {
+    return 'An — angemeldet als $email';
+  }
+
+  @override
+  String get cloudSyncOff =>
+      'Aus — Daten werden nur auf diesem Gerät gespeichert';
+
+  @override
+  String get cloudSyncUnavailable =>
+      'Nicht verfügbar — dieser Build hat keine Cloud-Konfiguration';
+
+  @override
+  String get turnOnCloudSync => 'Cloud-Sync einschalten';
+
+  @override
+  String get turnOffCloudSync => 'Cloud-Sync ausschalten';
+
+  @override
+  String get turnOffCloudSyncConfirm =>
+      'Du wirst abgemeldet. Deine Daten bleiben auf diesem Gerät.';
+
+  @override
+  String get localOnlyMode => 'Nur lokal';
+
+  @override
+  String get unlockMedora => 'Medora entsperren';
+
+  @override
+  String get cloudRequiredForFamily =>
+      'Familienfreigabe benötigt Cloud-Sync. Aktiviere ihn in den Einstellungen.';
+
+  @override
+  String get invalidEmail => 'Gib eine gültige E-Mail-Adresse ein';
+
+  @override
+  String get passwordTooShort => 'Das Passwort muss mindestens 6 Zeichen haben';
+
+  @override
+  String get turnOn => 'Einschalten';
+
+  @override
+  String get turnOff => 'Ausschalten';
 }
