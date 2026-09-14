@@ -605,7 +605,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get allRemindersCancelled => 'Alle Erinnerungen abgebrochen';
 
   @override
-  String get dataAndSync => 'Daten & Synchronisierung';
+  String get dataSection => 'Daten';
 
   @override
   String get online => 'Online';
@@ -638,7 +638,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Synchronisierung fehlgeschlagen — tippen zum Wiederholen';
 
   @override
-  String get features => 'Funktionen';
+  String get advanced => 'Erweitert';
 
   @override
   String get familySharing => 'Familienfreigabe';
@@ -917,14 +917,6 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get searchByBarcode => 'Nach Code suchen';
-
-  @override
-  String get archiveTreatment => 'Behandlung archivieren';
-
-  @override
-  String archiveTreatmentConfirm(String name) {
-    return '\"$name\" archivieren? Die Behandlung wird ins Archiv verschoben und kann später eingesehen werden.';
-  }
 
   @override
   String get archive => 'Archivieren';

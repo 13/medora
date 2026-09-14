@@ -81,32 +81,6 @@ class _TreatmentDetailScreenState
                             .read(treatmentListProvider.notifier)
                             .endTreatment(treatment.id);
                       }
-                    case 'archive':
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(l10n.archiveTreatment),
-                          content: Text(
-                            l10n.archiveTreatmentConfirm(treatment.name),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: Text(l10n.cancel),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: Text(l10n.archive),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirm == true && context.mounted) {
-                        ref
-                            .read(treatmentListProvider.notifier)
-                            .endTreatment(treatment.id);
-                        if (context.mounted) context.pop();
-                      }
                     case 'delete':
                       final confirm = await showDialog<bool>(
                         context: context,
@@ -144,17 +118,6 @@ class _TreatmentDetailScreenState
                         leading: Icon(Icons.stop_circle,
                             color: context.medora.warning),
                         title: Text(l10n.endTreatment),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  if (!treatment.isActive)
-                    PopupMenuItem(
-                      value: 'archive',
-                      child: ListTile(
-                        leading: Icon(Icons.archive,
-                            color: context.colors.onSurfaceVariant),
-                        title: Text(l10n.archiveTreatment),
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                       ),

@@ -597,7 +597,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get allRemindersCancelled => 'All reminders cancelled';
 
   @override
-  String get dataAndSync => 'Data & Sync';
+  String get dataSection => 'Data';
 
   @override
   String get online => 'Online';
@@ -628,7 +628,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncError => 'Sync failed — tap to retry';
 
   @override
-  String get features => 'Features';
+  String get advanced => 'Advanced';
 
   @override
   String get familySharing => 'Family Sharing';
@@ -904,14 +904,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get searchByBarcode => 'Search by code';
-
-  @override
-  String get archiveTreatment => 'Archive Treatment';
-
-  @override
-  String archiveTreatmentConfirm(String name) {
-    return 'Archive \"$name\"? It will be moved to the archive and can be viewed later.';
-  }
 
   @override
   String get archive => 'Archive';

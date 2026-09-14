@@ -601,7 +601,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get allRemindersCancelled => 'Tutti i promemoria annullati';
 
   @override
-  String get dataAndSync => 'Dati e sincronizzazione';
+  String get dataSection => 'Dati';
 
   @override
   String get online => 'Online';
@@ -632,7 +632,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get syncError => 'Sincronizzazione fallita — tocca per riprovare';
 
   @override
-  String get features => 'Funzionalità';
+  String get advanced => 'Avanzate';
 
   @override
   String get familySharing => 'Condivisione familiare';
@@ -911,14 +911,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get searchByBarcode => 'Cerca per codice';
-
-  @override
-  String get archiveTreatment => 'Archivia trattamento';
-
-  @override
-  String archiveTreatmentConfirm(String name) {
-    return 'Archiviare \"$name\"? Verrà spostato nell\'archivio e potrà essere consultato in seguito.';
-  }
 
   @override
   String get archive => 'Archivia';

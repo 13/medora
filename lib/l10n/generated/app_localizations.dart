@@ -1180,11 +1180,11 @@ abstract class AppLocalizations {
   /// **'All reminders cancelled'**
   String get allRemindersCancelled;
 
-  /// No description provided for @dataAndSync.
+  /// No description provided for @dataSection.
   ///
   /// In en, this message translates to:
-  /// **'Data & Sync'**
-  String get dataAndSync;
+  /// **'Data'**
+  String get dataSection;
 
   /// No description provided for @online.
   ///
@@ -1240,11 +1240,11 @@ abstract class AppLocalizations {
   /// **'Sync failed — tap to retry'**
   String get syncError;
 
-  /// No description provided for @features.
+  /// No description provided for @advanced.
   ///
   /// In en, this message translates to:
-  /// **'Features'**
-  String get features;
+  /// **'Advanced'**
+  String get advanced;
 
   /// No description provided for @familySharing.
   ///
@@ -1761,18 +1761,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search by code'**
   String get searchByBarcode;
-
-  /// No description provided for @archiveTreatment.
-  ///
-  /// In en, this message translates to:
-  /// **'Archive Treatment'**
-  String get archiveTreatment;
-
-  /// No description provided for @archiveTreatmentConfirm.
-  ///
-  /// In en, this message translates to:
-  /// **'Archive \"{name}\"? It will be moved to the archive and can be viewed later.'**
-  String archiveTreatmentConfirm(String name);
 
   /// No description provided for @archive.
   ///

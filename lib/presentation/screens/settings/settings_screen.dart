@@ -49,292 +49,329 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.settings)),
       body: ListView(
         children: [
-          // ── Cloud sync ─────────────────────────────────────
-          _SectionTitle(l10n.cloudSync),
-          ListTile(
-            leading: Icon(
-              !cloudAvailable
-                  ? Icons.cloud_off
-                  : appMode == AppMode.cloud ? Icons.cloud_done : Icons.phone_android,
-            ),
-            title: Text(
-              !cloudAvailable
-                  ? l10n.cloudSyncUnavailable
-                  : appMode == AppMode.cloud
-                      ? l10n.cloudSyncOn(user?.email ?? '')
-                      : l10n.cloudSyncOff,
-            ),
-            trailing: !cloudAvailable
-                ? null
-                : appMode == AppMode.cloud
-                    ? TextButton(
-                        onPressed: () => _confirmTurnOffCloud(context, ref, l10n),
-                        child: Text(l10n.turnOff),
-                      )
-                    : FilledButton.tonal(
-                        onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.cloud),
-                        child: Text(l10n.turnOn),
-                      ),
-          ),
-          const Divider(),
-
           // ── Appearance ─────────────────────────────────────
           _SectionTitle(l10n.appearance),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                // Dark mode
+                ListTile(
+                  leading: const Icon(Icons.dark_mode_outlined),
+                  title: Text(l10n.darkMode),
+                  subtitle: Text(_themeLabel(l10n, themeMode)),
+                  trailing: SegmentedButton<ThemeMode>(
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    segments: [
+                      ButtonSegment(
+                        value: ThemeMode.system,
+                        icon: const Icon(Icons.brightness_auto, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.light,
+                        icon: const Icon(Icons.light_mode, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: ThemeMode.dark,
+                        icon: const Icon(Icons.dark_mode, size: 18),
+                      ),
+                    ],
+                    selected: {themeMode},
+                    onSelectionChanged: (v) =>
+                        ref.read(themeModeProvider.notifier).set(v.first),
+                  ),
+                ),
 
-          // Dark mode
-          ListTile(
-            leading: const Icon(Icons.dark_mode_outlined),
-            title: Text(l10n.darkMode),
-            subtitle: Text(_themeLabel(l10n, themeMode)),
-            trailing: SegmentedButton<ThemeMode>(
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              segments: [
-                ButtonSegment(
-                  value: ThemeMode.system,
-                  icon: const Icon(Icons.brightness_auto, size: 18),
+                // Language
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: Text(l10n.language),
+                  subtitle: Text(_localeLabel(l10n, locale)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showLanguagePicker(context, ref, l10n, locale),
                 ),
-                ButtonSegment(
-                  value: ThemeMode.light,
-                  icon: const Icon(Icons.light_mode, size: 18),
-                ),
-                ButtonSegment(
-                  value: ThemeMode.dark,
-                  icon: const Icon(Icons.dark_mode, size: 18),
+
+                // Color Scheme
+                ListTile(
+                  leading: const Icon(Icons.palette_outlined),
+                  title: Text(l10n.colorScheme),
+                  subtitle: Text(l10n.colorSchemeDesc),
+                  trailing: _ColorDot(ref.watch(colorSchemeProvider).color),
+                  onTap: () => _showColorSchemePicker(context, ref, l10n),
                 ),
               ],
-              selected: {themeMode},
-              onSelectionChanged: (v) =>
-                  ref.read(themeModeProvider.notifier).set(v.first),
             ),
           ),
 
-          // Language
-          ListTile(
-            leading: const Icon(Icons.language),
-            title: Text(l10n.language),
-            subtitle: Text(_localeLabel(l10n, locale)),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showLanguagePicker(context, ref, l10n, locale),
+          // ── Notifications ──────────────────────────────────
+          _SectionTitle(l10n.notifications),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.notifications_outlined),
+                  title: Text(l10n.enableNotifications),
+                  subtitle: Text(l10n.receiveDoseReminders),
+                  value: remindersEnabled,
+                  onChanged: (value) async {
+                    if (value) await ReminderService.instance.requestPermissions();
+                    await ref.read(remindersEnabledProvider.notifier).set(value);
+                    if (value) ref.read(reminderSchedulerProvider).reset();
+                    await ref.read(reminderSchedulerProvider).reconcile();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.cancel_outlined),
+                  title: Text(l10n.cancelAllReminders),
+                  subtitle: Text(l10n.removePendingNotifications),
+                  enabled: remindersEnabled,
+                  onTap: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(l10n.cancelAllReminders),
+                        content: Text(l10n.cancelAllRemindersConfirm),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text(l10n.no),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(l10n.yes),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm == true && context.mounted) {
+                      await ref.read(reminderPortProvider).cancelAll();
+                      ref.read(reminderSchedulerProvider).reset();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l10n.allRemindersCancelled)),
+                        );
+                      }
+                    }
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.timer_off_outlined),
+                  title: Text(l10n.missedGracePeriod),
+                  subtitle: Text(l10n.missedGracePeriodDesc),
+                  trailing: DropdownButton<int>(
+                    value: kMissedGraceOptions.contains(graceMinutes) ? graceMinutes : 120,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      for (final m in kMissedGraceOptions)
+                        DropdownMenuItem(
+                          value: m,
+                          child: Text(m < 60 ? l10n.minutesShort(m) : l10n.hoursShort(m ~/ 60)),
+                        ),
+                    ],
+                    onChanged: (v) async {
+                      if (v == null) return;
+                      await ref.read(missedGraceMinutesProvider.notifier).set(v);
+                      await ref.read(appStartupTasksProvider).run(includeSync: false);
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
-
-          // Color Scheme
-          ListTile(
-            leading: const Icon(Icons.palette_outlined),
-            title: Text(l10n.colorScheme),
-            subtitle: Text(l10n.colorSchemeDesc),
-            trailing: _ColorDot(ref.watch(colorSchemeProvider).color),
-            onTap: () => _showColorSchemePicker(context, ref, l10n),
-          ),
-          const Divider(),
 
           // ── Security ───────────────────────────────────────
           if (caps.hasBiometrics) ...[
             _SectionTitle(l10n.securitySection),
-            SwitchListTile(
-              secondary: const Icon(Icons.fingerprint),
-              title: Text(l10n.fingerprintUnlock),
-              subtitle: Text(l10n.fingerprintUnlockDesc),
-              value: biometricsEnabled,
-              onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
-            ),
-            const Divider(),
-          ],
-
-          // ── AIFA Database ──────────────────────────────────
-          _SectionTitle(l10n.aifaDatabase),
-          _AifaDatabaseTile(),
-          const Divider(),
-
-          // ── Notifications ──────────────────────────────────
-          _SectionTitle(l10n.notifications),
-          SwitchListTile(
-            secondary: const Icon(Icons.notifications_outlined),
-            title: Text(l10n.enableNotifications),
-            subtitle: Text(l10n.receiveDoseReminders),
-            value: remindersEnabled,
-            onChanged: (value) async {
-              if (value) await ReminderService.instance.requestPermissions();
-              await ref.read(remindersEnabledProvider.notifier).set(value);
-              if (value) ref.read(reminderSchedulerProvider).reset();
-              await ref.read(reminderSchedulerProvider).reconcile();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.cancel_outlined),
-            title: Text(l10n.cancelAllReminders),
-            subtitle: Text(l10n.removePendingNotifications),
-            enabled: remindersEnabled,
-            onTap: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text(l10n.cancelAllReminders),
-                  content: Text(l10n.cancelAllRemindersConfirm),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: Text(l10n.no),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: Text(l10n.yes),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true && context.mounted) {
-                await ref.read(reminderPortProvider).cancelAll();
-                ref.read(reminderSchedulerProvider).reset();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(l10n.allRemindersCancelled)),
-                  );
-                }
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.timer_off_outlined),
-            title: Text(l10n.missedGracePeriod),
-            subtitle: Text(l10n.missedGracePeriodDesc),
-            trailing: DropdownButton<int>(
-              value: kMissedGraceOptions.contains(graceMinutes) ? graceMinutes : 120,
-              underline: const SizedBox.shrink(),
-              items: [
-                for (final m in kMissedGraceOptions)
-                  DropdownMenuItem(
-                    value: m,
-                    child: Text(m < 60 ? l10n.minutesShort(m) : l10n.hoursShort(m ~/ 60)),
-                  ),
-              ],
-              onChanged: (v) async {
-                if (v == null) return;
-                await ref.read(missedGraceMinutesProvider.notifier).set(v);
-                await ref.read(appStartupTasksProvider).run(includeSync: false);
-              },
-            ),
-          ),
-          const Divider(),
-
-          // ── Data & Sync ────────────────────────────────────
-          if (appMode == AppMode.cloud) ...[
-            _SectionTitle(l10n.dataAndSync),
-            ListTile(
-              leading: Icon(
-                isOnline ? Icons.cloud_done : Icons.cloud_off,
-                color: isOnline ? context.medora.success : context.medora.warning,
-              ),
-              title: Text(isOnline ? l10n.online : l10n.offline),
-              subtitle: Text(isOnline
-                  ? l10n.connectedSyncsAutomatically
-                  : l10n.usingLocalData),
-              trailing: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isOnline ? context.medora.success : context.medora.warning,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: Icon(
-                _syncIcon(syncState),
-                color: _syncColor(context, syncState),
-              ),
-              title: Text(l10n.syncNow),
-              subtitle: Text(_syncLabel(l10n, syncState)),
-              trailing: syncState == SyncState.syncing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.sync),
-              onTap: (syncState == SyncState.syncing || !isOnline)
-                  ? null
-                  : () => ref.read(syncServiceProvider).syncAll(),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Row(
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (syncState == SyncState.syncing || !isOnline)
-                          ? null
-                          : () => _showForceSyncDialog(context, ref, l10n, true),
-                      icon: const Icon(Icons.upload_outlined, size: 18),
-                      label: Text(l10n.forcePush),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: context.medora.warning,
-                        side: BorderSide(color: context.medora.warning),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (syncState == SyncState.syncing || !isOnline)
-                          ? null
-                          : () => _showForceSyncDialog(context, ref, l10n, false),
-                      icon: const Icon(Icons.download_outlined, size: 18),
-                      label: Text(l10n.forcePull),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: context.colors.primary,
-                      ),
-                    ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.fingerprint),
+                    title: Text(l10n.fingerprintUnlock),
+                    subtitle: Text(l10n.fingerprintUnlockDesc),
+                    value: biometricsEnabled,
+                    onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
                   ),
                 ],
               ),
             ),
-            const Divider(),
           ],
 
-          // ── Features ───────────────────────────────────────
-          _SectionTitle(l10n.features),
-          if (appMode == AppMode.cloud)
-            ListTile(
-              leading: const Icon(Icons.people),
-              title: Text(l10n.familySharing),
-              subtitle: Text(l10n.shareCabinetWithFamily),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push(AppRoutes.family),
+          // ── Data ───────────────────────────────────────────
+          _SectionTitle(l10n.dataSection),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                _AifaDatabaseTile(),
+                if (caps.hasFileShare)
+                  ListTile(
+                    leading: const Icon(Icons.download_outlined),
+                    title: Text(l10n.exportData),
+                    subtitle: Text(l10n.exportAsCsvOrPdf),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.export),
+                  ),
+                if (appMode == AppMode.cloud)
+                  ListTile(
+                    leading: const Icon(Icons.people),
+                    title: Text(l10n.familySharing),
+                    subtitle: Text(l10n.shareCabinetWithFamily),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.family),
+                  ),
+              ],
             ),
-          if (caps.hasFileShare)
-            ListTile(
-              leading: const Icon(Icons.download_outlined),
-              title: Text(l10n.exportData),
-              subtitle: Text(l10n.exportAsCsvOrPdf),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.push(AppRoutes.export),
+          ),
+
+          // ── Cloud sync ─────────────────────────────────────
+          _SectionTitle(l10n.cloudSync),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(
+                    !cloudAvailable
+                        ? Icons.cloud_off
+                        : appMode == AppMode.cloud ? Icons.cloud_done : Icons.phone_android,
+                  ),
+                  title: Text(
+                    !cloudAvailable
+                        ? l10n.cloudSyncUnavailable
+                        : appMode == AppMode.cloud
+                            ? l10n.cloudSyncOn(user?.email ?? '')
+                            : l10n.cloudSyncOff,
+                  ),
+                  trailing: !cloudAvailable
+                      ? null
+                      : appMode == AppMode.cloud
+                          ? TextButton(
+                              onPressed: () => _confirmTurnOffCloud(context, ref, l10n),
+                              child: Text(l10n.turnOff),
+                            )
+                          : FilledButton.tonal(
+                              onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.cloud),
+                              child: Text(l10n.turnOn),
+                            ),
+                ),
+                if (appMode == AppMode.cloud) ...[
+                  ListTile(
+                    leading: Icon(
+                      isOnline ? Icons.cloud_done : Icons.cloud_off,
+                      color: isOnline ? context.medora.success : context.medora.warning,
+                    ),
+                    title: Text(isOnline ? l10n.online : l10n.offline),
+                    subtitle: Text(isOnline
+                        ? l10n.connectedSyncsAutomatically
+                        : l10n.usingLocalData),
+                    trailing: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isOnline ? context.medora.success : context.medora.warning,
+                      ),
+                    ),
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      _syncIcon(syncState),
+                      color: _syncColor(context, syncState),
+                    ),
+                    title: Text(l10n.syncNow),
+                    subtitle: Text(_syncLabel(l10n, syncState)),
+                    trailing: syncState == SyncState.syncing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.sync),
+                    onTap: (syncState == SyncState.syncing || !isOnline)
+                        ? null
+                        : () => ref.read(syncServiceProvider).syncAll(),
+                  ),
+                  ExpansionTile(
+                    title: Text(l10n.advanced),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: (syncState == SyncState.syncing || !isOnline)
+                                  ? null
+                                  : () => _showForceSyncDialog(context, ref, l10n, true),
+                              icon: const Icon(Icons.upload_outlined, size: 18),
+                              label: Text(l10n.forcePush),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: context.medora.warning,
+                                side: BorderSide(color: context.medora.warning),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: (syncState == SyncState.syncing || !isOnline)
+                                  ? null
+                                  : () => _showForceSyncDialog(context, ref, l10n, false),
+                              icon: const Icon(Icons.download_outlined, size: 18),
+                              label: Text(l10n.forcePull),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: context.colors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
-          const Divider(),
+          ),
 
           // ── Danger Zone ────────────────────────────────────
           _SectionTitle(l10n.dangerZone),
-          ListTile(
-            leading: Icon(Icons.delete_forever, color: context.colors.error),
-            title: Text(l10n.deleteAllData,
-                style: TextStyle(color: context.colors.error)),
-            subtitle: Text(l10n.deleteAllDataDesc),
-            onTap: () => _showDeleteAllDialog(context, ref, l10n),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.delete_forever, color: context.colors.error),
+                  title: Text(l10n.deleteAllData,
+                      style: TextStyle(color: context.colors.error)),
+                  subtitle: Text(l10n.deleteAllDataDesc),
+                  onTap: () => _showDeleteAllDialog(context, ref, l10n),
+                ),
+              ],
+            ),
           ),
-          const Divider(),
 
           // ── About ──────────────────────────────────────────
           _SectionTitle(l10n.about),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: Text(l10n.appVersion),
-            subtitle: Text(appVersionAsync.maybeWhen(
-              data: (v) => v,
-              orElse: () => '…',
-            )),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(l10n.appVersion),
+                  subtitle: Text(appVersionAsync.maybeWhen(
+                    data: (v) => v,
+                    orElse: () => '…',
+                  )),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 32),
         ],

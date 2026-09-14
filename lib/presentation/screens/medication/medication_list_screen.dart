@@ -172,8 +172,21 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                           children: [
                             if (!med.isArchived)
                               SlidableAction(
-                                onPressed: (_) {
-                                  ref.read(medicationListProvider.notifier).archiveMedication(med.id);
+                                onPressed: (_) async {
+                                  await ref.read(medicationListProvider.notifier).archiveMedication(med.id);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(l10n.archived),
+                                        action: SnackBarAction(
+                                          label: l10n.undo,
+                                          onPressed: () => ref
+                                              .read(medicationListProvider.notifier)
+                                              .unarchiveMedication(med.id),
+                                        ),
+                                      ),
+                                    );
+                                  }
                                 },
                                 backgroundColor: context.colors.tertiaryContainer,
                                 foregroundColor: context.colors.onTertiaryContainer,

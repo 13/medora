@@ -176,18 +176,6 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                 icon: Icons.stop_circle,
                                 label: l10n.end,
                               ),
-                            if (!t.isActive)
-                              SlidableAction(
-                                onPressed: (_) {
-                                  ref
-                                      .read(treatmentListProvider.notifier)
-                                      .deleteTreatment(t.id);
-                                },
-                                backgroundColor: context.colors.tertiaryContainer,
-                                foregroundColor: context.colors.onTertiaryContainer,
-                                icon: Icons.archive,
-                                label: l10n.archive,
-                              ),
                             SlidableAction(
                               onPressed: (_) async {
                                 final confirm = await showDialog<bool>(
