@@ -4,6 +4,12 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Medora uses the camera to read the AIC code printed on medication packages.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Medora lets you attach a photo of a medication package from your library.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Medora can lock your medicine cabinet behind Face ID.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

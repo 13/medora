@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -336,7 +337,7 @@ class MedicationDetailScreen extends ConsumerWidget {
               ],
 
               // Photo (at bottom)
-              if (med.imagePath != null && File(med.imagePath!).existsSync()) ...[
+              if (!kIsWeb && med.imagePath != null && File(med.imagePath!).existsSync()) ...[
                 const SizedBox(height: 16),
                 GestureDetector(
                   onTap: () {

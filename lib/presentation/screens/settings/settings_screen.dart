@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -39,6 +40,7 @@ class SettingsScreen extends ConsumerWidget {
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
     final appVersionAsync = ref.watch(appVersionProvider);
+    final caps = ref.watch(platformCapabilitiesProvider);
 
     final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
     final syncState = syncAsync.value ?? SyncState.idle;
@@ -130,15 +132,17 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
 
           // ── Security ───────────────────────────────────────
-          _SectionTitle("Security"),
-          SwitchListTile(
-            secondary: const Icon(Icons.fingerprint),
-            title: const Text("Fingerprint Unlock"),
-            subtitle: const Text("Use biometrics to protect your data"),
-            value: biometricsEnabled,
-            onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
-          ),
-          const Divider(),
+          if (caps.hasBiometrics) ...[
+            _SectionTitle("Security"),
+            SwitchListTile(
+              secondary: const Icon(Icons.fingerprint),
+              title: const Text("Fingerprint Unlock"),
+              subtitle: const Text("Use biometrics to protect your data"),
+              value: biometricsEnabled,
+              onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
+            ),
+            const Divider(),
+          ],
 
           // ── AIFA Database ──────────────────────────────────
           _SectionTitle(l10n.aifaDatabase),

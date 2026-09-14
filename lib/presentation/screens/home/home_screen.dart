@@ -4,6 +4,7 @@ library;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/core/constants.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -36,15 +37,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     final l10n = AppLocalizations.of(context);
+    final caps = ref.watch(platformCapabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
-            tooltip: l10n.scanBarcodeTooltip,
-            onPressed: () => context.push(AppRoutes.scanner),
-          ),
+          if (caps.hasCamera)
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              tooltip: l10n.scanBarcodeTooltip,
+              onPressed: () => context.push(AppRoutes.scanner),
+            ),
           const SyncIconButton(),
           IconButton(
             icon: const Icon(Icons.settings),
