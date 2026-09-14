@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, labeled]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -52,3 +54,33 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter build apk --debug
+
+  integration:
+    # Manual (workflow_dispatch) or PRs labelled "integration": runs the sync
+    # convergence test against a local Supabase started with the CLI.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'integration')
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .fvmrc
+          cache: true
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase start
+      - name: Export local credentials
+        # `supabase status -o env` prints API_URL=..., ANON_KEY=..., etc.
+        run: supabase status -o env >> "$GITHUB_ENV"
+      - run: flutter pub get
+      - name: Run the convergence test
+        run: |
+          test -n "$API_URL" || { echo "API_URL missing from 'supabase status -o env'"; exit 1; }
+          test -n "$ANON_KEY" || { echo "ANON_KEY missing from 'supabase status -o env'"; exit 1; }
+          flutter test test/integration \
+            --dart-define=SUPABASE_URL="$API_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$ANON_KEY"
+      - if: always()
+        run: supabase stop

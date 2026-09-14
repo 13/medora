@@ -40,7 +40,7 @@ Medora works completely offline. All data lives in a local SQLite database on th
 
 ## Optional: cloud sync with Supabase
 
-1. Create a Supabase project and run the SQL files in `supabase/migrations/` in filename order in the SQL editor.
+1. Create a Supabase project and apply the SQL files in `supabase/migrations/` in order — paste them into the SQL editor one by one, or run `supabase db push` with the [Supabase CLI](https://supabase.com/docs/guides/cli).
 2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
 3. Run or build with the defines:
 
@@ -50,6 +50,29 @@ fvm flutter build apk --release --dart-define-from-file=dart_defines.json
 ```
 
 Then open **Settings → Cloud sync → Turn on** and sign in. Without defines the app runs local-only and the cloud section says so.
+
+### How sync works
+
+- Offline-first: every change is written to the local database first and works with no network.
+- Each cycle pushes the pending local changes, then pulls only what changed since the last pull (delta by `updated_at`).
+- Deletes are tombstones (`deleted_at`), so a deletion made on one device is applied on every other device.
+- A row edited on two devices resolves last-write-wins by `updated_at`; a tombstone always wins.
+- Settings shows the last sync report — what was pushed, pulled and deleted, and any rows that failed.
+- **Force pull** wipes the local rows and re-downloads everything from the server.
+- Turning cloud sync on uploads the data already on the device instead of discarding it.
+
+### Integration test
+
+A convergence test drives two simulated devices against a real Supabase. Start one locally and run it with the defines:
+
+```bash
+supabase start
+fvm flutter test test/integration \
+  --dart-define=SUPABASE_URL=http://127.0.0.1:54321 \
+  --dart-define=SUPABASE_ANON_KEY=<anon key from `supabase status`>
+```
+
+Without those defines the test is skipped, so a plain `fvm flutter test` needs no Supabase. In CI the same test runs in the `integration` job, which is triggered manually (**Run workflow**) or by adding the `integration` label to a pull request.
 
 ## Development
 
