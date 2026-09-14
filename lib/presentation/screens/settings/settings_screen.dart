@@ -250,9 +250,9 @@ class SettingsScreen extends ConsumerWidget {
                     child: OutlinedButton.icon(
                       onPressed: (syncState == SyncState.syncing || !isOnline)
                           ? null
-                          : () => _showForceSyncDialog(context, ref, true),
+                          : () => _showForceSyncDialog(context, ref, l10n, true),
                       icon: const Icon(Icons.upload_outlined, size: 18),
-                      label: const Text("Force Push"),
+                      label: Text(l10n.forcePush),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.orange,
                         side: const BorderSide(color: Colors.orange),
@@ -264,9 +264,9 @@ class SettingsScreen extends ConsumerWidget {
                     child: OutlinedButton.icon(
                       onPressed: (syncState == SyncState.syncing || !isOnline)
                           ? null
-                          : () => _showForceSyncDialog(context, ref, false),
+                          : () => _showForceSyncDialog(context, ref, l10n, false),
                       icon: const Icon(Icons.download_outlined, size: 18),
-                      label: const Text("Force Pull"),
+                      label: Text(l10n.forcePull),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppTheme.primaryColor,
                       ),
@@ -341,18 +341,16 @@ class SettingsScreen extends ConsumerWidget {
     await ref.read(authControllerProvider.notifier).signOut();
   }
 
-  void _showForceSyncDialog(BuildContext context, WidgetRef ref, bool isPush) {
+  void _showForceSyncDialog(BuildContext context, WidgetRef ref, AppLocalizations l10n, bool isPush) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(isPush ? "Force Push to Cloud" : "Force Pull from Cloud"),
-        content: Text(isPush
-            ? "This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?"
-            : "This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?"),
+        title: Text(isPush ? l10n.forcePushTitle : l10n.forcePullTitle),
+        content: Text(isPush ? l10n.forcePushConfirm : l10n.forcePullConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () {

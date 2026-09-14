@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/auth/auth_screen.dart';
+import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/test_database.dart';
@@ -18,11 +21,18 @@ void main() {
   });
   tearDown(tearDownTestDatabase);
 
-  Future<ProviderContainer> pumpApp(WidgetTester tester, {required String mode}) async {
+  Future<ProviderContainer> pumpApp(
+    WidgetTester tester, {
+    required String mode,
+    List<Override> overrides = const [],
+  }) async {
     SharedPreferences.setMockInitialValues({'app_mode': mode});
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        ...overrides,
+      ],
     );
     addTearDown(container.dispose);
     await tester.pumpWidget(
@@ -69,6 +79,26 @@ void main() {
 
     expect(find.byType(AuthScreen), findsNothing);
     expect(container.read(appRouterProvider).routerDelegate.currentConfiguration.uri.path, '/');
+
+    // MainShellScreen schedules a delayed sync call in initState; flush it so
+    // no pending Timer trips the framework's teardown invariant check. This
+    // is unrelated to routing/auth.
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('/scanner shows an unavailable screen on a platform without a camera', (tester) async {
+    final container = await pumpApp(
+      tester,
+      mode: 'localOnly',
+      overrides: [platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.web)],
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    container.read(appRouterProvider).go('/scanner');
+    await tester.pumpAndSettle();
+
+    expect(find.text('This feature is not available on this device.'), findsOneWidget);
+    expect(find.byType(BarcodeScannerScreen), findsNothing);
 
     // MainShellScreen schedules a delayed sync call in initState; flush it so
     // no pending Timer trips the framework's teardown invariant check. This

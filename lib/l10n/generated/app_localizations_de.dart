@@ -1221,4 +1221,8 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get turnOff => 'Ausschalten';
+
+  @override
+  String get featureUnavailableOnPlatform =>
+      'Diese Funktion ist auf diesem Gerät nicht verfügbar.';
 }

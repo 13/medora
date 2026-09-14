@@ -62,8 +62,35 @@ void main() {
 
   test('clearAllData empties every table', () async {
     final db = await AppDatabase.instance.database;
+
     await db.insert('medications', {'id': 'm1', 'name': 'Tachipirina', 'quantity': 1});
+    await db.insert('treatments', {'id': 't1', 'name': 'Fever', 'start_date': '2026-01-01'});
+    await db.insert('prescriptions', {
+      'id': 'p1',
+      'treatment_id': 't1',
+      'medication_id': 'm1',
+      'dosage': '500mg',
+      'start_time': '2026-01-01T08:00:00.000',
+    });
+    await db.insert('dose_logs', {
+      'id': 'd1',
+      'prescription_id': 'p1',
+      'scheduled_time': '2026-01-01T08:00:00.000',
+    });
+    await db.insert('families', {'id': 'f1', 'name': 'The Family'});
+    await db.insert('family_members', {'id': 'fm1', 'family_id': 'f1'});
+
     await AppDatabase.instance.clearAllData();
-    expect(await db.query('medications'), isEmpty);
+
+    for (final table in [
+      'medications',
+      'treatments',
+      'prescriptions',
+      'dose_logs',
+      'families',
+      'family_members',
+    ]) {
+      expect(await db.query(table), isEmpty, reason: table);
+    }
   });
 }

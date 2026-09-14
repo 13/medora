@@ -42,11 +42,11 @@ Future<void> main() async {
 /// Start non-critical services without blocking the initial UI render.
 void _initServicesInBackground() {
   // Connectivity check can be slow on some devices, so we run it in background
-  unawaited(ConnectivityService.instance.initialize());
-  
+  unawaited(_initSafe('Connectivity', ConnectivityService.instance.initialize));
+
   // Notification/Timezone initialization is heavy, run in background
-  unawaited(ReminderService.instance.initialize());
-  
+  unawaited(_initSafe('Reminders', ReminderService.instance.initialize));
+
   // Note: Database opening is now lazy and will happen when the first data provider needs it.
 }
 

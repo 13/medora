@@ -419,5 +419,6 @@
   "invalidEmail": "Inserisci un indirizzo email valido",
   "passwordTooShort": "La password deve avere almeno 6 caratteri",
   "turnOn": "Attiva",
-  "turnOff": "Disattiva"
+  "turnOff": "Disattiva",
+  "featureUnavailableOnPlatform": "Questa funzione non è disponibile su questo dispositivo."
 }

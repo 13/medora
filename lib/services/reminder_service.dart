@@ -3,10 +3,9 @@
 /// Manages local notifications for medication dose reminders.
 library;
 
-import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:timezone/data/latest.dart' as tz;
@@ -28,8 +27,13 @@ class ReminderService {
   // Store navigation callback
   static BuildContext? _navigationContext;
 
+  /// Whether the current platform supports scheduled local notifications
+  /// (mobile only; web and desktop plugins cannot schedule).
+  static bool get _supported => PlatformCapabilities.detect().hasLocalNotifications;
+
   /// Initialize the notification service.
   Future<void> initialize() async {
+    if (!_supported) return;
     if (_isInitialized) return;
 
     // USE latest.dart INSTEAD OF latest_all.dart
@@ -76,8 +80,8 @@ class ReminderService {
     required String medicationName,
     bool cancelFirst = true,
   }) async {
-    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
-    
+    if (!_supported) return;
+
     await _ensureInitialized();
 
     if (cancelFirst) {
@@ -134,7 +138,7 @@ class ReminderService {
     String? payload,
     AppLocalizations? l10n,
   }) async {
-    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
+    if (!_supported) return;
 
     final tzScheduledTime = tz.TZDateTime.from(scheduledTime, tz.local);
 
@@ -172,7 +176,7 @@ class ReminderService {
   }
 
   Future<void> cancelRemindersForDose(String doseId) async {
-    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return;
+    if (!_supported) return;
     await _ensureInitialized();
     final baseId = doseId.hashCode;
     for (var i = 0; i < 4; i++) {
@@ -181,11 +185,12 @@ class ReminderService {
   }
 
   Future<void> cancelAllReminders() async {
+    if (!_supported) return;
     await _notifications.cancelAll();
   }
 
   Future<bool> requestPermissions() async {
-    if (kIsWeb || (!kIsWeb && Platform.isLinux)) return true;
+    if (!_supported) return true;
 
     final androidPlugin = _notifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {

@@ -544,5 +544,6 @@
   "invalidEmail": "Enter a valid email address",
   "passwordTooShort": "Password must be at least 6 characters",
   "turnOn": "Turn on",
-  "turnOff": "Turn off"
+  "turnOff": "Turn off",
+  "featureUnavailableOnPlatform": "This feature is not available on this device."
 }

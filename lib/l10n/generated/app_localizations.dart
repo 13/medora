@@ -2337,6 +2337,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Turn off'**
   String get turnOff;
+
+  /// No description provided for @featureUnavailableOnPlatform.
+  ///
+  /// In en, this message translates to:
+  /// **'This feature is not available on this device.'**
+  String get featureUnavailableOnPlatform;
 }
 
 class _AppLocalizationsDelegate

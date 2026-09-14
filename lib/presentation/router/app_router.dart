@@ -1,10 +1,12 @@
 /// Medora - App Router Configuration
 library;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/screens/auth/auth_screen.dart';
@@ -119,15 +121,48 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: AppRoutes.doseHistory, builder: (_, _) => const DoseHistoryScreen()),
           GoRoute(
             path: AppRoutes.scanner,
-            builder: (_, state) => BarcodeScannerScreen(
-              returnBarcodeOnly: state.uri.queryParameters['returnOnly'] == 'true',
-            ),
+            builder: (context, state) {
+              final caps = ProviderScope.containerOf(context).read(platformCapabilitiesProvider);
+              if (!caps.hasCamera) return const _UnavailableScreen();
+              return BarcodeScannerScreen(
+                returnBarcodeOnly: state.uri.queryParameters['returnOnly'] == 'true',
+              );
+            },
           ),
           GoRoute(path: AppRoutes.settings, builder: (_, _) => const SettingsScreen()),
           GoRoute(path: AppRoutes.family, builder: (_, _) => const FamilyScreen()),
-          GoRoute(path: AppRoutes.export, builder: (_, _) => const ExportScreen()),
+          GoRoute(
+            path: AppRoutes.export,
+            builder: (context, state) {
+              final caps = ProviderScope.containerOf(context).read(platformCapabilitiesProvider);
+              if (!caps.hasFileShare) return const _UnavailableScreen();
+              return const ExportScreen();
+            },
+          ),
         ],
       ),
     ],
   );
 });
+
+/// Shown in place of a route whose screen needs a platform capability
+/// (camera, file share) the current platform doesn't provide.
+class _UnavailableScreen extends StatelessWidget {
+  const _UnavailableScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            AppLocalizations.of(context).featureUnavailableOnPlatform,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
+}

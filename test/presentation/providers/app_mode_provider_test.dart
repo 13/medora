@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/supabase_config.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -11,6 +12,7 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     prefs = await SharedPreferences.getInstance();
+    SupabaseConfig.resetForTest();
   });
 
   ProviderContainer makeContainer() => ProviderContainer(
@@ -45,7 +47,20 @@ void main() {
     final c = makeContainer();
     addTearDown(c.dispose);
     await c.read(appModeProvider.notifier).set(AppMode.cloud);
+    expect(c.read(appModeProvider), AppMode.cloud);
     expect(c.read(supabaseClientProvider), isNull);
     expect(c.read(medicationDatasourceProvider), isNull);
+  });
+
+  test('with no app_mode pref, defaults to localOnly when the build is unconfigured', () {
+    // This exercises only the "not signed in" side of the one-time upgrade
+    // migration in AppModeNotifier.build(): SupabaseConfig.isConfigured is
+    // false here, so the cloud branch (a pre-existing Supabase session with
+    // no app_mode pref yet) can't be exercised without a real, configured
+    // Supabase client and session — that path is covered by manual/QA
+    // verification instead.
+    final c = makeContainer();
+    addTearDown(c.dispose);
+    expect(c.read(appModeProvider), AppMode.localOnly);
   });
 }

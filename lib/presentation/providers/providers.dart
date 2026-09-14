@@ -150,8 +150,8 @@ final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
 );
 
-final syncServiceProvider = Provider<SyncService>(
-  (ref) => SyncService(
+final syncServiceProvider = Provider<SyncService>((ref) {
+  final service = SyncService(
     medicationLocal: ref.watch(medicationLocalDatasourceProvider),
     medicationRemote: ref.watch(medicationDatasourceProvider),
     treatmentLocal: ref.watch(treatmentLocalDatasourceProvider),
@@ -162,8 +162,10 @@ final syncServiceProvider = Provider<SyncService>(
     doseLogRemote: ref.watch(doseLogDatasourceProvider),
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
-  ),
-);
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 /// Stream provider for connectivity status.
 final connectivityStreamProvider = StreamProvider<bool>((ref) {
