@@ -28,10 +28,6 @@ void main() {
       ];
 
   testWidgets('shows three sections and saves a medication with just a name', (tester) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     final c = await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
     await tester.pumpAndSettle();
 
@@ -49,10 +45,6 @@ void main() {
   });
 
   testWidgets('empty name shows the validator and keeps Basics expanded', (tester) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
@@ -62,10 +54,6 @@ void main() {
   });
 
   testWidgets('collapsing Basics does not bypass validation and the section reopens on error', (tester) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     final c = await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
     await tester.pumpAndSettle();
 
@@ -95,10 +83,6 @@ void main() {
   });
 
   testWidgets('collapsed Stock section shows a summary', (tester) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     await pumpMedoraApp(tester, const AddMedicationScreen(), overrides: await overrides());
     await tester.pumpAndSettle();
 

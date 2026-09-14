@@ -284,50 +284,99 @@ void showDoseDetailBottomSheet({
             const SizedBox(height: 16),
 
             // Action buttons
-            if (dose.status == DoseStatus.pending)
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ref.read(doseActionsProvider).skip(dose.id);
-                        Navigator.pop(ctx);
-                      },
-                      icon: const Icon(Icons.skip_next),
-                      label: Text(l10n.skip),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        ref.read(doseActionsProvider).take(dose.id);
-                        Navigator.pop(ctx);
-                      },
-                      icon: const Icon(Icons.check),
-                      label: Text(l10n.take),
-                    ),
-                  ),
-                ],
-              ),
-            if (dose.status == DoseStatus.taken)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    ref.read(doseActionsProvider).undoTake(dose.id);
-                    Navigator.pop(ctx);
-                  },
-                  icon: const Icon(Icons.undo),
-                  label: Text(l10n.undoTaken),
-                  style: OutlinedButton.styleFrom(foregroundColor: context.colors.error),
-                ),
-              ),
+            _DoseSheetActions(dose: dose, actions: ref.read(doseActionsProvider)),
           ],
         ),
       ),
     ),
   );
+}
+
+/// Take / skip / undo buttons of the dose detail sheet.
+///
+/// Stateful so the buttons can be disabled while the write is in flight,
+/// and so the result of the action is actually awaited — a failed write
+/// used to close the sheet silently.
+class _DoseSheetActions extends StatefulWidget {
+  const _DoseSheetActions({required this.dose, required this.actions});
+
+  final DoseLog dose;
+
+  /// Read from the provider container before the sheet was built, so it
+  /// stays valid even though this sheet outlives nothing in particular.
+  final DoseActions actions;
+
+  @override
+  State<_DoseSheetActions> createState() => _DoseSheetActionsState();
+}
+
+class _DoseSheetActionsState extends State<_DoseSheetActions> {
+  bool _busy = false;
+
+  Future<void> _run(Future<bool> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    // Captured before the await: the sheet is popped below, so `context`
+    // is gone by the time the SnackBar has to be shown.
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final l10n = AppLocalizations.of(context);
+    bool ok;
+    try {
+      ok = await action();
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    navigator.pop();
+    if (!ok) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final dose = widget.dose;
+    if (dose.status == DoseStatus.pending) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed:
+                  _busy ? null : () => _run(() => widget.actions.skip(dose.id)),
+              icon: const Icon(Icons.skip_next),
+              label: Text(l10n.skip),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed:
+                  _busy ? null : () => _run(() => widget.actions.take(dose.id)),
+              icon: const Icon(Icons.check),
+              label: Text(l10n.take),
+            ),
+          ),
+        ],
+      );
+    }
+    if (dose.status == DoseStatus.taken) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _busy
+              ? null
+              : () => _run(() => widget.actions.undoTake(dose.id)),
+          icon: const Icon(Icons.undo),
+          label: Text(l10n.undoTaken),
+          style: OutlinedButton.styleFrom(foregroundColor: context.colors.error),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
 }
 
 class DetailRow extends StatelessWidget {
