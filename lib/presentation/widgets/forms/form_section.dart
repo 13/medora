@@ -70,7 +70,9 @@ class _FormSectionState extends State<FormSection> {
   }
 
   void _onControllerChanged() {
-    final v = widget.controller!.value;
+    final controller = widget.controller;
+    if (controller == null) return;
+    final v = controller.value;
     if (v != _expanded) {
       setState(() => _expanded = v);
     }
