@@ -1171,10 +1171,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get dontHaveAccount => 'Non hai un account? Registrati';
 
   @override
-  String get forcePush => 'Force Push';
+  String get forcePush => 'Forza invio';
 
   @override
-  String get forcePull => 'Force Pull';
+  String get forcePull => 'Forza ricezione';
 
   @override
   String get forcePushTitle => 'Force Push to Cloud';

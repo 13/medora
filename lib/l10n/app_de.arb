@@ -410,8 +410,8 @@
   "alreadyHaveAccount": "Bereits ein Konto? Anmelden",
   "dontHaveAccount": "Noch kein Konto? Registrieren",
 
-  "forcePush": "Force Push",
-  "forcePull": "Force Pull",
+  "forcePush": "Push erzwingen",
+  "forcePull": "Pull erzwingen",
   "forcePushTitle": "Force Push zu Cloud",
   "forcePullTitle": "Force Pull von Cloud",
   "forcePushConfirm": "Dies wird alle Daten in Supabase mit Ihren lokalen Daten überschreiben. Dies kann nicht rückgängig gemacht werden. Fortfahren?",

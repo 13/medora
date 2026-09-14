@@ -135,8 +135,11 @@ class Prescription {
     return times;
   }
 
-  /// The first day's scheduled dose times — used for schedule previews.
-  List<DateTime> firstDayTimes() =>
+  /// The next [dosesPerDay] scheduled dose times, for the sheet's schedule
+  /// preview. Not "the first day's times": for a fixed interval that does
+  /// not divide 24h these run past midnight, and for a times-per-day
+  /// schedule they start at the next configured time, not at today's first.
+  List<DateTime> previewTimes() =>
       scheduledDoseTimes.take(dosesPerDay).toList();
 
   Prescription copyWith({

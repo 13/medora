@@ -12,7 +12,12 @@ void main() {
       for (var i = 0; i < lines.length; i++) {
         final line = lines[i];
         final hasStatic = RegExp(r'AppTheme\.\w+Color\b|AppTheme\.primary(Light|Dark)\b').hasMatch(line);
-        final hasColors = RegExp(r'\bColors\.\w+').hasMatch(line) && !allowed.hasMatch(line);
+        // Check every `Colors.` occurrence on its own: a line-wide
+        // `allowed` match used to whitelist the whole line, so
+        // `Colors.transparent` next to `Colors.red` slipped through.
+        final hasColors = RegExp(r'\bColors\.\w+')
+            .allMatches(line)
+            .any((m) => !allowed.hasMatch(m[0]!));
         if (hasStatic || hasColors) offenders.add('${file.path}:${i + 1}: ${line.trim()}');
       }
     }

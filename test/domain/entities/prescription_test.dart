@@ -58,12 +58,12 @@ void main() {
     });
   });
 
-  group('firstDayTimes', () {
+  group('previewTimes', () {
     test('returns the first dosesPerDay scheduled times', () {
       final times = _p(
         intervalHours: 8,
         startTime: DateTime(2026, 3, 1, 8, 0),
-      ).firstDayTimes();
+      ).previewTimes();
       expect(times, [
         DateTime(2026, 3, 1, 8, 0),
         DateTime(2026, 3, 1, 16, 0),
@@ -76,7 +76,7 @@ void main() {
         scheduleType: 'times_per_day',
         scheduleTimes: ['08:00', '12:00', '18:00'],
         startTime: DateTime(2026, 3, 1, 7, 0),
-      ).firstDayTimes();
+      ).previewTimes();
       expect(times, [
         DateTime(2026, 3, 1, 8, 0),
         DateTime(2026, 3, 1, 12, 0),

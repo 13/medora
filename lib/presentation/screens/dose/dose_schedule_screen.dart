@@ -22,16 +22,12 @@ class DoseScheduleScreen extends ConsumerStatefulWidget {
   ConsumerState<DoseScheduleScreen> createState() => _DoseScheduleScreenState();
 }
 
-class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> {
   final Set<String> _busyIds = {};
   bool _takeAllBusy = false;
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final l10n = AppLocalizations.of(context);
     final now = ref.watch(nowProvider)();
     final today = dayKey(now);
@@ -289,7 +285,9 @@ class _TimeGroup {
   final String label;
   final List<DoseLog> doses;
 
-  int get taken => doses.where((d) => d.status != DoseStatus.pending).length;
+  /// Only doses actually taken — the header reads "N of M taken", so
+  /// skipped and missed doses must not be counted here.
+  int get taken => doses.where((d) => d.status == DoseStatus.taken).length;
 }
 
 List<_TimeGroup> _timeOfDayGroups(List<DoseLog> doses, AppLocalizations l10n) {

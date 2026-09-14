@@ -103,4 +103,37 @@ void main() {
     expect(find.text('No doses scheduled for today'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Add Treatment'), findsOneWidget);
   });
+
+  testWidgets('section headers survive a 2.0x text scale', (tester) async {
+    // Phone width: at 800px the Row has slack even at 2.0x.
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db, medicationName: 'Tachipirina');
+    await seedDoseLog(db, s.prescriptionId, DateTime.now().subtract(const Duration(minutes: 10)));
+
+    await pumpMedoraApp(
+      tester,
+      const MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(2.0)),
+        child: HomeScreen(),
+      ),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    // Scroll the section headers into view: at 2.0x the Now card alone
+    // fills the viewport, and an overflowing Row only throws once painted.
+    await tester.scrollUntilVisible(find.text('Active Treatments'), 200,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Active Treatments'), findsOneWidget);
+    expect(find.text('See All'), findsWidgets);
+  });
 }

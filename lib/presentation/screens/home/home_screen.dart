@@ -29,13 +29,9 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final l10n = AppLocalizations.of(context);
     final caps = ref.watch(platformCapabilitiesProvider);
     return Scaffold(
@@ -457,11 +453,16 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+        // Expanded + ellipsis: at a 2.0x text scale a long section title
+        // and the "See all" button no longer fit side by side.
+        Expanded(
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ),
         TextButton(
           onPressed: onSeeAll,

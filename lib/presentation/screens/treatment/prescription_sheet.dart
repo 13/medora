@@ -504,7 +504,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
           Text(
             l10n.doseTimesPreview(
               _previewPrescription()
-                  .firstDayTimes()
+                  .previewTimes()
                   .map((t) => t.timeFormatted)
                   .join(', '),
             ),
