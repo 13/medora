@@ -254,8 +254,13 @@ class _NowCardState extends ConsumerState<_NowCard> {
   Future<void> _handleTake(BuildContext context, AppLocalizations l10n, String id) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
+    // Captured before the SnackBar is shown: the shell swaps tabs by index,
+    // so this screen (and its `ref`) can be disposed while the SnackBar is
+    // re-hosted by the ScaffoldMessenger. `DoseActions` holds a provider
+    // Ref and outlives the widget; `ref.read` at tap time would throw.
+    final actions = ref.read(doseActionsProvider);
     try {
-      final ok = await ref.read(doseActionsProvider).take(id);
+      final ok = await actions.take(id);
       if (!mounted) return;
       if (ok) {
         messenger.showSnackBar(
@@ -263,7 +268,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
             content: Text(l10n.doseTaken),
             action: SnackBarAction(
               label: l10n.undo,
-              onPressed: () => ref.read(doseActionsProvider).undoTake(id),
+              onPressed: () => actions.undoTake(id),
             ),
           ),
         );
@@ -282,8 +287,10 @@ class _NowCardState extends ConsumerState<_NowCard> {
   Future<void> _handleSkip(BuildContext context, AppLocalizations l10n, String id) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
+    // See _handleTake: the action object must outlive this widget.
+    final actions = ref.read(doseActionsProvider);
     try {
-      final ok = await ref.read(doseActionsProvider).skip(id);
+      final ok = await actions.skip(id);
       if (!mounted) return;
       if (ok) {
         messenger.showSnackBar(
@@ -291,7 +298,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
             content: Text(l10n.doseSkipped),
             action: SnackBarAction(
               label: l10n.undo,
-              onPressed: () => ref.read(doseActionsProvider).undoSkip(id),
+              onPressed: () => actions.undoSkip(id),
             ),
           ),
         );

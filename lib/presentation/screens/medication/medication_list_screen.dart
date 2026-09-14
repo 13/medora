@@ -36,6 +36,30 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
     super.dispose();
   }
 
+  /// Runs a [MedicationListNotifier] mutation, reporting the failure it
+  /// throws as a SnackBar instead of letting it escape an async `onPressed`
+  /// as an unhandled error. Returns true when the action succeeded.
+  Future<bool> _guard(
+    ScaffoldMessengerState messenger,
+    AppLocalizations l10n,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.errorWithDetails(_message(e)))),
+      );
+      return false;
+    }
+  }
+
+  /// `Exception('db down')` stringifies as "Exception: db down"; the
+  /// repository message alone reads better in the SnackBar.
+  static String _message(Object e) =>
+      e is Exception ? e.toString().replaceFirst('Exception: ', '') : '$e';
+
   List<Medication> _applyFilter(List<Medication> medications) {
     var filtered = medications;
 
@@ -156,7 +180,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
 
                 return RefreshIndicator(
                   onRefresh: () async {
-                    ref.read(medicationListProvider.notifier).refresh();
+                    await ref.read(medicationListProvider.notifier).refresh();
                   },
                   child: ListView.builder(
                     padding: const EdgeInsets.only(bottom: 80),
@@ -173,20 +197,33 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                             if (!med.isArchived)
                               SlidableAction(
                                 onPressed: (_) async {
-                                  await ref.read(medicationListProvider.notifier).archiveMedication(med.id);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(l10n.archived),
-                                        action: SnackBarAction(
-                                          label: l10n.undo,
-                                          onPressed: () => ref
-                                              .read(medicationListProvider.notifier)
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  // Captured before the SnackBar is shown: the
+                                  // shell swaps tabs by index, so this screen
+                                  // (and its `ref`) can be disposed while the
+                                  // SnackBar is re-hosted by the messenger.
+                                  final notifier =
+                                      ref.read(medicationListProvider.notifier);
+                                  final ok = await _guard(
+                                    messenger,
+                                    l10n,
+                                    () => notifier.archiveMedication(med.id),
+                                  );
+                                  if (!ok) return;
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(l10n.archived),
+                                      action: SnackBarAction(
+                                        label: l10n.undo,
+                                        onPressed: () => _guard(
+                                          messenger,
+                                          l10n,
+                                          () => notifier
                                               .unarchiveMedication(med.id),
                                         ),
                                       ),
-                                    );
-                                  }
+                                    ),
+                                  );
                                 },
                                 backgroundColor: context.colors.tertiaryContainer,
                                 foregroundColor: context.colors.onTertiaryContainer,
@@ -196,7 +233,11 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                             if (med.isArchived)
                               SlidableAction(
                                 onPressed: (_) {
-                                  ref.read(medicationListProvider.notifier).unarchiveMedication(med.id);
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final notifier =
+                                      ref.read(medicationListProvider.notifier);
+                                  _guard(messenger, l10n,
+                                      () => notifier.unarchiveMedication(med.id));
                                 },
                                 backgroundColor: context.medora.success,
                                 foregroundColor: context.medora.onSuccess,
@@ -222,8 +263,13 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                     ],
                                   ),
                                 );
-                                if (confirm == true) {
-                                  ref.read(medicationListProvider.notifier).deleteMedication(med.id);
+                                if (confirm == true && context.mounted) {
+                                  final messenger =
+                                      ScaffoldMessenger.of(context);
+                                  final notifier =
+                                      ref.read(medicationListProvider.notifier);
+                                  await _guard(messenger, l10n,
+                                      () => notifier.deleteMedication(med.id));
                                 }
                               },
                               backgroundColor: context.colors.error,

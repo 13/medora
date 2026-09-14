@@ -164,14 +164,22 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
     final l10n = AppLocalizations.of(context);
     setState(() => _busyIds.add(id));
     final messenger = ScaffoldMessenger.of(context);
+    // Captured before the SnackBar is shown: the shell swaps tabs by index,
+    // so this screen (and its `ref`) can be disposed while the SnackBar is
+    // re-hosted by the ScaffoldMessenger. `DoseActions` holds a provider
+    // Ref and outlives the widget; `ref.read` at tap time would throw.
+    final actions = ref.read(doseActionsProvider);
     try {
-      final ok = await ref.read(doseActionsProvider).take(id);
+      final ok = await actions.take(id);
       if (!mounted) return;
       if (ok) {
         messenger.showSnackBar(
           SnackBar(
             content: Text(l10n.doseTaken),
-            action: SnackBarAction(label: l10n.undo, onPressed: () => _handleUndoTake(id)),
+            action: SnackBarAction(
+              label: l10n.undo,
+              onPressed: () => _handleUndoTake(actions, messenger, l10n, id),
+            ),
           ),
         );
       } else {
@@ -190,14 +198,19 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
     final l10n = AppLocalizations.of(context);
     setState(() => _busyIds.add(id));
     final messenger = ScaffoldMessenger.of(context);
+    // See _handleTake: the action object must outlive this widget.
+    final actions = ref.read(doseActionsProvider);
     try {
-      final ok = await ref.read(doseActionsProvider).skip(id);
+      final ok = await actions.skip(id);
       if (!mounted) return;
       if (ok) {
         messenger.showSnackBar(
           SnackBar(
             content: Text(l10n.doseSkipped),
-            action: SnackBarAction(label: l10n.undo, onPressed: () => _handleUndoSkip(id)),
+            action: SnackBarAction(
+              label: l10n.undo,
+              onPressed: () => _handleUndoSkip(actions, messenger, l10n, id),
+            ),
           ),
         );
       } else {
@@ -212,26 +225,37 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
     }
   }
 
-  Future<void> _handleUndoTake(String id) async {
-    final ok = await ref.read(doseActionsProvider).undoTake(id);
-    if (!mounted || ok) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(AppLocalizations.of(context).genericError)));
+  /// Undo handlers run from a SnackBar action, i.e. potentially after this
+  /// screen was disposed by a tab switch — so they take the already-captured
+  /// [actions]/[messenger]/[l10n] rather than touching `ref` or `context`.
+  Future<void> _handleUndoTake(
+    DoseActions actions,
+    ScaffoldMessengerState messenger,
+    AppLocalizations l10n,
+    String id,
+  ) async {
+    if (await actions.undoTake(id)) return;
+    messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
   }
 
-  Future<void> _handleUndoSkip(String id) async {
-    final ok = await ref.read(doseActionsProvider).undoSkip(id);
-    if (!mounted || ok) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(AppLocalizations.of(context).genericError)));
+  Future<void> _handleUndoSkip(
+    DoseActions actions,
+    ScaffoldMessengerState messenger,
+    AppLocalizations l10n,
+    String id,
+  ) async {
+    if (await actions.undoSkip(id)) return;
+    messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
   }
 
   Future<void> _handleTakeAllDue(List<String> ids) async {
     final l10n = AppLocalizations.of(context);
     setState(() => _takeAllBusy = true);
     final messenger = ScaffoldMessenger.of(context);
+    // See _handleTake: the action object must outlive this widget.
+    final actions = ref.read(doseActionsProvider);
     try {
-      final taken = await ref.read(doseActionsProvider).takeAllDue(ids);
+      final taken = await actions.takeAllDue(ids);
       if (!mounted || taken.isEmpty) return;
       messenger.showSnackBar(
         SnackBar(
@@ -240,7 +264,7 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
             label: l10n.undo,
             onPressed: () async {
               for (final id in taken) {
-                await ref.read(doseActionsProvider).undoTake(id);
+                await actions.undoTake(id);
               }
             },
           ),
