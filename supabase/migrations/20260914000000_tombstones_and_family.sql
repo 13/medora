@@ -70,33 +70,76 @@ CREATE TRIGGER prescriptions_tombstone_cascade
 
 -- 4. Family RLS: members (not only owners) can read their family and update
 --    their own membership row; a user may insert their own membership.
+--
+--    `families_select` needs to look at `family_members` and the
+--    `family_members` policies need to look at `families`. Expressed as plain
+--    subqueries those two policies reference each other and Postgres aborts
+--    any SELECT on either table with 42P17 (infinite recursion in policy).
+--    The two SECURITY DEFINER helpers below run with the definer's rights, so
+--    their internal reads bypass RLS and the cycle is broken. They are STABLE
+--    (one evaluation per query, not per row) and pin `search_path` so a
+--    caller-controlled schema cannot shadow the tables they read.
+
+CREATE OR REPLACE FUNCTION is_family_member(p_family_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM family_members m
+    WHERE m.family_id = p_family_id AND m.user_id = auth.uid()
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION is_family_owner(p_family_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM families f
+    WHERE f.id = p_family_id AND f.owner_id = auth.uid()
+  )
+$$;
+
+REVOKE ALL ON FUNCTION is_family_member(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_family_member(TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION is_family_owner(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION is_family_owner(TEXT) TO authenticated;
+
+-- Both tables' policies are rewritten here (including the ones created by
+-- 20260901000000) so that no policy body reads the other table directly.
+
 DROP POLICY IF EXISTS "families_select" ON families;
 CREATE POLICY "families_select" ON families
-  FOR SELECT USING (
-    owner_id = auth.uid() OR
-    EXISTS (SELECT 1 FROM family_members m WHERE m.family_id = id AND m.user_id = auth.uid())
-  );
+  FOR SELECT USING (owner_id = auth.uid() OR is_family_member(id));
+
+DROP POLICY IF EXISTS "family_members_select" ON family_members;
+CREATE POLICY "family_members_select" ON family_members
+  FOR SELECT USING (user_id = auth.uid() OR is_family_owner(family_id));
 
 DROP POLICY IF EXISTS "family_members_insert" ON family_members;
 CREATE POLICY "family_members_insert" ON family_members
-  FOR INSERT WITH CHECK (
-    user_id = auth.uid() OR
-    EXISTS (SELECT 1 FROM families f WHERE f.id = family_id AND f.owner_id = auth.uid())
-  );
+  FOR INSERT WITH CHECK (user_id = auth.uid() OR is_family_owner(family_id));
 
 DROP POLICY IF EXISTS "family_members_update" ON family_members;
 CREATE POLICY "family_members_update" ON family_members
-  FOR UPDATE USING (
-    user_id = auth.uid() OR
-    EXISTS (SELECT 1 FROM families f WHERE f.id = family_id AND f.owner_id = auth.uid())
-  );
+  FOR UPDATE USING (user_id = auth.uid() OR is_family_owner(family_id));
+
+DROP POLICY IF EXISTS "family_members_delete" ON family_members;
+CREATE POLICY "family_members_delete" ON family_members
+  FOR DELETE USING (user_id = auth.uid() OR is_family_owner(family_id));
 
 -- 5. Join by invite code without exposing the families table to strangers.
 CREATE OR REPLACE FUNCTION join_family(p_invite_code TEXT, p_display_name TEXT)
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_family families%ROWTYPE;
