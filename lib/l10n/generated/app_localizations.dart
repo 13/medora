@@ -1252,6 +1252,12 @@ abstract class AppLocalizations {
   /// **'Export failed: {error}'**
   String exportFailed(String error);
 
+  /// No description provided for @wipeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete local data: {error}'**
+  String wipeFailed(String error);
+
   /// No description provided for @familySharingTitle.
   ///
   /// In en, this message translates to:
@@ -2289,12 +2295,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Turn off cloud sync'**
   String get turnOffCloudSync;
-
-  /// No description provided for @turnOffCloudSyncConfirm.
-  ///
-  /// In en, this message translates to:
-  /// **'You will be signed out. Your data stays on this device.'**
-  String get turnOffCloudSyncConfirm;
 
   /// No description provided for @localOnlyMode.
   ///

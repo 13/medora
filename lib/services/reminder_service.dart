@@ -91,21 +91,16 @@ class ReminderService implements ReminderPort {
 
   @override
   Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) =>
-      scheduleRemindersForDose(dose: dose, medicationName: medicationName, cancelFirst: false);
+      scheduleRemindersForDose(dose: dose, medicationName: medicationName);
 
   /// Schedule reminders for a dose.
   Future<void> scheduleRemindersForDose({
     required DoseLog dose,
     required String medicationName,
-    bool cancelFirst = true,
   }) async {
     if (!_supported) return;
 
     await _ensureInitialized();
-
-    if (cancelFirst) {
-      await cancelRemindersForDose(dose.id);
-    }
 
     final now = DateTime.now();
     final baseId = notificationBaseId(dose.id);
@@ -194,17 +189,9 @@ class ReminderService implements ReminderPort {
     );
   }
 
-  Future<void> cancelRemindersForDose(String doseId) async {
-    if (!_supported) return;
-    await _ensureInitialized();
-    final baseId = notificationBaseId(doseId);
-    for (var i = 0; i < 4; i++) {
-      await _notifications.cancel(id: baseId + i);
-    }
-  }
-
   Future<void> cancelAllReminders() async {
     if (!_supported) return;
+    await _ensureInitialized();
     await _notifications.cancelAll();
   }
 

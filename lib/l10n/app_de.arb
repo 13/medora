@@ -212,6 +212,12 @@
   "exportAndShare": "Exportieren & Teilen",
   "noDataToExport": "Keine Daten zum Exportieren",
   "exportFailed": "Export fehlgeschlagen: {error}",
+  "wipeFailed": "Lokale Daten konnten nicht gelöscht werden: {error}",
+  "@wipeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
 
   "familySharingTitle": "Familienfreigabe",
   "loadingFamily": "Familie wird geladen...",
@@ -412,7 +418,6 @@
   "cloudSyncUnavailable": "Nicht verfügbar — dieser Build hat keine Cloud-Konfiguration",
   "turnOnCloudSync": "Cloud-Sync einschalten",
   "turnOffCloudSync": "Cloud-Sync ausschalten",
-  "turnOffCloudSyncConfirm": "Du wirst abgemeldet. Deine Daten bleiben auf diesem Gerät.",
   "localOnlyMode": "Nur lokal",
   "unlockMedora": "Medora entsperren",
   "cloudRequiredForFamily": "Familienfreigabe benötigt Cloud-Sync. Aktiviere ihn in den Einstellungen.",

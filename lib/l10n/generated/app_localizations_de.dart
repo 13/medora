@@ -640,6 +640,11 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String wipeFailed(String error) {
+    return 'Lokale Daten konnten nicht gelöscht werden: $error';
+  }
+
+  @override
   String get familySharingTitle => 'Familienfreigabe';
 
   @override
@@ -1195,10 +1200,6 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get turnOffCloudSync => 'Cloud-Sync ausschalten';
-
-  @override
-  String get turnOffCloudSyncConfirm =>
-      'Du wirst abgemeldet. Deine Daten bleiben auf diesem Gerät.';
 
   @override
   String get localOnlyMode => 'Nur lokal';

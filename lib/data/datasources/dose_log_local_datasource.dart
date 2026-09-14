@@ -30,23 +30,6 @@ class DoseLogLocalDatasource {
     LEFT JOIN medications m ON p.medication_id = m.id
   ''';
 
-  /// Shared JOIN query filtered to only active treatments + non-archived medications.
-  static const _activeJoinQuery = '''
-    SELECT d.*,
-           m.name AS medication_name,
-           t.patient_tags AS patient_tags,
-           m.quantity_unit AS medication_unit,
-           p.dosage AS dosage,
-           p.dosage_amount AS dosage_amount,
-           p.dosage_unit AS dosage_unit,
-           p.notes AS prescription_notes,
-           t.name AS treatment_name
-    FROM dose_logs d
-    LEFT JOIN prescriptions p ON d.prescription_id = p.id
-    LEFT JOIN treatments t ON p.treatment_id = t.id
-    LEFT JOIN medications m ON p.medication_id = m.id
-  ''';
-
   Future<List<DoseLogModel>> getDoseLogsByPrescription(
       String prescriptionId) async {
     final db = await _db;
@@ -74,7 +57,7 @@ class DoseLogLocalDatasource {
     // treatment/prescription/medication status — they are historical facts.
     // Only filter PENDING doses to active prescriptions/treatments/medications.
     final rows = await db.rawQuery(
-      '''$_activeJoinQuery
+      '''$_joinQuery
         WHERE d.scheduled_time >= ? AND d.scheduled_time < ?
         AND d.sync_status != ?
         AND (
@@ -110,7 +93,7 @@ class DoseLogLocalDatasource {
   Future<List<DoseLogModel>> getPendingBetween(DateTime start, DateTime end) async {
     final db = await _db;
     final rows = await db.rawQuery(
-      '''$_activeJoinQuery
+      '''$_joinQuery
         WHERE d.status = 'pending'
         AND d.scheduled_time >= ? AND d.scheduled_time < ?
         AND d.sync_status != ?

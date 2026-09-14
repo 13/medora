@@ -1224,7 +1224,7 @@ Claude-Session: https://claude.ai/code/session_01BAjdzp9JhksW2XbhM6CPBS"
   class DoseMaintenanceService { DoseMaintenanceService({required DoseLogRepository doses, DateTime Function()? now});
     Future<int> markOverdueAsMissed({required Duration grace}); }
   // app_startup_tasks.dart
-  class AppStartupTasks { AppStartupTasks({required Future<void> Function() maintenance, required Future<void> Function() reminders, required Future<void> Function() sync, required Duration syncDelay});
+  class AppStartupTasks { AppStartupTasks({required Future<void> Function() maintenance, required Future<void> Function() reminders, required Future<void> Function() sync, required Duration syncDelay, required Duration minSyncInterval, DateTime Function()? now});
     Future<void> run({bool includeSync = true}); }                     // maintenance → reminders → (delayed) sync
   // settings_providers.dart
   final missedGraceMinutesProvider = NotifierProvider<MissedGraceMinutesNotifier, int>;   // default 120; .set(int)
@@ -1946,3 +1946,4 @@ Claude-Session: https://claude.ai/code/session_01BAjdzp9JhksW2XbhM6CPBS"
 - [ ] Medication photos survive an app-container move (stored by filename; v11 rows migrated).
 - [ ] Delete-all leaves no notifications or photo files; turning cloud sync off offers keep/wipe.
 - [ ] `fvm flutter analyze --fatal-infos` clean, `fvm flutter test` green, CI green.
+- [ ] Follow-ups recorded for Phase 2: `scheduled_time` UTC normalisation for cloud-synced rows; `reconcile()` debounce.

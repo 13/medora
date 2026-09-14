@@ -152,10 +152,6 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
 // Service Providers
 // ============================================================
 
-final reminderServiceProvider = Provider<ReminderService>(
-  (ref) => ReminderService.instance,
-);
-
 final reminderPortProvider = Provider<ReminderPort>((ref) => ReminderService.instance);
 
 final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {

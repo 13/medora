@@ -360,11 +360,19 @@ class SettingsScreen extends ConsumerWidget {
     await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
     await ref.read(authControllerProvider.notifier).signOut();
     if (choice == 'wipe') {
-      await ref.read(localDataWiperProvider).wipe();
-      ref.invalidate(medicationListProvider);
-      ref.invalidate(treatmentListProvider);
-      ref.invalidate(todaysDoseLogsProvider);
-      ref.invalidate(activePrescriptionsProvider);
+      try {
+        await ref.read(localDataWiperProvider).wipe();
+        ref.invalidate(medicationListProvider);
+        ref.invalidate(treatmentListProvider);
+        ref.invalidate(todaysDoseLogsProvider);
+        ref.invalidate(activePrescriptionsProvider);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.wipeFailed(e.toString()))),
+          );
+        }
+      }
     }
   }
 

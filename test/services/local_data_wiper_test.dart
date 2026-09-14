@@ -48,4 +48,25 @@ void main() {
     expect(prefs.getInt('aifa_count'), 5);
     expect(prefs.getString('theme_mode'), 'dark');
   });
+
+  test('wipe completes and clears the database even when photo cleanup fails', () async {
+    final photos = PhotoStorage(rootDirectory: () async => throw StateError('no fs'));
+
+    SharedPreferences.setMockInitialValues({'aifa_count': 5, 'app_mode': 'cloud', 'theme_mode': 'dark'});
+    final prefs = await SharedPreferences.getInstance();
+
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await seedDoseLog(db, s.prescriptionId, DateTime(2026, 3, 1, 8));
+
+    final port = _Port();
+    await LocalDataWiper(database: AppDatabase.instance, photos: photos, reminders: port, prefs: prefs).wipe();
+
+    expect(port.cancels, 1);
+    for (final t in ['medications', 'treatments', 'prescriptions', 'dose_logs']) {
+      expect(await db.query(t), isEmpty, reason: t);
+    }
+    expect(prefs.getInt('aifa_count'), 5);
+    expect(prefs.getString('theme_mode'), 'dark');
+  });
 }
