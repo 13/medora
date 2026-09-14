@@ -315,7 +315,7 @@ class SettingsScreen extends ConsumerWidget {
             title: Text(l10n.appVersion),
             subtitle: Text(appVersionAsync.maybeWhen(
               data: (v) => v,
-              orElse: () => AppConstants.appVersion,
+              orElse: () => '…',
             )),
           ),
           const SizedBox(height: 32),

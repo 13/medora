@@ -39,8 +39,7 @@ class SupabaseConfig {
     }
     await Supabase.initialize(
       url: config.supabaseUrl,
-      // ignore: deprecated_member_use
-      anonKey: config.supabaseAnonKey,
+      publishableKey: config.supabaseAnonKey,
     );
     _initialized = true;
     debugPrint('✅ Supabase initialized');
