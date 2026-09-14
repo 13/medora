@@ -288,13 +288,14 @@ class SettingsScreen extends ConsumerWidget {
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push(AppRoutes.family),
             ),
-          ListTile(
-            leading: const Icon(Icons.download_outlined),
-            title: Text(l10n.exportData),
-            subtitle: Text(l10n.exportAsCsvOrPdf),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push(AppRoutes.export),
-          ),
+          if (caps.hasFileShare)
+            ListTile(
+              leading: const Icon(Icons.download_outlined),
+              title: Text(l10n.exportData),
+              subtitle: Text(l10n.exportAsCsvOrPdf),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push(AppRoutes.export),
+            ),
           const Divider(),
 
           // ── Danger Zone ────────────────────────────────────

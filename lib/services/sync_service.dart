@@ -337,6 +337,7 @@ class SyncService {
   }
 
   void _setState(SyncState state) {
+    if (_stateController.isClosed) return;
     _currentState = state;
     _stateController.add(state);
   }
@@ -403,5 +404,10 @@ class SyncService {
     return rows.isNotEmpty;
   }
 
-  void dispose() { _stateController.close(); }
+  void dispose() {
+    if (!_stateController.isClosed) _stateController.close();
+  }
+
+  @visibleForTesting
+  void debugSetStateForTest(SyncState state) => _setState(state);
 }
