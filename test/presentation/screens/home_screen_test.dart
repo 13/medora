@@ -12,8 +12,8 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/home/home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/failing_dose_repo.dart';
+import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
@@ -40,7 +40,7 @@ void main() {
     tester,
   ) async {
     final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Tachipirina');
+    final s = await seedPrescription(db);
     final overdue = DateTime.now().subtract(const Duration(minutes: 10));
     await seedDoseLog(db, s.prescriptionId, overdue);
     await db.insert('medications', {
@@ -90,7 +90,7 @@ void main() {
     'Take resets busy state and reports failure when markDoseTaken fails',
     (tester) async {
       final db = await AppDatabase.instance.database;
-      final s = await seedPrescription(db, medicationName: 'Tachipirina');
+      final s = await seedPrescription(db);
       final overdue = DateTime.now().subtract(const Duration(minutes: 10));
       await seedDoseLog(db, s.prescriptionId, overdue);
 
@@ -146,7 +146,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Tachipirina');
+    final s = await seedPrescription(db);
     await seedDoseLog(
       db,
       s.prescriptionId,

@@ -209,7 +209,6 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
               id: deterministicId,
               prescriptionId: prescriptionId,
               scheduledTime: time,
-              status: DoseStatus.pending,
               createdAt: now,
               updatedAt: now,
             ),

@@ -20,6 +20,7 @@ jobs:
       - run: flutter pub get
       - run: flutter gen-l10n
       - run: git diff --exit-code -- lib/l10n/generated || (echo "Run 'flutter gen-l10n' and commit the result" && exit 1)
+      - run: dart format --set-exit-if-changed .
       - run: flutter analyze --fatal-infos
       # Golden images live in test/goldens/ and are committed. When a
       # screen changes on purpose, regenerate them locally with

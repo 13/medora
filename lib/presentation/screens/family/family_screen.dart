@@ -3,11 +3,11 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/family.dart';
 import 'package:medora/domain/entities/family_member.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/family_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -106,7 +106,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
     final nameCtrl = TextEditingController();
     final displayCtrl = TextEditingController();
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.createFamily),
@@ -158,7 +158,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
     final codeCtrl = TextEditingController();
     final displayCtrl = TextEditingController();
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.joinFamily),
@@ -454,7 +454,7 @@ class _FamilyDetailView extends ConsumerWidget {
               ),
             );
             if (confirm == true) {
-              ref.read(currentFamilyProvider.notifier).leaveFamily();
+              await ref.read(currentFamilyProvider.notifier).leaveFamily();
             }
           },
           style: OutlinedButton.styleFrom(

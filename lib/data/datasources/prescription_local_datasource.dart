@@ -24,7 +24,7 @@ class PrescriptionLocalDatasource {
     ''',
       [treatmentId, SyncStatus.pendingDelete],
     );
-    return rows.map((r) => PrescriptionModel.fromLocalMap(r)).toList();
+    return rows.map(PrescriptionModel.fromLocalMap).toList();
   }
 
   Future<List<PrescriptionModel>> getActivePrescriptions() async {
@@ -39,7 +39,7 @@ class PrescriptionLocalDatasource {
     ''',
       [SyncStatus.pendingDelete],
     );
-    return rows.map((r) => PrescriptionModel.fromLocalMap(r)).toList();
+    return rows.map(PrescriptionModel.fromLocalMap).toList();
   }
 
   Future<PrescriptionModel?> getPrescriptionById(String id) async {

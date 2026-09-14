@@ -1,15 +1,17 @@
 /// Medora - Medication Detail Screen
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
@@ -66,14 +68,21 @@ class MedicationDetailScreen extends ConsumerWidget {
                   ],
                   onSelected: (value) async {
                     if (value == 'archive') {
-                      ref
-                          .read(medicationListProvider.notifier)
-                          .archiveMedication(med.id);
+                      // Fire and forget: pop immediately, the list provider
+                      // refreshes itself when the write lands.
+                      unawaited(
+                        ref
+                            .read(medicationListProvider.notifier)
+                            .archiveMedication(med.id),
+                      );
                       if (context.mounted) context.pop();
                     } else if (value == 'unarchive') {
-                      ref
-                          .read(medicationListProvider.notifier)
-                          .unarchiveMedication(med.id);
+                      // Fire and forget: pop immediately (see above).
+                      unawaited(
+                        ref
+                            .read(medicationListProvider.notifier)
+                            .unarchiveMedication(med.id),
+                      );
                       if (context.mounted) context.pop();
                     } else if (value == 'delete') {
                       final confirm = await showDialog<bool>(
@@ -97,9 +106,12 @@ class MedicationDetailScreen extends ConsumerWidget {
                         ),
                       );
                       if (confirm == true && context.mounted) {
-                        ref
-                            .read(medicationListProvider.notifier)
-                            .deleteMedication(med.id);
+                        // Fire and forget: pop immediately (see above).
+                        unawaited(
+                          ref
+                              .read(medicationListProvider.notifier)
+                              .deleteMedication(med.id),
+                        );
                         context.pop();
                       }
                     }
@@ -362,7 +374,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                             const SizedBox(height: 16),
                             GestureDetector(
                               onTap: () {
-                                showDialog(
+                                showDialog<void>(
                                   context: context,
                                   builder: (ctx) => Dialog(
                                     backgroundColor: Colors.transparent,

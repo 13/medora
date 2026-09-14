@@ -15,7 +15,7 @@ Prescription _p({
     dosage: '1 tablet',
     intervalHours: intervalHours,
     durationDays: durationDays,
-    startTime: startTime ?? DateTime(2026, 3, 1, 8, 0),
+    startTime: startTime ?? DateTime(2026, 3, 1, 8),
     scheduleType: scheduleType,
     scheduleTimes: scheduleTimes,
   );
@@ -26,10 +26,10 @@ void main() {
     test(
       'generates durationDays * (24 / interval) doses starting at startTime',
       () {
-        final times = _p(intervalHours: 8, durationDays: 2).scheduledDoseTimes;
+        final times = _p(durationDays: 2).scheduledDoseTimes;
         expect(times.length, 6);
-        expect(times.first, DateTime(2026, 3, 1, 8, 0));
-        expect(times.last, DateTime(2026, 3, 3, 0, 0));
+        expect(times.first, DateTime(2026, 3, 1, 8));
+        expect(times.last, DateTime(2026, 3, 3));
       },
     );
 
@@ -53,21 +53,18 @@ void main() {
     });
 
     test('dosesPerDay rounds up', () {
-      expect(_p(intervalHours: 8).dosesPerDay, 3);
+      expect(_p().dosesPerDay, 3);
       expect(_p(intervalHours: 7).dosesPerDay, 4);
     });
   });
 
   group('previewTimes', () {
     test('returns the first dosesPerDay scheduled times', () {
-      final times = _p(
-        intervalHours: 8,
-        startTime: DateTime(2026, 3, 1, 8, 0),
-      ).previewTimes();
+      final times = _p(startTime: DateTime(2026, 3, 1, 8)).previewTimes();
       expect(times, [
-        DateTime(2026, 3, 1, 8, 0),
-        DateTime(2026, 3, 1, 16, 0),
-        DateTime(2026, 3, 2, 0, 0),
+        DateTime(2026, 3, 1, 8),
+        DateTime(2026, 3, 1, 16),
+        DateTime(2026, 3, 2),
       ]);
     });
 
@@ -75,12 +72,12 @@ void main() {
       final times = _p(
         scheduleType: 'times_per_day',
         scheduleTimes: ['08:00', '12:00', '18:00'],
-        startTime: DateTime(2026, 3, 1, 7, 0),
+        startTime: DateTime(2026, 3, 1, 7),
       ).previewTimes();
       expect(times, [
-        DateTime(2026, 3, 1, 8, 0),
-        DateTime(2026, 3, 1, 12, 0),
-        DateTime(2026, 3, 1, 18, 0),
+        DateTime(2026, 3, 1, 8),
+        DateTime(2026, 3, 1, 12),
+        DateTime(2026, 3, 1, 18),
       ]);
     });
   });
@@ -91,12 +88,12 @@ void main() {
         scheduleType: 'times_per_day',
         scheduleTimes: ['08:00', '20:00'],
         durationDays: 3,
-        startTime: DateTime(2026, 3, 1, 7, 0),
+        startTime: DateTime(2026, 3, 1, 7),
       ).scheduledDoseTimes;
       expect(times.length, 6);
-      expect(times[0], DateTime(2026, 3, 1, 8, 0));
-      expect(times[1], DateTime(2026, 3, 1, 20, 0));
-      expect(times.last, DateTime(2026, 3, 3, 20, 0));
+      expect(times[0], DateTime(2026, 3, 1, 8));
+      expect(times[1], DateTime(2026, 3, 1, 20));
+      expect(times.last, DateTime(2026, 3, 3, 20));
     });
 
     test(
@@ -106,12 +103,9 @@ void main() {
           scheduleType: 'times_per_day',
           scheduleTimes: ['08:00', '20:00'],
           durationDays: 1,
-          startTime: DateTime(2026, 3, 1, 12, 0),
+          startTime: DateTime(2026, 3, 1, 12),
         ).scheduledDoseTimes;
-        expect(times, [
-          DateTime(2026, 3, 1, 20, 0),
-          DateTime(2026, 3, 2, 8, 0),
-        ]);
+        expect(times, [DateTime(2026, 3, 1, 20), DateTime(2026, 3, 2, 8)]);
       },
     );
 
@@ -120,9 +114,9 @@ void main() {
         scheduleType: 'times_per_day',
         scheduleTimes: ['08:00'],
         durationDays: 1,
-        startTime: DateTime(2026, 3, 1, 8, 0),
+        startTime: DateTime(2026, 3, 1, 8),
       ).scheduledDoseTimes;
-      expect(times, [DateTime(2026, 3, 1, 8, 0)]);
+      expect(times, [DateTime(2026, 3, 1, 8)]);
     });
 
     test('falls back to fixed interval when scheduleTimes is empty', () {

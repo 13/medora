@@ -85,7 +85,7 @@ class ReminderScheduler {
     );
     if (pending == null) return _scheduled?.length ?? 0;
 
-    final limit = maxNotifications ~/ notificationsPerDose;
+    const limit = maxNotifications ~/ notificationsPerDose;
     final desired = pending.take(limit).toList();
     final desiredMap = {for (final d in desired) d.id: d.scheduledTime};
     final previous = _scheduled;

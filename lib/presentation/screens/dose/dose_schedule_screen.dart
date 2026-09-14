@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
@@ -13,7 +14,6 @@ import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:go_router/go_router.dart';
 
 class DoseScheduleScreen extends ConsumerStatefulWidget {
   const DoseScheduleScreen({super.key});

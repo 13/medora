@@ -28,7 +28,7 @@ class CurrentFamilyNotifier extends AsyncNotifier<Family?> {
     final repo = ref.read(familyRepositoryProvider);
     final result = await repo.createFamily(name, displayName);
     state = result.when(
-      success: (family) => AsyncValue.data(family),
+      success: AsyncValue.data,
       failure: (msg, [_]) => AsyncValue.error(msg, StackTrace.current),
     );
   }
@@ -38,7 +38,7 @@ class CurrentFamilyNotifier extends AsyncNotifier<Family?> {
     final repo = ref.read(familyRepositoryProvider);
     final result = await repo.joinFamily(inviteCode, displayName);
     state = result.when(
-      success: (family) => AsyncValue.data(family),
+      success: AsyncValue.data,
       failure: (msg, [_]) => AsyncValue.error(msg, StackTrace.current),
     );
   }

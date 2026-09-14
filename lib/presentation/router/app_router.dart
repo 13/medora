@@ -93,7 +93,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: AppRoutes.home,
-            builder: (_, _) => const MainShellScreen(initialIndex: 0),
+            builder: (_, _) => const MainShellScreen(),
           ),
           GoRoute(
             path: AppRoutes.medications,

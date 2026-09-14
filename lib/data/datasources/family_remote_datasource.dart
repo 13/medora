@@ -34,7 +34,7 @@ class FamilyRemoteDatasource {
     String displayName,
   ) async {
     final response =
-        await _client.rpc(
+        await _client.rpc<dynamic>(
               'join_family',
               params: {
                 'p_invite_code': inviteCode,

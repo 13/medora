@@ -241,8 +241,9 @@ class SyncService {
 
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
     await _pushBatch('families', report, where, whereArgs, (row) async {
-      if (row['sync_status'] == SyncStatus.pendingDelete)
+      if (row['sync_status'] == SyncStatus.pendingDelete) {
         return false; // Task 5
+      }
       final model = FamilyModel.fromJson(row);
       await familyRemote!.upsertFamily(model);
       await db.update(
@@ -521,8 +522,10 @@ class SyncService {
     MedicationModel m, {
     bool force = false,
   }) async {
-    if (!force && await _localPendingIsNewer('medications', m.id, m.updatedAt))
+    if (!force &&
+        await _localPendingIsNewer('medications', m.id, m.updatedAt)) {
       return;
+    }
     await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
   }
 
@@ -530,8 +533,9 @@ class SyncService {
     TreatmentModel t, {
     bool force = false,
   }) async {
-    if (!force && await _localPendingIsNewer('treatments', t.id, t.updatedAt))
+    if (!force && await _localPendingIsNewer('treatments', t.id, t.updatedAt)) {
       return;
+    }
     await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
   }
 
@@ -540,14 +544,16 @@ class SyncService {
     bool force = false,
   }) async {
     if (!force &&
-        await _localPendingIsNewer('prescriptions', p.id, p.updatedAt))
+        await _localPendingIsNewer('prescriptions', p.id, p.updatedAt)) {
       return;
+    }
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
   }
 
   Future<void> _safeUpsertDoseLog(DoseLogModel d, {bool force = false}) async {
-    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt))
+    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) {
       return;
+    }
     await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
   }
 
@@ -571,8 +577,9 @@ class SyncService {
     if (rows.first['sync_status'] == SyncStatus.pendingDelete) return true;
     final localRaw = rows.first['updated_at'] as String?;
     final local = localRaw == null ? null : DateTime.tryParse(localRaw);
-    if (local == null || remoteUpdatedAt == null)
+    if (local == null || remoteUpdatedAt == null) {
       return true; // keep local when unsure
+    }
     return !remoteUpdatedAt.toUtc().isAfter(local.toUtc());
   }
 

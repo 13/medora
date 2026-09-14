@@ -54,7 +54,7 @@ class FakeRemoteTable {
   }
 
   List<Map<String, dynamic>> all() =>
-      rows.values.map((r) => Map<String, dynamic>.from(r)).toList();
+      rows.values.map(Map<String, dynamic>.from).toList();
 
   /// Live rows only — mirrors the `.isFilter('deleted_at', null)` the
   /// non-delta remote getters apply. Delta pulls use [since] and still see

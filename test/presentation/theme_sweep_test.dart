@@ -22,8 +22,9 @@ void main() {
         final hasColors = RegExp(
           r'\bColors\.\w+',
         ).allMatches(line).any((m) => !allowed.hasMatch(m[0]!));
-        if (hasStatic || hasColors)
+        if (hasStatic || hasColors) {
           offenders.add('${file.path}:${i + 1}: ${line.trim()}');
+        }
       }
     }
     expect(offenders, isEmpty, reason: offenders.join('\n'));

@@ -55,7 +55,6 @@ void main() {
             title: 'Section',
             icon: Icons.info,
             controller: n,
-            initiallyExpanded: true,
             children: const [Text('body')],
           ),
         ),

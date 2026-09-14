@@ -85,7 +85,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       if (!mounted) return;
 
       setState(() => _isCameraReady = true);
-      _cameraController!.startImageStream(_processImageStream);
+      await _cameraController!.startImageStream(_processImageStream);
     } catch (e) {
       debugPrint('Camera init error: $e');
     }
@@ -163,7 +163,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     if (bytes.isEmpty) return null;
 
     final rotation = _rotationFromSensorOrientation(sensorOrientation);
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
+    final format = InputImageFormatValue.fromRawValue(image.format.raw as int);
     if (format == null) return null;
 
     return InputImage.fromBytes(
@@ -640,14 +640,18 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       context,
     ).showSnackBar(SnackBar(content: Text(l10n.autoFilledFromBarcode)));
     context.pop();
-    context.push('${AppRoutes.addMedication}?barcode=$code', extra: result);
+    // Fire and forget: `push` completes only when the pushed route pops, and
+    // this method is awaited by its callers.
+    unawaited(
+      context.push('${AppRoutes.addMedication}?barcode=$code', extra: result),
+    );
   }
 
   void _showManualEntryDialog(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final controller = TextEditingController();
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.enterBarcode),

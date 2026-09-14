@@ -16,10 +16,7 @@ void main() {
       expect(SupabaseConfig.clientOrNull, isNull);
       expect(SupabaseConfig.currentUserId, isNull);
       expect(SupabaseConfig.isAuthenticated, isFalse);
-      expect(
-        () => SupabaseConfig.requireClient(),
-        throwsA(isA<AuthException>()),
-      );
+      expect(SupabaseConfig.requireClient, throwsA(isA<AuthException>()));
     },
   );
 }

@@ -233,7 +233,7 @@ void main() {
         await h.service.syncAll();
         expect(await localRow('treatments', seeded.treatmentId), isNull);
         expect(await localRow('prescriptions', seeded.prescriptionId), isNull);
-        expect((await db.query('dose_logs')), isEmpty);
+        expect(await db.query('dose_logs'), isEmpty);
       },
     );
 
@@ -303,7 +303,7 @@ void main() {
         TreatmentModel(
           id: 't',
           name: 'T',
-          startDate: DateTime(2026, 3, 1),
+          startDate: DateTime(2026, 3),
         ).toJson(),
       );
       final report = await h.service.syncAll();

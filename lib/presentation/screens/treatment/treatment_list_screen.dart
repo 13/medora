@@ -2,13 +2,13 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -159,7 +159,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
 
                 return RefreshIndicator(
                   onRefresh: () async {
-                    ref.read(treatmentListProvider.notifier).refresh();
+                    await ref.read(treatmentListProvider.notifier).refresh();
                   },
                   child: ListView.builder(
                     padding: const EdgeInsets.only(bottom: 80),
@@ -211,7 +211,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                   ),
                                 );
                                 if (confirm == true) {
-                                  ref
+                                  await ref
                                       .read(treatmentListProvider.notifier)
                                       .deleteTreatment(t.id);
                                 }

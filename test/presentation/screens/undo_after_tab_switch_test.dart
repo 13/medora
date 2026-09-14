@@ -43,7 +43,7 @@ void main() {
     tester,
   ) async {
     final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db, medicationName: 'Tachipirina');
+    final s = await seedPrescription(db);
     final doseId = await seedDoseLog(
       db,
       s.prescriptionId,

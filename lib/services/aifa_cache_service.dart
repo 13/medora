@@ -7,9 +7,9 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart' as p;
 
 class AifaCacheService {
   AifaCacheService._();

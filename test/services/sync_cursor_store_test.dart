@@ -6,7 +6,7 @@ void main() {
   test('in-memory store round-trips and clears', () async {
     final store = SyncCursorStore.inMemory();
     expect(await store.lastPullAt('medications'), isNull);
-    final t = DateTime.utc(2026, 3, 4, 15, 0, 0);
+    final t = DateTime.utc(2026, 3, 4, 15);
     await store.setLastPullAt('medications', t);
     expect(await store.lastPullAt('medications'), t);
     await store.clear();

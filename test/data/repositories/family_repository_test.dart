@@ -89,7 +89,7 @@ void main() {
     'joinFamily goes through the RPC and stores family + member locally',
     () async {
       final local = FamilyLocalDatasource();
-      final remote = FakeFamilyRemote(DateTime.now, currentUserId: 'user-a');
+      final remote = FakeFamilyRemote(DateTime.now);
       remote.families.seed(
         const FamilyModel(
           id: 'f9',

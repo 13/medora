@@ -17,8 +17,9 @@ class SyncStatusChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(appModeProvider) != AppMode.cloud)
+    if (ref.watch(appModeProvider) != AppMode.cloud) {
       return const SizedBox.shrink();
+    }
 
     final l10n = AppLocalizations.of(context);
     final syncState =

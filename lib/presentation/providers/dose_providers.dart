@@ -81,7 +81,7 @@ final nextDueDoseProvider = Provider<DoseLog?>((ref) {
 });
 
 /// Single entry point for dose mutations from any screen.
-final doseActionsProvider = Provider<DoseActions>((ref) => DoseActions(ref));
+final doseActionsProvider = Provider<DoseActions>(DoseActions.new);
 
 class DoseActions {
   DoseActions(this._ref);
@@ -285,9 +285,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       // Generate all missing dose logs in parallel
       if (needsGeneration.isNotEmpty) {
         await Future.wait(
-          needsGeneration.map(
-            (id) => doseRepo.generateDoseLogsForPrescription(id),
-          ),
+          needsGeneration.map(doseRepo.generateDoseLogsForPrescription),
         );
 
         // Refresh the state after generation

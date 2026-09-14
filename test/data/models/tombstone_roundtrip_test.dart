@@ -30,7 +30,7 @@ void main() {
     final t = TreatmentModel(
       id: 't',
       name: 'x',
-      startDate: DateTime(2026, 3, 1),
+      startDate: DateTime(2026, 3),
       deletedAt: deleted,
     );
     expect(TreatmentModel.fromJson(t.toJson()).deletedAt?.toUtc(), deleted);
@@ -60,8 +60,8 @@ void main() {
       takenTime: DateTime(2026, 3, 1, 8, 5),
     );
     final json = d.toJson();
-    expect((json['scheduled_time'] as String), endsWith('Z'));
-    expect((json['taken_time'] as String), endsWith('Z'));
+    expect(json['scheduled_time'] as String, endsWith('Z'));
+    expect(json['taken_time'] as String, endsWith('Z'));
     expect(DoseLogModel.fromJson(json).scheduledTime, DateTime(2026, 3, 1, 8));
   });
 }

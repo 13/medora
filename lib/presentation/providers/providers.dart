@@ -7,17 +7,17 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
-import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
+import 'package:medora/data/datasources/family_local_datasource.dart';
+import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
-import 'package:medora/data/datasources/family_local_datasource.dart';
-import 'package:medora/data/datasources/family_remote_datasource.dart';
+import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
@@ -29,7 +29,11 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
+import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
@@ -39,10 +43,6 @@ import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
-import 'package:medora/presentation/providers/medication_providers.dart';
-import 'package:medora/presentation/providers/settings_providers.dart';
-import 'package:medora/presentation/providers/treatment_providers.dart';
-import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
@@ -246,7 +246,7 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
     }
   });
 
-  ref.onDispose(() => subscription.cancel());
+  ref.onDispose(subscription.cancel);
 
   return syncService.stateStream;
 });

@@ -13,13 +13,10 @@ class AppTheme {
 
   /// Build light theme with the given color seed.
   static ThemeData lightThemeFrom(Color seedColor) {
-    final textTheme = Typography.material2021(
-      platform: TargetPlatform.android,
-    ).black.apply(fontFamily: 'Inter');
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.light,
+    final textTheme = Typography.material2021().black.apply(
+      fontFamily: 'Inter',
     );
+    final scheme = ColorScheme.fromSeed(seedColor: seedColor);
 
     return ThemeData(
       useMaterial3: true,
@@ -87,9 +84,9 @@ class AppTheme {
 
   /// Build dark theme with the given color seed.
   static ThemeData darkThemeFrom(Color seedColor) {
-    final textTheme = Typography.material2021(
-      platform: TargetPlatform.android,
-    ).white.apply(fontFamily: 'Inter');
+    final textTheme = Typography.material2021().white.apply(
+      fontFamily: 'Inter',
+    );
     final scheme = ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: Brightness.dark,

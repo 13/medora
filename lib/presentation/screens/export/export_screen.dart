@@ -3,12 +3,12 @@ library;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';

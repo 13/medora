@@ -2,14 +2,14 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:medora/core/constants.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';

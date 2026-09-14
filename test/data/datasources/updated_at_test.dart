@@ -41,7 +41,7 @@ void main() {
       TreatmentModel(
         id: 't1',
         name: 'Flu',
-        startDate: DateTime(2026, 3, 1),
+        startDate: DateTime(2026, 3),
         updatedAt: remoteStamp,
       ),
       syncStatus: SyncStatus.synced,

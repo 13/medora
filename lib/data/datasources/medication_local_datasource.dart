@@ -21,7 +21,7 @@ class MedicationLocalDatasource {
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'name ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   /// Get only archived medications.
@@ -33,7 +33,7 @@ class MedicationLocalDatasource {
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'name ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   /// Archive a medication.
@@ -83,7 +83,7 @@ class MedicationLocalDatasource {
     final rows = await db.query(
       'medications',
       where:
-          "(name LIKE ? OR description LIKE ? OR active_ingredients LIKE ? OR notes LIKE ?) AND sync_status != ?",
+          '(name LIKE ? OR description LIKE ? OR active_ingredients LIKE ? OR notes LIKE ?) AND sync_status != ?',
       whereArgs: [
         '%$query%',
         '%$query%',
@@ -93,7 +93,7 @@ class MedicationLocalDatasource {
       ],
       orderBy: 'name ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   Future<List<MedicationModel>> getExpiringSoon({int days = 30}) async {
@@ -111,7 +111,7 @@ class MedicationLocalDatasource {
       ],
       orderBy: 'expiry_date ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   Future<List<MedicationModel>> getLowStock() async {
@@ -123,7 +123,7 @@ class MedicationLocalDatasource {
       whereArgs: [SyncStatus.pendingDelete],
       orderBy: 'quantity ASC',
     );
-    return rows.map((r) => _fromRow(r)).toList();
+    return rows.map(_fromRow).toList();
   }
 
   Future<MedicationModel?> getMedicationByBarcode(String barcode) async {

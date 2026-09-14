@@ -18,7 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_reminder_port.dart';
 
-final goldenNow = DateTime(2026, 3, 4, 15, 0); // Wednesday
+final goldenNow = DateTime(2026, 3, 4, 15); // Wednesday
 final goldenToday = DateTime(2026, 3, 4);
 
 final goldenMedications = <Medication>[
@@ -41,7 +41,7 @@ final goldenMedications = <Medication>[
     // would flip the Home golden's Expiring Soon card to a populated,
     // daily-changing state once "today" caught up. These goldens only cover
     // the empty Expiring Soon state.
-    expiryDate: DateTime(2099, 1, 1),
+    expiryDate: DateTime(2099),
     category: 'painkiller',
   ),
   Medication(
@@ -49,7 +49,7 @@ final goldenMedications = <Medication>[
     name: 'Bentelan',
     quantity: 8,
     quantityUnit: 'tablets',
-    expiryDate: DateTime(2025, 12, 1),
+    expiryDate: DateTime(2025, 12),
     category: 'other',
   ),
 ];

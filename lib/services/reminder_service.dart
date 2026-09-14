@@ -5,13 +5,13 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:go_router/go_router.dart';
 
 /// Service for scheduling and managing medication reminders.
 class ReminderService implements ReminderPort {
@@ -43,13 +43,9 @@ class ReminderService implements ReminderPort {
     tz.initializeTimeZones();
 
     const androidSettings = AndroidInitializationSettings('ic_stat_notify');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+    const iosSettings = DarwinInitializationSettings();
 
-    final settings = InitializationSettings(
+    const settings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
@@ -142,7 +138,7 @@ class ReminderService implements ReminderPort {
 
       String body;
       if (l10n != null) {
-        body = l10n.notificationReminderBody(dose.displayDosage ?? "");
+        body = l10n.notificationReminderBody(dose.displayDosage ?? '');
       } else {
         body = '${dose.displayDosage ?? ""} — Tap to log your dose';
       }

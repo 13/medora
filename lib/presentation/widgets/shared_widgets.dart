@@ -4,9 +4,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 
@@ -235,7 +235,7 @@ void showDoseDetailBottomSheet({
     dateLabel = dose.scheduledTime.formatted;
   }
 
-  showModalBottomSheet(
+  showModalBottomSheet<void>(
     context: context,
     builder: (ctx) => SafeArea(
       child: Padding(

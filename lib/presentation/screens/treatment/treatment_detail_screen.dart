@@ -78,7 +78,7 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                           ),
                         );
                         if (confirm == true) {
-                          ref
+                          await ref
                               .read(treatmentListProvider.notifier)
                               .endTreatment(treatment.id);
                         }
@@ -106,9 +106,13 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                           ),
                         );
                         if (confirm == true && context.mounted) {
-                          ref
-                              .read(treatmentListProvider.notifier)
-                              .deleteTreatment(treatment.id);
+                          // Fire and forget: pop immediately, the list
+                          // provider refreshes itself when the write lands.
+                          unawaited(
+                            ref
+                                .read(treatmentListProvider.notifier)
+                                .deleteTreatment(treatment.id),
+                          );
                           if (context.mounted) context.pop();
                         }
                     }
@@ -522,7 +526,7 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                               ],
                               onSelected: (action) async {
                                 if (action == 'edit') {
-                                  showPrescriptionSheet(
+                                  await showPrescriptionSheet(
                                     context,
                                     ref,
                                     treatmentId: widget.treatmentId,

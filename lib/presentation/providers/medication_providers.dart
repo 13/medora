@@ -3,8 +3,8 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/medication.dart';
-import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 
 /// Provider for the full medication list.
 final medicationListProvider =
@@ -118,7 +118,7 @@ final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
   final meds = await ref.watch(medicationListProvider.future);
 
   return meds
-      .where((m) => !m.isArchived && m.isExpiringSoon(days: 30) && !m.isExpired)
+      .where((m) => !m.isArchived && m.isExpiringSoon() && !m.isExpired)
       .toList();
 });
 

@@ -30,7 +30,7 @@ void main() {
         platformCapabilitiesProvider.overrideWithValue(
           PlatformCapabilities.mobile,
         ),
-        medicationListProvider.overrideWith(() => _Failing()),
+        medicationListProvider.overrideWith(_Failing.new),
       ];
 
       await pumpMedoraApp(

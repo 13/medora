@@ -8,15 +8,14 @@ import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-
 import 'package:medora/core/extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 /// Localized labels used to build CSV headers and PDF section titles.
 ///
@@ -290,8 +289,7 @@ class ExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          header: (context) =>
-              pw.Header(level: 1, child: pw.Text(labels.medications)),
+          header: (context) => pw.Header(child: pw.Text(labels.medications)),
           build: (context) => [
             pw.TableHelper.fromTextArray(
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
@@ -335,8 +333,7 @@ class ExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          header: (context) =>
-              pw.Header(level: 1, child: pw.Text(labels.treatments)),
+          header: (context) => pw.Header(child: pw.Text(labels.treatments)),
           build: (context) => [
             pw.TableHelper.fromTextArray(
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
@@ -373,8 +370,7 @@ class ExportService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          header: (context) =>
-              pw.Header(level: 1, child: pw.Text(labels.doseLog)),
+          header: (context) => pw.Header(child: pw.Text(labels.doseLog)),
           build: (context) => [
             pw.TableHelper.fromTextArray(
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),

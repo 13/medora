@@ -191,7 +191,6 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       intervalHours: interval,
       durationDays: duration,
       startTime: widget.existing?.startTime ?? _roundedNow,
-      scheduleType: 'fixed_interval',
     );
   }
 
@@ -686,7 +685,6 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       // New prescriptions use `_roundedNow`, captured when the sheet was
       // opened, so the fixed-interval preview above matches what is saved.
       startTime: existing?.startTime ?? _roundedNow,
-      isActive: true,
       autoDiminish: _autoDiminish,
       notes: _notesController.text.trim().isEmpty
           ? null

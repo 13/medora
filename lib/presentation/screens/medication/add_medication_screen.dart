@@ -532,7 +532,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                                   setState(
                                     () => _barcodeController.text = barcode,
                                   );
-                                  _searchBarcode(barcode);
+                                  await _searchBarcode(barcode);
                                 }
                               },
                             ),

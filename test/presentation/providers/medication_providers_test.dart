@@ -64,11 +64,7 @@ void main() {
     final c = await make();
     await c.read(medicationListProvider.future);
     final states = <AsyncValue<List<Medication>>>[];
-    final sub = c.listen(
-      medicationListProvider,
-      (_, next) => states.add(next),
-      fireImmediately: false,
-    );
+    final sub = c.listen(medicationListProvider, (_, next) => states.add(next));
     addTearDown(sub.close);
 
     await c

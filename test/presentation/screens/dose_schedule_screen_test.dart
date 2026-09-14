@@ -90,7 +90,7 @@ class _SlowRepo implements DoseLogRepository {
 }
 
 void main() {
-  final fixedNow = DateTime(2026, 3, 4, 15, 0);
+  final fixedNow = DateTime(2026, 3, 4, 15);
   final today = DateTime(2026, 3, 4);
 
   setUp(() async {

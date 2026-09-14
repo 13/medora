@@ -12,17 +12,17 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
-import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
-import 'package:medora/services/aifa_cache_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -68,17 +68,17 @@ class SettingsScreen extends ConsumerWidget {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   segments: [
-                    ButtonSegment(
+                    const ButtonSegment(
                       value: ThemeMode.system,
-                      icon: const Icon(Icons.brightness_auto, size: 18),
+                      icon: Icon(Icons.brightness_auto, size: 18),
                     ),
-                    ButtonSegment(
+                    const ButtonSegment(
                       value: ThemeMode.light,
-                      icon: const Icon(Icons.light_mode, size: 18),
+                      icon: Icon(Icons.light_mode, size: 18),
                     ),
-                    ButtonSegment(
+                    const ButtonSegment(
                       value: ThemeMode.dark,
-                      icon: const Icon(Icons.dark_mode, size: 18),
+                      icon: Icon(Icons.dark_mode, size: 18),
                     ),
                   ],
                   selected: {themeMode},
@@ -117,8 +117,9 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: Text(l10n.receiveDoseReminders),
                 value: remindersEnabled,
                 onChanged: (value) async {
-                  if (value)
+                  if (value) {
                     await ReminderService.instance.requestPermissions();
+                  }
                   await ref.read(remindersEnabledProvider.notifier).set(value);
                   if (value) ref.read(reminderSchedulerProvider).reset();
                   await ref.read(reminderSchedulerProvider).reconcile();
@@ -477,7 +478,7 @@ class SettingsScreen extends ConsumerWidget {
     AppLocalizations l10n,
     bool isPush,
   ) {
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(isPush ? l10n.forcePushTitle : l10n.forcePullTitle),
@@ -514,7 +515,7 @@ class SettingsScreen extends ConsumerWidget {
     AppLocalizations l10n,
   ) {
     final controller = TextEditingController();
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -619,12 +620,12 @@ class SettingsScreen extends ConsumerWidget {
   ) {
     final options = <_LanguageOption>[
       _LanguageOption(null, l10n.systemDefault),
-      _LanguageOption(const Locale('en'), 'English'),
-      _LanguageOption(const Locale('de'), 'Deutsch'),
-      _LanguageOption(const Locale('it'), 'Italiano'),
+      const _LanguageOption(Locale('en'), 'English'),
+      const _LanguageOption(Locale('de'), 'Deutsch'),
+      const _LanguageOption(Locale('it'), 'Italiano'),
     ];
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -757,7 +758,7 @@ class SettingsScreen extends ConsumerWidget {
     AppLocalizations l10n,
   ) {
     final current = ref.read(colorSchemeProvider);
-    final schemes = AppColorScheme.values;
+    const schemes = AppColorScheme.values;
 
     String colorLabel(AppColorScheme scheme) {
       return switch (scheme) {
@@ -772,7 +773,7 @@ class SettingsScreen extends ConsumerWidget {
       };
     }
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -882,7 +883,7 @@ class _ColorDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: Theme.of(context).dividerColor, width: 1),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
     );
   }
