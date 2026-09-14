@@ -4,8 +4,10 @@
 /// pending doses for the next [horizon], earliest first, capped at
 /// [maxNotifications]. The first run (or the first after [reset]) cancels
 /// everything and schedules the desired set; later runs diff against the
-/// previous run's snapshot and only cancel/schedule the delta. When
-/// reminders are disabled it cancels everything and schedules nothing.
+/// previous run's snapshot and only cancel/schedule the delta. The snapshot
+/// tracks id and scheduled time; a dose whose time changes (e.g. after a
+/// cloud pull) is re-scheduled. When reminders are disabled it cancels
+/// everything and schedules nothing.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -57,15 +59,16 @@ class ReminderScheduler {
     }
   }
 
-  /// Ids scheduled by the previous run; null means "unknown, do a full cancel".
-  Set<String>? _scheduledIds;
+  /// Snapshot of the previous run: dose id → scheduled time. Null means
+  /// "unknown, do a full cancel".
+  Map<String, DateTime>? _scheduled;
 
-  void reset() => _scheduledIds = null;
+  void reset() => _scheduled = null;
 
   Future<int> _reconcileOnce() async {
     if (!_remindersEnabled()) {
       await _port.cancelAll();
-      _scheduledIds = {};
+      _scheduled = {};
       return 0;
     }
     final now = _now();
@@ -74,12 +77,12 @@ class ReminderScheduler {
       debugPrint('Reminders: could not load pending doses: $msg');
       return null;
     });
-    if (pending == null) return _scheduledIds?.length ?? 0;
+    if (pending == null) return _scheduled?.length ?? 0;
 
     final limit = maxNotifications ~/ notificationsPerDose;
     final desired = pending.take(limit).toList();
-    final desiredIds = desired.map((d) => d.id).toSet();
-    final previous = _scheduledIds;
+    final desiredMap = {for (final d in desired) d.id: d.scheduledTime};
+    final previous = _scheduled;
 
     if (previous == null) {
       await _port.cancelAll();
@@ -87,15 +90,19 @@ class ReminderScheduler {
         await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
       }
     } else {
-      for (final id in previous.difference(desiredIds)) {
-        await _port.cancelForDose(id);
+      for (final id in previous.keys) {
+        if (!desiredMap.containsKey(id) || desiredMap[id] != previous[id]) {
+          await _port.cancelForDose(id);
+        }
       }
-      for (final dose in desired.where((d) => !previous.contains(d.id))) {
-        await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
+      for (final dose in desired) {
+        if (!previous.containsKey(dose.id) || previous[dose.id] != dose.scheduledTime) {
+          await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
+        }
       }
     }
-    _scheduledIds = desiredIds;
-    debugPrint('Reminders: ${desiredIds.length} dose(s) scheduled (${pending.length} pending in horizon)');
-    return desiredIds.length;
+    _scheduled = desiredMap;
+    debugPrint('Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)');
+    return desiredMap.length;
   }
 }

@@ -187,7 +187,8 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               );
               if (confirm == true && context.mounted) {
-                await ReminderService.instance.cancelAllReminders();
+                await ref.read(reminderPortProvider).cancelAll();
+                ref.read(reminderSchedulerProvider).reset();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(l10n.allRemindersCancelled)),
@@ -362,8 +363,8 @@ class SettingsScreen extends ConsumerWidget {
     await ref.read(authControllerProvider.notifier).signOut();
     if (choice == 'wipe') {
       try {
-        await ref.read(localDataWiperProvider).wipe();
         ref.read(reminderSchedulerProvider).reset();
+        await ref.read(localDataWiperProvider).wipe();
         ref.invalidate(medicationListProvider);
         ref.invalidate(treatmentListProvider);
         ref.invalidate(todaysDoseLogsProvider);
@@ -476,8 +477,8 @@ class SettingsScreen extends ConsumerWidget {
                                 .neq('id', '');
                         }
                         // If remote deletion is successful, delete local data
-                        await ref.read(localDataWiperProvider).wipe();
                         ref.read(reminderSchedulerProvider).reset();
+                        await ref.read(localDataWiperProvider).wipe();
 
                         // Invalidate all providers
                         ref.invalidate(medicationListProvider);

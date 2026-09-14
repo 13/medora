@@ -39,6 +39,8 @@ final List<Migration> kMigrations = [
   }),
   // v13: dose timestamps are stored as naive local ISO strings so that
   // string range comparisons match local day boundaries (Phase 1 review).
+  // Converts with the device's current time zone; rows written in another
+  // zone or across a DST change may shift.
   Migration(13, (db) async {
     for (final column in ['scheduled_time', 'taken_time', 'updated_at', 'created_at']) {
       final rows = await db.query('dose_logs', columns: ['id', column], where: "$column LIKE '%Z'");

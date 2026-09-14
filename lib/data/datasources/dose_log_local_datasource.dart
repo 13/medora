@@ -263,18 +263,18 @@ class DoseLogLocalDatasource {
     return DoseLogModel(
       id: row['id'] as String,
       prescriptionId: row['prescription_id'] as String,
-      scheduledTime: DateTime.parse(row['scheduled_time'] as String),
+      scheduledTime: DateTime.parse(row['scheduled_time'] as String).toLocal(),
       takenTime: row['taken_time'] != null
-          ? DateTime.tryParse(row['taken_time'] as String)
+          ? DateTime.tryParse(row['taken_time'] as String)?.toLocal()
           : null,
       status:
           DoseStatus.fromString(row['status'] as String? ?? 'pending'),
       notes: row['notes'] as String?,
       createdAt: row['created_at'] != null
-          ? DateTime.tryParse(row['created_at'] as String)
+          ? DateTime.tryParse(row['created_at'] as String)?.toLocal()
           : null,
       updatedAt: row['updated_at'] != null
-          ? DateTime.tryParse(row['updated_at'] as String)
+          ? DateTime.tryParse(row['updated_at'] as String)?.toLocal()
           : null,
       medicationName: row['medication_name'] as String?,
       dosage: row['dosage'] as String?,
