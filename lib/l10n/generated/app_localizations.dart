@@ -106,6 +106,12 @@ abstract class AppLocalizations {
   /// **'Medora'**
   String get appTitle;
 
+  /// No description provided for @appDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Medora - Home Medicine Cabinet Manager'**
+  String get appDescription;
+
   /// No description provided for @navHome.
   ///
   /// In en, this message translates to:
@@ -2122,12 +2128,6 @@ abstract class AppLocalizations {
   /// **'Password'**
   String get password;
 
-  /// No description provided for @continueAsGuest.
-  ///
-  /// In en, this message translates to:
-  /// **'Continue as Guest'**
-  String get continueAsGuest;
-
   /// No description provided for @signOut.
   ///
   /// In en, this message translates to:
@@ -2145,12 +2145,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Don\'t have an account? Sign Up'**
   String get dontHaveAccount;
-
-  /// No description provided for @useOfflineMode.
-  ///
-  /// In en, this message translates to:
-  /// **'Use Offline Mode'**
-  String get useOfflineMode;
 
   /// No description provided for @forcePush.
   ///
@@ -2241,6 +2235,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{dosage} — Tap to log your dose'**
   String notificationReminderBody(String dosage);
+
+  /// No description provided for @useOnThisDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Medora on this device'**
+  String get useOnThisDevice;
+
+  /// No description provided for @useOnThisDeviceDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Your data stays on this device. You can turn on cloud sync later in Settings.'**
+  String get useOnThisDeviceDesc;
+
+  /// No description provided for @orSignInForCloud.
+  ///
+  /// In en, this message translates to:
+  /// **'Or sign in to sync across devices'**
+  String get orSignInForCloud;
+
+  /// No description provided for @cloudSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud sync'**
+  String get cloudSync;
+
+  /// No description provided for @cloudSyncOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On — signed in as {email}'**
+  String cloudSyncOn(String email);
+
+  /// No description provided for @cloudSyncOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off — data is stored only on this device'**
+  String get cloudSyncOff;
+
+  /// No description provided for @cloudSyncUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Unavailable — this build has no cloud configuration'**
+  String get cloudSyncUnavailable;
+
+  /// No description provided for @turnOnCloudSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on cloud sync'**
+  String get turnOnCloudSync;
+
+  /// No description provided for @turnOffCloudSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off cloud sync'**
+  String get turnOffCloudSync;
+
+  /// No description provided for @turnOffCloudSyncConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'You will be signed out. Your data stays on this device.'**
+  String get turnOffCloudSyncConfirm;
+
+  /// No description provided for @localOnlyMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Local only'**
+  String get localOnlyMode;
+
+  /// No description provided for @unlockMedora.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock Medora'**
+  String get unlockMedora;
+
+  /// No description provided for @cloudRequiredForFamily.
+  ///
+  /// In en, this message translates to:
+  /// **'Family sharing needs cloud sync. Turn it on in Settings.'**
+  String get cloudRequiredForFamily;
+
+  /// No description provided for @invalidEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid email address'**
+  String get invalidEmail;
+
+  /// No description provided for @passwordTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Password must be at least 6 characters'**
+  String get passwordTooShort;
+
+  /// No description provided for @turnOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on'**
+  String get turnOn;
+
+  /// No description provided for @turnOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off'**
+  String get turnOff;
+
+  /// No description provided for @featureUnavailableOnPlatform.
+  ///
+  /// In en, this message translates to:
+  /// **'This feature is not available on this device.'**
+  String get featureUnavailableOnPlatform;
 }
 
 class _AppLocalizationsDelegate

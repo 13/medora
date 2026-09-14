@@ -3,6 +3,7 @@
 
 # Environment variables (contains secrets)
 .env
+dart_defines.json
 
 # Flutter/Dart
 .dart_tool/

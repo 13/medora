@@ -1,14 +1,14 @@
 /// Medora - Family Remote Datasource (Supabase)
 library;
 
-import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class FamilyRemoteDatasource {
-  FamilyRemoteDatasource();
+  FamilyRemoteDatasource(this._client);
 
-  final _client = SupabaseConfig.client;
+  final SupabaseClient _client;
 
   Future<FamilyModel> createFamily(FamilyModel family) async {
     final response = await _client

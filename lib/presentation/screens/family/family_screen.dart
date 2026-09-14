@@ -7,7 +7,9 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/family_member.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/family_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -17,6 +19,17 @@ class FamilyScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+
+    if (ref.watch(appModeProvider) != AppMode.cloud) {
+      return Scaffold(
+        appBar: AppBar(title: Text(l10n.familySharingTitle)),
+        body: EmptyStateWidget(
+          icon: Icons.cloud_off,
+          title: l10n.cloudRequiredForFamily,
+        ),
+      );
+    }
+
     final familyAsync = ref.watch(currentFamilyProvider);
 
     return Scaffold(

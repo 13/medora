@@ -10,7 +10,6 @@ class AppConstants {
 
   // App Info
   static const String appName = 'Medora';
-  static const String appVersion = '1.0.0';
 
   // Supabase Table Names
   static const String usersTable = 'users';

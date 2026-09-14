@@ -18,7 +18,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
   });
 
   final MedicationLocalDatasource localDatasource;
-  final MedicationRemoteDatasource remoteDatasource;
+  final MedicationRemoteDatasource? remoteDatasource;
 
   @override
   Future<Result<List<Medication>>> getMedications() async {
@@ -86,7 +86,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
     try {
       final model = MedicationModel.fromDomain(medication);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncInBackground(() => remoteDatasource.addMedication(model), model.id);
+      _syncInBackground((r) => r.addMedication(model), model.id);
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to add medication: $e', st);
@@ -98,7 +98,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
     try {
       final model = MedicationModel.fromDomain(medication);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground(() => remoteDatasource.updateMedication(model), model.id);
+      _syncInBackground((r) => r.updateMedication(model), model.id);
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to update medication: $e', st);
@@ -109,8 +109,8 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<void>> deleteMedication(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      _syncInBackground(() async {
-        await remoteDatasource.deleteMedication(id);
+      _syncInBackground((r) async {
+        await r.deleteMedication(id);
         await localDatasource.hardDelete(id);
       }, id);
       return const Result.success(null);
@@ -153,9 +153,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
         updatedAt: DateTime.now(),
       );
       await localDatasource.upsert(updated, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground(() async {
-        await remoteDatasource.updateQuantity(id, delta);
-      }, id);
+      _syncInBackground((r) => r.updateQuantity(id, delta), id);
       return Result.success(updated.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to update quantity: $e', st);
@@ -192,12 +190,17 @@ class MedicationRepositoryImpl implements MedicationRepository {
     }
   }
 
-  /// Fire-and-forget remote sync.
-  void _syncInBackground(Future<dynamic> Function() remoteFn, String id) {
+  /// Fire-and-forget remote sync. No-op in local-only mode.
+  void _syncInBackground(
+    Future<dynamic> Function(MedicationRemoteDatasource remote) remoteFn,
+    String id,
+  ) {
+    final remote = remoteDatasource;
+    if (remote == null) return;
     if (!ConnectivityService.instance.isOnline) return;
     Future(() async {
       try {
-        await remoteFn();
+        await remoteFn(remote);
         await localDatasource.markSynced(id);
       } catch (e) {
         debugPrint('⚠ Background sync failed for medication $id: $e');

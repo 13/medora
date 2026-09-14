@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/constants.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/domain/entities/medication.dart';
@@ -460,6 +461,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final caps = ref.watch(platformCapabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -471,16 +473,17 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
               tooltip: l10n.searchAifaByName,
               onPressed: () => _showAifaTextSearch(context),
             ),
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner),
-              tooltip: l10n.scanBarcodeTooltip,
-              onPressed: () async {
-                final barcode = await context.push<String>(AppRoutes.scanner);
-                if (barcode != null && mounted) {
-                  setState(() => _barcodeController.text = barcode);
-                }
-              },
-            ),
+            if (caps.hasCamera)
+              IconButton(
+                icon: const Icon(Icons.qr_code_scanner),
+                tooltip: l10n.scanBarcodeTooltip,
+                onPressed: () async {
+                  final barcode = await context.push<String>(AppRoutes.scanner);
+                  if (barcode != null && mounted) {
+                    setState(() => _barcodeController.text = barcode);
+                  }
+                },
+              ),
           ],
         ],
       ),
@@ -721,17 +724,18 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           : null,
                     ),
                     // Open camera scanner
-                    IconButton(
-                      icon: const Icon(Icons.qr_code_scanner),
-                      onPressed: () async {
-                        final barcode = await context
-                            .push<String>('${AppRoutes.scanner}?returnOnly=true');
-                        if (barcode != null && mounted) {
-                          setState(() => _barcodeController.text = barcode);
-                          _searchBarcode(barcode);
-                        }
-                      },
-                    ),
+                    if (caps.hasCamera)
+                      IconButton(
+                        icon: const Icon(Icons.qr_code_scanner),
+                        onPressed: () async {
+                          final barcode = await context
+                              .push<String>('${AppRoutes.scanner}?returnOnly=true');
+                          if (barcode != null && mounted) {
+                            setState(() => _barcodeController.text = barcode);
+                            _searchBarcode(barcode);
+                          }
+                        },
+                      ),
                   ],
                 ),
               ),
@@ -744,8 +748,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             const SizedBox(height: 16),
 
             // Photo
-            _buildPhotoSection(l10n),
-            const SizedBox(height: 16),
+            if (!kIsWeb) ...[
+              _buildPhotoSection(l10n),
+              const SizedBox(height: 16),
+            ],
 
             // Notes
             TextFormField(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/services/sync_service.dart';
 
@@ -8,6 +9,7 @@ class SyncIconButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(appModeProvider) != AppMode.cloud) return const SizedBox.shrink();
     final syncState = ref.watch(syncStateStreamProvider).value ?? SyncState.idle;
     final isSyncing = syncState == SyncState.syncing;
 

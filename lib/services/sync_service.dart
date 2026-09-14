@@ -43,15 +43,23 @@ class SyncService {
   });
 
   final MedicationLocalDatasource medicationLocal;
-  final MedicationRemoteDatasource medicationRemote;
+  final MedicationRemoteDatasource? medicationRemote;
   final TreatmentLocalDatasource treatmentLocal;
-  final TreatmentRemoteDatasource treatmentRemote;
+  final TreatmentRemoteDatasource? treatmentRemote;
   final PrescriptionLocalDatasource prescriptionLocal;
-  final PrescriptionRemoteDatasource prescriptionRemote;
+  final PrescriptionRemoteDatasource? prescriptionRemote;
   final DoseLogLocalDatasource doseLogLocal;
-  final DoseLogRemoteDatasource doseLogRemote;
+  final DoseLogRemoteDatasource? doseLogRemote;
   final FamilyLocalDatasource familyLocal;
-  final FamilyRemoteDatasource familyRemote;
+  final FamilyRemoteDatasource? familyRemote;
+
+  /// True when every remote datasource exists (cloud mode, configured build).
+  bool get isAvailable =>
+      medicationRemote != null &&
+      treatmentRemote != null &&
+      prescriptionRemote != null &&
+      doseLogRemote != null &&
+      familyRemote != null;
 
   final _stateController = StreamController<SyncState>.broadcast();
   Stream<SyncState> get stateStream => _stateController.stream;
@@ -72,6 +80,10 @@ class SyncService {
 
   /// Push pending local data to Supabase, then pull remote data.
   Future<void> syncAll() async {
+    if (!isAvailable) {
+      debugPrint('Sync: skipped (local-only mode)');
+      return;
+    }
     if (_currentState == SyncState.syncing) return;
     if (!ConnectivityService.instance.isOnline) {
       debugPrint('Sync: skipped (offline)');
@@ -123,6 +135,10 @@ class SyncService {
 
   /// Force push ALL local data to Supabase, overwriting remote records.
   Future<void> forcePush() async {
+    if (!isAvailable) {
+      debugPrint('Sync: skipped (local-only mode)');
+      return;
+    }
     if (_currentState == SyncState.syncing) return;
     if (!ConnectivityService.instance.isOnline) {
       debugPrint('Force Push: skipped (offline)');
@@ -145,6 +161,10 @@ class SyncService {
 
   /// Force pull ALL remote data to local, overwriting local records.
   Future<void> forcePull() async {
+    if (!isAvailable) {
+      debugPrint('Sync: skipped (local-only mode)');
+      return;
+    }
     if (_currentState == SyncState.syncing) return;
     if (!ConnectivityService.instance.isOnline) {
       debugPrint('Force Pull: skipped (offline)');
@@ -190,7 +210,7 @@ class SyncService {
     // Process each table in batches to avoid blocking UI
     await _pushBatch('families', where, whereArgs, (row) async {
       final model = FamilyModel.fromJson(row);
-      await familyRemote.createFamily(model);
+      await familyRemote!.createFamily(model);
       await db.update('families', {'sync_status': SyncStatus.synced}, where: 'id = ?', whereArgs: [model.id]);
     });
 
@@ -198,10 +218,10 @@ class SyncService {
       final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
       final status = row['sync_status'] as String;
       if (status == SyncStatus.pendingDelete) {
-        await medicationRemote.deleteMedication(model.id);
+        await medicationRemote!.deleteMedication(model.id);
         await medicationLocal.hardDelete(model.id);
       } else {
-        await medicationRemote.upsertMedication(model);
+        await medicationRemote!.upsertMedication(model);
         await medicationLocal.markSynced(model.id);
       }
     });
@@ -210,10 +230,10 @@ class SyncService {
       final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
       final status = row['sync_status'] as String;
       if (status == SyncStatus.pendingDelete) {
-        await treatmentRemote.deleteTreatment(model.id);
+        await treatmentRemote!.deleteTreatment(model.id);
         await treatmentLocal.hardDelete(model.id);
       } else {
-        await treatmentRemote.upsertTreatment(model);
+        await treatmentRemote!.upsertTreatment(model);
         await treatmentLocal.markSynced(model.id);
       }
     });
@@ -222,10 +242,10 @@ class SyncService {
       final model = PrescriptionModel.fromLocalMap(row);
       final status = row['sync_status'] as String;
       if (status == SyncStatus.pendingDelete) {
-        await prescriptionRemote.deletePrescription(model.id);
+        await prescriptionRemote!.deletePrescription(model.id);
         await prescriptionLocal.hardDelete(model.id);
       } else {
-        await prescriptionRemote.upsertPrescription(model);
+        await prescriptionRemote!.upsertPrescription(model);
         await prescriptionLocal.markSynced(model.id);
       }
     });
@@ -234,10 +254,10 @@ class SyncService {
       final model = DoseLogModel.fromLocalMap(row);
       final status = row['sync_status'] as String;
       if (status == SyncStatus.pendingDelete) {
-        await doseLogRemote.deleteDoseLog(model.id);
+        await doseLogRemote!.deleteDoseLog(model.id);
         await doseLogLocal.hardDelete(model.id);
       } else {
-        await doseLogRemote.upsertDoseLog(model);
+        await doseLogRemote!.upsertDoseLog(model);
         await doseLogLocal.markSynced(model.id);
       }
     });
@@ -268,12 +288,12 @@ class SyncService {
 
   Future<void> _pullFamilies() async {
     try {
-      final membership = await familyRemote.getCurrentMembership();
+      final membership = await familyRemote!.getCurrentMembership();
       if (membership != null) {
-        final family = await familyRemote.getFamilyById(membership.familyId);
+        final family = await familyRemote!.getFamilyById(membership.familyId);
         if (family != null) {
           await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
-          final members = await familyRemote.getMembers(family.id);
+          final members = await familyRemote!.getMembers(family.id);
           for (final m in members) {
             await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);
           }
@@ -284,28 +304,28 @@ class SyncService {
 
   Future<void> _pullMedications({bool force = false}) async {
     try {
-      final remoteMeds = await medicationRemote.getMedications();
+      final remoteMeds = await medicationRemote!.getMedications();
       for (final m in remoteMeds) { await _safeUpsertMedication(m, force: force); }
     } catch (e) { debugPrint('Sync: pull medications error: $e'); }
   }
 
   Future<void> _pullTreatments({bool force = false}) async {
     try {
-      final remote = await treatmentRemote.getTreatments();
+      final remote = await treatmentRemote!.getTreatments();
       for (final t in remote) { await _safeUpsertTreatment(t, force: force); }
     } catch (e) { debugPrint('Sync: pull treatments error: $e'); }
   }
 
   Future<void> _pullPrescriptions({bool force = false}) async {
     try {
-      final remote = await prescriptionRemote.getPrescriptions();
+      final remote = await prescriptionRemote!.getPrescriptions();
       for (final p in remote) { await _safeUpsertPrescription(p, force: force); }
     } catch (e) { debugPrint('Sync: pull prescriptions error: $e'); }
   }
 
   Future<void> _pullDoseLogs({bool force = false}) async {
     try {
-      final remote = await doseLogRemote.getDoseLogs();
+      final remote = await doseLogRemote!.getDoseLogs();
       for (final d in remote) {
         if (force) {
           await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
@@ -317,6 +337,7 @@ class SyncService {
   }
 
   void _setState(SyncState state) {
+    if (_stateController.isClosed) return;
     _currentState = state;
     _stateController.add(state);
   }
@@ -383,5 +404,10 @@ class SyncService {
     return rows.isNotEmpty;
   }
 
-  void dispose() { _stateController.close(); }
+  void dispose() {
+    if (!_stateController.isClosed) _stateController.close();
+  }
+
+  @visibleForTesting
+  void debugSetStateForTest(SyncState state) => _setState(state);
 }

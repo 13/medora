@@ -18,7 +18,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   });
 
   final PrescriptionLocalDatasource localDatasource;
-  final PrescriptionRemoteDatasource remoteDatasource;
+  final PrescriptionRemoteDatasource? remoteDatasource;
 
   @override
   Future<Result<List<Prescription>>> getPrescriptionsByTreatment(
@@ -60,7 +60,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
       final updated = prescription.copyWith(createdAt: now, updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncInBackground(() => remoteDatasource.addPrescription(model), model.id);
+      _syncInBackground((r) => r.addPrescription(model), model.id);
       return Result.success(updated);
     } catch (e, st) {
       return Result.failure('Failed to add prescription: $e', st);
@@ -75,7 +75,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
       final updated = prescription.copyWith(updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground(() => remoteDatasource.updatePrescription(model), model.id);
+      _syncInBackground((r) => r.updatePrescription(model), model.id);
       return Result.success(updated);
     } catch (e, st) {
       return Result.failure('Failed to update prescription: $e', st);
@@ -86,8 +86,8 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> deletePrescription(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      _syncInBackground(() async {
-        await remoteDatasource.deletePrescription(id);
+      _syncInBackground((r) async {
+        await r.deletePrescription(id);
         await localDatasource.hardDelete(id);
       }, id);
       return const Result.success(null);
@@ -100,7 +100,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> deactivatePrescription(String id) async {
     try {
       await localDatasource.deactivate(id);
-      _syncInBackground(() => remoteDatasource.deactivatePrescription(id), id);
+      _syncInBackground((r) => r.deactivatePrescription(id), id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to deactivate prescription: $e', st);
@@ -111,19 +111,24 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> reactivatePrescription(String id) async {
     try {
       await localDatasource.reactivate(id);
-      _syncInBackground(() => remoteDatasource.reactivatePrescription(id), id);
+      _syncInBackground((r) => r.reactivatePrescription(id), id);
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to reactivate prescription: $e', st);
     }
   }
 
-  /// Fire-and-forget remote sync.
-  void _syncInBackground(Future<dynamic> Function() remoteFn, String id) {
+  /// Fire-and-forget remote sync. No-op in local-only mode.
+  void _syncInBackground(
+    Future<dynamic> Function(PrescriptionRemoteDatasource remote) remoteFn,
+    String id,
+  ) {
+    final remote = remoteDatasource;
+    if (remote == null) return;
     if (!ConnectivityService.instance.isOnline) return;
     Future(() async {
       try {
-        await remoteFn();
+        await remoteFn(remote);
         await localDatasource.markSynced(id);
       } catch (e) {
         debugPrint('⚠ Background sync failed for prescription $id: $e');

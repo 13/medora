@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -95,7 +96,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
           ),
-          if (kIsWeb)
+          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
             IconButton(
               icon: const Icon(Icons.logout),
               tooltip: l10n.signOut,

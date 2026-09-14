@@ -12,6 +12,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get appTitle => 'Medora';
 
   @override
+  String get appDescription =>
+      'Medora - Gestore dell\'armadietto dei medicinali di casa';
+
+  @override
   String get navHome => 'Dashboard';
 
   @override
@@ -1091,9 +1095,6 @@ class AppLocalizationsIt extends AppLocalizations {
   String get password => 'Password';
 
   @override
-  String get continueAsGuest => 'Continua come ospite';
-
-  @override
   String get signOut => 'Disconnetti';
 
   @override
@@ -1101,9 +1102,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get dontHaveAccount => 'Non hai un account? Registrati';
-
-  @override
-  String get useOfflineMode => 'Usa modalità offline';
 
   @override
   String get forcePush => 'Force Push';
@@ -1158,4 +1156,67 @@ class AppLocalizationsIt extends AppLocalizations {
   String notificationReminderBody(String dosage) {
     return '$dosage — Tocca per registrare la dose';
   }
+
+  @override
+  String get useOnThisDevice => 'Usa Medora su questo dispositivo';
+
+  @override
+  String get useOnThisDeviceDesc =>
+      'I tuoi dati restano su questo dispositivo. Potrai attivare la sincronizzazione cloud dalle Impostazioni.';
+
+  @override
+  String get orSignInForCloud =>
+      'Oppure accedi per sincronizzare tra dispositivi';
+
+  @override
+  String get cloudSync => 'Sincronizzazione cloud';
+
+  @override
+  String cloudSyncOn(String email) {
+    return 'Attiva — accesso come $email';
+  }
+
+  @override
+  String get cloudSyncOff =>
+      'Disattiva — i dati sono salvati solo su questo dispositivo';
+
+  @override
+  String get cloudSyncUnavailable =>
+      'Non disponibile — questa build non ha una configurazione cloud';
+
+  @override
+  String get turnOnCloudSync => 'Attiva sincronizzazione cloud';
+
+  @override
+  String get turnOffCloudSync => 'Disattiva sincronizzazione cloud';
+
+  @override
+  String get turnOffCloudSyncConfirm =>
+      'Verrai disconnesso. I tuoi dati restano su questo dispositivo.';
+
+  @override
+  String get localOnlyMode => 'Solo locale';
+
+  @override
+  String get unlockMedora => 'Sblocca Medora';
+
+  @override
+  String get cloudRequiredForFamily =>
+      'La condivisione familiare richiede la sincronizzazione cloud. Attivala nelle Impostazioni.';
+
+  @override
+  String get invalidEmail => 'Inserisci un indirizzo email valido';
+
+  @override
+  String get passwordTooShort => 'La password deve avere almeno 6 caratteri';
+
+  @override
+  String get turnOn => 'Attiva';
+
+  @override
+  String get turnOff => 'Disattiva';
+
+  @override
+  String get featureUnavailableOnPlatform =>
+      'Questa funzione non è disponibile su questo dispositivo.';
 }

@@ -12,7 +12,7 @@ A production-ready Flutter mobile application for managing your home medicine ca
 
 - **Medication Inventory** — Add, edit, delete, and view medications with full details (name, active ingredient, category, quantity, expiry date, barcode, storage location, notes).
 - **Expiry & Stock Alerts** — Automatically detects medications expiring within 30 days and medications with low stock.
-- **Barcode Scanner** — Scan medication package barcodes using the device camera (`mobile_scanner`). Barcodes are stored with each medication.
+- **AIC Code Scanner** — Point the camera at an Italian medication package; on-device OCR (ML Kit) reads the AIC code and looks it up in the AIFA database (cached locally after a one-time download).
 - **Treatment / Illness Tracking** — Create treatment plans with symptoms, start/end dates, and notes.
 - **Prescription Plans** — Attach medication prescriptions to treatments with dosage, interval, and duration.
 - **Dose Scheduling** — Auto-generated dose log entries with pending/taken/skipped/missed status.
@@ -25,74 +25,49 @@ A production-ready Flutter mobile application for managing your home medicine ca
 ## Prerequisites
 
 - **FVM** — Flutter Version Manager ([install guide](https://fvm.app/documentation/getting-started/installation))
-- **Flutter 3.41+ (stable)** — managed via FVM
-- **Supabase account** — [supabase.com](https://supabase.com)
-- **Android Studio / Xcode** — for device emulators
+- **Flutter stable** (3.44+) — managed via FVM (`.fvmrc`)
+- Android Studio / Xcode for device builds (optional for Linux/Web)
 
----
-
-## Setup Instructions
-
-### 1. Clone and install Flutter via FVM
+## Run it (no configuration needed)
 
 ```bash
-cd medora
-fvm install        # installs the pinned Flutter version
-fvm use stable     # already configured
-```
-
-### 2. Configure Supabase
-
-1. Create a new Supabase project at [supabase.com](https://supabase.com).
-
-2. **Run the SQL schema** — go to your Supabase dashboard → **SQL Editor** → **New Query**, paste the contents of `supabase/migrations/001_initial_schema.sql` and click **Run**.
-
-3. **Run the RLS policies** — open a second **New Query**, paste `supabase/migrations/002_rls_policies.sql` and click **Run**.
-
-   > **Important:** The MVP uses permissive RLS (`USING (true)`) so no authentication is required. All four tables (`medications`, `treatments`, `prescriptions`, `dose_logs`) must exist before running the app.
-
-4. Copy `.env.example` to `.env` and fill in your credentials from the Supabase dashboard → **Project Settings → API**:
-   ```bash
-   cp .env.example .env
-   ```
-   ```
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_ANON_KEY=your-anon-key-here
-   ```
-
-### 3. Install dependencies
-
-```bash
+fvm install
 fvm flutter pub get
+fvm flutter run            # pick a device: Android, iOS, Linux, Windows, Chrome
 ```
 
-### 4. Run the app
+Medora works completely offline. All data lives in a local SQLite database on the device.
+
+## Optional: cloud sync with Supabase
+
+1. Create a Supabase project and run `supabase/initial_schema.sql` in the SQL editor.
+2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
+3. Run or build with the defines:
 
 ```bash
-# Android
-fvm flutter build apk --debug
-
-# Android Emulator
-fvm flutter run
-
-# iOS (macOS only)
-fvm flutter run --device-id=<ios-device-or-simulator>
-
-# Web
-fvm flutter build web --release
-
-# Linux
-fvm flutter build linux --release
+fvm flutter run --dart-define-from-file=dart_defines.json
+fvm flutter build apk --release --dart-define-from-file=dart_defines.json
 ```
 
-> **Note:** The project requires **minSdk 28** (Android 9.0+) due to `mobile_scanner` and `supabase_flutter`. Core library desugaring is already configured in `android/app/build.gradle.kts` for `flutter_local_notifications`.
+Then open **Settings → Cloud sync → Turn on** and sign in. Without defines the app runs local-only and the cloud section says so.
 
-### 5. (Optional) Run code generation
-
-If you add Freezed/json_serializable models:
+## Development
 
 ```bash
-fvm dart run build_runner build --delete-conflicting-outputs
+fvm flutter analyze
+fvm flutter test
+fvm flutter gen-l10n       # after editing lib/l10n/*.arb
 ```
 
----
+Architecture: Clean Architecture (`lib/domain`, `lib/data`, `lib/presentation`, `lib/services`) with Riverpod 3 for state, go_router for navigation, sqflite for local storage, optional Supabase for sync. Design docs live in `docs/superpowers/specs/`.
+
+## Platform notes
+
+- Android: `minSdk 28`. Release builds need your own keystore (see `android/app/build.gradle.kts`).
+- iOS: camera, photo library and Face ID usage strings are in `ios/Runner/Info.plist`.
+- Web: installable PWA; OCR scanning, photos and notifications are not available in the browser.
+- Linux/Windows: full local functionality; scheduled notifications are not supported by the desktop plugins.
+
+## License
+
+Private project. All rights reserved.

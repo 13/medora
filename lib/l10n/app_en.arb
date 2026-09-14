@@ -490,11 +490,9 @@
   "createAccount": "Create Account",
   "email": "Email",
   "password": "Password",
-  "continueAsGuest": "Continue as Guest",
   "signOut": "Sign Out",
   "alreadyHaveAccount": "Already have an account? Sign In",
   "dontHaveAccount": "Don't have an account? Sign Up",
-  "useOfflineMode": "Use Offline Mode",
 
   "forcePush": "Force Push",
   "forcePull": "Force Pull",
@@ -528,5 +526,24 @@
     "placeholders": {
       "dosage": { "type": "String" }
     }
-  }
+  },
+  "useOnThisDevice": "Use Medora on this device",
+  "useOnThisDeviceDesc": "Your data stays on this device. You can turn on cloud sync later in Settings.",
+  "orSignInForCloud": "Or sign in to sync across devices",
+  "cloudSync": "Cloud sync",
+  "cloudSyncOn": "On — signed in as {email}",
+  "@cloudSyncOn": { "placeholders": { "email": { "type": "String" } } },
+  "cloudSyncOff": "Off — data is stored only on this device",
+  "cloudSyncUnavailable": "Unavailable — this build has no cloud configuration",
+  "turnOnCloudSync": "Turn on cloud sync",
+  "turnOffCloudSync": "Turn off cloud sync",
+  "turnOffCloudSyncConfirm": "You will be signed out. Your data stays on this device.",
+  "localOnlyMode": "Local only",
+  "unlockMedora": "Unlock Medora",
+  "cloudRequiredForFamily": "Family sharing needs cloud sync. Turn it on in Settings.",
+  "invalidEmail": "Enter a valid email address",
+  "passwordTooShort": "Password must be at least 6 characters",
+  "turnOn": "Turn on",
+  "turnOff": "Turn off",
+  "featureUnavailableOnPlatform": "This feature is not available on this device."
 }

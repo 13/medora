@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
@@ -33,9 +35,12 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
     final user = ref.watch(currentUserProvider);
+    final appMode = ref.watch(appModeProvider);
+    final cloudAvailable = SupabaseConfig.isConfigured;
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
     final appVersionAsync = ref.watch(appVersionProvider);
+    final caps = ref.watch(platformCapabilitiesProvider);
 
     final isOnline = connectivityAsync.value ?? ConnectivityService.instance.isOnline;
     final syncState = syncAsync.value ?? SyncState.idle;
@@ -44,16 +49,32 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(l10n.settings)),
       body: ListView(
         children: [
-          // ── Account ────────────────────────────────────────
-          _SectionTitle(user?.isAnonymous == true ? "Guest Account" : "Account"),
+          // ── Cloud sync ─────────────────────────────────────
+          _SectionTitle(l10n.cloudSync),
           ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: Text(user?.email ?? (user?.isAnonymous == true ? "Anonymous User" : "Not signed in")),
-            subtitle: Text(user?.id ?? ""),
-            trailing: TextButton(
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-              child: Text(l10n.signOut, style: const TextStyle(color: Colors.red)),
+            leading: Icon(
+              !cloudAvailable
+                  ? Icons.cloud_off
+                  : appMode == AppMode.cloud ? Icons.cloud_done : Icons.phone_android,
             ),
+            title: Text(
+              !cloudAvailable
+                  ? l10n.cloudSyncUnavailable
+                  : appMode == AppMode.cloud
+                      ? l10n.cloudSyncOn(user?.email ?? '')
+                      : l10n.cloudSyncOff,
+            ),
+            trailing: !cloudAvailable
+                ? null
+                : appMode == AppMode.cloud
+                    ? TextButton(
+                        onPressed: () => _confirmTurnOffCloud(context, ref, l10n),
+                        child: Text(l10n.turnOff),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.cloud),
+                        child: Text(l10n.turnOn),
+                      ),
           ),
           const Divider(),
 
@@ -111,15 +132,17 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
 
           // ── Security ───────────────────────────────────────
-          _SectionTitle("Security"),
-          SwitchListTile(
-            secondary: const Icon(Icons.fingerprint),
-            title: const Text("Fingerprint Unlock"),
-            subtitle: const Text("Use biometrics to protect your data"),
-            value: biometricsEnabled,
-            onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
-          ),
-          const Divider(),
+          if (caps.hasBiometrics) ...[
+            _SectionTitle("Security"),
+            SwitchListTile(
+              secondary: const Icon(Icons.fingerprint),
+              title: const Text("Fingerprint Unlock"),
+              subtitle: const Text("Use biometrics to protect your data"),
+              value: biometricsEnabled,
+              onChanged: (value) => ref.read(biometricsEnabledProvider.notifier).set(value),
+            ),
+            const Divider(),
+          ],
 
           // ── AIFA Database ──────────────────────────────────
           _SectionTitle(l10n.aifaDatabase),
@@ -181,94 +204,98 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
 
           // ── Data & Sync ────────────────────────────────────
-          _SectionTitle(l10n.dataAndSync),
-          ListTile(
-            leading: Icon(
-              isOnline ? Icons.cloud_done : Icons.cloud_off,
-              color: isOnline ? AppTheme.successColor : Colors.orange,
-            ),
-            title: Text(isOnline ? l10n.online : l10n.offline),
-            subtitle: Text(isOnline
-                ? l10n.connectedSyncsAutomatically
-                : l10n.usingLocalData),
-            trailing: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
+          if (appMode == AppMode.cloud) ...[
+            _SectionTitle(l10n.dataAndSync),
+            ListTile(
+              leading: Icon(
+                isOnline ? Icons.cloud_done : Icons.cloud_off,
                 color: isOnline ? AppTheme.successColor : Colors.orange,
               ),
+              title: Text(isOnline ? l10n.online : l10n.offline),
+              subtitle: Text(isOnline
+                  ? l10n.connectedSyncsAutomatically
+                  : l10n.usingLocalData),
+              trailing: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isOnline ? AppTheme.successColor : Colors.orange,
+                ),
+              ),
             ),
-          ),
-          ListTile(
-            leading: Icon(
-              _syncIcon(syncState),
-              color: _syncColor(syncState),
+            ListTile(
+              leading: Icon(
+                _syncIcon(syncState),
+                color: _syncColor(syncState),
+              ),
+              title: Text(l10n.syncNow),
+              subtitle: Text(_syncLabel(l10n, syncState)),
+              trailing: syncState == SyncState.syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.sync),
+              onTap: (syncState == SyncState.syncing || !isOnline)
+                  ? null
+                  : () => ref.read(syncServiceProvider).syncAll(),
             ),
-            title: Text(l10n.syncNow),
-            subtitle: Text(_syncLabel(l10n, syncState)),
-            trailing: syncState == SyncState.syncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.sync),
-            onTap: (syncState == SyncState.syncing || !isOnline)
-                ? null
-                : () => ref.read(syncServiceProvider).syncAll(),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: (syncState == SyncState.syncing || !isOnline)
-                        ? null
-                        : () => _showForceSyncDialog(context, ref, true),
-                    icon: const Icon(Icons.upload_outlined, size: 18),
-                    label: const Text("Force Push"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.orange,
-                      side: const BorderSide(color: Colors.orange),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: (syncState == SyncState.syncing || !isOnline)
+                          ? null
+                          : () => _showForceSyncDialog(context, ref, l10n, true),
+                      icon: const Icon(Icons.upload_outlined, size: 18),
+                      label: Text(l10n.forcePush),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange,
+                        side: const BorderSide(color: Colors.orange),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: (syncState == SyncState.syncing || !isOnline)
-                        ? null
-                        : () => _showForceSyncDialog(context, ref, false),
-                    icon: const Icon(Icons.download_outlined, size: 18),
-                    label: const Text("Force Pull"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primaryColor,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: (syncState == SyncState.syncing || !isOnline)
+                          ? null
+                          : () => _showForceSyncDialog(context, ref, l10n, false),
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: Text(l10n.forcePull),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryColor,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const Divider(),
+            const Divider(),
+          ],
 
           // ── Features ───────────────────────────────────────
           _SectionTitle(l10n.features),
-          ListTile(
-            leading: const Icon(Icons.people),
-            title: Text(l10n.familySharing),
-            subtitle: Text(l10n.shareCabinetWithFamily),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push(AppRoutes.family),
-          ),
-          ListTile(
-            leading: const Icon(Icons.download_outlined),
-            title: Text(l10n.exportData),
-            subtitle: Text(l10n.exportAsCsvOrPdf),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push(AppRoutes.export),
-          ),
+          if (appMode == AppMode.cloud)
+            ListTile(
+              leading: const Icon(Icons.people),
+              title: Text(l10n.familySharing),
+              subtitle: Text(l10n.shareCabinetWithFamily),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push(AppRoutes.family),
+            ),
+          if (caps.hasFileShare)
+            ListTile(
+              leading: const Icon(Icons.download_outlined),
+              title: Text(l10n.exportData),
+              subtitle: Text(l10n.exportAsCsvOrPdf),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push(AppRoutes.export),
+            ),
           const Divider(),
 
           // ── Danger Zone ────────────────────────────────────
@@ -289,7 +316,7 @@ class SettingsScreen extends ConsumerWidget {
             title: Text(l10n.appVersion),
             subtitle: Text(appVersionAsync.maybeWhen(
               data: (v) => v,
-              orElse: () => AppConstants.appVersion,
+              orElse: () => '…',
             )),
           ),
           const SizedBox(height: 32),
@@ -298,18 +325,33 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _showForceSyncDialog(BuildContext context, WidgetRef ref, bool isPush) {
+  Future<void> _confirmTurnOffCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.turnOffCloudSync),
+        content: Text(l10n.turnOffCloudSyncConfirm),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.turnOff)),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
+    await ref.read(authControllerProvider.notifier).signOut();
+  }
+
+  void _showForceSyncDialog(BuildContext context, WidgetRef ref, AppLocalizations l10n, bool isPush) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(isPush ? "Force Push to Cloud" : "Force Pull from Cloud"),
-        content: Text(isPush
-            ? "This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?"
-            : "This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?"),
+        title: Text(isPush ? l10n.forcePushTitle : l10n.forcePullTitle),
+        content: Text(isPush ? l10n.forcePushConfirm : l10n.forcePullConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () {
@@ -377,8 +419,8 @@ class SettingsScreen extends ConsumerWidget {
                       Navigator.pop(ctx);
                       try {
                         // Try to delete remote data first
-                        if (SupabaseConfig.isAuthenticated) {
-                            final client = SupabaseConfig.client;
+                        final client = SupabaseConfig.clientOrNull;
+                        if (client != null && SupabaseConfig.isAuthenticated) {
                             // Delete in FK order: dose_logs → prescriptions → treatments → medications
                             await client
                                 .from(AppConstants.doseLogsTable)
