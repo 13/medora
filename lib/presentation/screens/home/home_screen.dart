@@ -1,10 +1,10 @@
 /// Medora - Home / Dashboard Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,15 +12,14 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/treatment.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
+import 'package:medora/presentation/widgets/sync_status_chip.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -48,17 +47,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
               tooltip: l10n.scanBarcodeTooltip,
               onPressed: () => context.push(AppRoutes.scanner),
             ),
-          const SyncIconButton(),
+          const SyncStatusChip(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
           ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
       body: RefreshIndicator(
@@ -109,7 +102,6 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
     final dosesAsync = ref.watch(todaysDoseLogsProvider);
 
     return Card(
@@ -131,18 +123,16 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
           },
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: dosesAsync.when(
-              data: (doses) => _DosesSummaryContent(doses: doses),
-              loading: () => SizedBox(
+            child: AsyncValueView<List<DoseLog>>(
+              value: dosesAsync,
+              compact: true,
+              loading: SizedBox(
                 height: 60,
                 child: Center(
                   child: CircularProgressIndicator(color: context.colors.onPrimary),
                 ),
               ),
-              error: (error, stack) => Text(
-                l10n.unableToLoadDoses,
-                style: TextStyle(color: context.colors.onPrimary.withValues(alpha: 0.7)),
-              ),
+              data: (doses) => _DosesSummaryContent(doses: doses),
             ),
           ),
         ),
@@ -236,22 +226,19 @@ class _ExpiringSoonCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final expiringAsync = ref.watch(expiringSoonProvider);
 
-    return expiringAsync.when(
+    return AsyncValueView<List<Medication>>(
+      value: expiringAsync,
+      compact: true,
+      onRetry: () async => ref.invalidate(expiringSoonProvider),
+      emptyWhen: (meds) => meds.isEmpty,
+      empty: Card(
+        child: EmptyStateWidget(
+          compact: true,
+          icon: Icons.check_circle,
+          title: l10n.allMedicationsWithinDate,
+        ),
+      ),
       data: (meds) {
-        if (meds.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: context.medora.success),
-                  const SizedBox(width: 12),
-                  Text(l10n.allMedicationsWithinDate),
-                ],
-              ),
-            ),
-          );
-        }
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
@@ -302,18 +289,6 @@ class _ExpiringSoonCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (error, stack) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(l10n.errorWithDetails(error.toString())),
-        ),
-      ),
     );
   }
 }
@@ -326,22 +301,19 @@ class _LowStockCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final lowStockAsync = ref.watch(lowStockProvider);
 
-    return lowStockAsync.when(
+    return AsyncValueView<List<Medication>>(
+      value: lowStockAsync,
+      compact: true,
+      onRetry: () async => ref.invalidate(lowStockProvider),
+      emptyWhen: (meds) => meds.isEmpty,
+      empty: Card(
+        child: EmptyStateWidget(
+          compact: true,
+          icon: Icons.check_circle,
+          title: l10n.allMedicationsWellStocked,
+        ),
+      ),
       data: (meds) {
-        if (meds.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: context.medora.success),
-                  const SizedBox(width: 12),
-                  Text(l10n.allMedicationsWellStocked),
-                ],
-              ),
-            ),
-          );
-        }
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
@@ -391,18 +363,6 @@ class _LowStockCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (error, stack) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(l10n.errorWithDetails(error.toString())),
-        ),
-      ),
     );
   }
 }
@@ -415,22 +375,19 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final treatmentsAsync = ref.watch(activeTreatmentsProvider);
 
-    return treatmentsAsync.when(
+    return AsyncValueView<List<Treatment>>(
+      value: treatmentsAsync,
+      compact: true,
+      onRetry: () async => ref.invalidate(activeTreatmentsProvider),
+      emptyWhen: (treatments) => treatments.isEmpty,
+      empty: Card(
+        child: EmptyStateWidget(
+          compact: true,
+          icon: Icons.check_circle,
+          title: l10n.noActiveTreatments,
+        ),
+      ),
       data: (treatments) {
-        if (treatments.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: context.medora.success),
-                  const SizedBox(width: 12),
-                  Text(l10n.noActiveTreatments),
-                ],
-              ),
-            ),
-          );
-        }
         return Card(
           child: Column(
             children: treatments.take(3).map((t) {
@@ -439,18 +396,6 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (error, stack) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(l10n.errorWithDetails(error.toString())),
-        ),
-      ),
     );
   }
 }

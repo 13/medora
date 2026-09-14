@@ -1,20 +1,17 @@
 /// Medora - Dose Schedule Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:go_router/go_router.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 class DoseScheduleScreen extends ConsumerStatefulWidget {
   const DoseScheduleScreen({super.key});
@@ -42,29 +39,18 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
             tooltip: l10n.doseHistory,
             onPressed: () => context.push(AppRoutes.doseHistory),
           ),
-          const SyncIconButton(),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(AppRoutes.settings),
-          ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
-      body: dosesAsync.when(
+      body: AsyncValueView<List<DoseLog>>(
+        value: dosesAsync,
+        onRetry: () async => ref.read(todaysDoseLogsProvider.notifier).refresh(),
+        emptyWhen: (doses) => doses.isEmpty,
+        empty: EmptyStateWidget(
+          icon: Icons.check_circle_outline,
+          title: l10n.noDosesScheduledToday,
+          subtitle: l10n.createTreatmentForDoses,
+        ),
         data: (doses) {
-          if (doses.isEmpty) {
-            return EmptyStateWidget(
-              icon: Icons.check_circle_outline,
-              title: l10n.noDosesScheduledToday,
-              subtitle: l10n.createTreatmentForDoses,
-            );
-          }
-
           final pending =
               doses.where((d) => d.status == DoseStatus.pending).toList();
           final completed =
@@ -96,12 +82,7 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
             ),
           );
         },
-        loading: () => LoadingWidget(message: l10n.loadingDoses),
-        error: (error, _) => ErrorDisplayWidget(
-          message: error.toString(),
-          onRetry: () =>
-              ref.read(todaysDoseLogsProvider.notifier).refresh(),
-        ),
+        loading: LoadingWidget(message: l10n.loadingDoses),
       ),
     );
   }

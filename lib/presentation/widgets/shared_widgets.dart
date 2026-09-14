@@ -365,6 +365,7 @@ class EmptyStateWidget extends StatelessWidget {
     this.subtitle,
     this.actionLabel,
     this.onAction,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -372,9 +373,30 @@ class EmptyStateWidget extends StatelessWidget {
   final String? subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, size: 24, color: context.colors.outline),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),

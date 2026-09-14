@@ -9,8 +9,10 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class MedicationDetailScreen extends ConsumerWidget {
@@ -23,7 +25,13 @@ class MedicationDetailScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final medsAsync = ref.watch(medicationListProvider);
 
-    return medsAsync.when(
+    return AsyncValueView<List<Medication>>(
+      value: medsAsync,
+      onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
+      loading: Scaffold(
+        appBar: AppBar(title: Text(l10n.medication)),
+        body: const LoadingWidget(),
+      ),
       data: (medications) {
         final med = medications.where((m) => m.id == medicationId).firstOrNull;
         if (med == null) {
@@ -398,18 +406,6 @@ class MedicationDetailScreen extends ConsumerWidget {
           ),
         );
       },
-      loading: () => Scaffold(
-        appBar: AppBar(title: Text(l10n.medication)),
-        body: const LoadingWidget(),
-      ),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(title: Text(l10n.medication)),
-        body: ErrorDisplayWidget(
-          message: e.toString(),
-          onRetry: () =>
-              ref.read(medicationListProvider.notifier).refresh(),
-        ),
-      ),
     );
   }
 }

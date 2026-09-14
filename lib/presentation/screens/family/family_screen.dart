@@ -6,10 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme_extensions.dart';
+import 'package:medora/domain/entities/family.dart';
 import 'package:medora/domain/entities/family_member.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/family_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -34,19 +36,13 @@ class FamilyScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.familySharingTitle)),
-      body: familyAsync.when(
-        data: (family) {
-          if (family == null) {
-            return _NoFamilyView();
-          }
-          return _FamilyDetailView(family: family);
-        },
-        loading: () => LoadingWidget(message: l10n.loadingFamily),
-        error: (e, _) => ErrorDisplayWidget(
-          message: e.toString(),
-          onRetry: () =>
-              ref.read(currentFamilyProvider.notifier).refresh(),
-        ),
+      body: AsyncValueView<Family?>(
+        value: familyAsync,
+        onRetry: () async => ref.read(currentFamilyProvider.notifier).refresh(),
+        loading: LoadingWidget(message: l10n.loadingFamily),
+        emptyWhen: (family) => family == null,
+        empty: _NoFamilyView(),
+        data: (family) => _FamilyDetailView(family: family!),
       ),
     );
   }
@@ -343,16 +339,18 @@ class _FamilyDetailView extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
 
-        membersAsync.when(
+        AsyncValueView<List<FamilyMember>>(
+          value: membersAsync,
+          compact: true,
+          onRetry: () async => ref.invalidate(familyMembersProvider(family.id as String)),
+          emptyWhen: (members) => members.isEmpty,
+          empty: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(l10n.noMembersYet),
+            ),
+          ),
           data: (members) {
-            if (members.isEmpty) {
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(l10n.noMembersYet),
-                ),
-              );
-            }
             return Column(
               children: members.map((m) {
                 return Card(
@@ -415,8 +413,6 @@ class _FamilyDetailView extends ConsumerWidget {
               }).toList(),
             );
           },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text(l10n.errorWithDetails(e.toString())),
         ),
 
         const SizedBox(height: 32),

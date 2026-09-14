@@ -1,7 +1,6 @@
 /// Medora - Treatment List Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,13 +9,11 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for treatment list.
 enum TreatmentFilter { active, ended, all }
@@ -91,17 +88,6 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
               });
             },
           ),
-          const SyncIconButton(),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(AppRoutes.settings),
-          ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
       body: Column(
@@ -137,19 +123,19 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
 
           // Treatment list
           Expanded(
-            child: treatmentsAsync.when(
+            child: AsyncValueView<List<Treatment>>(
+              value: treatmentsAsync,
+              onRetry: () async => ref.read(treatmentListProvider.notifier).refresh(),
+              emptyWhen: (treatments) => treatments.isEmpty,
+              empty: EmptyStateWidget(
+                icon: Icons.healing_outlined,
+                title: l10n.noTreatmentsYet,
+                subtitle: l10n.createTreatmentPlan,
+                actionLabel: l10n.addTreatment,
+                onAction: () => context.push(AppRoutes.addTreatment),
+              ),
               data: (treatments) {
                 final filtered = _applyFilter(treatments);
-                if (treatments.isEmpty) {
-                  return EmptyStateWidget(
-                    icon: Icons.healing_outlined,
-                    title: l10n.noTreatmentsYet,
-                    subtitle: l10n.createTreatmentPlan,
-                    actionLabel: l10n.addTreatment,
-                    onAction: () => context.push(AppRoutes.addTreatment),
-                  );
-                }
-
                 if (filtered.isEmpty) {
                   return Center(
                     child: Column(
@@ -246,12 +232,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                   ),
                 );
               },
-              loading: () => LoadingWidget(message: l10n.loadingTreatments),
-              error: (error, stackTrace) => ErrorDisplayWidget(
-                message: error.toString(),
-                onRetry: () =>
-                    ref.read(treatmentListProvider.notifier).refresh(),
-              ),
+              loading: LoadingWidget(message: l10n.loadingTreatments),
             ),
           ),
         ],

@@ -1,7 +1,6 @@
 /// Medora - Medication List Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -11,12 +10,10 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for medication list.
 enum MedicationFilter { all, needsAttention, archived }
@@ -97,17 +94,6 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
               });
             },
           ),
-          const SyncIconButton(),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(AppRoutes.settings),
-          ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
       body: Column(
@@ -142,19 +128,19 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
 
           // Medication list
           Expanded(
-            child: medicationsAsync.when(
+            child: AsyncValueView<List<Medication>>(
+              value: medicationsAsync,
+              onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
+              emptyWhen: (medications) => medications.isEmpty,
+              empty: EmptyStateWidget(
+                icon: Icons.inventory_2_outlined,
+                title: l10n.noMedicationsYet,
+                subtitle: l10n.addFirstMedication,
+                actionLabel: l10n.addMedicationButton,
+                onAction: () => context.push(AppRoutes.addMedication),
+              ),
               data: (medications) {
                 final filtered = _applyFilter(medications);
-                if (medications.isEmpty) {
-                  return EmptyStateWidget(
-                    icon: Icons.inventory_2_outlined,
-                    title: l10n.noMedicationsYet,
-                    subtitle: l10n.addFirstMedication,
-                    actionLabel: l10n.addMedicationButton,
-                    onAction: () => context.push(AppRoutes.addMedication),
-                  );
-                }
-
                 if (filtered.isEmpty) {
                   return Center(
                     child: Column(
@@ -240,11 +226,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                   ),
                 );
               },
-              loading: () => LoadingWidget(message: l10n.loadingMedications),
-              error: (error, stackTrace) => ErrorDisplayWidget(
-                message: error.toString(),
-                onRetry: () => ref.read(medicationListProvider.notifier).refresh(),
-              ),
+              loading: LoadingWidget(message: l10n.loadingMedications),
             ),
           ),
         ],

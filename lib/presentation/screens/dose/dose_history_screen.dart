@@ -11,6 +11,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 /// Provider to load dose logs for a date range.
@@ -114,15 +115,15 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
           ),
           // Dose list
           Expanded(
-            child: historyAsync.when(
+            child: AsyncValueView<List<DoseLog>>(
+              value: historyAsync,
+              onRetry: () async => _invalidateCurrentRange(),
+              emptyWhen: (doses) => doses.isEmpty,
+              empty: EmptyStateWidget(
+                icon: Icons.history,
+                title: l10n.noDoseHistory,
+              ),
               data: (doses) {
-                if (doses.isEmpty) {
-                  return EmptyStateWidget(
-                    icon: Icons.history,
-                    title: l10n.noDoseHistory,
-                  );
-                }
-
                 // Group by date (using ISO date string for correct sorting)
                 final grouped = <String, List<DoseLog>>{};
                 for (final d in doses) {
@@ -162,11 +163,6 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
                   },
                 );
               },
-              loading: () => const LoadingWidget(),
-              error: (e, _) => ErrorDisplayWidget(
-                message: e.toString(),
-                onRetry: () => ref.invalidate(doseHistoryProvider(range)),
-              ),
             ),
           ),
         ],

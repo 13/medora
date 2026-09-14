@@ -9,12 +9,14 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/prescription.dart';
+import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:uuid/uuid.dart';
 
@@ -37,7 +39,12 @@ class _TreatmentDetailScreenState
     final prescriptionsAsync =
         ref.watch(prescriptionsByTreatmentProvider(widget.treatmentId));
 
-    return treatmentsAsync.when(
+    return AsyncValueView<List<Treatment>>(
+      value: treatmentsAsync,
+      loading: Scaffold(
+        appBar: AppBar(title: Text(l10n.treatment)),
+        body: const LoadingWidget(),
+      ),
       data: (treatments) {
         final treatment =
             treatments.where((t) => t.id == widget.treatmentId).firstOrNull;
@@ -309,32 +316,34 @@ class _TreatmentDetailScreenState
               ),
               const SizedBox(height: 8),
 
-              prescriptionsAsync.when(
+              AsyncValueView<List<Prescription>>(
+                value: prescriptionsAsync,
+                compact: true,
+                onRetry: () async => ref.invalidate(
+                    prescriptionsByTreatmentProvider(widget.treatmentId)),
+                emptyWhen: (prescriptions) => prescriptions.isEmpty,
+                empty: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        Icon(Icons.medication_outlined,
+                            size: 48, color: context.colors.outline),
+                        const SizedBox(height: 8),
+                        Text(l10n.noPrescriptionsYet),
+                        if (treatment.isActive) ...[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () =>
+                                _showPrescriptionDialog(context),
+                            child: Text(l10n.addPrescription),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
                 data: (prescriptions) {
-                  if (prescriptions.isEmpty) {
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          children: [
-                            Icon(Icons.medication_outlined,
-                                size: 48, color: context.colors.outline),
-                            const SizedBox(height: 8),
-                            Text(l10n.noPrescriptionsYet),
-                            if (treatment.isActive) ...[
-                              const SizedBox(height: 8),
-                              TextButton(
-                                onPressed: () =>
-                                    _showPrescriptionDialog(context),
-                                child: Text(l10n.addPrescription),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    );
-                  }
-
                   return Column(
                     children: prescriptions.map((p) {
                       return Dismissible(
@@ -530,32 +539,11 @@ class _TreatmentDetailScreenState
                     }).toList(),
                   );
                 },
-                loading: () => const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: CircularProgressIndicator(),
-                  ),
-                ),
-                error: (e, _) => Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child:
-                        Text(l10n.errorLoadingPrescriptions(e.toString())),
-                  ),
-                ),
               ),
             ],
           ),
         );
       },
-      loading: () => Scaffold(
-        appBar: AppBar(title: Text(l10n.treatment)),
-        body: const LoadingWidget(),
-      ),
-      error: (e, _) => Scaffold(
-        appBar: AppBar(title: Text(l10n.treatment)),
-        body: ErrorDisplayWidget(message: e.toString()),
-      ),
     );
   }
 
