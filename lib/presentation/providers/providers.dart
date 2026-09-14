@@ -3,6 +3,8 @@
 /// Central place for all Riverpod providers that wire up the app.
 library;
 
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
@@ -152,6 +154,11 @@ final connectivityServiceProvider = Provider<ConnectivityService>(
 );
 
 final photoStorageProvider = Provider<PhotoStorage>((ref) => PhotoStorage.appDocuments());
+
+/// Resolved photo file for a stored image name (null when absent/missing).
+final resolvedPhotoProvider = FutureProvider.family<File?, String?>(
+  (ref, stored) => ref.watch(photoStorageProvider).resolve(stored),
+);
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(

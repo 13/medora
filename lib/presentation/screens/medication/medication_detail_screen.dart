@@ -1,8 +1,6 @@
 /// Medora - Medication Detail Screen
 library;
 
-import 'dart:io';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -339,10 +337,8 @@ class MedicationDetailScreen extends ConsumerWidget {
 
               // Photo (at bottom)
               if (!kIsWeb)
-                FutureBuilder<File?>(
-                  future: ref.read(photoStorageProvider).resolve(med.imagePath),
-                  builder: (context, snap) {
-                    final file = snap.data;
+                ref.watch(resolvedPhotoProvider(med.imagePath)).maybeWhen(
+                  data: (file) {
                     if (file == null) return const SizedBox.shrink();
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -395,6 +391,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                       ],
                     );
                   },
+                  orElse: () => const SizedBox.shrink(),
                 ),
             ],
           ),

@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/domain/entities/medication.dart';
+import 'package:medora/services/photo_storage.dart';
 
 class MedicationModel {
   const MedicationModel({
@@ -101,7 +102,9 @@ class MedicationModel {
       minimumStockLevel: json['minimum_stock_level'] as int? ?? 0,
       storageLocation: json['storage_location'] as String?,
       barcode: json['barcode'] as String?,
-      imagePath: json['image_path'] as String?,
+      imagePath: json['image_path'] != null
+          ? PhotoStorage.toStoredName(json['image_path'] as String)
+          : null,
       notes: json['notes'] as String?,
       isArchived: json['is_archived'] == true || json['is_archived'] == 1,
       createdAt: json['created_at'] != null

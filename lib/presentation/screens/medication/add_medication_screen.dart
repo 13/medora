@@ -1,8 +1,6 @@
 /// Medora - Add/Edit Medication Screen
 library;
 
-import 'dart:io' show File;
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -800,10 +798,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             ),
             child: _imagePath == null || kIsWeb
                 ? _photoPlaceholder(l10n)
-                : FutureBuilder<File?>(
-                    future: ref.read(photoStorageProvider).resolve(_imagePath),
-                    builder: (context, snap) {
-                      final file = snap.data;
+                : ref.watch(resolvedPhotoProvider(_imagePath)).maybeWhen(
+                    data: (file) {
                       if (file == null) return _photoPlaceholder(l10n);
                       return ClipRRect(
                         borderRadius: BorderRadius.circular(12),
@@ -811,6 +807,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                             fit: BoxFit.cover, width: double.infinity),
                       );
                     },
+                    orElse: () => _photoPlaceholder(l10n),
                   ),
           ),
         ),
