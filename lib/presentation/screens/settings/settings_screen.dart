@@ -8,7 +8,6 @@ import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
-import 'package:medora/data/local/app_database.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
@@ -342,20 +341,31 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _confirmTurnOffCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
-    final ok = await showDialog<bool>(
+    final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.turnOffCloudSync),
-        content: Text(l10n.turnOffCloudSyncConfirm),
+        content: Text(l10n.turnOffCloudSyncChoice),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n.turnOff)),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'wipe'),
+            child: Text(l10n.wipeLocalData, style: const TextStyle(color: Colors.red)),
+          ),
+          FilledButton(onPressed: () => Navigator.pop(ctx, 'keep'), child: Text(l10n.keepLocalData)),
         ],
       ),
     );
-    if (ok != true) return;
+    if (choice == null) return;
     await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
     await ref.read(authControllerProvider.notifier).signOut();
+    if (choice == 'wipe') {
+      await ref.read(localDataWiperProvider).wipe();
+      ref.invalidate(medicationListProvider);
+      ref.invalidate(treatmentListProvider);
+      ref.invalidate(todaysDoseLogsProvider);
+      ref.invalidate(activePrescriptionsProvider);
+    }
   }
 
   void _showForceSyncDialog(BuildContext context, WidgetRef ref, AppLocalizations l10n, bool isPush) {
@@ -456,7 +466,7 @@ class SettingsScreen extends ConsumerWidget {
                                 .neq('id', '');
                         }
                         // If remote deletion is successful, delete local data
-                        await AppDatabase.instance.clearAllData();
+                        await ref.read(localDataWiperProvider).wipe();
 
                         // Invalidate all providers
                         ref.invalidate(medicationListProvider);

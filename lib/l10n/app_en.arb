@@ -551,5 +551,8 @@
   "minutesShort": "{minutes} min",
   "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
   "hoursShort": "{hours} h",
-  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } }
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } },
+  "keepLocalData": "Keep my data on this device",
+  "wipeLocalData": "Delete my data from this device",
+  "turnOffCloudSyncChoice": "You will be signed out. What should happen to the data stored on this device?"
 }

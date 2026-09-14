@@ -2367,6 +2367,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{hours} h'**
   String hoursShort(int hours);
+
+  /// No description provided for @keepLocalData.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep my data on this device'**
+  String get keepLocalData;
+
+  /// No description provided for @wipeLocalData.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete my data from this device'**
+  String get wipeLocalData;
+
+  /// No description provided for @turnOffCloudSyncChoice.
+  ///
+  /// In en, this message translates to:
+  /// **'You will be signed out. What should happen to the data stored on this device?'**
+  String get turnOffCloudSyncChoice;
 }
 
 class _AppLocalizationsDelegate

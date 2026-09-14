@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
@@ -31,6 +32,7 @@ import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
+import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
@@ -174,6 +176,13 @@ final photoStorageProvider = Provider<PhotoStorage>((ref) => PhotoStorage.appDoc
 final resolvedPhotoProvider = FutureProvider.family<File?, String?>(
   (ref, stored) => ref.watch(photoStorageProvider).resolve(stored),
 );
+
+final localDataWiperProvider = Provider<LocalDataWiper>((ref) => LocalDataWiper(
+      database: AppDatabase.instance,
+      photos: ref.watch(photoStorageProvider),
+      reminders: ref.watch(reminderPortProvider),
+      prefs: ref.watch(sharedPreferencesProvider),
+    ));
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(

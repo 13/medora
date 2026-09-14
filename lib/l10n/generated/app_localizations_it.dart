@@ -1236,4 +1236,14 @@ class AppLocalizationsIt extends AppLocalizations {
   String hoursShort(int hours) {
     return '$hours h';
   }
+
+  @override
+  String get keepLocalData => 'Mantieni i miei dati su questo dispositivo';
+
+  @override
+  String get wipeLocalData => 'Elimina i miei dati da questo dispositivo';
+
+  @override
+  String get turnOffCloudSyncChoice =>
+      'Verrai disconnesso. Cosa fare con i dati salvati su questo dispositivo?';
 }

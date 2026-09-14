@@ -426,5 +426,8 @@
   "minutesShort": "{minutes} min",
   "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
   "hoursShort": "{hours} h",
-  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } }
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } },
+  "keepLocalData": "Mantieni i miei dati su questo dispositivo",
+  "wipeLocalData": "Elimina i miei dati da questo dispositivo",
+  "turnOffCloudSyncChoice": "Verrai disconnesso. Cosa fare con i dati salvati su questo dispositivo?"
 }
