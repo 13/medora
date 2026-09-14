@@ -1,6 +1,9 @@
 # <img src="assets/icon/medora_icon_pill.png" width="30" height="30" /> Medora — Home Medicine Cabinet Manager
 
-A production-ready Flutter mobile application for managing your home medicine cabinet, tracking medication expiration dates, creating treatment plans, managing dose schedules, and receiving medication reminders.
+A Flutter app for the medicine cabinet at home: what you own, what expires
+when, which treatment it belongs to, and when the next dose is due. It works
+completely offline — no account, no network — and can optionally sync across
+devices through Supabase.
 
 <p align="center">
   <img src="assets/screenshots/screenshot1.png" width="200" />
@@ -10,33 +13,38 @@ A production-ready Flutter mobile application for managing your home medicine ca
 
 ## Features
 
-- **Medication Inventory** — Add, edit, delete, and view medications with full details (name, active ingredient, category, quantity, expiry date, barcode, storage location, notes).
-- **Expiry & Stock Alerts** — Automatically detects medications expiring within 30 days and medications with low stock.
-- **AIC Code Scanner** — Point the camera at an Italian medication package; on-device OCR (ML Kit) reads the AIC code and looks it up in the AIFA database (cached locally after a one-time download).
-- **Treatment / Illness Tracking** — Create treatment plans with symptoms, start/end dates, and notes.
-- **Prescription Plans** — Attach medication prescriptions to treatments with dosage, interval, and duration.
-- **Dose Scheduling** — Auto-generated dose log entries with pending/taken/skipped/missed status.
-- **Reminders** — Local push notifications for each scheduled dose (`flutter_local_notifications`).
-- **Dashboard** — Home screen with summary cards: today's doses, expiring meds, low stock, active treatments.
-- **Settings** — Notification controls, sync status, and future feature placeholders.
+- **Medication inventory** — name, active ingredient, category, quantity, expiry date, barcode, storage location, photo and notes.
+- **Expiry & stock alerts** — flags medications expiring within 30 days and anything at or below the low-stock threshold.
+- **AIC code scanner** — point the camera at an Italian package; on-device OCR (ML Kit) reads the AIC code and looks it up in the AIFA database, cached locally after a one-time download.
+- **Treatments** — illness/treatment plans with symptoms, start and end dates, and notes.
+- **Prescriptions** — attach a medication to a treatment with dosage, interval and duration.
+- **Dose schedule** — auto-generated dose entries with pending / taken / skipped / missed status; stale pending doses become "missed" after a configurable grace period.
+- **Reminders** — local notifications for upcoming doses.
+- **Dashboard** — today's doses, expiring medications, low stock, active treatments.
+- **Export** — CSV and PDF of medications, treatments and dose history.
+- **Family sharing** — optional, on top of cloud sync: join a family by invite code and share the cabinet.
+- **English, German and Italian**, light and dark themes, biometric lock.
 
----
+## Platforms
 
-## Prerequisites
+| Platform | Status |
+|---|---|
+| Android (`minSdk 28`) | Full functionality. |
+| iOS | Full functionality. |
+| Web | Installable PWA; no OCR scanning, photo capture or scheduled notifications. |
+| Linux / Windows | Full local functionality; the desktop plugins cannot schedule notifications. |
 
-- **FVM** — Flutter Version Manager ([install guide](https://fvm.app/documentation/getting-started/installation))
-- **Flutter stable** (3.44+) — managed via FVM (`.fvmrc`)
-- Android Studio / Xcode for device builds (optional for Linux/Web)
-
-## Run it (no configuration needed)
+## Quick start
 
 ```bash
-fvm install
+fvm install                 # Flutter is pinned in .fvmrc (see https://fvm.app)
 fvm flutter pub get
-fvm flutter run            # pick a device: Android, iOS, Linux, Windows, Chrome
+fvm flutter run             # pick a device: Android, iOS, Linux, Windows, Chrome
 ```
 
-Medora works completely offline. All data lives in a local SQLite database on the device.
+That is the whole setup. Medora runs local-only by default: everything lives in
+a SQLite database on the device, nothing is uploaded, and no configuration file
+is needed.
 
 ## Optional: cloud sync with Supabase
 
@@ -86,19 +94,24 @@ Without those defines the test is skipped, so a plain `fvm flutter test` needs n
 ## Development
 
 ```bash
-fvm flutter analyze
-fvm flutter test
-fvm flutter gen-l10n       # after editing lib/l10n/*.arb
+fvm flutter analyze --fatal-infos          # CI gate
+fvm dart format --set-exit-if-changed .    # CI gate — always the bundled Dart
+fvm flutter test                           # unit, widget and golden tests
+fvm flutter gen-l10n                       # after editing lib/l10n/*.arb; commit the generated output
+fvm flutter test --update-goldens test/goldens/   # only for a deliberate UI change; review the PNGs
 ```
 
-Architecture: Clean Architecture (`lib/domain`, `lib/data`, `lib/presentation`, `lib/services`) with Riverpod 3 for state, go_router for navigation, sqflite for local storage, optional Supabase for sync. Design docs live in `docs/superpowers/specs/`.
+Always drive Dart through `fvm` — a standalone `dart` from PATH may format
+differently from the pinned SDK and will fail the CI format gate. Every
+user-facing string goes into all three ARBs (`app_en`, `app_de`, `app_it`); two
+sweep tests fail the build on hardcoded strings and on raw `Colors.*` in the
+presentation layer.
 
-## Platform notes
+## Documentation
 
-- Android: `minSdk 28`. Release builds need your own keystore (see `android/app/build.gradle.kts`).
-- iOS: camera, photo library and Face ID usage strings are in `ios/Runner/Info.plist`.
-- Web: installable PWA; OCR scanning, photos and notifications are not available in the browser.
-- Linux/Windows: full local functionality; scheduled notifications are not supported by the desktop plugins.
+- [`docs/architecture.md`](docs/architecture.md) — layers, app modes, the local schema ledger, reminders, sync, theming and the test layout.
+- [`docs/release.md`](docs/release.md) — keystore setup, signed Android/iOS/web builds, CI secrets, versioning.
+- [`docs/superpowers/specs/`](docs/superpowers/specs/) — design specs; [`docs/superpowers/plans/`](docs/superpowers/plans/) — implementation plans.
 
 ## License
 
