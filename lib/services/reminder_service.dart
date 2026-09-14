@@ -3,6 +3,7 @@
 /// Manages local notifications for medication dose reminders.
 library;
 
+import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
@@ -49,7 +50,9 @@ class ReminderService implements ReminderPort {
     final pending = _pendingRoute;
     if (pending != null) {
       _pendingRoute = null;
-      value.go(pending);
+      // The router is installed from `initState`, so navigating straight
+      // away would run during a build; defer it by a microtask.
+      scheduleMicrotask(() => value.go(pending));
     }
   }
 

@@ -586,7 +586,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
                   onPressed: () async {
                     final picked = await widget.pickTime(
                       context,
-                      TimeOfDay.now(),
+                      TimeOfDay.fromDateTime(_roundedNow),
                     );
                     if (picked == null) return;
                     final formatted = _formatTimeOfDay(picked);

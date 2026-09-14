@@ -63,20 +63,32 @@ Future<void> _initSafe(String name, Future<dynamic> Function() init) async {
 }
 
 /// Root application widget.
-class MedoraApp extends ConsumerWidget {
+class MedoraApp extends ConsumerStatefulWidget {
   const MedoraApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MedoraApp> createState() => _MedoraAppState();
+}
+
+class _MedoraAppState extends ConsumerState<MedoraApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Notification taps navigate through the router and reminder strings are
+    // looked up from the chosen locale — neither keeps a BuildContext alive.
+    // Installed once, not on every build: assigning the router flushes a
+    // pending notification route, which must not happen mid-build.
+    ReminderService.router = ref.read(appRouterProvider);
+    // Read lazily so the resolver always sees the current locale.
+    ReminderService.localeResolver = () => ref.read(localeProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(localeProvider);
     final colorScheme = ref.watch(colorSchemeProvider);
     final router = ref.watch(appRouterProvider);
-
-    // Notification taps navigate through the router and reminder strings are
-    // looked up from the chosen locale — neither keeps a BuildContext alive.
-    ReminderService.router = router;
-    ReminderService.localeResolver = () => locale;
 
     return MaterialApp.router(
       title: 'Medora',
