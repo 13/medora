@@ -65,7 +65,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
       success: (_) async {
         await refresh();
         // Also refresh today's doses as they might show stock warnings
-        ref.invalidate(todaysDoseLogsProvider);
+        ref.invalidateDoseData();
       },
       failure: (msg) => throw Exception(msg),
     );
@@ -78,6 +78,9 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
       success: (_) async {
         await refresh();
         ref.invalidate(archivedMedicationsProvider);
+        // Dose lists hide pending doses of archived medications, so they
+        // have to be refetched too.
+        ref.invalidateDoseData();
       },
       failure: (msg) => throw Exception(msg),
     );
@@ -90,6 +93,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
       success: (_) async {
         await refresh();
         ref.invalidate(archivedMedicationsProvider);
+        ref.invalidateDoseData();
       },
       failure: (msg) => throw Exception(msg),
     );

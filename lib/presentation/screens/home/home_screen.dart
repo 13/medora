@@ -1,26 +1,26 @@
 /// Medora - Home / Dashboard Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/treatment.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
+import 'package:medora/presentation/widgets/sync_status_chip.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -29,18 +29,14 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final l10n = AppLocalizations.of(context);
     final caps = ref.watch(platformCapabilitiesProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Text(l10n.dashboard),
         actions: [
           if (caps.hasCamera)
             IconButton(
@@ -48,17 +44,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
               tooltip: l10n.scanBarcodeTooltip,
               onPressed: () => context.push(AppRoutes.scanner),
             ),
-          const SyncIconButton(),
+          const SyncStatusChip(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
           ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
       body: RefreshIndicator(
@@ -71,9 +61,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Today's Doses Summary (on top) - always load immediately
-            const _TodaysDosesSummaryCard(),
+            // Now: the single next actionable dose (or a done/empty state).
+            const _NowCard(),
             const SizedBox(height: 16),
+
+            // At-a-glance counts, tappable to jump to the relevant tab.
+            const _StatTiles(),
+            const SizedBox(height: 16),
+
+            // Today's overall progress bar (only rendered when there are
+            // doses scheduled today).
+            const _TodayProgress(),
 
             // Active Treatments
             _SectionHeader(
@@ -104,42 +102,294 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
   }
 }
 
-class _TodaysDosesSummaryCard extends ConsumerWidget {
-  const _TodaysDosesSummaryCard();
+/// The single most relevant thing to do right now: take (or skip) the next
+/// due dose, or a confirmation that everything is handled.
+class _NowCard extends ConsumerStatefulWidget {
+  const _NowCard();
+
+  @override
+  ConsumerState<_NowCard> createState() => _NowCardState();
+}
+
+class _NowCardState extends ConsumerState<_NowCard> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final dosesAsync = ref.watch(todaysDoseLogsProvider);
+    final nextDose = ref.watch(nextDueDoseProvider);
+
+    return Card(
+      color: context.colors.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: AsyncValueView<List<DoseLog>>(
+          value: dosesAsync,
+          compact: true,
+          onRetry: () async => ref.invalidate(todaysDoseLogsProvider),
+          loading: SizedBox(
+            height: 72,
+            child: Center(
+              child: CircularProgressIndicator(color: context.colors.onPrimaryContainer),
+            ),
+          ),
+          data: (doses) {
+            if (nextDose != null) {
+              return _buildNextDose(context, l10n, nextDose);
+            }
+            if (doses.isNotEmpty) {
+              return _buildAllDone(context, l10n);
+            }
+            return _buildEmpty(context, l10n);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNextDose(BuildContext context, AppLocalizations l10n, DoseLog dose) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.nextDose,
+          style: context.text.labelMedium?.copyWith(
+            color: context.colors.onPrimaryContainer.withValues(alpha: 0.8),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                dose.medicationName ?? '',
+                style: context.text.headlineSmall?.copyWith(color: context.colors.onPrimaryContainer),
+              ),
+            ),
+            if (dose.isOverdue) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.medora.dangerContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  l10n.overdue,
+                  style: context.text.labelSmall?.copyWith(
+                    color: context.medora.onDangerContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${dosageLabel(l10n, dose) ?? ''} · ${dose.scheduledTime.timeFormatted}',
+          style: context.text.bodyMedium?.copyWith(
+            color: context.colors.onPrimaryContainer.withValues(alpha: 0.8),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _handleTake(context, l10n, dose.id),
+              icon: const Icon(Icons.check),
+              label: Text(l10n.take),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: _busy ? null : () => _handleSkip(context, l10n, dose.id),
+              child: Text(l10n.skip),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAllDone(BuildContext context, AppLocalizations l10n) {
+    return Row(
+      children: [
+        Icon(Icons.check_circle, color: context.colors.onPrimaryContainer),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            l10n.allDosesDone,
+            style: context.text.titleMedium?.copyWith(color: context.colors.onPrimaryContainer),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmpty(BuildContext context, AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.noDosesScheduled,
+          style: context.text.titleMedium?.copyWith(color: context.colors.onPrimaryContainer),
+        ),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => context.push(AppRoutes.addTreatment),
+            child: Text(l10n.addTreatment),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleTake(BuildContext context, AppLocalizations l10n, String id) async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    // Captured before the SnackBar is shown: the shell swaps tabs by index,
+    // so this screen (and its `ref`) can be disposed while the SnackBar is
+    // re-hosted by the ScaffoldMessenger. `DoseActions` holds a provider
+    // Ref and outlives the widget; `ref.read` at tap time would throw.
+    final actions = ref.read(doseActionsProvider);
+    try {
+      final ok = await actions.take(id);
+      if (!mounted) return;
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l10n.doseTaken),
+            action: SnackBarAction(
+              label: l10n.undo,
+              onPressed: () => actions.undoTake(id),
+            ),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(e.toString()))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _handleSkip(BuildContext context, AppLocalizations l10n, String id) async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    // See _handleTake: the action object must outlive this widget.
+    final actions = ref.read(doseActionsProvider);
+    try {
+      final ok = await actions.skip(id);
+      if (!mounted) return;
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l10n.doseSkipped),
+            action: SnackBarAction(
+              label: l10n.undo,
+              onPressed: () => actions.undoSkip(id),
+            ),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(e.toString()))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
+/// Row of three at-a-glance counts, each tapping into the relevant tab.
+class _StatTiles extends ConsumerWidget {
+  const _StatTiles();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final dosesAsync = ref.watch(todaysDoseLogsProvider);
+    final expiring = ref.watch(expiringSoonProvider).value?.length ?? 0;
+    final lowStock = ref.watch(lowStockProvider).value?.length ?? 0;
+    final treatments = ref.watch(activeTreatmentsProvider).value?.length ?? 0;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [AppTheme.primaryColor, AppTheme.primaryDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+    return Row(
+      children: [
+        _StatTile(
+          label: l10n.statExpiring,
+          value: expiring,
+          color: context.medora.warning,
+          onTap: () => MainShellScope.of(context)?.switchTab(1),
         ),
+        const SizedBox(width: 12),
+        _StatTile(
+          label: l10n.statLowStock,
+          value: lowStock,
+          color: context.medora.warning,
+          onTap: () => MainShellScope.of(context)?.switchTab(1),
+        ),
+        const SizedBox(width: 12),
+        _StatTile(
+          label: l10n.statTreatments,
+          value: treatments,
+          color: context.colors.primary,
+          onTap: () => MainShellScope.of(context)?.switchTab(2),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final numberColor = value == 0 ? context.colors.onSurfaceVariant : color;
+    return Expanded(
+      child: Card(
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () {
-            MainShellScope.of(context)?.switchTab(3);
-          },
+          onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: dosesAsync.when(
-              data: (doses) => _DosesSummaryContent(doses: doses),
-              loading: () => const SizedBox(
-                height: 60,
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$value',
+                  style: context.text.headlineMedium?.copyWith(
+                    color: numberColor,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              error: (error, stack) => Text(
-                l10n.unableToLoadDoses,
-                style: const TextStyle(color: Colors.white70),
-              ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: context.text.labelMedium?.copyWith(color: context.colors.onSurfaceVariant),
+                ),
+              ],
             ),
           ),
         ),
@@ -148,52 +398,45 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
   }
 }
 
-class _DosesSummaryContent extends StatelessWidget {
-  const _DosesSummaryContent({required this.doses});
-
-  final List<DoseLog> doses;
+/// Thin progress bar summarizing today's doses, hidden when there are none.
+class _TodayProgress extends ConsumerWidget {
+  const _TodayProgress();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final total = doses.length;
-    final taken = doses.where((d) => d.status == DoseStatus.taken).length;
-    final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+    final dosesAsync = ref.watch(todaysDoseLogsProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l10n.todaysDosesTitle,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
+    return dosesAsync.maybeWhen(
+      data: (doses) {
+        final total = doses.length;
+        if (total == 0) return const SizedBox.shrink();
+        final taken = doses.where((d) => d.status == DoseStatus.taken).length;
+        final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: taken / total,
+                  minHeight: 4,
+                  backgroundColor: context.colors.surfaceContainerHighest,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                l10n.dosesProgress(taken, total, pending),
+                style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        if (total == 0)
-          Text(
-            l10n.noDosesScheduled,
-            style: const TextStyle(color: Colors.white70),
-          )
-        else ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: total > 0 ? taken / total : 0,
-              backgroundColor: Colors.white24,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              minHeight: 8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.dosesProgress(taken, total, pending),
-            style: const TextStyle(color: Colors.white70),
-          ),
-        ],
-      ],
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }
@@ -210,11 +453,16 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+        // Expanded + ellipsis: at a 2.0x text scale a long section title
+        // and the "See all" button no longer fit side by side.
+        Expanded(
+          child: Text(
+            title,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
         ),
         TextButton(
           onPressed: onSeeAll,
@@ -233,30 +481,27 @@ class _ExpiringSoonCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final expiringAsync = ref.watch(expiringSoonProvider);
 
-    return expiringAsync.when(
+    return AsyncValueView<List<Medication>>(
+      value: expiringAsync,
+      compact: true,
+      onRetry: () async => ref.invalidate(expiringSoonProvider),
+      emptyWhen: (meds) => meds.isEmpty,
+      empty: Card(
+        child: EmptyStateWidget(
+          compact: true,
+          icon: Icons.check_circle,
+          title: l10n.allMedicationsWithinDate,
+        ),
+      ),
       data: (meds) {
-        if (meds.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: AppTheme.inStockColor),
-                  const SizedBox(width: 12),
-                  Text(l10n.allMedicationsWithinDate),
-                ],
-              ),
-            ),
-          );
-        }
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
               final days = med.expiryDate?.difference(DateTime.now()).inDays;
               return ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.warning_amber_rounded,
-                  color: AppTheme.expiringSoonColor,
+                  color: context.medora.warning,
                 ),
                 title: Text(med.name),
                 subtitle: Column(
@@ -280,15 +525,15 @@ class _ExpiringSoonCard extends ConsumerWidget {
                   children: [
                     Text(
                       '${days ?? 0}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: AppTheme.expiringSoonColor,
+                        color: context.medora.warning,
                       ),
                     ),
                     Text(
                       l10n.daysLabel,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -299,18 +544,6 @@ class _ExpiringSoonCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (error, stack) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text('Error: $error'),
-        ),
-      ),
     );
   }
 }
@@ -323,29 +556,26 @@ class _LowStockCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final lowStockAsync = ref.watch(lowStockProvider);
 
-    return lowStockAsync.when(
+    return AsyncValueView<List<Medication>>(
+      value: lowStockAsync,
+      compact: true,
+      onRetry: () async => ref.invalidate(lowStockProvider),
+      emptyWhen: (meds) => meds.isEmpty,
+      empty: Card(
+        child: EmptyStateWidget(
+          compact: true,
+          icon: Icons.check_circle,
+          title: l10n.allMedicationsWellStocked,
+        ),
+      ),
       data: (meds) {
-        if (meds.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: AppTheme.inStockColor),
-                  const SizedBox(width: 12),
-                  Text(l10n.allMedicationsWellStocked),
-                ],
-              ),
-            ),
-          );
-        }
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
               return ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.inventory_2_outlined,
-                  color: AppTheme.lowStockColor,
+                  color: context.medora.warning,
                 ),
                 title: Text(med.name),
                 subtitle: Column(
@@ -369,15 +599,15 @@ class _LowStockCard extends ConsumerWidget {
                   children: [
                     Text(
                       '${med.quantity}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: AppTheme.lowStockColor,
+                        color: context.medora.warning,
                       ),
                     ),
                     Text(
                       l10n.leftLabel,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -388,18 +618,6 @@ class _LowStockCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (error, stack) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text('Error: $error'),
-        ),
-      ),
     );
   }
 }
@@ -412,22 +630,19 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final treatmentsAsync = ref.watch(activeTreatmentsProvider);
 
-    return treatmentsAsync.when(
+    return AsyncValueView<List<Treatment>>(
+      value: treatmentsAsync,
+      compact: true,
+      onRetry: () async => ref.invalidate(activeTreatmentsProvider),
+      emptyWhen: (treatments) => treatments.isEmpty,
+      empty: Card(
+        child: EmptyStateWidget(
+          compact: true,
+          icon: Icons.check_circle,
+          title: l10n.noActiveTreatments,
+        ),
+      ),
       data: (treatments) {
-        if (treatments.isEmpty) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: AppTheme.inStockColor),
-                  const SizedBox(width: 12),
-                  Text(l10n.noActiveTreatments),
-                ],
-              ),
-            ),
-          );
-        }
         return Card(
           child: Column(
             children: treatments.take(3).map((t) {
@@ -436,18 +651,6 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      ),
-      error: (error, stack) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text('Error: $error'),
-        ),
-      ),
     );
   }
 }
@@ -461,7 +664,7 @@ class _ActiveTreatmentTile extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     return ListTile(
-      leading: const Icon(Icons.healing, color: AppTheme.primaryColor),
+      leading: Icon(Icons.healing, color: context.colors.primary),
       title: Text(treatment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -477,7 +680,7 @@ class _ActiveTreatmentTile extends StatelessWidget {
           ],
         ],
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      trailing: Icon(Icons.chevron_right, color: context.colors.outline),
       dense: true,
       onTap: () => context.push('/treatments/${treatment.id}'),
     );

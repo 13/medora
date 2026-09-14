@@ -9,15 +9,20 @@ import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/medication/aifa_search_sheet.dart';
+import 'package:medora/presentation/widgets/forms/date_picker_field.dart';
+import 'package:medora/presentation/widgets/forms/form_section.dart';
+import 'package:medora/presentation/widgets/forms/tag_input_field.dart';
+import 'package:medora/presentation/widgets/forms/unit_dropdown.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:uuid/uuid.dart';
-import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class AddMedicationScreen extends ConsumerStatefulWidget {
   const AddMedicationScreen({
@@ -50,6 +55,16 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   late final TextEditingController _storageLocationController;
   late final TextEditingController _barcodeController;
   late final TextEditingController _notesController;
+
+  // Two-way synced with FormSection: force-expand the section containing a
+  // failing field, or, in edit mode, a section that already has data; a
+  // manual header collapse writes back into these too. See
+  // [FormSection.controller]. Basics starts expanded; Stock & storage and
+  // Details start collapsed and are opened once loaded edit-mode data shows
+  // they have content (see [_loadExistingMedication]).
+  final _basicsExpanded = ValueNotifier<bool>(true);
+  final _stockExpanded = ValueNotifier<bool>(false);
+  final _detailsExpanded = ValueNotifier<bool>(false);
 
   List<String> _activeIngredients = [];
   List<String> _symptoms = [];
@@ -123,6 +138,27 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _barcodeController.text = result.code;
   }
 
+  /// Whether [med] has any data belonging to the Stock & storage section.
+  bool _hasStockData(Medication med) {
+    return med.minimumStockLevel != AppConstants.defaultMinimumStock ||
+        (med.storageLocation?.isNotEmpty ?? false) ||
+        med.purchaseDate != null ||
+        (med.barcode?.isNotEmpty ?? false);
+  }
+
+  /// Whether [med] has any data belonging to the Details section.
+  bool _hasDetailsData(Medication med) {
+    return (med.description?.isNotEmpty ?? false) ||
+        med.activeIngredients.isNotEmpty ||
+        med.symptoms.isNotEmpty ||
+        med.patientTags.isNotEmpty ||
+        med.category != null ||
+        (med.manufacturer?.isNotEmpty ?? false) ||
+        (med.atcCode?.isNotEmpty ?? false) ||
+        med.imagePath != null ||
+        (med.notes?.isNotEmpty ?? false);
+  }
+
   Future<void> _loadExistingMedication() async {
     final l10n = AppLocalizations.of(context);
     final repo = ref.read(medicationRepositoryProvider);
@@ -150,6 +186,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           _notesController.text = med.notes ?? '';
           _imagePath = med.imagePath;
         });
+        if (_hasStockData(med)) _stockExpanded.value = true;
+        if (_hasDetailsData(med)) _detailsExpanded.value = true;
       },
       failure: (msg) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -157,6 +195,14 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
         );
       },
     );
+  }
+
+  /// Push the barcode scanner and fill [_barcodeController] with the result.
+  Future<void> _openScanner() async {
+    final barcode = await context.push<String>(AppRoutes.scanner);
+    if (barcode != null && mounted) {
+      setState(() => _barcodeController.text = barcode);
+    }
   }
 
   /// Search AIFA database by code and apply the result.
@@ -194,70 +240,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       }
 
       // Pick from results
-      AifaSearchResult? selected;
-      if (results.length == 1) {
-        selected = results.first;
-      } else {
-        selected = await showModalBottomSheet<AifaSearchResult>(
-          context: context,
-          isScrollControlled: true,
-          builder: (ctx) => DraggableScrollableSheet(
-            initialChildSize: 0.5,
-            minChildSize: 0.3,
-            maxChildSize: 0.85,
-            expand: false,
-            builder: (ctx, scrollCtrl) => Column(
-              children: [
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[400],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    l10n.selectMedication,
-                    style: Theme.of(ctx).textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: ListView.separated(
-                    controller: scrollCtrl,
-                    itemCount: results.length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (ctx, i) {
-                      final r = results[i];
-                      return ListTile(
-                        title: Text(r.name,
-                            style: const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(r.description,
-                                style: const TextStyle(fontSize: 12),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
-                            if (r.activeIngredient != null)
-                              Text(r.activeIngredient!,
-                                  style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-                          ],
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.pop(ctx, r),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
+      final selected = results.length == 1
+          ? results.first
+          : await showAifaResultsPicker(context, results,
+              title: l10n.selectMedication);
 
       if (selected == null || !mounted) return;
 
@@ -280,155 +266,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   Future<void> _showAifaTextSearch(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    final searchController = TextEditingController();
-    List<AifaSearchResult> results = [];
-    bool isSearching = false;
-
-    final selected = await showModalBottomSheet<AifaSearchResult>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (ctx, scrollController) => Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.only(top: 8),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  l10n.searchAifaByName,
-                  style: Theme.of(ctx)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: TextField(
-                  controller: searchController,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    hintText: l10n.searchMedications,
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: isSearching
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.send),
-                            onPressed: () async {
-                              final query =
-                                  searchController.text.trim();
-                              if (query.length < 2) return;
-                              setSheetState(() => isSearching = true);
-                              try {
-                                final r = await AifaCacheService.instance
-                                    .searchByName(query);
-                                setSheetState(() {
-                                  results = r;
-                                  isSearching = false;
-                                });
-                              } catch (_) {
-                                setSheetState(
-                                    () => isSearching = false);
-                              }
-                            },
-                          ),
-                  ),
-                  onSubmitted: (query) async {
-                    if (query.trim().length < 2) return;
-                    setSheetState(() => isSearching = true);
-                    try {
-                      final r = await AifaCacheService.instance
-                          .searchByName(query.trim());
-                      setSheetState(() {
-                        results = r;
-                        isSearching = false;
-                      });
-                    } catch (_) {
-                      setSheetState(() => isSearching = false);
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Divider(height: 1),
-              Expanded(
-                child: results.isEmpty
-                    ? Center(
-                        child: Text(
-                          isSearching
-                              ? ''
-                              : l10n.searchMedications,
-                          style: TextStyle(color: Colors.grey[400]),
-                        ),
-                      )
-                    : ListView.separated(
-                        controller: scrollController,
-                        itemCount: results.length,
-                        separatorBuilder: (_, _) =>
-                            const Divider(height: 1),
-                        itemBuilder: (ctx, i) {
-                          final r = results[i];
-                          return ListTile(
-                            title: Text(r.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600)),
-                            subtitle: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                if (r.description.isNotEmpty)
-                                  Text(r.description,
-                                      style:
-                                          const TextStyle(fontSize: 12),
-                                      maxLines: 2,
-                                      overflow:
-                                          TextOverflow.ellipsis),
-                                if (r.activeIngredient != null)
-                                  Text(r.activeIngredient!,
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[600])),
-                                if (r.manufacturer != null)
-                                  Text(r.manufacturer!,
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey[500])),
-                              ],
-                            ),
-                            trailing:
-                                const Icon(Icons.chevron_right),
-                            onTap: () =>
-                                Navigator.pop(ctx, r),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
+    final selected = await showAifaSearchSheet(context);
     if (selected == null || !mounted) return;
     _applyAifaResult(selected);
     setState(() {});
@@ -451,7 +289,23 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _storageLocationController.dispose();
     _barcodeController.dispose();
     _notesController.dispose();
+    _basicsExpanded.dispose();
+    _stockExpanded.dispose();
+    _detailsExpanded.dispose();
     super.dispose();
+  }
+
+  /// Collapsed-state summary for the Stock & storage section, e.g. "10
+  /// Pills · min 2".
+  String _stockSummary(AppLocalizations l10n) {
+    final qty = _quantityController.text.trim();
+    final unit = (_quantityUnit != null && _quantityUnit!.isNotEmpty)
+        ? AppConstants.unitLabel(l10n, _quantityUnit!)
+        : '';
+    final qtyPart = [qty, unit].where((s) => s.isNotEmpty).join(' ');
+    final minStock = int.tryParse(_minStockController.text.trim()) ?? 0;
+    final minPart = l10n.minStockShort(minStock);
+    return qtyPart.isEmpty ? minPart : '$qtyPart · $minPart';
   }
 
   @override
@@ -473,119 +327,282 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
               IconButton(
                 icon: const Icon(Icons.qr_code_scanner),
                 tooltip: l10n.scanBarcodeTooltip,
-                onPressed: () async {
-                  final barcode = await context.push<String>(AppRoutes.scanner);
-                  if (barcode != null && mounted) {
-                    setState(() => _barcodeController.text = barcode);
-                  }
-                },
+                onPressed: _openScanner,
               ),
           ],
         ],
       ),
       body: Form(
         key: _formKey,
-        child: ListView(
+        // A SingleChildScrollView + Column keeps every field mounted at all
+        // times (unlike a ListView, which lazily unmounts off-screen
+        // children — deactivating their FormFieldState and making
+        // Form.validate() silently skip them on a small viewport / large
+        // text scale).
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          children: [
-            // Name
-            TextFormField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: l10n.medicationNameLabel,
-                prefixIcon: const Icon(Icons.medication),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return l10n.pleaseEnterMedicationName;
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!_isEditMode) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (caps.hasCamera)
+                      ActionChip(
+                        avatar: const Icon(Icons.qr_code_scanner, size: 18),
+                        label: Text(l10n.scanBarcodeTooltip),
+                        onPressed: _openScanner,
+                      ),
+                    ActionChip(
+                      avatar: const Icon(Icons.search, size: 18),
+                      label: Text(l10n.searchAifaByName),
+                      onPressed: () => _showAifaTextSearch(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
 
-            // Description (e.g. "400 MG COMPRESSE RIVESTITE- 30 COMPRESSE IN BLISTER")
-            TextFormField(
-              controller: _descriptionController,
-              decoration: InputDecoration(
-                labelText: l10n.medicationDescription,
-                prefixIcon: const Icon(Icons.description),
-              ),
-              maxLines: 2,
-            ),
-            const SizedBox(height: 16),
-
-            // Active Ingredients (tags)
-            _TagInputField(
-              label: l10n.activeIngredients,
-              icon: Icons.science,
-              tags: _activeIngredients,
-              onChanged: (tags) => setState(() => _activeIngredients = tags),
-            ),
-            const SizedBox(height: 16),
-
-            // Symptoms / Used For (tags)
-            _TagInputField(
-              label: l10n.symptomsField,
-              icon: Icons.local_hospital,
-              tags: _symptoms,
-              onChanged: (tags) => setState(() => _symptoms = tags),
-            ),
-            const SizedBox(height: 16),
-
-            // Patient (tags) — e.g. "Baby", "Mom"
-            _TagInputField(
-              label: l10n.patientTagsField,
-              icon: Icons.person,
-              tags: _patientTags,
-              onChanged: (tags) => setState(() => _patientTags = tags),
-              isUserTag: true,
-            ),
-            const SizedBox(height: 16),
-
-            // Category Dropdown (localized)
-            DropdownButtonFormField<String>(
-              key: ValueKey('cat_$_selectedCategory'),
-              initialValue: _selectedCategory,
-              decoration: InputDecoration(
-                labelText: l10n.category,
-                prefixIcon: const Icon(Icons.category),
-              ),
-              items: AppConstants.medicationCategoryKeys.map((key) {
-                return DropdownMenuItem(
-                  value: key,
-                  child: Text(AppConstants.categoryLabel(l10n, key)),
-                );
-              }).toList(),
-              onChanged: (value) => setState(() => _selectedCategory = value),
-            ),
-            const SizedBox(height: 16),
-
-            // Manufacturer
-            TextFormField(
-              controller: _manufacturerController,
-              decoration: InputDecoration(
-                labelText: l10n.manufacturerLabel,
-                prefixIcon: const Icon(Icons.factory),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Form & ATC row
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
+              // ── Basics ──
+              FormSection(
+                title: l10n.sectionBasics,
+                icon: Icons.medication,
+                controller: _basicsExpanded,
+                children: [
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: l10n.medicationNameLabel,
+                      prefixIcon: const Icon(Icons.medication),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        _basicsExpanded.value = true;
+                        return l10n.pleaseEnterMedicationName;
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
                     controller: _formController,
                     decoration: InputDecoration(
                       labelText: l10n.formLabel,
                       prefixIcon: const Icon(Icons.medical_information),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextFormField(
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: _quantityController,
+                          decoration: InputDecoration(
+                            labelText: l10n.quantityLabel,
+                            prefixIcon: const Icon(Icons.inventory_2),
+                          ),
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(() {}),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              _basicsExpanded.value = true;
+                              return l10n.required;
+                            }
+                            if (int.tryParse(value) == null) {
+                              _basicsExpanded.value = true;
+                              return l10n.invalidNumber;
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 3,
+                        child: UnitDropdown(
+                          value: _quantityUnit,
+                          onChanged: (v) => setState(() => _quantityUnit = v),
+                          decoration: InputDecoration(
+                            labelText: l10n.quantityUnit,
+                            prefixIcon: const Icon(Icons.straighten),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  DatePickerField(
+                    label: l10n.expiryDate,
+                    icon: Icons.event,
+                    date: _expiryDate,
+                    onDateSelected: (date) =>
+                        setState(() => _expiryDate = date),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // ── Stock & storage ──
+              FormSection(
+                title: l10n.sectionStock,
+                icon: Icons.inventory_2,
+                initiallyExpanded: false,
+                controller: _stockExpanded,
+                summary: _stockSummary(l10n),
+                children: [
+                  TextFormField(
+                    controller: _minStockController,
+                    decoration: InputDecoration(
+                      labelText: l10n.minStock,
+                      prefixIcon: const Icon(Icons.low_priority),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('loc_${_storageLocationController.text}'),
+                    initialValue: AppConstants.storageLocationKeys.contains(
+                            _storageLocationController.text)
+                        ? _storageLocationController.text
+                        : null,
+                    decoration: InputDecoration(
+                      labelText: l10n.storageLocation,
+                      prefixIcon: const Icon(Icons.place),
+                    ),
+                    items: AppConstants.storageLocationKeys.map((key) {
+                      return DropdownMenuItem(
+                        value: key,
+                        child: Text(AppConstants.storageLabel(l10n, key)),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(
+                          () => _storageLocationController.text = value ?? '');
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DatePickerField(
+                    label: l10n.purchaseDate,
+                    icon: Icons.shopping_cart,
+                    date: _purchaseDate,
+                    onDateSelected: (date) =>
+                        setState(() => _purchaseDate = date),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _barcodeController,
+                    decoration: InputDecoration(
+                      labelText: l10n.barcode,
+                      prefixIcon: const Icon(Icons.qr_code),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Search MyHealthBox by barcode text
+                          IconButton(
+                            icon: const Icon(Icons.search),
+                            tooltip: l10n.searchByBarcode,
+                            onPressed: _barcodeController.text.trim().isNotEmpty
+                                ? () =>
+                                    _searchBarcode(_barcodeController.text.trim())
+                                : null,
+                          ),
+                          // Open camera scanner
+                          if (caps.hasCamera)
+                            IconButton(
+                              icon: const Icon(Icons.qr_code_scanner),
+                              onPressed: () async {
+                                final barcode = await context.push<String>(
+                                    '${AppRoutes.scanner}?returnOnly=true');
+                                if (barcode != null && mounted) {
+                                  setState(
+                                      () => _barcodeController.text = barcode);
+                                  _searchBarcode(barcode);
+                                }
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    onChanged: (_) => setState(() {}),
+                    onFieldSubmitted: (value) {
+                      if (value.trim().isNotEmpty) {
+                        _searchBarcode(value.trim());
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // ── Details ──
+              FormSection(
+                title: l10n.sectionDetails,
+                icon: Icons.notes,
+                initiallyExpanded: false,
+                controller: _detailsExpanded,
+                children: [
+                  TextFormField(
+                    controller: _descriptionController,
+                    decoration: InputDecoration(
+                      labelText: l10n.medicationDescription,
+                      prefixIcon: const Icon(Icons.description),
+                    ),
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 16),
+                  TagInputField(
+                    label: l10n.activeIngredients,
+                    icon: Icons.science,
+                    tags: _activeIngredients,
+                    onChanged: (tags) =>
+                        setState(() => _activeIngredients = tags),
+                  ),
+                  const SizedBox(height: 16),
+                  TagInputField(
+                    label: l10n.symptomsField,
+                    icon: Icons.local_hospital,
+                    tags: _symptoms,
+                    onChanged: (tags) => setState(() => _symptoms = tags),
+                  ),
+                  const SizedBox(height: 16),
+                  TagInputField(
+                    label: l10n.patientTagsField,
+                    icon: Icons.person,
+                    tags: _patientTags,
+                    onChanged: (tags) => setState(() => _patientTags = tags),
+                    isUserTag: true,
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('cat_$_selectedCategory'),
+                    initialValue: _selectedCategory,
+                    decoration: InputDecoration(
+                      labelText: l10n.category,
+                      prefixIcon: const Icon(Icons.category),
+                    ),
+                    items: AppConstants.medicationCategoryKeys.map((key) {
+                      return DropdownMenuItem(
+                        value: key,
+                        child: Text(AppConstants.categoryLabel(l10n, key)),
+                      );
+                    }).toList(),
+                    onChanged: (value) =>
+                        setState(() => _selectedCategory = value),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _manufacturerController,
+                    decoration: InputDecoration(
+                      labelText: l10n.manufacturerLabel,
+                      prefixIcon: const Icon(Icons.factory),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
                     controller: _atcCodeController,
                     decoration: InputDecoration(
                       labelText: l10n.atcCodeLabel,
@@ -593,187 +610,45 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     ),
                     textCapitalization: TextCapitalization.characters,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Quantity, Unit & Min Stock
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: TextFormField(
-                    controller: _quantityController,
-                    decoration: InputDecoration(
-                      labelText: l10n.quantityLabel,
-                      prefixIcon: const Icon(Icons.inventory_2),
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return l10n.required;
-                      }
-                      if (int.tryParse(value) == null) {
-                        return l10n.invalidNumber;
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 3,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('unit_$_quantityUnit'),
-                    initialValue: _quantityUnit,
-                    decoration: InputDecoration(
-                      labelText: l10n.quantityUnit,
-                      prefixIcon: const Icon(Icons.straighten),
-                    ),
-                    items: [
-                      DropdownMenuItem(value: 'pieces', child: Text(l10n.unitPieces)),
-                      DropdownMenuItem(value: 'pills', child: Text(l10n.unitPills)),
-                      DropdownMenuItem(value: 'tablets', child: Text(l10n.unitTablets)),
-                      DropdownMenuItem(value: 'capsules', child: Text(l10n.unitCapsules)),
-                      DropdownMenuItem(value: 'ml', child: Text(l10n.unitMl)),
-                      DropdownMenuItem(value: 'drops', child: Text(l10n.unitDrops)),
-                      DropdownMenuItem(value: 'bustine', child: Text(l10n.unitBustine)),
-                      DropdownMenuItem(value: 'ampoules', child: Text(l10n.unitAmpoules)),
-                      DropdownMenuItem(value: 'suppositories', child: Text(l10n.unitSuppositories)),
-                      DropdownMenuItem(value: 'patches', child: Text(l10n.unitPatches)),
-                    ],
-                    onChanged: (v) => setState(() => _quantityUnit = v),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _minStockController,
-              decoration: InputDecoration(
-                labelText: l10n.minStock,
-                prefixIcon: const Icon(Icons.low_priority),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 16),
-
-            // Purchase Date
-            _DatePickerField(
-              label: l10n.purchaseDate,
-              icon: Icons.shopping_cart,
-              date: _purchaseDate,
-              onDateSelected: (date) =>
-                  setState(() => _purchaseDate = date),
-            ),
-            const SizedBox(height: 16),
-
-            // Expiry Date
-            _DatePickerField(
-              label: l10n.expiryDate,
-              icon: Icons.event,
-              date: _expiryDate,
-              onDateSelected: (date) =>
-                  setState(() => _expiryDate = date),
-            ),
-            const SizedBox(height: 16),
-
-            // Storage Location
-            DropdownButtonFormField<String>(
-              key: ValueKey('loc_${_storageLocationController.text}'),
-              initialValue: AppConstants.storageLocationKeys.contains(
-                      _storageLocationController.text)
-                  ? _storageLocationController.text
-                  : null,
-              decoration: InputDecoration(
-                labelText: l10n.storageLocation,
-                prefixIcon: const Icon(Icons.place),
-              ),
-              items: AppConstants.storageLocationKeys.map((key) {
-                return DropdownMenuItem(
-                  value: key,
-                  child: Text(AppConstants.storageLabel(l10n, key)),
-                );
-              }).toList(),
-              onChanged: (value) {
-                _storageLocationController.text = value ?? '';
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Barcode
-            TextFormField(
-              controller: _barcodeController,
-              decoration: InputDecoration(
-                labelText: l10n.barcode,
-                prefixIcon: const Icon(Icons.qr_code),
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Search MyHealthBox by barcode text
-                    IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: l10n.searchByBarcode,
-                      onPressed: _barcodeController.text.trim().isNotEmpty
-                          ? () => _searchBarcode(_barcodeController.text.trim())
-                          : null,
-                    ),
-                    // Open camera scanner
-                    if (caps.hasCamera)
-                      IconButton(
-                        icon: const Icon(Icons.qr_code_scanner),
-                        onPressed: () async {
-                          final barcode = await context
-                              .push<String>('${AppRoutes.scanner}?returnOnly=true');
-                          if (barcode != null && mounted) {
-                            setState(() => _barcodeController.text = barcode);
-                            _searchBarcode(barcode);
-                          }
-                        },
-                      ),
+                  if (!kIsWeb) ...[
+                    const SizedBox(height: 16),
+                    _buildPhotoSection(l10n),
                   ],
-                ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _notesController,
+                    decoration: InputDecoration(
+                      labelText: l10n.notes,
+                      prefixIcon: const Icon(Icons.notes),
+                    ),
+                    maxLines: 3,
+                  ),
+                ],
               ),
-              onFieldSubmitted: (value) {
-                if (value.trim().isNotEmpty) {
-                  _searchBarcode(value.trim());
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Photo
-            if (!kIsWeb) ...[
-              _buildPhotoSection(l10n),
               const SizedBox(height: 16),
             ],
-
-            // Notes
-            TextFormField(
-              controller: _notesController,
-              decoration: InputDecoration(
-                labelText: l10n.notes,
-                prefixIcon: const Icon(Icons.notes),
-              ),
-              maxLines: 3,
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SizedBox(
+            height: 50,
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _isLoading ? null : _saveMedication,
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(_isEditMode
+                      ? l10n.updateMedication
+                      : l10n.addMedicationButton),
             ),
-            const SizedBox(height: 32),
-
-            // Save Button
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _saveMedication,
-                child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : Text(_isEditMode
-                        ? l10n.updateMedication
-                        : l10n.addMedicationButton),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
+          ),
         ),
       ),
     );
@@ -794,7 +669,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: context.colors.outlineVariant),
             ),
             child: _imagePath == null || kIsWeb
                 ? _photoPlaceholder(l10n)
@@ -836,9 +711,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.add_a_photo, size: 40, color: Colors.grey[400]),
+        Icon(Icons.add_a_photo, size: 40, color: context.colors.outline),
         const SizedBox(height: 8),
-        Text(l10n.addPhoto, style: TextStyle(color: Colors.grey[500])),
+        Text(l10n.addPhoto, style: TextStyle(color: context.colors.outline)),
       ],
     );
   }
@@ -877,6 +752,17 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     final name = await ref.read(photoStorageProvider).saveFromPath(picked.path);
     if (!mounted) return;
     setState(() => _imagePath = name);
+  }
+
+  /// Pop the screen if it was pushed onto a router (a no-op, e.g. in widget
+  /// tests that host the screen directly without a GoRouter ancestor).
+  void _popIfPossible() {
+    final router = GoRouter.maybeOf(context);
+    if (router != null && router.canPop()) {
+      router.pop();
+    } else {
+      Navigator.of(context).maybePop();
+    }
   }
 
   Future<void> _saveMedication() async {
@@ -943,163 +829,16 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             ),
           ),
         );
-        context.pop();
+        _popIfPossible();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
         );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-}
-
-/// Reusable date picker form field.
-class _DatePickerField extends StatelessWidget {
-  const _DatePickerField({
-    required this.label,
-    required this.icon,
-    required this.date,
-    required this.onDateSelected,
-  });
-
-  final String label;
-  final IconData icon;
-  final DateTime? date;
-  final ValueChanged<DateTime?> onDateSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return InkWell(
-      onTap: () async {
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: date ?? DateTime.now(),
-          firstDate: DateTime(2000),
-          lastDate: DateTime(2100),
-        );
-        if (picked != null) {
-          onDateSelected(picked);
-        }
-      },
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          suffixIcon: date != null
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () => onDateSelected(null),
-                )
-              : null,
-        ),
-        child: Text(
-          date != null
-              ? '${date!.year}-${date!.month.toString().padLeft(2, '0')}-${date!.day.toString().padLeft(2, '0')}'
-              : l10n.selectDate,
-          style: TextStyle(
-            color: date != null ? null : Colors.grey[500],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Reusable tag input field for entering multiple tags (chips).
-class _TagInputField extends StatefulWidget {
-  const _TagInputField({
-    required this.label,
-    required this.icon,
-    required this.tags,
-    required this.onChanged,
-    this.isUserTag = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final List<String> tags;
-  final ValueChanged<List<String>> onChanged;
-  final bool isUserTag;
-
-  @override
-  State<_TagInputField> createState() => _TagInputFieldState();
-}
-
-class _TagInputFieldState extends State<_TagInputField> {
-  final _controller = TextEditingController();
-  final _focusNode = FocusNode();
-
-  void _addTag(String text) {
-    final tag = text.trim();
-    if (tag.isNotEmpty && !widget.tags.contains(tag)) {
-      widget.onChanged([...widget.tags, tag]);
-    }
-    _controller.clear();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (widget.tags.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: widget.tags.map((tag) {
-                return InputChip(
-                  label: TagChip(
-                    label: tag, 
-                    fontSize: 12, 
-                    icon: widget.isUserTag ? Icons.person : null,
-                  ),
-                  onDeleted: () {
-                    widget.onChanged(
-                        widget.tags.where((t) => t != tag).toList());
-                  },
-                  backgroundColor: Colors.transparent,
-                  side: BorderSide.none,
-                  padding: EdgeInsets.zero,
-                  labelPadding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                );
-              }).toList(),
-            ),
-          ),
-        TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          decoration: InputDecoration(
-            labelText: widget.label,
-            prefixIcon: Icon(widget.icon),
-            hintText: l10n.addTag,
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => _addTag(_controller.text),
-            ),
-          ),
-          onSubmitted: (value) {
-            _addTag(value);
-            _focusNode.requestFocus();
-          },
-        ),
-      ],
-    );
   }
 }

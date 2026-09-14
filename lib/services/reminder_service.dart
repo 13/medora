@@ -90,6 +90,16 @@ class ReminderService implements ReminderPort {
   Future<void> cancelAll() => cancelAllReminders();
 
   @override
+  Future<void> cancelForDose(String doseId) async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    final baseId = notificationBaseId(doseId);
+    for (var i = 0; i < 4; i++) {
+      await _notifications.cancel(id: baseId + i);
+    }
+  }
+
+  @override
   Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) =>
       scheduleRemindersForDose(dose: dose, medicationName: medicationName);
 

@@ -22,7 +22,6 @@
       "pending": { "type": "int" }
     }
   },
-  "unableToLoadDoses": "Unable to load doses",
 
   "addMedication": "Add\nMedication",
   "scanBarcode": "Scan\nBarcode",
@@ -31,6 +30,9 @@
   "expiringSoon": "Expiring Soon",
   "lowStock": "Low Stock",
   "activeTreatments": "Active Treatments",
+  "statExpiring": "Expiring",
+  "statLowStock": "Low stock",
+  "statTreatments": "Treatments",
   "allMedicationsWithinDate": "All medications are within date",
   "allMedicationsWellStocked": "All medications are well stocked",
   "noActiveTreatments": "No active treatments",
@@ -73,6 +75,11 @@
   "loadingMedications": "Loading medications...",
 
   "editMedication": "Edit Medication",
+  "sectionBasics": "Basics",
+  "sectionStock": "Stock & storage",
+  "sectionDetails": "Details",
+  "minStockShort": "min {n}",
+  "@minStockShort": { "placeholders": { "n": { "type": "int" } } },
   "medicationNameLabel": "Medication Name *",
   "pleaseEnterMedicationName": "Please enter a medication name",
   "activeIngredient": "Active Ingredient",
@@ -180,20 +187,21 @@
     }
   },
   "done": "Done",
-  "errorLoadingPrescriptions": "Error loading prescriptions: {message}",
-  "@errorLoadingPrescriptions": {
-    "placeholders": {
-      "message": { "type": "String" }
-    }
-  },
   "medicationLabel": "Medication *",
   "dosageLabel": "Dosage *",
   "dosageHint": "e.g., 400mg",
   "intervalHoursLabel": "Interval (hours)",
   "durationDaysLabel": "Duration (days)",
+  "doseTimesPreview": "Doses at {times}",
+  "@doseTimesPreview": { "placeholders": { "times": { "type": "String" } } },
+  "changeMedicationConfirm": "Changing the medication regenerates pending doses. Continue?",
+  "intervalRange": "Interval must be between 1 and 48 hours",
+  "durationRange": "Duration must be between 1 and 365 days",
+  "selectAtLeastOneTime": "Select at least one time",
 
   "todaysDosesTitle": "Today's Doses",
   "noDosesScheduledToday": "No doses scheduled for today",
+  "noDosesForThisDay": "No doses on this day",
   "createTreatmentForDoses": "Create a treatment and add prescriptions to see doses here",
   "upcoming": "Upcoming",
   "completed": "Completed",
@@ -213,6 +221,25 @@
   "skip": "Skip",
   "take": "Take",
   "loadingDoses": "Loading doses...",
+
+  "nextDose": "Next dose",
+  "allDosesDone": "All doses done for today",
+  "doseTaken": "Taken",
+  "doseSkipped": "Skipped",
+  "undo": "Undo",
+  "takeAllDue": "Take all due",
+  "dosesDueNow": "{count} doses due",
+  "@dosesDueNow": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "dosesTakenCount": "{count} doses taken",
+  "@dosesTakenCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
 
   "scanBarcodeTitle": "Scan AIC Code",
   "pointCameraAtBarcode": "Point camera at AIC code on package",
@@ -263,7 +290,7 @@
   "no": "No",
   "yes": "Yes",
   "allRemindersCancelled": "All reminders cancelled",
-  "dataAndSync": "Data & Sync",
+  "dataSection": "Data",
   "online": "Online",
   "offline": "Offline",
   "connectedSyncsAutomatically": "Connected — data syncs automatically",
@@ -273,7 +300,7 @@
   "syncing": "Syncing...",
   "syncSuccess": "Sync completed successfully",
   "syncError": "Sync failed — tap to retry",
-  "features": "Features",
+  "advanced": "Advanced",
   "familySharing": "Family Sharing",
   "shareCabinetWithFamily": "Share your medicine cabinet with family",
   "exportData": "Export Data",
@@ -380,7 +407,9 @@
   "specificTimes": "Specific Times",
   "morning": "Morning",
   "noon": "Noon",
+  "afternoon": "Afternoon",
   "evening": "Evening",
+  "night": "Night",
   "beforeSleep": "Before Sleep",
   "selectTimes": "Select Times",
   "everyXHours": "Every {hours} hours",
@@ -396,11 +425,6 @@
   "selectMedication": "Select Medication",
   "results": "results",
   "searchByBarcode": "Search by code",
-  "archiveTreatment": "Archive Treatment",
-  "archiveTreatmentConfirm": "Archive \"{name}\"? It will be moved to the archive and can be viewed later.",
-  "@archiveTreatmentConfirm": {
-    "placeholders": { "name": { "type": "String" } }
-  },
   "archive": "Archive",
   "archived": "Archived",
   "deletePrescription": "Delete Prescription",
@@ -559,5 +583,43 @@
   "@hoursShort": { "placeholders": { "hours": { "type": "int" } } },
   "keepLocalData": "Keep my data on this device",
   "wipeLocalData": "Delete my data from this device",
-  "turnOffCloudSyncChoice": "You will be signed out. What should happen to the data stored on this device?"
+  "turnOffCloudSyncChoice": "You will be signed out. What should happen to the data stored on this device?",
+
+  "securitySection": "Security",
+  "fingerprintUnlock": "Fingerprint unlock",
+  "fingerprintUnlockDesc": "Use biometrics to protect your data",
+  "undoTaken": "Undo taken",
+  "continueAction": "Continue",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "tomorrow": "Tomorrow",
+  "date": "Date",
+  "clear": "Clear",
+  "genericError": "Something went wrong",
+  "errorWithDetails": "Something went wrong: {details}",
+  "@errorWithDetails": { "placeholders": { "details": { "type": "String" } } },
+  "deleteDataFailed": "Could not delete data: {details}",
+  "@deleteDataFailed": { "placeholders": { "details": { "type": "String" } } },
+  "exportNotSupportedOnWeb": "Export is not available in the browser yet.",
+  "exportReportTitle": "Medora report",
+  "exportSummary": "Home medicine cabinet summary",
+  "exportDoseRecords": "Dose records",
+  "name": "Name",
+  "dosage": "Dosage",
+  "colActiveIngredient": "Active ingredient",
+  "colMinStock": "Min stock",
+  "colScheduled": "Scheduled",
+  "colTaken": "Taken",
+  "colStatus": "Status",
+  "yesLabel": "Yes",
+  "noLabel": "No",
+
+  "onboardingCabinetTitle": "Your cabinet",
+  "onboardingCabinetBody": "Add the medicines you have at home. Medora tracks quantity and expiry for you.",
+  "onboardingTreatmentsTitle": "Treatments",
+  "onboardingTreatmentsBody": "Group medicines into a treatment with a schedule for who takes what and when.",
+  "onboardingDosesTitle": "Daily doses",
+  "onboardingDosesBody": "Each day shows what is due. Tap Take, or let reminders nudge you.",
+  "onboardingNext": "Next",
+  "onboardingDone": "Done"
 }

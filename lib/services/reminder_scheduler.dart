@@ -1,9 +1,13 @@
 /// Medora - Reminder scheduler.
 ///
-/// Single owner of "which notifications exist". [reconcile] cancels
-/// everything and re-schedules pending doses for the next [horizon],
-/// earliest first, capped at [maxNotifications]. When reminders are
-/// disabled it only cancels.
+/// Single owner of "which notifications exist". [reconcile] schedules
+/// pending doses for the next [horizon], earliest first, capped at
+/// [maxNotifications]. The first run (or the first after [reset]) cancels
+/// everything and schedules the desired set; later runs diff against the
+/// previous run's snapshot and only cancel/schedule the delta. The snapshot
+/// tracks id and scheduled time; a dose whose time changes (e.g. after a
+/// cloud pull) is re-scheduled. When reminders are disabled it cancels
+/// everything and schedules nothing.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -55,32 +59,50 @@ class ReminderScheduler {
     }
   }
 
-  Future<int> _reconcileOnce() async {
-    await _port.cancelAll();
-    if (!_remindersEnabled()) return 0;
+  /// Snapshot of the previous run: dose id → scheduled time. Null means
+  /// "unknown, do a full cancel".
+  Map<String, DateTime>? _scheduled;
 
+  void reset() => _scheduled = null;
+
+  Future<int> _reconcileOnce() async {
+    if (!_remindersEnabled()) {
+      await _port.cancelAll();
+      _scheduled = {};
+      return 0;
+    }
     final now = _now();
     final result = await _doses.getPendingDoseLogsBetween(now, now.add(horizon));
-    return result.when(
-      success: (pending) async {
-        final limit = maxNotifications ~/ notificationsPerDose;
+    final pending = result.when(success: (d) => d, failure: (msg) {
+      debugPrint('Reminders: could not load pending doses: $msg');
+      return null;
+    });
+    if (pending == null) return _scheduled?.length ?? 0;
 
-        var scheduled = 0;
-        for (final dose in pending) {
-          if (scheduled >= limit) break;
-          await _port.scheduleForDose(
-            dose: dose,
-            medicationName: dose.medicationName ?? 'Medication',
-          );
-          scheduled++;
+    final limit = maxNotifications ~/ notificationsPerDose;
+    final desired = pending.take(limit).toList();
+    final desiredMap = {for (final d in desired) d.id: d.scheduledTime};
+    final previous = _scheduled;
+
+    if (previous == null) {
+      await _port.cancelAll();
+      for (final dose in desired) {
+        await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
+      }
+    } else {
+      for (final id in previous.keys) {
+        if (!desiredMap.containsKey(id) || desiredMap[id] != previous[id]) {
+          await _port.cancelForDose(id);
         }
-        debugPrint('Reminders: scheduled $scheduled of ${pending.length} pending doses');
-        return scheduled;
-      },
-      failure: (msg) async {
-        debugPrint('Reminders: could not load pending doses: $msg');
-        return 0;
-      },
-    );
+      }
+      for (final dose in desired) {
+        if (!previous.containsKey(dose.id) || previous[dose.id] != dose.scheduledTime) {
+          await _port.scheduleForDose(dose: dose, medicationName: dose.medicationName ?? 'Medication');
+        }
+      }
+    }
+    _scheduled = desiredMap;
+    debugPrint('Reminders: ${desiredMap.length} dose(s) scheduled (${pending.length} pending in horizon)');
+    return desiredMap.length;
   }
 }

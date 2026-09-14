@@ -92,17 +92,30 @@ class Prescription {
     final end = endTime;
     const maxDoses = 1000;
 
-    if (scheduleType == 'times_per_day' && scheduleTimes != null && scheduleTimes!.isNotEmpty) {
+    if (scheduleType == 'times_per_day' &&
+        scheduleTimes != null &&
+        scheduleTimes!.isNotEmpty) {
       // Generate times for each day at the specified times
-      var currentDate = DateTime(startTime.year, startTime.month, startTime.day);
+      var currentDate = DateTime(
+        startTime.year,
+        startTime.month,
+        startTime.day,
+      );
       while (currentDate.isBefore(end) && times.length < maxDoses) {
         for (final timeStr in scheduleTimes!) {
           if (times.length >= maxDoses) break;
           final parts = timeStr.split(':');
           final h = int.tryParse(parts[0]) ?? 8;
           final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
-          final dt = DateTime(currentDate.year, currentDate.month, currentDate.day, h, m);
-          if (dt.isAfter(startTime.subtract(const Duration(minutes: 1))) && dt.isBefore(end)) {
+          final dt = DateTime(
+            currentDate.year,
+            currentDate.month,
+            currentDate.day,
+            h,
+            m,
+          );
+          if (dt.isAfter(startTime.subtract(const Duration(minutes: 1))) &&
+              dt.isBefore(end)) {
             times.add(dt);
           }
         }
@@ -121,6 +134,13 @@ class Prescription {
     times.sort();
     return times;
   }
+
+  /// The next [dosesPerDay] scheduled dose times, for the sheet's schedule
+  /// preview. Not "the first day's times": for a fixed interval that does
+  /// not divide 24h these run past midnight, and for a times-per-day
+  /// schedule they start at the next configured time, not at today's first.
+  List<DateTime> previewTimes() =>
+      scheduledDoseTimes.take(dosesPerDay).toList();
 
   Prescription copyWith({
     String? id,

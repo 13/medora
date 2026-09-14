@@ -5,12 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/presentation/widgets/forms/tag_input_field.dart';
 import 'package:uuid/uuid.dart';
-import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class AddTreatmentScreen extends ConsumerStatefulWidget {
   const AddTreatmentScreen({super.key, this.treatmentId});
@@ -65,8 +66,9 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
       },
       failure: (msg) {
         if (mounted) {
+          final l10n = AppLocalizations.of(context);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $msg')),
+            SnackBar(content: Text(l10n.errorWithDetails(msg))),
           );
         }
       },
@@ -110,7 +112,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
             const SizedBox(height: 16),
 
             // Patient Tags
-            _TagInputField(
+            TagInputField(
               label: l10n.treatmentPatientTags,
               icon: Icons.person,
               hintText: l10n.patientNameHint,
@@ -121,7 +123,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
             const SizedBox(height: 16),
 
             // Symptom Tags
-            _TagInputField(
+            TagInputField(
               label: l10n.treatmentSymptomTags,
               icon: Icons.sick,
               hintText: l10n.symptomsHint,
@@ -185,7 +187,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
                       ? '${_endDate!.year}-${_endDate!.month.toString().padLeft(2, '0')}-${_endDate!.day.toString().padLeft(2, '0')}'
                       : l10n.selectEndDate,
                   style: TextStyle(
-                    color: _endDate != null ? null : Colors.grey[500],
+                    color: _endDate != null ? null : context.colors.outline,
                   ),
                 ),
               ),
@@ -265,107 +267,11 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
         );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-}
-
-/// Reusable tag input field for treatment screen.
-class _TagInputField extends StatefulWidget {
-  const _TagInputField({
-    required this.label,
-    required this.icon,
-    required this.tags,
-    required this.onChanged,
-    this.hintText,
-    this.isUserTag = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final List<String> tags;
-  final ValueChanged<List<String>> onChanged;
-  final String? hintText;
-  final bool isUserTag;
-
-  @override
-  State<_TagInputField> createState() => _TagInputFieldState();
-}
-
-class _TagInputFieldState extends State<_TagInputField> {
-  final _controller = TextEditingController();
-  final _focusNode = FocusNode();
-
-  void _addTag(String text) {
-    final tag = text.trim();
-    if (tag.isNotEmpty && !widget.tags.contains(tag)) {
-      widget.onChanged([...widget.tags, tag]);
-    }
-    _controller.clear();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (widget.tags.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: widget.tags.map((tag) {
-                return InputChip(
-                  label: TagChip(
-                    label: tag, 
-                    fontSize: 12, 
-                    icon: widget.isUserTag ? Icons.person : null,
-                  ),
-                  onDeleted: () {
-                    widget.onChanged(
-                        widget.tags.where((t) => t != tag).toList());
-                  },
-                  backgroundColor: Colors.transparent,
-                  side: BorderSide.none,
-                  padding: EdgeInsets.zero,
-                  labelPadding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                );
-              }).toList(),
-            ),
-          ),
-        TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          decoration: InputDecoration(
-            labelText: widget.label,
-            prefixIcon: Icon(widget.icon),
-            hintText: widget.hintText ?? l10n.addTag,
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.add),
-              onPressed: () => _addTag(_controller.text),
-            ),
-          ),
-          onSubmitted: (value) {
-            _addTag(value);
-            _focusNode.requestFocus();
-          },
-        ),
-      ],
-    );
   }
 }

@@ -100,4 +100,46 @@ class AppConstants {
         return key;
     }
   }
+
+  // Quantity Units (keys — translated via l10n)
+  static const List<String> quantityUnitKeys = [
+    'pieces',
+    'pills',
+    'tablets',
+    'capsules',
+    'ml',
+    'drops',
+    'bustine',
+    'ampoules',
+    'suppositories',
+    'patches',
+  ];
+
+  /// Get the localized name for a quantity unit key.
+  static String unitLabel(AppLocalizations l10n, String key) {
+    switch (key) {
+      case 'pieces':
+        return l10n.unitPieces;
+      case 'pills':
+        return l10n.unitPills;
+      case 'tablets':
+        return l10n.unitTablets;
+      case 'capsules':
+        return l10n.unitCapsules;
+      case 'ml':
+        return l10n.unitMl;
+      case 'drops':
+        return l10n.unitDrops;
+      case 'bustine':
+        return l10n.unitBustine;
+      case 'ampoules':
+        return l10n.unitAmpoules;
+      case 'suppositories':
+        return l10n.unitSuppositories;
+      case 'patches':
+        return l10n.unitPatches;
+      default:
+        return key;
+    }
+  }
 }

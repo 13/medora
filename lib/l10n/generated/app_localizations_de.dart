@@ -44,9 +44,6 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get unableToLoadDoses => 'Dosen konnten nicht geladen werden';
-
-  @override
   String get addMedication => 'Medikament\nhinzufügen';
 
   @override
@@ -63,6 +60,15 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get activeTreatments => 'Aktive Behandlungen';
+
+  @override
+  String get statExpiring => 'Läuft ab';
+
+  @override
+  String get statLowStock => 'Wenig Vorrat';
+
+  @override
+  String get statTreatments => 'Behandlungen';
 
   @override
   String get allMedicationsWithinDate => 'Alle Medikamente sind haltbar';
@@ -131,6 +137,20 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get editMedication => 'Medikament bearbeiten';
+
+  @override
+  String get sectionBasics => 'Grunddaten';
+
+  @override
+  String get sectionStock => 'Bestand & Lagerung';
+
+  @override
+  String get sectionDetails => 'Details';
+
+  @override
+  String minStockShort(int n) {
+    return 'min $n';
+  }
 
   @override
   String get medicationNameLabel => 'Medikamentenname *';
@@ -348,11 +368,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get done => 'Fertig';
 
   @override
-  String errorLoadingPrescriptions(String message) {
-    return 'Fehler beim Laden der Verschreibungen: $message';
-  }
-
-  @override
   String get medicationLabel => 'Medikament *';
 
   @override
@@ -368,10 +383,31 @@ class AppLocalizationsDe extends AppLocalizations {
   String get durationDaysLabel => 'Dauer (Tage)';
 
   @override
+  String doseTimesPreview(String times) {
+    return 'Dosen um $times';
+  }
+
+  @override
+  String get changeMedicationConfirm =>
+      'Das Ändern des Medikaments erzeugt die ausstehenden Dosen neu. Fortfahren?';
+
+  @override
+  String get intervalRange => 'Intervall muss zwischen 1 und 48 Stunden liegen';
+
+  @override
+  String get durationRange => 'Dauer muss zwischen 1 und 365 Tagen liegen';
+
+  @override
+  String get selectAtLeastOneTime => 'Wähle mindestens eine Uhrzeit';
+
+  @override
   String get todaysDosesTitle => 'Heutige Dosen';
 
   @override
   String get noDosesScheduledToday => 'Keine Dosen für heute geplant';
+
+  @override
+  String get noDosesForThisDay => 'Keine Dosen an diesem Tag';
 
   @override
   String get createTreatmentForDoses =>
@@ -411,6 +447,34 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get loadingDoses => 'Dosen werden geladen...';
+
+  @override
+  String get nextDose => 'Nächste Dosis';
+
+  @override
+  String get allDosesDone => 'Alle Dosen für heute erledigt';
+
+  @override
+  String get doseTaken => 'Eingenommen';
+
+  @override
+  String get doseSkipped => 'Übersprungen';
+
+  @override
+  String get undo => 'Rückgängig';
+
+  @override
+  String get takeAllDue => 'Alle fälligen einnehmen';
+
+  @override
+  String dosesDueNow(int count) {
+    return '$count Dosen fällig';
+  }
+
+  @override
+  String dosesTakenCount(int count) {
+    return '$count Dosen eingenommen';
+  }
 
   @override
   String get scanBarcodeTitle => 'AIC-Code scannen';
@@ -541,7 +605,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get allRemindersCancelled => 'Alle Erinnerungen abgebrochen';
 
   @override
-  String get dataAndSync => 'Daten & Synchronisierung';
+  String get dataSection => 'Daten';
 
   @override
   String get online => 'Online';
@@ -574,7 +638,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Synchronisierung fehlgeschlagen — tippen zum Wiederholen';
 
   @override
-  String get features => 'Funktionen';
+  String get advanced => 'Erweitert';
 
   @override
   String get familySharing => 'Familienfreigabe';
@@ -815,7 +879,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get noon => 'Mittags';
 
   @override
+  String get afternoon => 'Nachmittag';
+
+  @override
   String get evening => 'Abends';
+
+  @override
+  String get night => 'Nacht';
 
   @override
   String get beforeSleep => 'Vor dem Schlafen';
@@ -847,14 +917,6 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get searchByBarcode => 'Nach Code suchen';
-
-  @override
-  String get archiveTreatment => 'Behandlung archivieren';
-
-  @override
-  String archiveTreatmentConfirm(String name) {
-    return '\"$name\" archivieren? Die Behandlung wird ins Archiv verschoben und kann später eingesehen werden.';
-  }
 
   @override
   String get archive => 'Archivieren';
@@ -1115,10 +1177,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get dontHaveAccount => 'Noch kein Konto? Registrieren';
 
   @override
-  String get forcePush => 'Force Push';
+  String get forcePush => 'Push erzwingen';
 
   @override
-  String get forcePull => 'Force Pull';
+  String get forcePull => 'Pull erzwingen';
 
   @override
   String get forcePushTitle => 'Force Push zu Cloud';
@@ -1253,4 +1315,115 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get turnOffCloudSyncChoice =>
       'Du wirst abgemeldet. Was soll mit den auf diesem Gerät gespeicherten Daten passieren?';
+
+  @override
+  String get securitySection => 'Sicherheit';
+
+  @override
+  String get fingerprintUnlock => 'Fingerabdruck-Entsperrung';
+
+  @override
+  String get fingerprintUnlockDesc =>
+      'Biometrie zum Schutz deiner Daten verwenden';
+
+  @override
+  String get undoTaken => 'Einnahme rückgängig machen';
+
+  @override
+  String get continueAction => 'Weiter';
+
+  @override
+  String get today => 'Heute';
+
+  @override
+  String get yesterday => 'Gestern';
+
+  @override
+  String get tomorrow => 'Morgen';
+
+  @override
+  String get date => 'Datum';
+
+  @override
+  String get clear => 'Leeren';
+
+  @override
+  String get genericError => 'Etwas ist schiefgelaufen';
+
+  @override
+  String errorWithDetails(String details) {
+    return 'Etwas ist schiefgelaufen: $details';
+  }
+
+  @override
+  String deleteDataFailed(String details) {
+    return 'Daten konnten nicht gelöscht werden: $details';
+  }
+
+  @override
+  String get exportNotSupportedOnWeb =>
+      'Export ist im Browser noch nicht verfügbar.';
+
+  @override
+  String get exportReportTitle => 'Medora-Bericht';
+
+  @override
+  String get exportSummary => 'Zusammenfassung der Hausapotheke';
+
+  @override
+  String get exportDoseRecords => 'Dosenprotokoll';
+
+  @override
+  String get name => 'Name';
+
+  @override
+  String get dosage => 'Dosierung';
+
+  @override
+  String get colActiveIngredient => 'Wirkstoff';
+
+  @override
+  String get colMinStock => 'Mindestbestand';
+
+  @override
+  String get colScheduled => 'Geplant';
+
+  @override
+  String get colTaken => 'Eingenommen';
+
+  @override
+  String get colStatus => 'Status';
+
+  @override
+  String get yesLabel => 'Ja';
+
+  @override
+  String get noLabel => 'Nein';
+
+  @override
+  String get onboardingCabinetTitle => 'Deine Hausapotheke';
+
+  @override
+  String get onboardingCabinetBody =>
+      'Trage die Medikamente ein, die du zu Hause hast. Medora behält Menge und Verfallsdatum für dich im Blick.';
+
+  @override
+  String get onboardingTreatmentsTitle => 'Behandlungen';
+
+  @override
+  String get onboardingTreatmentsBody =>
+      'Fasse Medikamente zu einer Behandlung zusammen – mit einem Plan, wer was wann einnimmt.';
+
+  @override
+  String get onboardingDosesTitle => 'Tägliche Dosen';
+
+  @override
+  String get onboardingDosesBody =>
+      'Jeder Tag zeigt, was ansteht. Tippe auf Einnehmen oder lass dich von Erinnerungen anstupsen.';
+
+  @override
+  String get onboardingNext => 'Weiter';
+
+  @override
+  String get onboardingDone => 'Fertig';
 }

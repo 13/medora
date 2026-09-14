@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 
 /// Badge showing medication expiry status.
@@ -38,23 +39,24 @@ class ExpiryBadge extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final now = _getCachedNow();
     final daysUntilExpiry = expiryDate!.difference(now).inDays;
+    final medora = context.medora;
 
-    final (color, label) = daysUntilExpiry < 0
-        ? (AppTheme.expiredColor, l10n.expired)
+    final (bg, fg, label) = daysUntilExpiry < 0
+        ? (medora.dangerContainer, medora.onDangerContainer, l10n.expired)
         : daysUntilExpiry <= 30
-            ? (AppTheme.expiringSoonColor, l10n.expiresInDaysShort(daysUntilExpiry))
-            : (AppTheme.inStockColor, l10n.valid);
+            ? (medora.warningContainer, medora.onWarningContainer, l10n.expiresInDaysShort(daysUntilExpiry))
+            : (medora.successContainer, medora.onSuccessContainer, l10n.valid);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: color,
+          color: fg,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
@@ -80,12 +82,13 @@ class StockIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isLow = quantity <= minimumStock;
+    final medora = context.medora;
 
     final (color, icon) = isExpired
-        ? (AppTheme.expiredColor, Icons.warning_rounded)
+        ? (medora.expired, Icons.warning_rounded)
         : isLow
-            ? (AppTheme.lowStockColor, Icons.warning_rounded)
-            : (AppTheme.inStockColor, Icons.check_circle_rounded);
+            ? (medora.lowStock, Icons.warning_rounded)
+            : (medora.inStock, Icons.check_circle_rounded);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -111,26 +114,31 @@ class StockIndicator extends StatelessWidget {
 
 /// Chip displaying dose status.
 class DoseStatusChip extends StatelessWidget {
-  const DoseStatusChip({super.key, required this.status});
+  const DoseStatusChip({super.key, required this.status, this.suffix});
 
   final DoseStatus status;
+
+  /// When non-null, appended to the label as `'$label · $suffix'` (e.g. a
+  /// taken time), keeping it inside the same [Text] as the status word.
+  final String? suffix;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final medora = context.medora;
 
-    final (color, icon, label) = switch (status) {
-      DoseStatus.taken => (AppTheme.doseTakenColor, Icons.check_circle, l10n.taken),
-      DoseStatus.skipped => (AppTheme.doseSkippedColor, Icons.skip_next, l10n.skipped),
-      DoseStatus.missed => (AppTheme.doseMissedColor, Icons.cancel, l10n.missed),
-      DoseStatus.pending => (AppTheme.dosePendingColor, Icons.schedule, l10n.pending),
+    final (bg, fg, icon, label) = switch (status) {
+      DoseStatus.taken => (medora.successContainer, medora.onSuccessContainer, Icons.check_circle, l10n.taken),
+      DoseStatus.skipped => (medora.warningContainer, medora.onWarningContainer, Icons.skip_next, l10n.skipped),
+      DoseStatus.missed => (medora.dangerContainer, medora.onDangerContainer, Icons.cancel, l10n.missed),
+      DoseStatus.pending => (medora.neutralContainer, medora.onNeutralContainer, Icons.schedule, l10n.pending),
     };
 
     return Chip(
-      avatar: Icon(icon, color: color, size: 18),
-      label: Text(label),
-      backgroundColor: color.withValues(alpha: 0.1),
-      labelStyle: TextStyle(color: color, fontSize: 12),
+      avatar: Icon(icon, color: fg, size: 18),
+      label: Text(suffix == null ? label : '$label · $suffix'),
+      backgroundColor: bg,
+      labelStyle: TextStyle(color: fg, fontSize: 12),
       padding: EdgeInsets.zero,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
@@ -152,7 +160,8 @@ class TagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = label.toColor;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = HSLColor.fromColor(label.toColor).withLightness(isDark ? 0.75 : 0.35).toColor();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -200,9 +209,9 @@ void showDoseDetailBottomSheet({
 
   final String dateLabel;
   if (doseDate == today) {
-    dateLabel = 'Today';
+    dateLabel = l10n.today;
   } else if (doseDate == today.subtract(const Duration(days: 1))) {
-    dateLabel = 'Yesterday';
+    dateLabel = l10n.yesterday;
   } else {
     dateLabel = dose.scheduledTime.formatted;
   }
@@ -220,8 +229,8 @@ void showDoseDetailBottomSheet({
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
-                  child: const Icon(Icons.medication, color: AppTheme.primaryColor),
+                  backgroundColor: context.colors.primaryContainer,
+                  child: Icon(Icons.medication, color: context.colors.onPrimaryContainer),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -232,8 +241,8 @@ void showDoseDetailBottomSheet({
                         dose.medicationName ?? l10n.unknownMedication,
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      if (dose.displayDosage != null)
-                        Text(dose.displayDosage!, style: TextStyle(color: Colors.grey[600])),
+                      if (dosageLabel(l10n, dose) != null)
+                        Text(dosageLabel(l10n, dose)!, style: TextStyle(color: context.colors.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -243,7 +252,7 @@ void showDoseDetailBottomSheet({
             const Divider(height: 24),
 
             // Details
-            DetailRow(icon: Icons.calendar_today, label: 'Date', value: dateLabel),
+            DetailRow(icon: Icons.calendar_today, label: l10n.date, value: dateLabel),
             DetailRow(icon: Icons.schedule, label: l10n.selectTimes, value: dose.scheduledTime.timeFormatted),
             if (dose.treatmentName != null)
               DetailRow(icon: Icons.medical_services, label: l10n.treatment, value: dose.treatmentName!),
@@ -252,9 +261,9 @@ void showDoseDetailBottomSheet({
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    Icon(Icons.person, size: 18, color: Colors.grey[600]),
+                    Icon(Icons.person, size: 18, color: context.colors.onSurfaceVariant),
                     const SizedBox(width: 8),
-                    Text('${l10n.patientTagsField}: ', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    Text('${l10n.patientTagsField}: ', style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13)),
                     Expanded(
                       child: Wrap(
                         spacing: 4,
@@ -275,50 +284,99 @@ void showDoseDetailBottomSheet({
             const SizedBox(height: 16),
 
             // Action buttons
-            if (dose.status == DoseStatus.pending)
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ref.read(todaysDoseLogsProvider.notifier).markSkipped(dose.id);
-                        Navigator.pop(ctx);
-                      },
-                      icon: const Icon(Icons.skip_next),
-                      label: Text(l10n.skip),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        ref.read(todaysDoseLogsProvider.notifier).markTaken(dose.id);
-                        Navigator.pop(ctx);
-                      },
-                      icon: const Icon(Icons.check),
-                      label: Text(l10n.take),
-                    ),
-                  ),
-                ],
-              ),
-            if (dose.status == DoseStatus.taken)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    ref.read(todaysDoseLogsProvider.notifier).undoTaken(dose.id);
-                    Navigator.pop(ctx);
-                  },
-                  icon: const Icon(Icons.undo),
-                  label: const Text("Undo Taken"),
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                ),
-              ),
+            _DoseSheetActions(dose: dose, actions: ref.read(doseActionsProvider)),
           ],
         ),
       ),
     ),
   );
+}
+
+/// Take / skip / undo buttons of the dose detail sheet.
+///
+/// Stateful so the buttons can be disabled while the write is in flight,
+/// and so the result of the action is actually awaited — a failed write
+/// used to close the sheet silently.
+class _DoseSheetActions extends StatefulWidget {
+  const _DoseSheetActions({required this.dose, required this.actions});
+
+  final DoseLog dose;
+
+  /// Read from the provider container before the sheet was built, so it
+  /// stays valid even though this sheet outlives nothing in particular.
+  final DoseActions actions;
+
+  @override
+  State<_DoseSheetActions> createState() => _DoseSheetActionsState();
+}
+
+class _DoseSheetActionsState extends State<_DoseSheetActions> {
+  bool _busy = false;
+
+  Future<void> _run(Future<bool> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    // Captured before the await: the sheet is popped below, so `context`
+    // is gone by the time the SnackBar has to be shown.
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final l10n = AppLocalizations.of(context);
+    bool ok;
+    try {
+      ok = await action();
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    navigator.pop();
+    if (!ok) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final dose = widget.dose;
+    if (dose.status == DoseStatus.pending) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed:
+                  _busy ? null : () => _run(() => widget.actions.skip(dose.id)),
+              icon: const Icon(Icons.skip_next),
+              label: Text(l10n.skip),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed:
+                  _busy ? null : () => _run(() => widget.actions.take(dose.id)),
+              icon: const Icon(Icons.check),
+              label: Text(l10n.take),
+            ),
+          ),
+        ],
+      );
+    }
+    if (dose.status == DoseStatus.taken) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _busy
+              ? null
+              : () => _run(() => widget.actions.undoTake(dose.id)),
+          icon: const Icon(Icons.undo),
+          label: Text(l10n.undoTaken),
+          style: OutlinedButton.styleFrom(foregroundColor: context.colors.error),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
 }
 
 class DetailRow extends StatelessWidget {
@@ -333,19 +391,18 @@ class DetailRow extends StatelessWidget {
   final String label;
   final String value;
 
-  // Cache the text style to avoid recreating it
-  static final _labelStyle = TextStyle(color: Colors.grey[600], fontSize: 13);
   static const _valueStyle = TextStyle(fontSize: 13);
 
   @override
   Widget build(BuildContext context) {
+    final labelStyle = TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Colors.grey[600]),
+          Icon(icon, size: 18, color: context.colors.onSurfaceVariant),
           const SizedBox(width: 8),
-          Text('$label: ', style: _labelStyle),
+          Text('$label: ', style: labelStyle),
           Expanded(child: Text(value, style: _valueStyle)),
         ],
       ),
@@ -362,6 +419,7 @@ class EmptyStateWidget extends StatelessWidget {
     this.subtitle,
     this.actionLabel,
     this.onAction,
+    this.compact = false,
   });
 
   final IconData icon;
@@ -369,21 +427,42 @@ class EmptyStateWidget extends StatelessWidget {
   final String? subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon, size: 24, color: context.colors.outline),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: Colors.grey[400]),
+            Icon(icon, size: 64, color: context.colors.outline),
             const SizedBox(height: 16),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.grey[600],
+              style: context.text.titleMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
                   ),
               textAlign: TextAlign.center,
             ),
@@ -391,8 +470,8 @@ class EmptyStateWidget extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 subtitle!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[500],
+                style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.outline,
                     ),
                 textAlign: TextAlign.center,
               ),
@@ -454,7 +533,7 @@ class ErrorDisplayWidget extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            Icon(Icons.error_outline, size: 48, color: context.colors.error),
             const SizedBox(height: 16),
             Text(
               message,

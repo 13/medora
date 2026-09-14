@@ -1,22 +1,19 @@
 /// Medora - Treatment List Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for treatment list.
 enum TreatmentFilter { active, ended, all }
@@ -91,17 +88,6 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
               });
             },
           ),
-          const SyncIconButton(),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(AppRoutes.settings),
-          ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
       body: Column(
@@ -137,29 +123,29 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
 
           // Treatment list
           Expanded(
-            child: treatmentsAsync.when(
+            child: AsyncValueView<List<Treatment>>(
+              value: treatmentsAsync,
+              onRetry: () async => ref.read(treatmentListProvider.notifier).refresh(),
+              emptyWhen: (treatments) => treatments.isEmpty,
+              empty: EmptyStateWidget(
+                icon: Icons.healing_outlined,
+                title: l10n.noTreatmentsYet,
+                subtitle: l10n.createTreatmentPlan,
+                actionLabel: l10n.addTreatment,
+                onAction: () => context.push(AppRoutes.addTreatment),
+              ),
               data: (treatments) {
                 final filtered = _applyFilter(treatments);
-                if (treatments.isEmpty) {
-                  return EmptyStateWidget(
-                    icon: Icons.healing_outlined,
-                    title: l10n.noTreatmentsYet,
-                    subtitle: l10n.createTreatmentPlan,
-                    actionLabel: l10n.addTreatment,
-                    onAction: () => context.push(AppRoutes.addTreatment),
-                  );
-                }
-
                 if (filtered.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Icons.search_off,
-                            size: 48, color: Colors.grey[400]),
+                            size: 48, color: context.colors.outline),
                         const SizedBox(height: 8),
                         Text(l10n.noResults,
-                            style: TextStyle(color: Colors.grey[500])),
+                            style: TextStyle(color: context.colors.onSurfaceVariant)),
                       ],
                     ),
                   );
@@ -185,22 +171,10 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                       .read(treatmentListProvider.notifier)
                                       .endTreatment(t.id);
                                 },
-                                backgroundColor: Colors.orange,
-                                foregroundColor: Colors.white,
+                                backgroundColor: context.medora.warning,
+                                foregroundColor: context.medora.onWarning,
                                 icon: Icons.stop_circle,
                                 label: l10n.end,
-                              ),
-                            if (!t.isActive)
-                              SlidableAction(
-                                onPressed: (_) {
-                                  ref
-                                      .read(treatmentListProvider.notifier)
-                                      .deleteTreatment(t.id);
-                                },
-                                backgroundColor: Colors.blueGrey,
-                                foregroundColor: Colors.white,
-                                icon: Icons.archive,
-                                label: l10n.archive,
                               ),
                             SlidableAction(
                               onPressed: (_) async {
@@ -221,8 +195,8 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                         onPressed: () =>
                                             Navigator.pop(ctx, true),
                                         child: Text(l10n.delete,
-                                            style: const TextStyle(
-                                                color: Colors.red)),
+                                            style: TextStyle(
+                                                color: context.colors.error)),
                                       ),
                                     ],
                                   ),
@@ -233,8 +207,8 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                       .deleteTreatment(t.id);
                                 }
                               },
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
+                              backgroundColor: context.colors.error,
+                              foregroundColor: context.colors.onError,
                               icon: Icons.delete,
                               label: l10n.delete,
                             ),
@@ -246,12 +220,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                   ),
                 );
               },
-              loading: () => LoadingWidget(message: l10n.loadingTreatments),
-              error: (error, stackTrace) => ErrorDisplayWidget(
-                message: error.toString(),
-                onRetry: () =>
-                    ref.read(treatmentListProvider.notifier).refresh(),
-              ),
+              loading: LoadingWidget(message: l10n.loadingTreatments),
             ),
           ),
         ],
@@ -275,10 +244,10 @@ class _TreatmentTile extends ConsumerWidget {
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
-        child: const Icon(
+        backgroundColor: context.colors.primaryContainer,
+        child: Icon(
           Icons.healing,
-          color: AppTheme.primaryColor,
+          color: context.colors.onPrimaryContainer,
         ),
       ),
       title: Text(
@@ -314,8 +283,8 @@ class _TreatmentTile extends ConsumerWidget {
                       horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: treatment.isActive
-                        ? AppTheme.successColor.withValues(alpha: 0.15)
-                        : Colors.grey.withValues(alpha: 0.15),
+                        ? context.medora.successContainer
+                        : context.colors.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -324,15 +293,15 @@ class _TreatmentTile extends ConsumerWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: treatment.isActive
-                          ? AppTheme.successColor
-                          : Colors.grey,
+                          ? context.medora.onSuccessContainer
+                          : context.colors.onSurfaceVariant,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   l10n.startedOn(treatment.startDate.shortFormatted),
-                  style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                  style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 12),
                 ),
               ],
             ),
@@ -346,15 +315,15 @@ class _TreatmentTile extends ConsumerWidget {
           children: [
             Text(
               '${prescriptions.length}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
-                color: AppTheme.primaryColor,
+                color: context.colors.primary,
               ),
             ),
             Text(
               l10n.prescriptions,
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
             ),
           ],
         ),

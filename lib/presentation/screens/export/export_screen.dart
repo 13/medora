@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
@@ -50,13 +50,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         children: [
           // Header
           Card(
-            color: AppTheme.primaryColor.withValues(alpha: 0.1),
+            color: context.colors.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  const Icon(Icons.download_outlined,
-                      color: AppTheme.primaryColor, size: 32),
+                  Icon(Icons.download_outlined,
+                      color: context.colors.onPrimaryContainer, size: 32),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -64,14 +64,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                       children: [
                         Text(
                           l10n.exportYourData,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            color: context.colors.onPrimaryContainer,
                           ),
                         ),
                         Text(
                           l10n.chooseWhatToExport,
-                          style: const TextStyle(fontSize: 13),
+                          style: TextStyle(fontSize: 13, color: context.colors.onPrimaryContainer),
                         ),
                       ],
                     ),
@@ -186,12 +187,12 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
             segments: const [
               ButtonSegment(
                 value: ExportFormat.pdf,
-                label: Text('PDF'),
+                label: Text('PDF'), // l10n-exempt: proper noun
                 icon: Icon(Icons.picture_as_pdf),
               ),
               ButtonSegment(
                 value: ExportFormat.csv,
-                label: Text('CSV'),
+                label: Text('CSV'), // l10n-exempt: proper noun
                 icon: Icon(Icons.table_chart),
               ),
             ],
@@ -229,7 +230,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
     if (kIsWeb) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Export is not yet supported on Web.')),
+        SnackBar(content: Text(l10n.exportNotSupportedOnWeb)),
       );
       return;
     }
@@ -265,11 +266,14 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         );
       }
 
+      final labels = ExportLabels.fromL10n(l10n);
+
       if (_format == ExportFormat.pdf) {
         final file = await exportService.exportPDF(
           medications: medications,
           treatments: treatments,
           doseLogs: doseLogs,
+          labels: labels,
         );
         if (file != null) {
           await SharePlus.instance.share(
@@ -280,15 +284,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         final files = <XFile>[];
 
         if (medications != null && medications.isNotEmpty) {
-          final f = await exportService.exportMedicationsCSV(medications);
+          final f = await exportService.exportMedicationsCSV(medications, labels);
           if (f != null) files.add(XFile(f.path));
         }
         if (treatments != null && treatments.isNotEmpty) {
-          final f = await exportService.exportTreatmentsCSV(treatments);
+          final f = await exportService.exportTreatmentsCSV(treatments, labels);
           if (f != null) files.add(XFile(f.path));
         }
         if (doseLogs != null && doseLogs.isNotEmpty) {
-          final f = await exportService.exportDoseLogsCSV(doseLogs);
+          final f = await exportService.exportDoseLogsCSV(doseLogs, labels);
           if (f != null) files.add(XFile(f.path));
         }
 

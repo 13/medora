@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:medora/core/app_config.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
@@ -78,6 +79,12 @@ class MedoraApp extends ConsumerWidget {
       locale: locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
+      localeResolutionCallback: (device, supported) {
+        final resolved = locale ??
+            supported.firstWhere((s) => s.languageCode == device?.languageCode, orElse: () => supported.first);
+        Intl.defaultLocale = resolved.toLanguageTag();
+        return resolved;
+      },
       routerConfig: ref.watch(appRouterProvider),
       builder: (context, child) {
         // Set navigation context for notification handling

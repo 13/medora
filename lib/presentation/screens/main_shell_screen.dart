@@ -8,10 +8,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/presentation/providers/onboarding_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/screens/dose/dose_schedule_screen.dart';
 import 'package:medora/presentation/screens/home/home_screen.dart';
 import 'package:medora/presentation/screens/medication/medication_list_screen.dart';
+import 'package:medora/presentation/screens/onboarding/onboarding_sheet.dart';
 import 'package:medora/presentation/screens/treatment/treatment_list_screen.dart';
 import 'package:medora/presentation/widgets/app_nav_bar.dart';
 
@@ -51,8 +53,21 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> with WidgetsB
     _currentIndex = widget.initialIndex;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(ref.read(appStartupTasksProvider).run());
+      if (!mounted) return;
+      unawaited(ref.read(appStartupTasksProvider).run());
+      unawaited(_maybeShowOnboarding());
     });
+  }
+
+  /// On the very first launch, show the onboarding sheet. Marking it seen
+  /// happens synchronously, right before the sheet opens — not after it
+  /// closes — so a second [MainShellScreen] mounting while the sheet is
+  /// still open cannot show a second one, and an interrupted first run
+  /// (app killed mid-sheet) does not re-show it either.
+  Future<void> _maybeShowOnboarding() async {
+    if (ref.read(onboardingSeenProvider)) return;
+    unawaited(ref.read(onboardingSeenProvider.notifier).markSeen());
+    await showOnboardingSheet(context);
   }
 
   @override

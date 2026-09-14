@@ -166,12 +166,6 @@ abstract class AppLocalizations {
   /// **'{taken} of {total} taken · {pending} pending'**
   String dosesProgress(int taken, int total, int pending);
 
-  /// No description provided for @unableToLoadDoses.
-  ///
-  /// In en, this message translates to:
-  /// **'Unable to load doses'**
-  String get unableToLoadDoses;
-
   /// No description provided for @addMedication.
   ///
   /// In en, this message translates to:
@@ -207,6 +201,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Active Treatments'**
   String get activeTreatments;
+
+  /// No description provided for @statExpiring.
+  ///
+  /// In en, this message translates to:
+  /// **'Expiring'**
+  String get statExpiring;
+
+  /// No description provided for @statLowStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Low stock'**
+  String get statLowStock;
+
+  /// No description provided for @statTreatments.
+  ///
+  /// In en, this message translates to:
+  /// **'Treatments'**
+  String get statTreatments;
 
   /// No description provided for @allMedicationsWithinDate.
   ///
@@ -327,6 +339,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit Medication'**
   String get editMedication;
+
+  /// No description provided for @sectionBasics.
+  ///
+  /// In en, this message translates to:
+  /// **'Basics'**
+  String get sectionBasics;
+
+  /// No description provided for @sectionStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Stock & storage'**
+  String get sectionStock;
+
+  /// No description provided for @sectionDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get sectionDetails;
+
+  /// No description provided for @minStockShort.
+  ///
+  /// In en, this message translates to:
+  /// **'min {n}'**
+  String minStockShort(int n);
 
   /// No description provided for @medicationNameLabel.
   ///
@@ -706,12 +742,6 @@ abstract class AppLocalizations {
   /// **'Done'**
   String get done;
 
-  /// No description provided for @errorLoadingPrescriptions.
-  ///
-  /// In en, this message translates to:
-  /// **'Error loading prescriptions: {message}'**
-  String errorLoadingPrescriptions(String message);
-
   /// No description provided for @medicationLabel.
   ///
   /// In en, this message translates to:
@@ -742,6 +772,36 @@ abstract class AppLocalizations {
   /// **'Duration (days)'**
   String get durationDaysLabel;
 
+  /// No description provided for @doseTimesPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Doses at {times}'**
+  String doseTimesPreview(String times);
+
+  /// No description provided for @changeMedicationConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing the medication regenerates pending doses. Continue?'**
+  String get changeMedicationConfirm;
+
+  /// No description provided for @intervalRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Interval must be between 1 and 48 hours'**
+  String get intervalRange;
+
+  /// No description provided for @durationRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration must be between 1 and 365 days'**
+  String get durationRange;
+
+  /// No description provided for @selectAtLeastOneTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one time'**
+  String get selectAtLeastOneTime;
+
   /// No description provided for @todaysDosesTitle.
   ///
   /// In en, this message translates to:
@@ -753,6 +813,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No doses scheduled for today'**
   String get noDosesScheduledToday;
+
+  /// No description provided for @noDosesForThisDay.
+  ///
+  /// In en, this message translates to:
+  /// **'No doses on this day'**
+  String get noDosesForThisDay;
 
   /// No description provided for @createTreatmentForDoses.
   ///
@@ -825,6 +891,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading doses...'**
   String get loadingDoses;
+
+  /// No description provided for @nextDose.
+  ///
+  /// In en, this message translates to:
+  /// **'Next dose'**
+  String get nextDose;
+
+  /// No description provided for @allDosesDone.
+  ///
+  /// In en, this message translates to:
+  /// **'All doses done for today'**
+  String get allDosesDone;
+
+  /// No description provided for @doseTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Taken'**
+  String get doseTaken;
+
+  /// No description provided for @doseSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped'**
+  String get doseSkipped;
+
+  /// No description provided for @undo.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get undo;
+
+  /// No description provided for @takeAllDue.
+  ///
+  /// In en, this message translates to:
+  /// **'Take all due'**
+  String get takeAllDue;
+
+  /// No description provided for @dosesDueNow.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} doses due'**
+  String dosesDueNow(int count);
+
+  /// No description provided for @dosesTakenCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} doses taken'**
+  String dosesTakenCount(int count);
 
   /// No description provided for @scanBarcodeTitle.
   ///
@@ -1066,11 +1180,11 @@ abstract class AppLocalizations {
   /// **'All reminders cancelled'**
   String get allRemindersCancelled;
 
-  /// No description provided for @dataAndSync.
+  /// No description provided for @dataSection.
   ///
   /// In en, this message translates to:
-  /// **'Data & Sync'**
-  String get dataAndSync;
+  /// **'Data'**
+  String get dataSection;
 
   /// No description provided for @online.
   ///
@@ -1126,11 +1240,11 @@ abstract class AppLocalizations {
   /// **'Sync failed — tap to retry'**
   String get syncError;
 
-  /// No description provided for @features.
+  /// No description provided for @advanced.
   ///
   /// In en, this message translates to:
-  /// **'Features'**
-  String get features;
+  /// **'Advanced'**
+  String get advanced;
 
   /// No description provided for @familySharing.
   ///
@@ -1576,11 +1690,23 @@ abstract class AppLocalizations {
   /// **'Noon'**
   String get noon;
 
+  /// No description provided for @afternoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Afternoon'**
+  String get afternoon;
+
   /// No description provided for @evening.
   ///
   /// In en, this message translates to:
   /// **'Evening'**
   String get evening;
+
+  /// No description provided for @night.
+  ///
+  /// In en, this message translates to:
+  /// **'Night'**
+  String get night;
 
   /// No description provided for @beforeSleep.
   ///
@@ -1635,18 +1761,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search by code'**
   String get searchByBarcode;
-
-  /// No description provided for @archiveTreatment.
-  ///
-  /// In en, this message translates to:
-  /// **'Archive Treatment'**
-  String get archiveTreatment;
-
-  /// No description provided for @archiveTreatmentConfirm.
-  ///
-  /// In en, this message translates to:
-  /// **'Archive \"{name}\"? It will be moved to the archive and can be viewed later.'**
-  String archiveTreatmentConfirm(String name);
 
   /// No description provided for @archive.
   ///
@@ -2385,6 +2499,210 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You will be signed out. What should happen to the data stored on this device?'**
   String get turnOffCloudSyncChoice;
+
+  /// No description provided for @securitySection.
+  ///
+  /// In en, this message translates to:
+  /// **'Security'**
+  String get securitySection;
+
+  /// No description provided for @fingerprintUnlock.
+  ///
+  /// In en, this message translates to:
+  /// **'Fingerprint unlock'**
+  String get fingerprintUnlock;
+
+  /// No description provided for @fingerprintUnlockDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Use biometrics to protect your data'**
+  String get fingerprintUnlockDesc;
+
+  /// No description provided for @undoTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo taken'**
+  String get undoTaken;
+
+  /// No description provided for @continueAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get continueAction;
+
+  /// No description provided for @today.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get today;
+
+  /// No description provided for @yesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'Yesterday'**
+  String get yesterday;
+
+  /// No description provided for @tomorrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Tomorrow'**
+  String get tomorrow;
+
+  /// No description provided for @date.
+  ///
+  /// In en, this message translates to:
+  /// **'Date'**
+  String get date;
+
+  /// No description provided for @clear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear'**
+  String get clear;
+
+  /// No description provided for @genericError.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong'**
+  String get genericError;
+
+  /// No description provided for @errorWithDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong: {details}'**
+  String errorWithDetails(String details);
+
+  /// No description provided for @deleteDataFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete data: {details}'**
+  String deleteDataFailed(String details);
+
+  /// No description provided for @exportNotSupportedOnWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Export is not available in the browser yet.'**
+  String get exportNotSupportedOnWeb;
+
+  /// No description provided for @exportReportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Medora report'**
+  String get exportReportTitle;
+
+  /// No description provided for @exportSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Home medicine cabinet summary'**
+  String get exportSummary;
+
+  /// No description provided for @exportDoseRecords.
+  ///
+  /// In en, this message translates to:
+  /// **'Dose records'**
+  String get exportDoseRecords;
+
+  /// No description provided for @name.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get name;
+
+  /// No description provided for @dosage.
+  ///
+  /// In en, this message translates to:
+  /// **'Dosage'**
+  String get dosage;
+
+  /// No description provided for @colActiveIngredient.
+  ///
+  /// In en, this message translates to:
+  /// **'Active ingredient'**
+  String get colActiveIngredient;
+
+  /// No description provided for @colMinStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Min stock'**
+  String get colMinStock;
+
+  /// No description provided for @colScheduled.
+  ///
+  /// In en, this message translates to:
+  /// **'Scheduled'**
+  String get colScheduled;
+
+  /// No description provided for @colTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Taken'**
+  String get colTaken;
+
+  /// No description provided for @colStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get colStatus;
+
+  /// No description provided for @yesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes'**
+  String get yesLabel;
+
+  /// No description provided for @noLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'No'**
+  String get noLabel;
+
+  /// No description provided for @onboardingCabinetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your cabinet'**
+  String get onboardingCabinetTitle;
+
+  /// No description provided for @onboardingCabinetBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Add the medicines you have at home. Medora tracks quantity and expiry for you.'**
+  String get onboardingCabinetBody;
+
+  /// No description provided for @onboardingTreatmentsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Treatments'**
+  String get onboardingTreatmentsTitle;
+
+  /// No description provided for @onboardingTreatmentsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Group medicines into a treatment with a schedule for who takes what and when.'**
+  String get onboardingTreatmentsBody;
+
+  /// No description provided for @onboardingDosesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily doses'**
+  String get onboardingDosesTitle;
+
+  /// No description provided for @onboardingDosesBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Each day shows what is due. Tap Take, or let reminders nudge you.'**
+  String get onboardingDosesBody;
+
+  /// No description provided for @onboardingNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get onboardingNext;
+
+  /// No description provided for @onboardingDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get onboardingDone;
 }
 
 class _AppLocalizationsDelegate

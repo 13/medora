@@ -50,12 +50,12 @@ void main() {
     final upgraded = await AppDatabase.instance.database;
 
     expect(await columnsOf(upgraded, 'medications'), contains('deleted_at'));
-    expect(await AppDatabase.instance.appliedMigrations(), [11, 12]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
 
     // Reopen: nothing re-applied, no duplicate rows.
     await AppDatabase.instance.reset();
     final again = await AppDatabase.instance.database;
-    expect(await AppDatabase.instance.appliedMigrations(), [11, 12]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
     await again.close();
     await dir.delete(recursive: true);
   });
@@ -86,7 +86,42 @@ void main() {
     final db = await AppDatabase.instance.database;
     final rows = await db.query('medications', columns: ['id', 'image_path'], orderBy: 'id');
     expect(rows.map((r) => r['image_path']).toList(), ['med_abc.jpg', 'med_def.jpg', null]);
-    expect(await AppDatabase.instance.appliedMigrations(), [11, 12]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
+    await AppDatabase.instance.reset();
+    await dir.delete(recursive: true);
+  });
+
+  test('migration 13 rewrites Z-suffixed dose timestamps as local naive strings', () async {
+    final dir = await Directory.systemTemp.createTemp('medora_mig13_');
+    final path = p.join(dir.path, 'medora.db');
+    final legacy = await databaseFactory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 12,
+        onCreate: (db, _) async {
+          await AppDatabase.createBaseSchema(db);
+          await kMigrations[0].run(db);
+          await kMigrations[1].run(db);
+        },
+      ),
+    );
+    await legacy.insert('medications', {'id': 'm', 'name': 'M', 'quantity': 1});
+    await legacy.insert('treatments', {'id': 't', 'name': 'T', 'start_date': '2026-03-01', 'is_active': 1});
+    await legacy.insert('prescriptions', {
+      'id': 'p', 'treatment_id': 't', 'medication_id': 'm', 'dosage': '1', 'start_time': '2026-03-01T08:00:00.000',
+    });
+    await legacy.insert('dose_logs', {'id': 'z', 'prescription_id': 'p', 'scheduled_time': '2026-03-01T07:00:00.000Z', 'status': 'pending'});
+    await legacy.insert('dose_logs', {'id': 'n', 'prescription_id': 'p', 'scheduled_time': '2026-03-01T08:00:00.000', 'status': 'pending'});
+    await legacy.close();
+
+    AppDatabase.debugPathOverride = path;
+    await AppDatabase.instance.reset();
+    final db = await AppDatabase.instance.database;
+    final rows = {for (final r in await db.query('dose_logs')) r['id']: r['scheduled_time'] as String};
+    expect(rows['n'], '2026-03-01T08:00:00.000');
+    expect(rows['z'], isNot(endsWith('Z')));
+    expect(DateTime.parse(rows['z']!), DateTime.utc(2026, 3, 1, 7).toLocal());
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
   });

@@ -6,11 +6,13 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 /// Provider to load dose logs for a date range.
@@ -114,15 +116,15 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
           ),
           // Dose list
           Expanded(
-            child: historyAsync.when(
+            child: AsyncValueView<List<DoseLog>>(
+              value: historyAsync,
+              onRetry: () async => _invalidateCurrentRange(),
+              emptyWhen: (doses) => doses.isEmpty,
+              empty: EmptyStateWidget(
+                icon: Icons.history,
+                title: l10n.noDoseHistory,
+              ),
               data: (doses) {
-                if (doses.isEmpty) {
-                  return EmptyStateWidget(
-                    icon: Icons.history,
-                    title: l10n.noDoseHistory,
-                  );
-                }
-
                 // Group by date (using ISO date string for correct sorting)
                 final grouped = <String, List<DoseLog>>{};
                 for (final d in doses) {
@@ -162,11 +164,6 @@ class _DoseHistoryScreenState extends ConsumerState<DoseHistoryScreen> {
                   },
                 );
               },
-              loading: () => const LoadingWidget(),
-              error: (e, _) => ErrorDisplayWidget(
-                message: e.toString(),
-                onRetry: () => ref.invalidate(doseHistoryProvider(range)),
-              ),
             ),
           ),
         ],
@@ -210,19 +207,19 @@ class _DoseHistoryTile extends StatelessWidget {
     String statusLabel;
     switch (dose.status) {
       case DoseStatus.taken:
-        statusColor = AppTheme.successColor;
+        statusColor = context.medora.success;
         statusIcon = Icons.check_circle;
         statusLabel = l10n.taken;
       case DoseStatus.skipped:
-        statusColor = Colors.orange;
+        statusColor = context.medora.warning;
         statusIcon = Icons.skip_next;
         statusLabel = l10n.skip;
       case DoseStatus.missed:
-        statusColor = Colors.red;
+        statusColor = context.medora.danger;
         statusIcon = Icons.cancel;
         statusLabel = l10n.missed;
       case DoseStatus.pending:
-        statusColor = Colors.grey;
+        statusColor = context.medora.neutral;
         statusIcon = Icons.schedule;
         statusLabel = l10n.pending;
     }
@@ -244,10 +241,10 @@ class _DoseHistoryTile extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (dose.displayDosage != null && dose.displayDosage!.isNotEmpty)
+          if (dosageLabel(l10n, dose)?.isNotEmpty ?? false)
             Text(
-              dose.displayDosage!,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              dosageLabel(l10n, dose)!,
+              style: TextStyle(fontSize: 12, color: context.colors.onSurfaceVariant),
             ),
           // Treatment and patient info with chips
           if (dose.treatmentName != null || dose.patientTags.isNotEmpty)
@@ -262,12 +259,12 @@ class _DoseHistoryTile extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.medical_services, size: 11, color: Colors.grey[500]),
+                        Icon(Icons.medical_services, size: 11, color: context.colors.onSurfaceVariant),
                         const SizedBox(width: 3),
                         Text(
                           dose.treatmentName!,
                           style: TextStyle(
-                            color: Colors.grey[500],
+                            color: context.colors.onSurfaceVariant,
                             fontSize: 11,
                             fontStyle: FontStyle.italic,
                           ),
@@ -283,7 +280,7 @@ class _DoseHistoryTile extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 dose.prescriptionNotes!,
-                style: TextStyle(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
+                style: TextStyle(fontSize: 11, color: context.colors.onSurfaceVariant, fontStyle: FontStyle.italic),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -303,7 +300,7 @@ class _DoseHistoryTile extends StatelessWidget {
           if (takenTimeStr != null)
             Text(
               '@ $takenTimeStr',
-              style: TextStyle(color: Colors.grey[500], fontSize: 10),
+              style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 10),
             ),
         ],
       ),

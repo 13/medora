@@ -1,7 +1,6 @@
 /// Medora - Medication List Screen
 library;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -9,14 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
-import 'package:medora/presentation/providers/app_mode_provider.dart';
-import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/presentation/widgets/sync_icon_button.dart';
 
 /// Filter options for medication list.
 enum MedicationFilter { all, needsAttention, archived }
@@ -38,6 +35,30 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
     _searchController.dispose();
     super.dispose();
   }
+
+  /// Runs a [MedicationListNotifier] mutation, reporting the failure it
+  /// throws as a SnackBar instead of letting it escape an async `onPressed`
+  /// as an unhandled error. Returns true when the action succeeded.
+  Future<bool> _guard(
+    ScaffoldMessengerState messenger,
+    AppLocalizations l10n,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.errorWithDetails(_message(e)))),
+      );
+      return false;
+    }
+  }
+
+  /// `Exception('db down')` stringifies as "Exception: db down"; the
+  /// repository message alone reads better in the SnackBar.
+  static String _message(Object e) =>
+      e is Exception ? e.toString().replaceFirst('Exception: ', '') : '$e';
 
   List<Medication> _applyFilter(List<Medication> medications) {
     var filtered = medications;
@@ -97,17 +118,6 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
               });
             },
           ),
-          const SyncIconButton(),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(AppRoutes.settings),
-          ),
-          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: l10n.signOut,
-              onPressed: () => ref.read(authControllerProvider.notifier).signOut(),
-            ),
         ],
       ),
       body: Column(
@@ -142,27 +152,27 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
 
           // Medication list
           Expanded(
-            child: medicationsAsync.when(
+            child: AsyncValueView<List<Medication>>(
+              value: medicationsAsync,
+              onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
+              emptyWhen: (medications) => medications.isEmpty,
+              empty: EmptyStateWidget(
+                icon: Icons.inventory_2_outlined,
+                title: l10n.noMedicationsYet,
+                subtitle: l10n.addFirstMedication,
+                actionLabel: l10n.addMedicationButton,
+                onAction: () => context.push(AppRoutes.addMedication),
+              ),
               data: (medications) {
                 final filtered = _applyFilter(medications);
-                if (medications.isEmpty) {
-                  return EmptyStateWidget(
-                    icon: Icons.inventory_2_outlined,
-                    title: l10n.noMedicationsYet,
-                    subtitle: l10n.addFirstMedication,
-                    actionLabel: l10n.addMedicationButton,
-                    onAction: () => context.push(AppRoutes.addMedication),
-                  );
-                }
-
                 if (filtered.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                        Icon(Icons.search_off, size: 48, color: context.colors.outline),
                         const SizedBox(height: 8),
-                        Text(l10n.noResults, style: TextStyle(color: Colors.grey[500])),
+                        Text(l10n.noResults, style: TextStyle(color: context.colors.onSurfaceVariant)),
                       ],
                     ),
                   );
@@ -170,7 +180,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
 
                 return RefreshIndicator(
                   onRefresh: () async {
-                    ref.read(medicationListProvider.notifier).refresh();
+                    await ref.read(medicationListProvider.notifier).refresh();
                   },
                   child: ListView.builder(
                     padding: const EdgeInsets.only(bottom: 80),
@@ -186,21 +196,51 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                           children: [
                             if (!med.isArchived)
                               SlidableAction(
-                                onPressed: (_) {
-                                  ref.read(medicationListProvider.notifier).archiveMedication(med.id);
+                                onPressed: (_) async {
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  // Captured before the SnackBar is shown: the
+                                  // shell swaps tabs by index, so this screen
+                                  // (and its `ref`) can be disposed while the
+                                  // SnackBar is re-hosted by the messenger.
+                                  final notifier =
+                                      ref.read(medicationListProvider.notifier);
+                                  final ok = await _guard(
+                                    messenger,
+                                    l10n,
+                                    () => notifier.archiveMedication(med.id),
+                                  );
+                                  if (!ok) return;
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(l10n.archived),
+                                      action: SnackBarAction(
+                                        label: l10n.undo,
+                                        onPressed: () => _guard(
+                                          messenger,
+                                          l10n,
+                                          () => notifier
+                                              .unarchiveMedication(med.id),
+                                        ),
+                                      ),
+                                    ),
+                                  );
                                 },
-                                backgroundColor: Colors.blueGrey,
-                                foregroundColor: Colors.white,
+                                backgroundColor: context.colors.tertiaryContainer,
+                                foregroundColor: context.colors.onTertiaryContainer,
                                 icon: Icons.archive,
                                 label: l10n.archive,
                               ),
                             if (med.isArchived)
                               SlidableAction(
                                 onPressed: (_) {
-                                  ref.read(medicationListProvider.notifier).unarchiveMedication(med.id);
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final notifier =
+                                      ref.read(medicationListProvider.notifier);
+                                  _guard(messenger, l10n,
+                                      () => notifier.unarchiveMedication(med.id));
                                 },
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
+                                backgroundColor: context.medora.success,
+                                foregroundColor: context.medora.onSuccess,
                                 icon: Icons.unarchive,
                                 label: l10n.unarchive,
                               ),
@@ -218,17 +258,22 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                       ),
                                       TextButton(
                                         onPressed: () => Navigator.pop(ctx, true),
-                                        child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                                        child: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
                                       ),
                                     ],
                                   ),
                                 );
-                                if (confirm == true) {
-                                  ref.read(medicationListProvider.notifier).deleteMedication(med.id);
+                                if (confirm == true && context.mounted) {
+                                  final messenger =
+                                      ScaffoldMessenger.of(context);
+                                  final notifier =
+                                      ref.read(medicationListProvider.notifier);
+                                  await _guard(messenger, l10n,
+                                      () => notifier.deleteMedication(med.id));
                                 }
                               },
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
+                              backgroundColor: context.colors.error,
+                              foregroundColor: context.colors.onError,
                               icon: Icons.delete,
                               label: l10n.delete,
                             ),
@@ -240,11 +285,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                   ),
                 );
               },
-              loading: () => LoadingWidget(message: l10n.loadingMedications),
-              error: (error, stackTrace) => ErrorDisplayWidget(
-                message: error.toString(),
-                onRetry: () => ref.read(medicationListProvider.notifier).refresh(),
-              ),
+              loading: LoadingWidget(message: l10n.loadingMedications),
             ),
           ),
         ],
@@ -270,14 +311,18 @@ class _MedicationTile extends StatelessWidget {
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: (isExpired || isLowStock)
-            ? (isExpired ? Colors.red[50] : Colors.orange[50])
-            : AppTheme.primaryColor.withValues(alpha: 0.1),
+        backgroundColor: isExpired
+            ? context.medora.dangerContainer
+            : isLowStock
+                ? context.medora.warningContainer
+                : context.colors.primaryContainer,
         child: Icon(
           Icons.medication,
-          color: (isExpired || isLowStock)
-              ? (isExpired ? Colors.red : Colors.orange)
-              : AppTheme.primaryColor,
+          color: isExpired
+              ? context.medora.onDangerContainer
+              : isLowStock
+                  ? context.medora.onWarningContainer
+                  : context.colors.onPrimaryContainer,
         ),
       ),
       title: Text(
@@ -308,20 +353,20 @@ class _MedicationTile extends StatelessWidget {
                   isExpired: isExpired,
                 ),
                 if (med.expiryDate != null) ...[
-                  const Text(' · ', style: TextStyle(color: Colors.grey)),
+                  Text(' · ', style: TextStyle(color: context.colors.onSurfaceVariant)),
                   Text(
                     med.expiryDate!.year == now.year
                         ? med.expiryDate!.shortFormatted
                         : med.expiryDate!.formatted,
                     style: TextStyle(
-                      color: isExpired ? Colors.red : Colors.grey[600],
+                      color: isExpired ? context.medora.danger : context.colors.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   ),
                 ],
                 if (med.isArchived) ...[
-                  const Text(' · ', style: TextStyle(color: Colors.grey)),
-                  Icon(Icons.archive, size: 12, color: Colors.blueGrey[300]),
+                  Text(' · ', style: TextStyle(color: context.colors.onSurfaceVariant)),
+                  Icon(Icons.archive, size: 12, color: context.colors.onSurfaceVariant),
                 ],
               ],
             ),
@@ -341,12 +386,12 @@ class _MedicationTile extends StatelessWidget {
           ? Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.blueGrey.withValues(alpha: 0.1),
+                color: context.colors.secondaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 AppConstants.categoryLabel(l10n, med.category!),
-                style: TextStyle(fontSize: 10, color: Colors.blueGrey[700]),
+                style: TextStyle(fontSize: 10, color: context.colors.onSecondaryContainer),
               ),
             )
           : null,

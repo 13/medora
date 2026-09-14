@@ -155,10 +155,17 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
 final reminderPortProvider = Provider<ReminderPort>((ref) => ReminderService.instance);
 
 final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
+  // reconcile() can still be mid-flight (it's fired via `unawaited`) after
+  // the container is disposed (e.g. test teardown); cache the last-known
+  // value and guard against reading a disposed Ref rather than throwing.
+  var lastEnabled = ref.read(remindersEnabledProvider);
   return ReminderScheduler(
     port: ref.watch(reminderPortProvider),
     doses: ref.watch(doseLogRepositoryProvider),
-    remindersEnabled: () => ref.read(remindersEnabledProvider),
+    remindersEnabled: () {
+      if (ref.mounted) lastEnabled = ref.read(remindersEnabledProvider);
+      return lastEnabled;
+    },
   );
 });
 
@@ -233,6 +240,10 @@ final doseMaintenanceProvider = Provider<DoseMaintenanceService>(
 
 /// Delay before the startup sync; tests override this with Duration.zero.
 final syncStartupDelayProvider = Provider<Duration>((_) => const Duration(seconds: 2));
+
+/// Injectable clock. Screens/providers that need "now" read
+/// `ref.read(nowProvider)()`; tests and goldens override it.
+final nowProvider = Provider<DateTime Function()>((_) => DateTime.now);
 
 final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
   return AppStartupTasks(
