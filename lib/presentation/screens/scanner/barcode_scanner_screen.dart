@@ -4,6 +4,7 @@
 /// from medication packages. User can tap any detected text block
 /// to use it as an AIC code for AIFA database lookup.
 library;
+// ignore_for_file: deprecated_member_use
 
 import 'dart:async';
 import 'dart:typed_data';

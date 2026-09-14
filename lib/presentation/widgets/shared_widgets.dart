@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 
@@ -38,23 +38,24 @@ class ExpiryBadge extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final now = _getCachedNow();
     final daysUntilExpiry = expiryDate!.difference(now).inDays;
+    final medora = context.medora;
 
-    final (color, label) = daysUntilExpiry < 0
-        ? (AppTheme.expiredColor, l10n.expired)
+    final (bg, fg, label) = daysUntilExpiry < 0
+        ? (medora.dangerContainer, medora.onDangerContainer, l10n.expired)
         : daysUntilExpiry <= 30
-            ? (AppTheme.expiringSoonColor, l10n.expiresInDaysShort(daysUntilExpiry))
-            : (AppTheme.inStockColor, l10n.valid);
+            ? (medora.warningContainer, medora.onWarningContainer, l10n.expiresInDaysShort(daysUntilExpiry))
+            : (medora.successContainer, medora.onSuccessContainer, l10n.valid);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: bg,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         label,
         style: TextStyle(
-          color: color,
+          color: fg,
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
@@ -80,12 +81,13 @@ class StockIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isLow = quantity <= minimumStock;
+    final medora = context.medora;
 
     final (color, icon) = isExpired
-        ? (AppTheme.expiredColor, Icons.warning_rounded)
+        ? (medora.expired, Icons.warning_rounded)
         : isLow
-            ? (AppTheme.lowStockColor, Icons.warning_rounded)
-            : (AppTheme.inStockColor, Icons.check_circle_rounded);
+            ? (medora.lowStock, Icons.warning_rounded)
+            : (medora.inStock, Icons.check_circle_rounded);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -118,19 +120,20 @@ class DoseStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final medora = context.medora;
 
-    final (color, icon, label) = switch (status) {
-      DoseStatus.taken => (AppTheme.doseTakenColor, Icons.check_circle, l10n.taken),
-      DoseStatus.skipped => (AppTheme.doseSkippedColor, Icons.skip_next, l10n.skipped),
-      DoseStatus.missed => (AppTheme.doseMissedColor, Icons.cancel, l10n.missed),
-      DoseStatus.pending => (AppTheme.dosePendingColor, Icons.schedule, l10n.pending),
+    final (bg, fg, icon, label) = switch (status) {
+      DoseStatus.taken => (medora.successContainer, medora.onSuccessContainer, Icons.check_circle, l10n.taken),
+      DoseStatus.skipped => (medora.warningContainer, medora.onWarningContainer, Icons.skip_next, l10n.skipped),
+      DoseStatus.missed => (medora.dangerContainer, medora.onDangerContainer, Icons.cancel, l10n.missed),
+      DoseStatus.pending => (medora.neutralContainer, medora.onNeutralContainer, Icons.schedule, l10n.pending),
     };
 
     return Chip(
-      avatar: Icon(icon, color: color, size: 18),
+      avatar: Icon(icon, color: fg, size: 18),
       label: Text(label),
-      backgroundColor: color.withValues(alpha: 0.1),
-      labelStyle: TextStyle(color: color, fontSize: 12),
+      backgroundColor: bg,
+      labelStyle: TextStyle(color: fg, fontSize: 12),
       padding: EdgeInsets.zero,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
@@ -152,7 +155,8 @@ class TagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = label.toColor;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = HSLColor.fromColor(label.toColor).withLightness(isDark ? 0.75 : 0.35).toColor();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
@@ -220,8 +224,8 @@ void showDoseDetailBottomSheet({
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
-                  child: const Icon(Icons.medication, color: AppTheme.primaryColor),
+                  backgroundColor: context.colors.primaryContainer,
+                  child: Icon(Icons.medication, color: context.colors.onPrimaryContainer),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -233,7 +237,7 @@ void showDoseDetailBottomSheet({
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       if (dose.displayDosage != null)
-                        Text(dose.displayDosage!, style: TextStyle(color: Colors.grey[600])),
+                        Text(dose.displayDosage!, style: TextStyle(color: context.colors.onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -252,9 +256,9 @@ void showDoseDetailBottomSheet({
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    Icon(Icons.person, size: 18, color: Colors.grey[600]),
+                    Icon(Icons.person, size: 18, color: context.colors.onSurfaceVariant),
                     const SizedBox(width: 8),
-                    Text('${l10n.patientTagsField}: ', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                    Text('${l10n.patientTagsField}: ', style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13)),
                     Expanded(
                       child: Wrap(
                         spacing: 4,
@@ -311,7 +315,7 @@ void showDoseDetailBottomSheet({
                   },
                   icon: const Icon(Icons.undo),
                   label: const Text("Undo Taken"),
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                  style: OutlinedButton.styleFrom(foregroundColor: context.colors.error),
                 ),
               ),
           ],
@@ -333,19 +337,18 @@ class DetailRow extends StatelessWidget {
   final String label;
   final String value;
 
-  // Cache the text style to avoid recreating it
-  static final _labelStyle = TextStyle(color: Colors.grey[600], fontSize: 13);
   static const _valueStyle = TextStyle(fontSize: 13);
 
   @override
   Widget build(BuildContext context) {
+    final labelStyle = TextStyle(color: context.colors.onSurfaceVariant, fontSize: 13);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: Colors.grey[600]),
+          Icon(icon, size: 18, color: context.colors.onSurfaceVariant),
           const SizedBox(width: 8),
-          Text('$label: ', style: _labelStyle),
+          Text('$label: ', style: labelStyle),
           Expanded(child: Text(value, style: _valueStyle)),
         ],
       ),
@@ -378,12 +381,12 @@ class EmptyStateWidget extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: Colors.grey[400]),
+            Icon(icon, size: 64, color: context.colors.outline),
             const SizedBox(height: 16),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Colors.grey[600],
+              style: context.text.titleMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
                   ),
               textAlign: TextAlign.center,
             ),
@@ -391,8 +394,8 @@ class EmptyStateWidget extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 subtitle!,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[500],
+                style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.outline,
                     ),
                 textAlign: TextAlign.center,
               ),
@@ -454,7 +457,7 @@ class ErrorDisplayWidget extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            Icon(Icons.error_outline, size: 48, color: context.colors.error),
             const SizedBox(height: 16),
             Text(
               message,
