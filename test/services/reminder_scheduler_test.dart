@@ -199,10 +199,11 @@ void main() {
         1,
         reason: 'only the first pass does a full cancel',
       );
-      expect(port.scheduled.map((d) => d.id).toList(), [
-        'a',
-        'b',
-      ], reason: 'rerun scheduled the dose that appeared after pass 1 queried');
+      expect(
+        port.scheduled.map((d) => d.id).toList(),
+        ['a', 'b'],
+        reason: 'rerun scheduled the dose that appeared after pass 1 queried',
+      );
     },
   );
 
