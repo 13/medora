@@ -201,7 +201,7 @@ class SettingsScreen extends ConsumerWidget {
             title: Text(l10n.missedGracePeriod),
             subtitle: Text(l10n.missedGracePeriodDesc),
             trailing: DropdownButton<int>(
-              value: graceMinutes,
+              value: kMissedGraceOptions.contains(graceMinutes) ? graceMinutes : 120,
               underline: const SizedBox.shrink(),
               items: [
                 for (final m in kMissedGraceOptions)

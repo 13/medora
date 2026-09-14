@@ -42,4 +42,29 @@ void main() {
     expect(row['sync_status'], SyncStatus.pendingUpdate);
     expect(row['updated_at'], isNotNull);
   });
+
+  test('does not mark overdue doses of an inactive prescription as missed', () async {
+    final db = await AppDatabase.instance.database;
+    final s1 = await seedPrescription(db);
+    final s2 = await seedPrescription(db);
+    await db.update('prescriptions', {'is_active': 0},
+        where: 'id = ?', whereArgs: [s2.prescriptionId]);
+    final active = await seedDoseLog(
+        db, s1.prescriptionId, now.subtract(const Duration(hours: 3)));
+    final inactive = await seedDoseLog(
+        db, s2.prescriptionId, now.subtract(const Duration(hours: 3)));
+
+    final repo = DoseLogRepositoryImpl(
+      localDatasource: DoseLogLocalDatasource(),
+      remoteDatasource: null,
+      prescriptionLocal: PrescriptionLocalDatasource(),
+    );
+    final service = DoseMaintenanceService(doses: repo, now: () => now);
+    final changed = await service.markOverdueAsMissed(grace: const Duration(minutes: 120));
+
+    expect(changed, 1);
+    final ds = DoseLogLocalDatasource();
+    expect((await ds.getDoseLogById(active))!.status, DoseStatus.missed);
+    expect((await ds.getDoseLogById(inactive))!.status, DoseStatus.pending);
+  });
 }

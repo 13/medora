@@ -9,6 +9,7 @@ void main() {
       reminders: () async => calls.add('reminders'),
       sync: () async => calls.add('sync'),
       syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
     );
     await tasks.run();
     expect(calls, ['maintenance', 'reminders', 'sync']);
@@ -21,6 +22,7 @@ void main() {
       reminders: () async => calls.add('r'),
       sync: () async => calls.add('s'),
       syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
     );
     await tasks.run(includeSync: false);
     expect(calls, ['m', 'r']);
@@ -33,6 +35,7 @@ void main() {
       reminders: () async => calls.add('r'),
       sync: () async => calls.add('s'),
       syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
     );
     await tasks.run();
     expect(calls, ['r', 's']);
@@ -45,8 +48,29 @@ void main() {
       reminders: () async {},
       sync: () async {},
       syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
     );
     await Future.wait([tasks.run(), tasks.run()]);
     expect(maintenanceRuns, 1);
+  });
+
+  test('sync is skipped when the last sync was within minSyncInterval', () async {
+    var syncs = 0;
+    var clock = DateTime(2026, 3, 1, 9);
+    final tasks = AppStartupTasks(
+      maintenance: () async {},
+      reminders: () async {},
+      sync: () async => syncs++,
+      syncDelay: Duration.zero,
+      minSyncInterval: const Duration(minutes: 5),
+      now: () => clock,
+    );
+    await tasks.run();
+    clock = clock.add(const Duration(minutes: 1));
+    await tasks.run();
+    expect(syncs, 1);
+    clock = clock.add(const Duration(minutes: 5));
+    await tasks.run();
+    expect(syncs, 2);
   });
 }

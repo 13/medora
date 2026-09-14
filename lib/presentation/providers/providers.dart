@@ -246,5 +246,6 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
       }
     },
     syncDelay: ref.watch(syncStartupDelayProvider),
+    minSyncInterval: const Duration(minutes: 5),
   );
 });

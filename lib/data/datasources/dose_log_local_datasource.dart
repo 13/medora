@@ -252,18 +252,27 @@ class DoseLogLocalDatasource {
     );
   }
 
-  /// Mark pending doses scheduled before [cutoff] as missed. Returns the count.
+  /// Mark pending doses scheduled before [cutoff] as missed. Returns the
+  /// count. Scoped to doses whose prescription is active, whose treatment is
+  /// active (or absent), and whose medication is not archived (or absent) —
+  /// the same predicates [getPendingBetween] uses.
   Future<int> markOverduePendingAsMissed(DateTime cutoff) async {
     final db = await _db;
-    return db.update(
-      'dose_logs',
-      {
-        'status': 'missed',
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: "status = 'pending' AND scheduled_time < ? AND sync_status != ?",
-      whereArgs: [cutoff.toIso8601String(), SyncStatus.pendingDelete],
+    return db.rawUpdate(
+      '''UPDATE dose_logs
+         SET status = 'missed', sync_status = ?, updated_at = ?
+         WHERE status = 'pending'
+           AND scheduled_time < ?
+           AND sync_status != ?
+           AND prescription_id IN (
+             SELECT p.id FROM prescriptions p
+             LEFT JOIN treatments t ON p.treatment_id = t.id
+             LEFT JOIN medications m ON p.medication_id = m.id
+             WHERE p.is_active = 1
+               AND (t.id IS NULL OR t.is_active = 1)
+               AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
+           )''',
+      [SyncStatus.pendingUpdate, DateTime.now().toIso8601String(), cutoff.toIso8601String(), SyncStatus.pendingDelete],
     );
   }
 
