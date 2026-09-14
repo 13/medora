@@ -48,10 +48,16 @@ class DoseLogLocalDatasource {
     return _fromRow(rows.first);
   }
 
+  /// Shared WHERE fragment: non-pending rows are always included (they are
+  /// historical facts); pending rows only when their prescription/treatment
+  /// is active and their medication is not archived (or absent).
+  static const _pendingOnlyIfActive =
+      '''(d.status != 'pending' OR ((p.is_active IS NULL OR p.is_active = 1) AND (t.id IS NULL OR t.is_active = 1) AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))))''';
+
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
+    final end = DateTime(now.year, now.month, now.day + 1);
     final db = await _db;
     // Show ALL non-pending doses (taken/skipped/missed) regardless of
     // treatment/prescription/medication status — they are historical facts.
@@ -60,14 +66,7 @@ class DoseLogLocalDatasource {
       '''$_joinQuery
         WHERE d.scheduled_time >= ? AND d.scheduled_time < ?
         AND d.sync_status != ?
-        AND (
-          d.status != 'pending'
-          OR (
-            (p.is_active IS NULL OR p.is_active = 1)
-            AND (t.id IS NULL OR t.is_active = 1)
-            AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
-          )
-        )
+        AND $_pendingOnlyIfActive
         ORDER BY d.scheduled_time ASC''',
       [
         start.toIso8601String(),
@@ -81,11 +80,18 @@ class DoseLogLocalDatasource {
   Future<List<DoseLogModel>> getDoseLogsByDateRange(
       DateTime start, DateTime end) async {
     final db = await _db;
+    // Apply the same rule as [getTodaysDoseLogs]: non-pending rows are
+    // always included; pending rows only for active prescriptions/
+    // treatments and non-archived medications.
     final rows = await db.rawQuery(
-      '$_joinQuery WHERE d.scheduled_time >= ? AND d.scheduled_time < ? AND d.sync_status != ? ORDER BY d.scheduled_time ASC',
+      '''$_joinQuery
+        WHERE d.scheduled_time >= ? AND d.scheduled_time < ?
+        AND d.sync_status != ?
+        AND $_pendingOnlyIfActive
+        ORDER BY d.scheduled_time ASC''',
       [start.toIso8601String(), end.toIso8601String(), SyncStatus.pendingDelete],
     );
-    return rows.map(_fromRow).toList();
+    return _dedupeById(rows).map(_fromRow).toList();
   }
 
   /// Pending doses with scheduled_time in [start, end), for active

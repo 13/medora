@@ -74,6 +74,47 @@ void main() {
     expect(doses.where((d) => d.status == DoseStatus.taken).length, 2);
   });
 
+  test('takeAllDue skips ids that are not pending and does not double-count or double-diminish them', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await db.update('prescriptions', {'auto_diminish': 1},
+        where: 'id = ?', whereArgs: [s.prescriptionId]);
+    final a = await seedDoseLog(db, s.prescriptionId, now.subtract(const Duration(hours: 2)));
+    final b = await seedDoseLog(db, s.prescriptionId, now.subtract(const Duration(hours: 1)));
+    final alreadyTaken = await seedDoseLog(
+        db, s.prescriptionId, now.subtract(const Duration(hours: 3)),
+        status: 'taken');
+
+    final n = await c.read(doseActionsProvider).takeAllDue([a, b, alreadyTaken]);
+    expect(n, 2);
+
+    final med = await db.query('medications',
+        where: 'id = ?', whereArgs: [s.medicationId]);
+    expect(med.single['quantity'], 8);
+  });
+
+  test('take returns false for an unknown id', () async {
+    final result = await c.read(doseActionsProvider).take('does-not-exist');
+    expect(result, isFalse);
+  });
+
+  test('dosesForDayProvider hides pending doses of inactive prescriptions but keeps taken ones', () async {
+    final db = await AppDatabase.instance.database;
+    await seedPrescription(db);
+    final s2 = await seedPrescription(db);
+    await db.update('prescriptions', {'is_active': 0},
+        where: 'id = ?', whereArgs: [s2.prescriptionId]);
+    final pending = await seedDoseLog(
+        db, s2.prescriptionId, today.add(const Duration(hours: 9)));
+    final taken = await seedDoseLog(
+        db, s2.prescriptionId, today.add(const Duration(hours: 10)),
+        status: 'taken');
+
+    final doses = await c.read(dosesForDayProvider(today).future);
+    expect(doses.map((d) => d.id), [taken]);
+    expect(doses.any((d) => d.id == pending), isFalse);
+  });
+
   test('undoTake restores pending and clears takenTime', () async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);

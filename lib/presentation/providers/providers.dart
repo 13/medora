@@ -155,14 +155,17 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
 final reminderPortProvider = Provider<ReminderPort>((ref) => ReminderService.instance);
 
 final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
+  // reconcile() can still be mid-flight (it's fired via `unawaited`) after
+  // the container is disposed (e.g. test teardown); cache the last-known
+  // value and guard against reading a disposed Ref rather than throwing.
+  var lastEnabled = ref.read(remindersEnabledProvider);
   return ReminderScheduler(
     port: ref.watch(reminderPortProvider),
     doses: ref.watch(doseLogRepositoryProvider),
-    // reconcile() can still be mid-flight (it's fired via `unawaited`) after
-    // the container is disposed (e.g. test teardown); guard against reading
-    // a disposed Ref rather than throwing.
-    remindersEnabled: () =>
-        ref.mounted ? ref.read(remindersEnabledProvider) : false,
+    remindersEnabled: () {
+      if (ref.mounted) lastEnabled = ref.read(remindersEnabledProvider);
+      return lastEnabled;
+    },
   );
 });
 

@@ -37,7 +37,7 @@ final dosesForDayProvider = FutureProvider.family<List<DoseLog>, DateTime>(
     final repo = ref.watch(doseLogRepositoryProvider);
     final result = await repo.getDoseLogsByDateRange(
       key,
-      key.add(const Duration(days: 1)),
+      DateTime(key.year, key.month, key.day + 1),
     );
     return result.when(
       success: (data) => data,
@@ -46,21 +46,20 @@ final dosesForDayProvider = FutureProvider.family<List<DoseLog>, DateTime>(
   },
 );
 
-/// The next pending dose to act on: earliest pending dose today whose time
-/// is <= now + 2h, else the earliest pending dose today, else null.
+/// The next pending dose to act on: the earliest pending dose today, else
+/// null. "Earliest pending" already covers the old "<= now + 2h" case — if
+/// the earliest pending dose is more than 2h out, there is by definition no
+/// pending dose within the next 2h, so returning it (or null) is the same
+/// result either way.
 final nextDueDoseProvider = Provider<DoseLog?>((ref) {
   final doses = ref.watch(todaysDoseLogsProvider).value ?? [];
-  final now = ref.watch(nowProvider)();
+  // Watched so future time-aware logic (e.g. reintroducing a cutoff) has
+  // the hook without needing to thread `now` through again.
+  ref.watch(nowProvider);
 
   final pending = doses.where((d) => d.status == DoseStatus.pending).toList()
     ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
-  if (pending.isEmpty) return null;
-
-  final cutoff = now.add(const Duration(hours: 2));
-  for (final dose in pending) {
-    if (!dose.scheduledTime.isAfter(cutoff)) return dose;
-  }
-  return pending.first;
+  return pending.isEmpty ? null : pending.first;
 });
 
 /// Single entry point for dose mutations from any screen.
@@ -71,51 +70,61 @@ class DoseActions {
 
   final Ref _ref;
 
-  Future<void> take(String id) async {
+  Future<bool> take(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    await repo.markDoseTaken(id);
+    final result = await repo.markDoseTaken(id);
     await _autoDiminish(_ref, id);
     await _refresh();
+    return result.isSuccess;
   }
 
-  Future<void> undoTake(String id) async {
+  Future<bool> undoTake(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    await repo.markDosePending(id);
+    final result = await repo.markDosePending(id);
     await _autoDiminish(_ref, id, reverse: true);
     await _refresh();
+    return result.isSuccess;
   }
 
-  Future<void> skip(String id) async {
+  Future<bool> skip(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    await repo.markDoseSkipped(id);
+    final result = await repo.markDoseSkipped(id);
     await _refresh();
+    return result.isSuccess;
   }
 
-  Future<void> markMissed(String id) async {
+  Future<bool> markMissed(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    await repo.markDoseMissed(id);
+    final result = await repo.markDoseMissed(id);
     await _refresh();
+    return result.isSuccess;
   }
 
   /// Undo a skip: mark pending again, without touching stock.
-  Future<void> undoSkip(String id) async {
+  Future<bool> undoSkip(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    await repo.markDosePending(id);
+    final result = await repo.markDosePending(id);
     await _refresh();
+    return result.isSuccess;
   }
 
-  /// Take each dose in turn; returns the number taken.
+  /// Take each dose in turn; returns the number actually taken (ids that
+  /// aren't currently pending — e.g. already taken — are skipped and not
+  /// counted).
   Future<int> takeAllDue(List<String> ids) async {
+    final repo = _ref.read(doseLogRepositoryProvider);
     var count = 0;
     for (final id in ids) {
-      await take(id);
-      count++;
+      final doseResult = await repo.getDoseLogById(id);
+      final dose = doseResult.dataOrNull;
+      if (dose == null || dose.status != DoseStatus.pending) continue;
+      if (await take(id)) count++;
     }
     return count;
   }
 
   Future<void> _refresh() async {
-    await _ref.read(todaysDoseLogsProvider.notifier).refresh();
+    await _ref.read(todaysDoseLogsProvider.notifier).refresh(reconcile: false);
     _ref.read(doseDataVersionProvider.notifier).bump();
     unawaited(_ref.read(reminderSchedulerProvider).reconcile());
   }
@@ -247,9 +256,14 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     }
   }
 
-  Future<void> refresh() async {
+  /// Refetch today's doses. Reconciling reminders is normally the caller's
+  /// job (see [DoseActions], which owns a single reconcile per mutation) —
+  /// pass [reconcile] false when the caller will reconcile itself.
+  Future<void> refresh({bool reconcile = true}) async {
     state = await AsyncValue.guard(_fetchTodaysDoses);
-    unawaited(ref.read(reminderSchedulerProvider).reconcile());
+    if (reconcile) {
+      unawaited(ref.read(reminderSchedulerProvider).reconcile());
+    }
   }
 
   // Thin wrappers kept so existing call sites compile unchanged.
