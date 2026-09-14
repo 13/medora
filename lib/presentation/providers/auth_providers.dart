@@ -7,13 +7,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Provider for the Supabase Auth state.
 final authStateProvider = StreamProvider<AuthState>((ref) {
-  return SupabaseConfig.client.auth.onAuthStateChange;
+  return SupabaseConfig.requireClient().auth.onAuthStateChange;
 });
 
 /// Provider for the current user.
 final currentUserProvider = Provider<User?>((ref) {
   final authState = ref.watch(authStateProvider).value;
-  return authState?.session?.user ?? SupabaseConfig.client.auth.currentUser;
+  return authState?.session?.user ?? SupabaseConfig.requireClient().auth.currentUser;
 });
 
 /// Provider for Offline Mode.
@@ -47,7 +47,7 @@ class AuthController extends Notifier<AsyncValue<void>> {
   Future<void> signInWithEmail(String email, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await SupabaseConfig.client.auth.signInWithPassword(
+      await SupabaseConfig.requireClient().auth.signInWithPassword(
         email: email,
         password: password,
       );
@@ -58,7 +58,7 @@ class AuthController extends Notifier<AsyncValue<void>> {
   Future<void> signUpWithEmail(String email, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await SupabaseConfig.client.auth.signUp(
+      await SupabaseConfig.requireClient().auth.signUp(
         email: email,
         password: password,
       );
@@ -69,7 +69,7 @@ class AuthController extends Notifier<AsyncValue<void>> {
   Future<void> signOut() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await SupabaseConfig.client.auth.signOut();
+      await SupabaseConfig.requireClient().auth.signOut();
       ref.read(isOfflineModeProvider.notifier).set(false);
     });
   }
@@ -77,7 +77,7 @@ class AuthController extends Notifier<AsyncValue<void>> {
   Future<void> signInAnonymously() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await SupabaseConfig.client.auth.signInAnonymously();
+      await SupabaseConfig.requireClient().auth.signInAnonymously();
       ref.read(isOfflineModeProvider.notifier).set(false);
     });
   }

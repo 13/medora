@@ -12,7 +12,7 @@ class MedicationRemoteDatasource {
 
   /// Get all medications for the current user.
   Future<List<MedicationModel>> getMedications() async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .select()
         .order('name');
@@ -24,7 +24,7 @@ class MedicationRemoteDatasource {
 
   /// Get a single medication by ID.
   Future<MedicationModel> getMedicationById(String id) async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .select()
         .eq('id', id)
@@ -35,7 +35,7 @@ class MedicationRemoteDatasource {
 
   /// Search medications by name or active ingredient.
   Future<List<MedicationModel>> searchMedications(String query) async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .select()
         .or('name.ilike.%$query%,active_ingredients.ilike.%$query%')
@@ -48,14 +48,14 @@ class MedicationRemoteDatasource {
 
   /// Add a new medication.
   Future<void> addMedication(MedicationModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .insert(model.toJson());
   }
 
   /// Update a medication.
   Future<void> updateMedication(MedicationModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .update(model.toJson())
         .eq('id', model.id);
@@ -63,14 +63,14 @@ class MedicationRemoteDatasource {
 
   /// Upsert a medication (insert or update).
   Future<void> upsertMedication(MedicationModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .upsert(model.toJson());
   }
 
   /// Delete a medication.
   Future<void> deleteMedication(String id) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .delete()
         .eq('id', id);
@@ -81,7 +81,7 @@ class MedicationRemoteDatasource {
     final current = await getMedicationById(id);
     final newQuantity = (current.quantity + delta).clamp(0, 999999);
 
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.medicationsTable)
         .update({'quantity': newQuantity})
         .eq('id', id);

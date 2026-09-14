@@ -6,8 +6,8 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/app_config.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/db_setup.dart' if (dart.library.html) 'package:medora/data/local/db_setup_web.dart';
@@ -19,31 +19,14 @@ import 'package:medora/services/reminder_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
-  // 1. Ensure Flutter is ready as soon as possible
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 2. Setup database factory (fast)
   setupDatabaseFactory();
 
-  // 3. Initialize essential configuration in parallel
-  // We only await things that are absolutely required for the first frame or app stability
-  final results = await Future.wait([
-    SharedPreferences.getInstance(),
-    dotenv.load(fileName: '.env').catchError((e) {
-      debugPrint('⚠ Failed to load .env: $e');
-      return null;
-    }),
-  ]);
+  final prefs = await SharedPreferences.getInstance();
 
-  final prefs = results[0] as SharedPreferences;
+  // Cloud is optional: this is a no-op when no dart-defines are present.
+  await _initSafe('Supabase', () => SupabaseConfig.initialize(AppConfig.fromEnvironment()));
 
-  // 4. Initialize Supabase. 
-  // We await this because the AuthGuard depends on the client being available.
-  // However, we don't await network-dependent tasks inside Supabase.initialize.
-  await _initSafe('Supabase', () => SupabaseConfig.initialize());
-
-  // 5. Defer non-critical services to background
-  // This removes the largest bottlenecks from app startup (Connectivity checks, Timezone loading)
   _initServicesInBackground();
 
   runApp(

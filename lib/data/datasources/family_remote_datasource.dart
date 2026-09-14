@@ -8,7 +8,7 @@ import 'package:medora/data/models/family_model.dart';
 class FamilyRemoteDatasource {
   FamilyRemoteDatasource();
 
-  final _client = SupabaseConfig.client;
+  final _client = SupabaseConfig.requireClient();
 
   Future<FamilyModel> createFamily(FamilyModel family) async {
     final response = await _client

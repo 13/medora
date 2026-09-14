@@ -9,7 +9,7 @@ class DoseLogRemoteDatasource {
   DoseLogRemoteDatasource();
 
   Future<List<DoseLogModel>> getDoseLogs() async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .select('*, prescriptions(id, medications(name)) ');
 
@@ -23,7 +23,7 @@ class DoseLogRemoteDatasource {
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
 
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .select('*, prescriptions(id, medications(name))')
         .gte('scheduled_time', startOfDay.toIso8601String())
@@ -35,20 +35,20 @@ class DoseLogRemoteDatasource {
   }
 
   Future<void> addDoseLog(DoseLogModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .insert(model.toJson());
   }
 
   Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
     if (models.isEmpty) return;
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .insert(models.map((m) => m.toJson()).toList());
   }
 
   Future<void> upsertDoseLog(DoseLogModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .upsert(model.toJson());
   }
@@ -66,7 +66,7 @@ class DoseLogRemoteDatasource {
       updateData['taken_time'] = null;
     }
 
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .update(updateData)
         .eq('id', id);
@@ -74,7 +74,7 @@ class DoseLogRemoteDatasource {
 
   /// Delete a dose log from remote.
   Future<void> deleteDoseLog(String id) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.doseLogsTable)
         .delete()
         .eq('id', id);

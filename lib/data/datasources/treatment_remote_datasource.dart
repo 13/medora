@@ -9,7 +9,7 @@ class TreatmentRemoteDatasource {
   TreatmentRemoteDatasource();
 
   Future<List<TreatmentModel>> getTreatments() async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .select()
         .order('start_date', ascending: false);
@@ -20,7 +20,7 @@ class TreatmentRemoteDatasource {
   }
 
   Future<List<TreatmentModel>> getActiveTreatments() async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .select()
         .eq('is_active', true)
@@ -32,7 +32,7 @@ class TreatmentRemoteDatasource {
   }
 
   Future<TreatmentModel> getTreatmentById(String id) async {
-    final response = await SupabaseConfig.client
+    final response = await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .select()
         .eq('id', id)
@@ -43,14 +43,14 @@ class TreatmentRemoteDatasource {
 
   /// Add a new treatment.
   Future<void> addTreatment(TreatmentModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .insert(model.toJson());
   }
 
   /// Update a treatment.
   Future<void> updateTreatment(TreatmentModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .update(model.toJson())
         .eq('id', model.id);
@@ -58,20 +58,20 @@ class TreatmentRemoteDatasource {
 
   /// Upsert a treatment (insert or update).
   Future<void> upsertTreatment(TreatmentModel model) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .upsert(model.toJson());
   }
 
   Future<void> deleteTreatment(String id) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .delete()
         .eq('id', id);
   }
 
   Future<void> endTreatment(String id) async {
-    await SupabaseConfig.client
+    await SupabaseConfig.requireClient()
         .from(AppConstants.treatmentsTable)
         .update({
           'is_active': false,
