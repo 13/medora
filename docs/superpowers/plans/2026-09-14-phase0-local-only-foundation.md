@@ -668,7 +668,7 @@ void main() {
       final times = _p(intervalHours: 8, durationDays: 2).scheduledDoseTimes;
       expect(times.length, 6);
       expect(times.first, DateTime(2026, 3, 1, 8, 0));
-      expect(times.last, DateTime(2026, 3, 2, 16, 0));
+      expect(times.last, DateTime(2026, 3, 3, 0, 0));
     });
 
     test('is sorted ascending and strictly before endTime', () {
@@ -710,14 +710,14 @@ void main() {
       expect(times.last, DateTime(2026, 3, 3, 20, 0));
     });
 
-    test('skips times on the first day that are before startTime', () {
+    test('skips times on the first day that are before startTime and continues until endTime', () {
       final times = _p(
         scheduleType: 'times_per_day',
         scheduleTimes: ['08:00', '20:00'],
         durationDays: 1,
         startTime: DateTime(2026, 3, 1, 12, 0),
       ).scheduledDoseTimes;
-      expect(times, [DateTime(2026, 3, 1, 20, 0)]);
+      expect(times, [DateTime(2026, 3, 1, 20, 0), DateTime(2026, 3, 2, 8, 0)]);
     });
 
     test('includes a time equal to startTime (minute precision)', () {
