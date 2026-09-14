@@ -31,33 +31,56 @@ class ReminderScheduler {
   final DateTime Function() _now;
 
   bool _running = false;
+  bool _rerunRequested = false;
 
   /// Returns the number of doses that received notifications.
+  ///
+  /// If a reconcile is requested while one is already running, it is not
+  /// dropped: the running reconcile reruns once more before returning.
   Future<int> reconcile() async {
-    if (_running) return 0;
+    if (_running) {
+      _rerunRequested = true;
+      return 0;
+    }
     _running = true;
+    var scheduled = 0;
     try {
-      await _port.cancelAll();
-      if (!_remindersEnabled()) return 0;
-
-      final now = _now();
-      final result = await _doses.getPendingDoseLogsBetween(now, now.add(horizon));
-      final pending = result.dataOrNull ?? [];
-      final limit = maxNotifications ~/ notificationsPerDose;
-
-      var scheduled = 0;
-      for (final dose in pending) {
-        if (scheduled >= limit) break;
-        await _port.scheduleForDose(
-          dose: dose,
-          medicationName: dose.medicationName ?? 'Medication',
-        );
-        scheduled++;
-      }
-      debugPrint('Reminders: scheduled $scheduled of ${pending.length} pending doses');
+      do {
+        _rerunRequested = false;
+        scheduled = await _reconcileOnce();
+      } while (_rerunRequested);
       return scheduled;
     } finally {
       _running = false;
     }
+  }
+
+  Future<int> _reconcileOnce() async {
+    await _port.cancelAll();
+    if (!_remindersEnabled()) return 0;
+
+    final now = _now();
+    final result = await _doses.getPendingDoseLogsBetween(now, now.add(horizon));
+    return result.when(
+      success: (pending) async {
+        final limit = maxNotifications ~/ notificationsPerDose;
+
+        var scheduled = 0;
+        for (final dose in pending) {
+          if (scheduled >= limit) break;
+          await _port.scheduleForDose(
+            dose: dose,
+            medicationName: dose.medicationName ?? 'Medication',
+          );
+          scheduled++;
+        }
+        debugPrint('Reminders: scheduled $scheduled of ${pending.length} pending doses');
+        return scheduled;
+      },
+      failure: (msg) async {
+        debugPrint('Reminders: could not load pending doses: $msg');
+        return 0;
+      },
+    );
   }
 }

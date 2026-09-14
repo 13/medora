@@ -107,6 +107,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
         // Refresh the state after generation
         state = await AsyncValue.guard(_fetchTodaysDoses);
+        unawaited(ref.read(reminderSchedulerProvider).reconcile());
       }
     } catch (e) {
       debugPrint('⚠ _ensureDoseLogsExist error: $e');

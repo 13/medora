@@ -23,6 +23,14 @@ class FakePort implements ReminderPort {
   }
 }
 
+class SlowPort extends FakePort {
+  @override
+  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) async {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await super.scheduleForDose(dose: dose, medicationName: medicationName);
+  }
+}
+
 void main() {
   setUp(setUpTestDatabase);
   tearDown(tearDownTestDatabase);
@@ -79,5 +87,33 @@ void main() {
     expect(port.cancelAllCalls, 1);
     expect(count, 0);
     expect(port.scheduled, isEmpty);
+  });
+
+  test('a reconcile requested during a run is executed afterwards, not dropped', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 1)));
+    final port = SlowPort();
+    final scheduler = make(port);
+    final first = scheduler.reconcile();
+    final second = scheduler.reconcile(); // arrives while first is running
+    await Future.wait([first, second]);
+    expect(port.cancelAllCalls, 2, reason: 'second request must run after the first completes');
+  });
+
+  test('getPendingBetween only schedules doses from active prescriptions', () async {
+    final db = await AppDatabase.instance.database;
+    final s1 = await seedPrescription(db);
+    final s2 = await seedPrescription(db);
+    await db.update('prescriptions', {'is_active': 0},
+        where: 'id = ?', whereArgs: [s2.prescriptionId]);
+    await seedDoseLog(db, s1.prescriptionId, now.add(const Duration(hours: 1)));
+    await seedDoseLog(db, s2.prescriptionId, now.add(const Duration(hours: 2)));
+
+    final port = FakePort();
+    final count = await make(port).reconcile();
+
+    expect(count, 1);
+    expect(port.scheduled.length, 1);
   });
 }

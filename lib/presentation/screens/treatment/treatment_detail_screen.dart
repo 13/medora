@@ -378,6 +378,8 @@ class _TreatmentDetailScreenState
                           ref.invalidate(
                               prescriptionsByTreatmentProvider(
                                   widget.treatmentId));
+                          ref.invalidate(todaysDoseLogsProvider);
+                          unawaited(ref.read(reminderSchedulerProvider).reconcile());
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -508,6 +510,8 @@ class _TreatmentDetailScreenState
                                     final repo = ref.read(prescriptionRepositoryProvider);
                                     await repo.deletePrescription(p.id);
                                     ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
+                                    ref.invalidate(todaysDoseLogsProvider);
+                                    unawaited(ref.read(reminderSchedulerProvider).reconcile());
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(content: Text(l10n.prescriptionDeleted)),
