@@ -20,12 +20,11 @@ import '../../helpers/test_database.dart';
 
 void main() {
   final now = DateTime.now();
-  // Noon anchor, not midnight: getTodaysDoseLogs/DoseMaintenanceService key
-  // off the real wall clock (by design), not nowProvider, so every seed
-  // below must stay on the same calendar day as DateTime.now() no matter
-  // what hour the suite runs at — noon plus/minus a few minutes never
-  // crosses into "yesterday" between 00:00 and 02:00.
-  final today = DateTime(now.year, now.month, now.day, 12);
+  // getTodaysDoseLogs/DoseMaintenanceService key off the real wall clock
+  // (by design), not nowProvider, so every seed below is placed relative
+  // to the REAL now via `recentToday`, which clamps to stay on the same
+  // calendar day and inside the missed-dose grace window no matter what
+  // hour the suite runs at.
 
   setUp(() async {
     await setUpTestDatabase();
@@ -42,7 +41,7 @@ void main() {
     platformCapabilitiesProvider.overrideWithValue(
       PlatformCapabilities.desktop,
     ),
-    nowProvider.overrideWithValue(() => today),
+    nowProvider.overrideWithValue(() => now),
   ];
 
   testWidgets('Now card shows the next due dose and Take → Undo works', (
@@ -50,7 +49,7 @@ void main() {
   ) async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
-    final overdue = today.subtract(const Duration(minutes: 10));
+    final overdue = recentToday(now, minutes: 10);
     await seedDoseLog(db, s.prescriptionId, overdue);
     await db.insert('medications', {
       'id': 'exp',
@@ -100,7 +99,7 @@ void main() {
     (tester) async {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db);
-      final overdue = today.subtract(const Duration(minutes: 10));
+      final overdue = recentToday(now, minutes: 10);
       await seedDoseLog(db, s.prescriptionId, overdue);
 
       final inner = DoseLogRepositoryImpl(
@@ -156,11 +155,7 @@ void main() {
 
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
-    await seedDoseLog(
-      db,
-      s.prescriptionId,
-      today.subtract(const Duration(minutes: 10)),
-    );
+    await seedDoseLog(db, s.prescriptionId, recentToday(now, minutes: 10));
 
     await pumpMedoraApp(
       tester,

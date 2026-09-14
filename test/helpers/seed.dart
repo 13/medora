@@ -93,3 +93,23 @@ Future<String> seedDoseLog(
   });
   return doseId;
 }
+
+/// A time on the same calendar day as [now], at most [minutes] before it
+/// (never crossing midnight) — stays inside the 2 h missed-dose grace window
+/// whatever the wall-clock hour, so maintenance never marks it missed.
+DateTime recentToday(DateTime now, {int minutes = 30}) {
+  final candidate = now.subtract(Duration(minutes: minutes));
+  return candidate.day == now.day
+      ? candidate
+      : DateTime(now.year, now.month, now.day, 0, 1);
+}
+
+/// A time on the same calendar day as [now], at least [minutes] after it
+/// (never crossing midnight) — for seeds that must land later today
+/// relative to the real clock, whatever the wall-clock hour.
+DateTime laterToday(DateTime now, {int minutes = 60}) {
+  final candidate = now.add(Duration(minutes: minutes));
+  return candidate.day == now.day
+      ? candidate
+      : DateTime(now.year, now.month, now.day, 23, 59);
+}

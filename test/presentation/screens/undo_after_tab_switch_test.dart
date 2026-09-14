@@ -23,15 +23,13 @@ import '../../helpers/test_database.dart';
 /// to be captured before the SnackBar is shown.
 void main() {
   final now = DateTime.now();
-  // Noon anchor, not midnight: this test pumps MainShellScreen, which runs
-  // AppStartupTasks (and DoseMaintenanceService) on init — those key off
-  // the real wall clock by design, not nowProvider, so a seed more than a
-  // couple hours stale gets swept to "missed" before the test can tap
-  // Take. Anchoring at noon keeps the seed both on the same calendar day
-  // as DateTime.now() (no matter what hour the suite runs at) and inside
-  // the missed-dose grace window relative to the real clock whenever the
-  // suite runs near midnight, which is the case this regression covers.
-  final today = DateTime(now.year, now.month, now.day, 12);
+  // This test pumps MainShellScreen, which runs AppStartupTasks (and
+  // DoseMaintenanceService) on init — those key off the real wall clock by
+  // design, not nowProvider, so a seed more than the missed-dose grace
+  // window (2h by default) stale gets swept to "missed" before the test
+  // can tap Take. `recentToday` seeds relative to the REAL now, clamped to
+  // stay on today's calendar day and well inside the grace window,
+  // whatever the wall-clock hour the suite runs at.
 
   setUp(() async {
     await setUpTestDatabase();
@@ -48,7 +46,7 @@ void main() {
     platformCapabilitiesProvider.overrideWithValue(
       PlatformCapabilities.desktop,
     ),
-    nowProvider.overrideWithValue(() => today),
+    nowProvider.overrideWithValue(() => now),
   ];
 
   testWidgets('Undo still works after the SnackBar outlives its tab', (
@@ -59,7 +57,7 @@ void main() {
     final doseId = await seedDoseLog(
       db,
       s.prescriptionId,
-      today.subtract(const Duration(minutes: 10)),
+      recentToday(now, minutes: 10),
     );
 
     await pumpMedoraApp(
