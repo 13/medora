@@ -1,7 +1,7 @@
 /// Medora - Add/Edit Medication Screen
 library;
 
-import 'dart:io' show File, Directory;
+import 'dart:io' show File;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -18,8 +18,6 @@ import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/services/aifa_cache_service.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
@@ -800,23 +798,19 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: Colors.grey.shade300),
             ),
-            child: _imagePath != null &&
-                    !kIsWeb &&
-                    File(_imagePath!).existsSync()
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.file(File(_imagePath!),
-                        fit: BoxFit.cover, width: double.infinity),
-                  )
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.add_a_photo,
-                          size: 40, color: Colors.grey[400]),
-                      const SizedBox(height: 8),
-                      Text(l10n.addPhoto,
-                          style: TextStyle(color: Colors.grey[500])),
-                    ],
+            child: _imagePath == null || kIsWeb
+                ? _photoPlaceholder(l10n)
+                : FutureBuilder<File?>(
+                    future: ref.read(photoStorageProvider).resolve(_imagePath),
+                    builder: (context, snap) {
+                      final file = snap.data;
+                      if (file == null) return _photoPlaceholder(l10n);
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(file,
+                            fit: BoxFit.cover, width: double.infinity),
+                      );
+                    },
                   ),
           ),
         ),
@@ -825,12 +819,29 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: () => setState(() => _imagePath = null),
+              onPressed: () async {
+                if (!_isEditMode || _imagePath != _existingMedication?.imagePath) {
+                  await ref.read(photoStorageProvider).delete(_imagePath);
+                }
+                if (!mounted) return;
+                setState(() => _imagePath = null);
+              },
               icon: const Icon(Icons.delete_outline, size: 18),
               label: Text(l10n.delete),
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _photoPlaceholder(AppLocalizations l10n) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.add_a_photo, size: 40, color: Colors.grey[400]),
+        const SizedBox(height: 8),
+        Text(l10n.addPhoto, style: TextStyle(color: Colors.grey[500])),
       ],
     );
   }
@@ -866,15 +877,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     final picked = await picker.pickImage(source: source, maxWidth: 1024);
     if (picked == null || !mounted) return;
 
-    // Save to app documents directory
-    final dir = await getApplicationDocumentsDirectory();
-    final ext = p.extension(picked.path);
-    final fileName = 'med_${const Uuid().v4()}$ext';
-    final savedPath = p.join(dir.path, 'medication_photos', fileName);
-    await Directory(p.dirname(savedPath)).create(recursive: true);
-    await File(picked.path).copy(savedPath);
-
-    setState(() => _imagePath = savedPath);
+    final name = await ref.read(photoStorageProvider).saveFromPath(picked.path);
+    if (!mounted) return;
+    setState(() => _imagePath = name);
   }
 
   Future<void> _saveMedication() async {

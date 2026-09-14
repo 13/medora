@@ -14,13 +14,27 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 11;
+const int kSchemaVersion = 12;
 
 final List<Migration> kMigrations = [
-  // v11: tombstone column for sync (spec §4.3). photo_file arrives with Phase 1.
+  // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
+  // (bare filename, see v12) rather than a separate photo_file column.
   Migration(11, (db) async {
     for (final table in ['medications', 'treatments', 'prescriptions', 'dose_logs']) {
       await db.execute('ALTER TABLE $table ADD COLUMN deleted_at TEXT');
+    }
+  }),
+  // v12: photos are referenced by bare filename (spec §4.3 / audit F10).
+  Migration(12, (db) async {
+    final rows = await db.query(
+      'medications',
+      columns: ['id', 'image_path'],
+      where: "image_path IS NOT NULL AND image_path LIKE '%/%'",
+    );
+    for (final row in rows) {
+      final path = row['image_path'] as String;
+      final name = path.substring(path.lastIndexOf('/') + 1);
+      await db.update('medications', {'image_path': name}, where: 'id = ?', whereArgs: [row['id']]);
     }
   }),
 ];

@@ -50,13 +50,44 @@ void main() {
     final upgraded = await AppDatabase.instance.database;
 
     expect(await columnsOf(upgraded, 'medications'), contains('deleted_at'));
-    expect(await AppDatabase.instance.appliedMigrations(), [11]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12]);
 
     // Reopen: nothing re-applied, no duplicate rows.
     await AppDatabase.instance.reset();
     final again = await AppDatabase.instance.database;
-    expect(await AppDatabase.instance.appliedMigrations(), [11]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12]);
     await again.close();
+    await dir.delete(recursive: true);
+  });
+
+  test('migration 12 backfills absolute image_path to a bare filename', () async {
+    final dir = await Directory.systemTemp.createTemp('medora_mig12_');
+    final path = p.join(dir.path, 'medora.db');
+    final legacy = await databaseFactory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 11,
+        onCreate: (db, _) async {
+          await AppDatabase.createBaseSchema(db);
+          await kMigrations.first.run(db); // v11
+        },
+      ),
+    );
+    await legacy.insert('medications', {
+      'id': 'm1', 'name': 'Old', 'quantity': 1,
+      'image_path': '/data/user/0/com.medora.medora/app_flutter/medication_photos/med_abc.jpg',
+    });
+    await legacy.insert('medications', {'id': 'm2', 'name': 'Bare', 'quantity': 1, 'image_path': 'med_def.jpg'});
+    await legacy.insert('medications', {'id': 'm3', 'name': 'None', 'quantity': 1});
+    await legacy.close();
+
+    AppDatabase.debugPathOverride = path;
+    await AppDatabase.instance.reset();
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query('medications', columns: ['id', 'image_path'], orderBy: 'id');
+    expect(rows.map((r) => r['image_path']).toList(), ['med_abc.jpg', 'med_def.jpg', null]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12]);
+    await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
   });
 

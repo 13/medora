@@ -27,6 +27,7 @@ import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
@@ -149,6 +150,8 @@ final reminderServiceProvider = Provider<ReminderService>(
 final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
 );
+
+final photoStorageProvider = Provider<PhotoStorage>((ref) => PhotoStorage.appDocuments());
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(
