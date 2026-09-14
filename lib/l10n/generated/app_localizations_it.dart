@@ -381,6 +381,24 @@ class AppLocalizationsIt extends AppLocalizations {
   String get durationDaysLabel => 'Durata (giorni)';
 
   @override
+  String doseTimesPreview(String times) {
+    return 'Dosi alle $times';
+  }
+
+  @override
+  String get changeMedicationConfirm =>
+      'Cambiare il farmaco rigenera le dosi in sospeso. Continuare?';
+
+  @override
+  String get intervalRange => 'L\'intervallo deve essere tra 1 e 48 ore';
+
+  @override
+  String get durationRange => 'La durata deve essere tra 1 e 365 giorni';
+
+  @override
+  String get selectAtLeastOneTime => 'Seleziona almeno un orario';
+
+  @override
   String get todaysDosesTitle => 'Dosi di oggi';
 
   @override

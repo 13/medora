@@ -192,6 +192,12 @@
   "dosageHint": "e.g., 400mg",
   "intervalHoursLabel": "Interval (hours)",
   "durationDaysLabel": "Duration (days)",
+  "doseTimesPreview": "Doses at {times}",
+  "@doseTimesPreview": { "placeholders": { "times": { "type": "String" } } },
+  "changeMedicationConfirm": "Changing the medication regenerates pending doses. Continue?",
+  "intervalRange": "Interval must be between 1 and 48 hours",
+  "durationRange": "Duration must be between 1 and 365 days",
+  "selectAtLeastOneTime": "Select at least one time",
 
   "todaysDosesTitle": "Today's Doses",
   "noDosesScheduledToday": "No doses scheduled for today",

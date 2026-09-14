@@ -772,6 +772,36 @@ abstract class AppLocalizations {
   /// **'Duration (days)'**
   String get durationDaysLabel;
 
+  /// No description provided for @doseTimesPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Doses at {times}'**
+  String doseTimesPreview(String times);
+
+  /// No description provided for @changeMedicationConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing the medication regenerates pending doses. Continue?'**
+  String get changeMedicationConfirm;
+
+  /// No description provided for @intervalRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Interval must be between 1 and 48 hours'**
+  String get intervalRange;
+
+  /// No description provided for @durationRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration must be between 1 and 365 days'**
+  String get durationRange;
+
+  /// No description provided for @selectAtLeastOneTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one time'**
+  String get selectAtLeastOneTime;
+
   /// No description provided for @todaysDosesTitle.
   ///
   /// In en, this message translates to:
