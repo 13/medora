@@ -30,23 +30,6 @@ class DoseLogLocalDatasource {
     LEFT JOIN medications m ON p.medication_id = m.id
   ''';
 
-  /// Shared JOIN query filtered to only active treatments + non-archived medications.
-  static const _activeJoinQuery = '''
-    SELECT d.*,
-           m.name AS medication_name,
-           t.patient_tags AS patient_tags,
-           m.quantity_unit AS medication_unit,
-           p.dosage AS dosage,
-           p.dosage_amount AS dosage_amount,
-           p.dosage_unit AS dosage_unit,
-           p.notes AS prescription_notes,
-           t.name AS treatment_name
-    FROM dose_logs d
-    LEFT JOIN prescriptions p ON d.prescription_id = p.id
-    LEFT JOIN treatments t ON p.treatment_id = t.id
-    LEFT JOIN medications m ON p.medication_id = m.id
-  ''';
-
   Future<List<DoseLogModel>> getDoseLogsByPrescription(
       String prescriptionId) async {
     final db = await _db;
@@ -55,6 +38,14 @@ class DoseLogLocalDatasource {
       [prescriptionId, SyncStatus.pendingDelete],
     );
     return rows.map(_fromRow).toList();
+  }
+
+  /// One dose log with its joined display fields, or null.
+  Future<DoseLogModel?> getDoseLogById(String id) async {
+    final db = await _db;
+    final rows = await db.rawQuery('$_joinQuery WHERE d.id = ? LIMIT 1', [id]);
+    if (rows.isEmpty) return null;
+    return _fromRow(rows.first);
   }
 
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
@@ -66,7 +57,7 @@ class DoseLogLocalDatasource {
     // treatment/prescription/medication status — they are historical facts.
     // Only filter PENDING doses to active prescriptions/treatments/medications.
     final rows = await db.rawQuery(
-      '''$_activeJoinQuery
+      '''$_joinQuery
         WHERE d.scheduled_time >= ? AND d.scheduled_time < ?
         AND d.sync_status != ?
         AND (
@@ -84,17 +75,7 @@ class DoseLogLocalDatasource {
         SyncStatus.pendingDelete,
       ],
     );
-    // Deduplicate by dose log ID to prevent showing the same dose multiple times
-    final seen = <String>{};
-    final unique = <Map<String, dynamic>>[];
-    for (final row in rows) {
-      final id = row['id'] as String;
-      if (!seen.contains(id)) {
-        seen.add(id);
-        unique.add(row);
-      }
-    }
-    return unique.map(_fromRow).toList();
+    return _dedupeById(rows).map(_fromRow).toList();
   }
 
   Future<List<DoseLogModel>> getDoseLogsByDateRange(
@@ -105,6 +86,40 @@ class DoseLogLocalDatasource {
       [start.toIso8601String(), end.toIso8601String(), SyncStatus.pendingDelete],
     );
     return rows.map(_fromRow).toList();
+  }
+
+  /// Pending doses with scheduled_time in [start, end), for active
+  /// prescriptions/treatments and non-archived medications, earliest first.
+  Future<List<DoseLogModel>> getPendingBetween(DateTime start, DateTime end) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      '''$_joinQuery
+        WHERE d.status = 'pending'
+        AND d.scheduled_time >= ? AND d.scheduled_time < ?
+        AND d.sync_status != ?
+        AND (p.is_active IS NULL OR p.is_active = 1)
+        AND (t.id IS NULL OR t.is_active = 1)
+        AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
+        ORDER BY d.scheduled_time ASC''',
+      [start.toIso8601String(), end.toIso8601String(), SyncStatus.pendingDelete],
+    );
+    return _dedupeById(rows).map(_fromRow).toList();
+  }
+
+  /// Deduplicate rows by dose log ID to prevent showing/scheduling the same
+  /// dose multiple times (a LEFT JOIN can fan out a row when joined data is
+  /// duplicated upstream).
+  List<Map<String, dynamic>> _dedupeById(List<Map<String, dynamic>> rows) {
+    final seen = <String>{};
+    final unique = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      final id = row['id'] as String;
+      if (!seen.contains(id)) {
+        seen.add(id);
+        unique.add(row);
+      }
+    }
+    return unique;
   }
 
   Future<void> upsert(DoseLogModel model, {required String syncStatus}) async {
@@ -164,18 +179,27 @@ class DoseLogLocalDatasource {
     });
   }
 
-  Future<void> updateStatus(String id, String status,
-      {DateTime? takenTime, required String syncStatus}) async {
+  /// Change a dose's status. Pass [clearTakenTime] to null out `taken_time`
+  /// (undo). Always writes `updated_at` so last-write-wins sync can compare.
+  Future<void> updateStatus(
+    String id,
+    String status, {
+    DateTime? takenTime,
+    bool clearTakenTime = false,
+    required String syncStatus,
+  }) async {
     final db = await _db;
     final updates = <String, dynamic>{
       'status': status,
       'sync_status': syncStatus,
+      'updated_at': DateTime.now().toIso8601String(),
     };
-    if (takenTime != null) {
+    if (clearTakenTime) {
+      updates['taken_time'] = null;
+    } else if (takenTime != null) {
       updates['taken_time'] = takenTime.toIso8601String();
     }
-    await db
-        .update('dose_logs', updates, where: 'id = ?', whereArgs: [id]);
+    await db.update('dose_logs', updates, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
@@ -211,6 +235,30 @@ class DoseLogLocalDatasource {
     );
   }
 
+  /// Mark pending doses scheduled before [cutoff] as missed. Returns the
+  /// count. Scoped to doses whose prescription is active, whose treatment is
+  /// active (or absent), and whose medication is not archived (or absent) —
+  /// the same predicates [getPendingBetween] uses.
+  Future<int> markOverduePendingAsMissed(DateTime cutoff) async {
+    final db = await _db;
+    return db.rawUpdate(
+      '''UPDATE dose_logs
+         SET status = 'missed', sync_status = ?, updated_at = ?
+         WHERE status = 'pending'
+           AND scheduled_time < ?
+           AND sync_status != ?
+           AND prescription_id IN (
+             SELECT p.id FROM prescriptions p
+             LEFT JOIN treatments t ON p.treatment_id = t.id
+             LEFT JOIN medications m ON p.medication_id = m.id
+             WHERE p.is_active = 1
+               AND (t.id IS NULL OR t.is_active = 1)
+               AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
+           )''',
+      [SyncStatus.pendingUpdate, DateTime.now().toIso8601String(), cutoff.toIso8601String(), SyncStatus.pendingDelete],
+    );
+  }
+
   DoseLogModel _fromRow(Map<String, dynamic> row) {
     return DoseLogModel(
       id: row['id'] as String,
@@ -224,6 +272,9 @@ class DoseLogLocalDatasource {
       notes: row['notes'] as String?,
       createdAt: row['created_at'] != null
           ? DateTime.tryParse(row['created_at'] as String)
+          : null,
+      updatedAt: row['updated_at'] != null
+          ? DateTime.tryParse(row['updated_at'] as String)
           : null,
       medicationName: row['medication_name'] as String?,
       dosage: row['dosage'] as String?,
@@ -246,6 +297,8 @@ class DoseLogLocalDatasource {
       'notes': m.notes,
       'created_at':
           m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'updated_at':
+          m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'sync_status': syncStatus,
     };
   }

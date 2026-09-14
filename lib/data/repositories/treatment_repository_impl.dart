@@ -54,7 +54,10 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   @override
   Future<Result<Treatment>> addTreatment(Treatment treatment) async {
     try {
-      final model = TreatmentModel.fromDomain(treatment);
+      final model = TreatmentModel.fromDomain(treatment.copyWith(
+        updatedAt: DateTime.now(),
+        createdAt: treatment.createdAt ?? DateTime.now(),
+      ));
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
       _syncInBackground((r) => r.addTreatment(model), model.id);
       return Result.success(treatment);
@@ -66,7 +69,8 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   @override
   Future<Result<Treatment>> updateTreatment(Treatment treatment) async {
     try {
-      final model = TreatmentModel.fromDomain(treatment);
+      final model = TreatmentModel.fromDomain(
+          treatment.copyWith(updatedAt: DateTime.now()));
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground((r) => r.updateTreatment(model), model.id);
       return Result.success(treatment);
@@ -105,6 +109,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
         isActive: false,
         notes: existing.notes,
         createdAt: existing.createdAt,
+        updatedAt: DateTime.now(),
       );
       await localDatasource.upsert(ended, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground((r) => r.endTreatment(id), id);

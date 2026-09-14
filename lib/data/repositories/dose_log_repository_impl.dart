@@ -11,7 +11,6 @@ import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/services/connectivity_service.dart';
-import 'package:medora/services/reminder_service.dart';
 import 'package:uuid/uuid.dart';
 
 class DoseLogRepositoryImpl implements DoseLogRepository {
@@ -61,6 +60,25 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   @override
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end) async {
+    try {
+      final models = await localDatasource.getPendingBetween(start, end);
+      return Result.success(models.map((m) => m.toDomain()).toList());
+    } catch (e, st) {
+      return Result.failure('Failed to load pending doses: $e', st);
+    }
+  }
+
+  @override
+  Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
+    try {
+      return Result.success(await localDatasource.markOverduePendingAsMissed(cutoff));
+    } catch (e, st) {
+      return Result.failure('Failed to mark overdue doses: $e', st);
+    }
+  }
+
+  @override
   Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) async {
     try {
       final model = DoseLogModel.fromDomain(doseLog);
@@ -73,94 +91,58 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   @override
-  Future<Result<DoseLog>> markDoseTaken(String id) async {
+  Future<Result<DoseLog>> getDoseLogById(String id) async {
     try {
-      final now = DateTime.now();
-      await localDatasource.updateStatus(id, 'taken',
-          takenTime: now, syncStatus: SyncStatus.pendingUpdate);
+      final model = await localDatasource.getDoseLogById(id);
+      if (model == null) return const Result.failure('Dose log not found');
+      return Result.success(model.toDomain());
+    } catch (e, st) {
+      return Result.failure('Failed to load dose log: $e', st);
+    }
+  }
+
+  /// Shared status mutation: update locally, sync in background, return the stored row.
+  Future<Result<DoseLog>> _changeStatus(
+    String id,
+    String status, {
+    DateTime? takenTime,
+    bool clearTakenTime = false,
+  }) async {
+    try {
+      final existing = await localDatasource.getDoseLogById(id);
+      if (existing == null) return const Result.failure('Dose log not found');
+
+      await localDatasource.updateStatus(
+        id,
+        status,
+        takenTime: takenTime,
+        clearTakenTime: clearTakenTime,
+        syncStatus: SyncStatus.pendingUpdate,
+      );
       _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(id, 'taken', takenTime: now),
+        (r) => r.updateDoseLogStatus(id, status, takenTime: clearTakenTime ? null : takenTime),
         id,
       );
-      return Result.success(DoseLog(
-        id: id,
-        prescriptionId: '',
-        scheduledTime: now,
-        takenTime: now,
-        status: DoseStatus.taken,
-        updatedAt: now,
-      ));
+      final updated = await localDatasource.getDoseLogById(id);
+      return Result.success(updated!.toDomain());
     } catch (e, st) {
-      return Result.failure('Failed to mark dose as taken: $e', st);
+      return Result.failure('Failed to mark dose as $status: $e', st);
     }
   }
 
   @override
-  Future<Result<DoseLog>> markDoseSkipped(String id) async {
-    try {
-      final now = DateTime.now();
-      await localDatasource.updateStatus(id, 'skipped',
-          syncStatus: SyncStatus.pendingUpdate);
-      _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(id, 'skipped'),
-        id,
-      );
-      return Result.success(DoseLog(
-        id: id,
-        prescriptionId: '',
-        scheduledTime: now,
-        status: DoseStatus.skipped,
-        updatedAt: now,
-      ));
-    } catch (e, st) {
-      return Result.failure('Failed to mark dose as skipped: $e', st);
-    }
-  }
+  Future<Result<DoseLog>> markDoseTaken(String id) =>
+      _changeStatus(id, 'taken', takenTime: DateTime.now());
 
   @override
-  Future<Result<DoseLog>> markDoseMissed(String id) async {
-    try {
-      final now = DateTime.now();
-      await localDatasource.updateStatus(id, 'missed',
-          syncStatus: SyncStatus.pendingUpdate);
-      _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(id, 'missed'),
-        id,
-      );
-      return Result.success(DoseLog(
-        id: id,
-        prescriptionId: '',
-        scheduledTime: now,
-        status: DoseStatus.missed,
-        updatedAt: now,
-      ));
-    } catch (e, st) {
-      return Result.failure('Failed to mark dose as missed: $e', st);
-    }
-  }
+  Future<Result<DoseLog>> markDoseSkipped(String id) => _changeStatus(id, 'skipped');
 
   @override
-  Future<Result<DoseLog>> markDosePending(String id) async {
-    try {
-      final now = DateTime.now();
-      // Manual reset: status to pending, takenTime to NULL
-      await localDatasource.updateStatus(id, 'pending',
-          takenTime: null, syncStatus: SyncStatus.pendingUpdate);
-      _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(id, 'pending', takenTime: null),
-        id,
-      );
-      return Result.success(DoseLog(
-        id: id,
-        prescriptionId: '',
-        scheduledTime: now,
-        status: DoseStatus.pending,
-        updatedAt: now,
-      ));
-    } catch (e, st) {
-      return Result.failure('Failed to reset dose to pending: $e', st);
-    }
-  }
+  Future<Result<DoseLog>> markDoseMissed(String id) => _changeStatus(id, 'missed');
+
+  @override
+  Future<Result<DoseLog>> markDosePending(String id) =>
+      _changeStatus(id, 'pending', clearTakenTime: true);
 
   @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
@@ -236,22 +218,11 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
       String prescriptionId) async {
     try {
-      // First, find all pending dose logs for this prescription to cancel their reminders
-      final existingLogsResult = await getDoseLogsByPrescription(prescriptionId);
-      if (existingLogsResult.isSuccess) {
-        final pendingLogs = existingLogsResult.dataOrNull
-                ?.where((l) => l.status == DoseStatus.pending) ??
-            [];
-        for (final log in pendingLogs) {
-          await ReminderService.instance.cancelRemindersForDose(log.id);
-        }
-      }
-
       // Delete only pending (not yet taken/skipped/missed) dose logs
       await localDatasource.deletePendingByPrescription(prescriptionId);
 
       // Generate fresh dose logs
-      return generateDoseLogsForPrescription(prescriptionId);
+      return await generateDoseLogsForPrescription(prescriptionId);
     } catch (e, st) {
       debugPrint('❌ regenerateDoseLogs FAILED: $e\n$st');
       return Result.failure('Failed to regenerate dose logs: $e', st);

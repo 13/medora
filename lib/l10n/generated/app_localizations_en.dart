@@ -630,6 +630,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String wipeFailed(String error) {
+    return 'Could not delete local data: $error';
+  }
+
+  @override
   String get familySharingTitle => 'Family Sharing';
 
   @override
@@ -1182,10 +1187,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get turnOffCloudSync => 'Turn off cloud sync';
 
   @override
-  String get turnOffCloudSyncConfirm =>
-      'You will be signed out. Your data stays on this device.';
-
-  @override
   String get localOnlyMode => 'Local only';
 
   @override
@@ -1210,4 +1211,31 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get featureUnavailableOnPlatform =>
       'This feature is not available on this device.';
+
+  @override
+  String get missedGracePeriod => 'Mark as missed after';
+
+  @override
+  String get missedGracePeriodDesc =>
+      'Pending doses older than this are marked missed when the app opens';
+
+  @override
+  String minutesShort(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String hoursShort(int hours) {
+    return '$hours h';
+  }
+
+  @override
+  String get keepLocalData => 'Keep my data on this device';
+
+  @override
+  String get wipeLocalData => 'Delete my data from this device';
+
+  @override
+  String get turnOffCloudSyncChoice =>
+      'You will be signed out. What should happen to the data stored on this device?';
 }

@@ -3,8 +3,11 @@
 /// Central place for all Riverpod providers that wire up the app.
 library;
 
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
@@ -26,10 +29,17 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/dose_maintenance_service.dart';
+import 'package:medora/services/local_data_wiper.dart';
+import 'package:medora/services/photo_storage.dart';
+import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -142,13 +152,33 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
 // Service Providers
 // ============================================================
 
-final reminderServiceProvider = Provider<ReminderService>(
-  (ref) => ReminderService.instance,
-);
+final reminderPortProvider = Provider<ReminderPort>((ref) => ReminderService.instance);
+
+final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
+  return ReminderScheduler(
+    port: ref.watch(reminderPortProvider),
+    doses: ref.watch(doseLogRepositoryProvider),
+    remindersEnabled: () => ref.read(remindersEnabledProvider),
+  );
+});
 
 final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
 );
+
+final photoStorageProvider = Provider<PhotoStorage>((ref) => PhotoStorage.appDocuments());
+
+/// Resolved photo file for a stored image name (null when absent/missing).
+final resolvedPhotoProvider = FutureProvider.family<File?, String?>(
+  (ref, stored) => ref.watch(photoStorageProvider).resolve(stored),
+);
+
+final localDataWiperProvider = Provider<LocalDataWiper>((ref) => LocalDataWiper(
+      database: AppDatabase.instance,
+      photos: ref.watch(photoStorageProvider),
+      reminders: ref.watch(reminderPortProvider),
+      prefs: ref.watch(sharedPreferencesProvider),
+    ));
 
 final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(
@@ -191,4 +221,36 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   ref.onDispose(() => subscription.cancel());
 
   return syncService.stateStream;
+});
+
+// ============================================================
+// Startup / maintenance
+// ============================================================
+
+final doseMaintenanceProvider = Provider<DoseMaintenanceService>(
+  (ref) => DoseMaintenanceService(doses: ref.watch(doseLogRepositoryProvider)),
+);
+
+/// Delay before the startup sync; tests override this with Duration.zero.
+final syncStartupDelayProvider = Provider<Duration>((_) => const Duration(seconds: 2));
+
+final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
+  return AppStartupTasks(
+    maintenance: () async {
+      final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
+      final changed = await ref.read(doseMaintenanceProvider).markOverdueAsMissed(grace: grace);
+      if (changed > 0) {
+        await ref.read(todaysDoseLogsProvider.notifier).refresh();
+        ref.read(doseDataVersionProvider.notifier).bump();
+      }
+    },
+    reminders: () => ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
+    sync: () async {
+      if (ref.read(appModeProvider) == AppMode.cloud) {
+        await ref.read(syncServiceProvider).syncAll();
+      }
+    },
+    syncDelay: ref.watch(syncStartupDelayProvider),
+    minSyncInterval: const Duration(minutes: 5),
+  );
 });

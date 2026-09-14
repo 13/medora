@@ -1,12 +1,13 @@
 /// Medora - Dose Log Providers
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
-import 'package:medora/services/reminder_service.dart';
 
 /// Counter that is incremented whenever dose statuses change.
 /// Providers that depend on this (e.g. dose history) will auto-refetch.
@@ -29,21 +30,13 @@ final todaysDoseLogsProvider =
 );
 
 class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
-  /// Track whether the one-time startup check has already run.
-  static bool _startupCheckDone = false;
-
   @override
   Future<List<DoseLog>> build() async {
-    // One-time startup check: ensure dose logs exist for all active
-    // prescriptions. Only runs once per app session to avoid
-    // interfering with already-taken doses on subsequent invalidations.
-    if (!_startupCheckDone) {
-      _startupCheckDone = true;
-      // We don't await this to keep app startup snappy
-      _ensureDoseLogsExistInBackground();
-    }
+    // We don't await this to keep app startup snappy. It's idempotent —
+    // it only generates dose logs that are missing.
+    unawaited(_ensureDoseLogsExistInBackground());
     final doses = await _fetchTodaysDoses();
-    _scheduleUpcomingReminders(doses);
+    unawaited(ref.read(reminderSchedulerProvider).reconcile());
     return doses;
   }
 
@@ -54,28 +47,6 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
       success: (data) => data,
       failure: (msg) => throw Exception(msg),
     );
-  }
-
-  /// Schedule reminders for all pending doses.
-  void _scheduleUpcomingReminders(List<DoseLog> doses) {
-    if (kIsWeb) return;
-
-    final pending = <DoseLog>[];
-    for (final d in doses) {
-      if (d.status == DoseStatus.pending) pending.add(d);
-    }
-
-    // Schedule all reminders in parallel without blocking the UI
-    Future.microtask(() async {
-      final futures = pending.map((dose) =>
-        ReminderService.instance.scheduleRemindersForDose(
-          dose: dose,
-          medicationName: dose.medicationName ?? 'Medication',
-          cancelFirst: false,
-        )
-      );
-      await Future.wait(futures);
-    });
   }
 
   /// Ensure dose logs exist for all active prescriptions.
@@ -135,9 +106,8 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
         );
 
         // Refresh the state after generation
-        if (_startupCheckDone) {
-          state = await AsyncValue.guard(_fetchTodaysDoses);
-        }
+        state = await AsyncValue.guard(_fetchTodaysDoses);
+        unawaited(ref.read(reminderSchedulerProvider).reconcile());
       }
     } catch (e) {
       debugPrint('⚠ _ensureDoseLogsExist error: $e');
@@ -146,19 +116,12 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
   Future<void> refresh() async {
     state = await AsyncValue.guard(_fetchTodaysDoses);
-    if (state.hasValue) {
-      _scheduleUpcomingReminders(state.value!);
-    }
+    unawaited(ref.read(reminderSchedulerProvider).reconcile());
   }
 
   Future<void> markTaken(String id) async {
     // Optimistic update: immediately reflect in UI
     _updateDoseStatus(id, DoseStatus.taken, takenTime: DateTime.now());
-
-    // Cancel pending reminders for this dose
-    if (!kIsWeb) {
-      await ReminderService.instance.cancelRemindersForDose(id);
-    }
 
     final repo = ref.read(doseLogRepositoryProvider);
     await repo.markDoseTaken(id);
@@ -176,41 +139,22 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
 
     final repo = ref.read(doseLogRepositoryProvider);
     await repo.markDosePending(id);
-    
+
     await _autoDiminish(id, reverse: true);
 
     await _refreshAndInvalidateHistory();
-    
-    // Reschedule reminders for this dose as it's now pending again
-    if (!kIsWeb && state.hasValue) {
-      final dose = state.value!.where((d) => d.id == id).firstOrNull;
-      if (dose != null) {
-        await ReminderService.instance.scheduleRemindersForDose(
-          dose: dose,
-          medicationName: dose.medicationName ?? 'Medication',
-        );
-      }
-    }
   }
 
   Future<void> markSkipped(String id) async {
     _updateDoseStatus(id, DoseStatus.skipped);
 
-    if (!kIsWeb) {
-      await ReminderService.instance.cancelRemindersForDose(id);
-    }
-
     final repo = ref.read(doseLogRepositoryProvider);
-    await repo.markDoseSkipped(id); 
+    await repo.markDoseSkipped(id);
     await _refreshAndInvalidateHistory();
   }
 
   Future<void> markMissed(String id) async {
     _updateDoseStatus(id, DoseStatus.missed);
-
-    if (!kIsWeb) {
-      await ReminderService.instance.cancelRemindersForDose(id);
-    }
 
     final repo = ref.read(doseLogRepositoryProvider);
     await repo.markDoseMissed(id);
@@ -245,7 +189,7 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
   Future<void> _refreshAndInvalidateHistory() async {
     final doses = await _fetchTodaysDoses();
     state = AsyncData(doses);
-    _scheduleUpcomingReminders(doses);
+    unawaited(ref.read(reminderSchedulerProvider).reconcile());
     // Bump version to trigger dose history and other dependent providers
     ref.read(doseDataVersionProvider.notifier).bump();
   }

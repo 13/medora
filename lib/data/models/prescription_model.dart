@@ -155,7 +155,7 @@ class PrescriptionModel {
       'auto_diminish': autoDiminish ? 1 : 0,
       'notes': notes,
       'created_at': createdAt?.toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'schedule_type': scheduleType,
       'schedule_times':
           scheduleTimes != null ? jsonEncode(scheduleTimes) : null,

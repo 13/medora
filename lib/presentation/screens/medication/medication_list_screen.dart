@@ -62,7 +62,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
           if (m.isArchived) return false;
           final isLowStock = m.quantity <= m.minimumStockLevel;
           final isExpired = m.expiryDate?.isPast ?? false;
-          return isLowStock || isExpired;
+          return isLowStock || isExpired || m.isExpiringSoon();
         }).toList(),
       MedicationFilter.archived => filtered.where((m) => m.isArchived).toList(),
     };
@@ -125,7 +125,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: '${l10n.lowStock}/${l10n.expired}',
+                  label: '${l10n.lowStock} · ${l10n.expiringSoon}',
                   selected: _filter == MedicationFilter.needsAttention,
                   onTap: () => setState(() => _filter = MedicationFilter.needsAttention),
                 ),

@@ -212,6 +212,12 @@
   "exportAndShare": "Exportieren & Teilen",
   "noDataToExport": "Keine Daten zum Exportieren",
   "exportFailed": "Export fehlgeschlagen: {error}",
+  "wipeFailed": "Lokale Daten konnten nicht gelöscht werden: {error}",
+  "@wipeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
 
   "familySharingTitle": "Familienfreigabe",
   "loadingFamily": "Familie wird geladen...",
@@ -412,7 +418,6 @@
   "cloudSyncUnavailable": "Nicht verfügbar — dieser Build hat keine Cloud-Konfiguration",
   "turnOnCloudSync": "Cloud-Sync einschalten",
   "turnOffCloudSync": "Cloud-Sync ausschalten",
-  "turnOffCloudSyncConfirm": "Du wirst abgemeldet. Deine Daten bleiben auf diesem Gerät.",
   "localOnlyMode": "Nur lokal",
   "unlockMedora": "Medora entsperren",
   "cloudRequiredForFamily": "Familienfreigabe benötigt Cloud-Sync. Aktiviere ihn in den Einstellungen.",
@@ -420,5 +425,14 @@
   "passwordTooShort": "Das Passwort muss mindestens 6 Zeichen haben",
   "turnOn": "Einschalten",
   "turnOff": "Ausschalten",
-  "featureUnavailableOnPlatform": "Diese Funktion ist auf diesem Gerät nicht verfügbar."
+  "featureUnavailableOnPlatform": "Diese Funktion ist auf diesem Gerät nicht verfügbar.",
+  "missedGracePeriod": "Als verpasst markieren nach",
+  "missedGracePeriodDesc": "Ausstehende Dosen, die älter sind, werden beim Öffnen der App als verpasst markiert",
+  "minutesShort": "{minutes} Min.",
+  "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
+  "hoursShort": "{hours} Std.",
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } },
+  "keepLocalData": "Meine Daten auf diesem Gerät behalten",
+  "wipeLocalData": "Meine Daten von diesem Gerät löschen",
+  "turnOffCloudSyncChoice": "Du wirst abgemeldet. Was soll mit den auf diesem Gerät gespeicherten Daten passieren?"
 }

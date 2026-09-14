@@ -1252,6 +1252,12 @@ abstract class AppLocalizations {
   /// **'Export failed: {error}'**
   String exportFailed(String error);
 
+  /// No description provided for @wipeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not delete local data: {error}'**
+  String wipeFailed(String error);
+
   /// No description provided for @familySharingTitle.
   ///
   /// In en, this message translates to:
@@ -2290,12 +2296,6 @@ abstract class AppLocalizations {
   /// **'Turn off cloud sync'**
   String get turnOffCloudSync;
 
-  /// No description provided for @turnOffCloudSyncConfirm.
-  ///
-  /// In en, this message translates to:
-  /// **'You will be signed out. Your data stays on this device.'**
-  String get turnOffCloudSyncConfirm;
-
   /// No description provided for @localOnlyMode.
   ///
   /// In en, this message translates to:
@@ -2343,6 +2343,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This feature is not available on this device.'**
   String get featureUnavailableOnPlatform;
+
+  /// No description provided for @missedGracePeriod.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as missed after'**
+  String get missedGracePeriod;
+
+  /// No description provided for @missedGracePeriodDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending doses older than this are marked missed when the app opens'**
+  String get missedGracePeriodDesc;
+
+  /// No description provided for @minutesShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes} min'**
+  String minutesShort(int minutes);
+
+  /// No description provided for @hoursShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours} h'**
+  String hoursShort(int hours);
+
+  /// No description provided for @keepLocalData.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep my data on this device'**
+  String get keepLocalData;
+
+  /// No description provided for @wipeLocalData.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete my data from this device'**
+  String get wipeLocalData;
+
+  /// No description provided for @turnOffCloudSyncChoice.
+  ///
+  /// In en, this message translates to:
+  /// **'You will be signed out. What should happen to the data stored on this device?'**
+  String get turnOffCloudSyncChoice;
 }
 
 class _AppLocalizationsDelegate

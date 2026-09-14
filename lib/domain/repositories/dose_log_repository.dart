@@ -10,6 +10,9 @@ abstract class DoseLogRepository {
     String prescriptionId,
   );
 
+  /// One dose log by id.
+  Future<Result<DoseLog>> getDoseLogById(String id);
+
   /// Get all dose logs for today.
   Future<Result<List<DoseLog>>> getTodaysDoseLogs();
 
@@ -18,6 +21,12 @@ abstract class DoseLogRepository {
     DateTime start,
     DateTime end,
   );
+
+  /// Pending doses scheduled in [start, end), earliest first.
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end);
+
+  /// Mark pending doses scheduled before [cutoff] as missed; returns the count.
+  Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff);
 
   /// Create a new dose log entry.
   Future<Result<DoseLog>> addDoseLog(DoseLog doseLog);

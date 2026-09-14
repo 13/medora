@@ -28,14 +28,13 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
     state = await AsyncValue.guard(_fetchMedications);
   }
 
   Future<void> addMedication(Medication medication) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.addMedication(medication);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
@@ -44,7 +43,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> updateMedication(Medication medication) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.updateMedication(medication);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
@@ -53,7 +52,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> deleteMedication(String id) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.deleteMedication(id);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
@@ -62,9 +61,9 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> updateQuantity(String id, int delta) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.updateQuantity(id, delta);
-    result.when(
-      success: (_) {
-        refresh();
+    await result.when(
+      success: (_) async {
+        await refresh();
         // Also refresh today's doses as they might show stock warnings
         ref.invalidate(todaysDoseLogsProvider);
       },
@@ -75,9 +74,9 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> archiveMedication(String id) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.archiveMedication(id);
-    result.when(
-      success: (_) {
-        refresh();
+    await result.when(
+      success: (_) async {
+        await refresh();
         ref.invalidate(archivedMedicationsProvider);
       },
       failure: (msg) => throw Exception(msg),
@@ -87,9 +86,9 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
   Future<void> unarchiveMedication(String id) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.unarchiveMedication(id);
-    result.when(
-      success: (_) {
-        refresh();
+    await result.when(
+      success: (_) async {
+        await refresh();
         ref.invalidate(archivedMedicationsProvider);
       },
       failure: (msg) => throw Exception(msg),
@@ -112,13 +111,9 @@ final archivedMedicationsProvider =
 final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
   // Watch the medication list to trigger updates
   final meds = await ref.watch(medicationListProvider.future);
-  final now = DateTime.now();
-  final threshold = now.add(const Duration(days: 30));
-  
-  return meds.where((m) => 
-    !m.isArchived && 
-    m.expiryDate != null && 
-    m.expiryDate!.isBefore(threshold)
+
+  return meds.where((m) =>
+    !m.isArchived && m.isExpiringSoon(days: 30) && !m.isExpired
   ).toList();
 });
 

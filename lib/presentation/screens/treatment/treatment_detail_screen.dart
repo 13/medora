@@ -1,6 +1,8 @@
 /// Medora - Treatment Detail Screen
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +16,6 @@ import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-import 'package:medora/services/reminder_service.dart';
 import 'package:uuid/uuid.dart';
 
 class TreatmentDetailScreen extends ConsumerStatefulWidget {
@@ -377,6 +378,8 @@ class _TreatmentDetailScreenState
                           ref.invalidate(
                               prescriptionsByTreatmentProvider(
                                   widget.treatmentId));
+                          ref.invalidate(todaysDoseLogsProvider);
+                          unawaited(ref.read(reminderSchedulerProvider).reconcile());
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -507,6 +510,8 @@ class _TreatmentDetailScreenState
                                     final repo = ref.read(prescriptionRepositoryProvider);
                                     await repo.deletePrescription(p.id);
                                     ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
+                                    ref.invalidate(todaysDoseLogsProvider);
+                                    unawaited(ref.read(reminderSchedulerProvider).reconcile());
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(content: Text(l10n.prescriptionDeleted)),
@@ -1097,32 +1102,6 @@ class _TreatmentDetailScreenState
                                   } catch (e) {
                                     debugPrint('⚠ Dose generation error: $e');
                                   }
-
-                                  // Schedule reminders (non-blocking)
-                                  try {
-                                    final medName = medications
-                                            .where((m) =>
-                                                m.id ==
-                                                selectedMedicationId)
-                                            .firstOrNull
-                                            ?.name ??
-                                        l10n.medication;
-
-                                    // Schedule reminders for all newly generated doses
-                                    final repo = ref.read(doseLogRepositoryProvider);
-                                    final doseLogs = await repo.getDoseLogsByPrescription(p.id);
-                                    doseLogs.when(
-                                      success: (doses) {
-                                        for (final dose in doses) {
-                                          ReminderService.instance.scheduleRemindersForDose(
-                                            dose: dose,
-                                            medicationName: medName,
-                                          );
-                                        }
-                                      },
-                                      failure: (_) {},
-                                    );
-                                  } catch (_) {}
                                 },
                                 failure: (msg) async {
                                   if (mounted) {
@@ -1144,6 +1123,7 @@ class _TreatmentDetailScreenState
                                   prescriptionsByTreatmentProvider(
                                       widget.treatmentId));
                               ref.invalidate(todaysDoseLogsProvider);
+                              unawaited(ref.read(reminderSchedulerProvider).reconcile());
                               ref.invalidate(activePrescriptionsProvider);
                             }
                           },

@@ -1,8 +1,6 @@
 /// Medora - Medication Detail Screen
 library;
 
-import 'dart:io';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -11,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class MedicationDetailScreen extends ConsumerWidget {
@@ -337,53 +336,63 @@ class MedicationDetailScreen extends ConsumerWidget {
               ],
 
               // Photo (at bottom)
-              if (!kIsWeb && med.imagePath != null && File(med.imagePath!).existsSync()) ...[
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => Dialog(
-                        backgroundColor: Colors.transparent,
-                        child: GestureDetector(
-                          onTap: () => Navigator.pop(ctx),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Image.file(
-                              File(med.imagePath!),
-                              fit: BoxFit.contain,
+              if (!kIsWeb)
+                ref.watch(resolvedPhotoProvider(med.imagePath)).maybeWhen(
+                  data: (file) {
+                    if (file == null) return const SizedBox.shrink();
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        GestureDetector(
+                          onTap: () {
+                            showDialog(
+                              context: context,
+                              builder: (ctx) => Dialog(
+                                backgroundColor: Colors.transparent,
+                                child: GestureDetector(
+                                  onTap: () => Navigator.pop(ctx),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Image.file(
+                                      file,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                          child: Hero(
+                            tag: 'med_photo_${med.id}',
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.file(
+                                  file,
+                                  height: 200,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     );
                   },
-                  child: Hero(
-                    tag: 'med_photo_${med.id}',
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.file(
-                          File(med.imagePath!),
-                          height: 200,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                  ),
+                  orElse: () => const SizedBox.shrink(),
                 ),
-              ],
             ],
           ),
         );

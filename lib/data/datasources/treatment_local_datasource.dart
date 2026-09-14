@@ -122,7 +122,7 @@ class TreatmentLocalDatasource {
       'notes': m.notes,
       'created_at':
           m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'sync_status': syncStatus,
     };
   }

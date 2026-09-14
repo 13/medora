@@ -212,6 +212,12 @@
   "exportAndShare": "Esporta e condivi",
   "noDataToExport": "Nessun dato da esportare",
   "exportFailed": "Esportazione fallita: {error}",
+  "wipeFailed": "Impossibile eliminare i dati locali: {error}",
+  "@wipeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
 
   "familySharingTitle": "Condivisione familiare",
   "loadingFamily": "Caricamento famiglia...",
@@ -412,7 +418,6 @@
   "cloudSyncUnavailable": "Non disponibile — questa build non ha una configurazione cloud",
   "turnOnCloudSync": "Attiva sincronizzazione cloud",
   "turnOffCloudSync": "Disattiva sincronizzazione cloud",
-  "turnOffCloudSyncConfirm": "Verrai disconnesso. I tuoi dati restano su questo dispositivo.",
   "localOnlyMode": "Solo locale",
   "unlockMedora": "Sblocca Medora",
   "cloudRequiredForFamily": "La condivisione familiare richiede la sincronizzazione cloud. Attivala nelle Impostazioni.",
@@ -420,5 +425,14 @@
   "passwordTooShort": "La password deve avere almeno 6 caratteri",
   "turnOn": "Attiva",
   "turnOff": "Disattiva",
-  "featureUnavailableOnPlatform": "Questa funzione non è disponibile su questo dispositivo."
+  "featureUnavailableOnPlatform": "Questa funzione non è disponibile su questo dispositivo.",
+  "missedGracePeriod": "Segna come saltata dopo",
+  "missedGracePeriodDesc": "Le dosi in sospeso più vecchie vengono segnate come saltate all'apertura dell'app",
+  "minutesShort": "{minutes} min",
+  "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
+  "hoursShort": "{hours} h",
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } },
+  "keepLocalData": "Mantieni i miei dati su questo dispositivo",
+  "wipeLocalData": "Elimina i miei dati da questo dispositivo",
+  "turnOffCloudSyncChoice": "Verrai disconnesso. Cosa fare con i dati salvati su questo dispositivo?"
 }

@@ -56,7 +56,14 @@ class AppDatabase {
           await _createLedger(db);
           final applied = (await _applied(db)).toSet();
           for (final m in kMigrations) {
-            if (m.version <= oldVersion || applied.contains(m.version)) continue;
+            if (applied.contains(m.version)) continue;
+            if (m.version <= oldVersion) {
+              // Schema already reflects this migration (pre-dates the
+              // ledger, or the ledger was created fresh on this upgrade);
+              // backfill the record without re-running it.
+              await _record(db, m.version);
+              continue;
+            }
             await m.run(db);
             await _record(db, m.version);
           }

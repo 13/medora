@@ -300,6 +300,12 @@
       "error": { "type": "String" }
     }
   },
+  "wipeFailed": "Could not delete local data: {error}",
+  "@wipeFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
 
   "familySharingTitle": "Family Sharing",
   "loadingFamily": "Loading family...",
@@ -537,7 +543,6 @@
   "cloudSyncUnavailable": "Unavailable — this build has no cloud configuration",
   "turnOnCloudSync": "Turn on cloud sync",
   "turnOffCloudSync": "Turn off cloud sync",
-  "turnOffCloudSyncConfirm": "You will be signed out. Your data stays on this device.",
   "localOnlyMode": "Local only",
   "unlockMedora": "Unlock Medora",
   "cloudRequiredForFamily": "Family sharing needs cloud sync. Turn it on in Settings.",
@@ -545,5 +550,14 @@
   "passwordTooShort": "Password must be at least 6 characters",
   "turnOn": "Turn on",
   "turnOff": "Turn off",
-  "featureUnavailableOnPlatform": "This feature is not available on this device."
+  "featureUnavailableOnPlatform": "This feature is not available on this device.",
+  "missedGracePeriod": "Mark as missed after",
+  "missedGracePeriodDesc": "Pending doses older than this are marked missed when the app opens",
+  "minutesShort": "{minutes} min",
+  "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
+  "hoursShort": "{hours} h",
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } },
+  "keepLocalData": "Keep my data on this device",
+  "wipeLocalData": "Delete my data from this device",
+  "turnOffCloudSyncChoice": "You will be signed out. What should happen to the data stored on this device?"
 }

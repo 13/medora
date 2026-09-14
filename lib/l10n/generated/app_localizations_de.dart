@@ -640,6 +640,11 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String wipeFailed(String error) {
+    return 'Lokale Daten konnten nicht gelöscht werden: $error';
+  }
+
+  @override
   String get familySharingTitle => 'Familienfreigabe';
 
   @override
@@ -1197,10 +1202,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get turnOffCloudSync => 'Cloud-Sync ausschalten';
 
   @override
-  String get turnOffCloudSyncConfirm =>
-      'Du wirst abgemeldet. Deine Daten bleiben auf diesem Gerät.';
-
-  @override
   String get localOnlyMode => 'Nur lokal';
 
   @override
@@ -1225,4 +1226,31 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get featureUnavailableOnPlatform =>
       'Diese Funktion ist auf diesem Gerät nicht verfügbar.';
+
+  @override
+  String get missedGracePeriod => 'Als verpasst markieren nach';
+
+  @override
+  String get missedGracePeriodDesc =>
+      'Ausstehende Dosen, die älter sind, werden beim Öffnen der App als verpasst markiert';
+
+  @override
+  String minutesShort(int minutes) {
+    return '$minutes Min.';
+  }
+
+  @override
+  String hoursShort(int hours) {
+    return '$hours Std.';
+  }
+
+  @override
+  String get keepLocalData => 'Meine Daten auf diesem Gerät behalten';
+
+  @override
+  String get wipeLocalData => 'Meine Daten von diesem Gerät löschen';
+
+  @override
+  String get turnOffCloudSyncChoice =>
+      'Du wirst abgemeldet. Was soll mit den auf diesem Gerät gespeicherten Daten passieren?';
 }
