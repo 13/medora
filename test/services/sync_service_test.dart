@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -20,7 +22,8 @@ import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
 class Harness {
-  Harness({DateTime? start}) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
+  Harness({DateTime? start, StreamController<bool>? online})
+      : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = FakeMedicationRemote(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
     prescriptions = FakePrescriptionRemote(clock.now);
@@ -39,9 +42,9 @@ class Harness {
       familyLocal: FamilyLocalDatasource(),
       familyRemote: family,
       cursors: cursors,
-      isOnline: () => online,
+      isOnline: () => this.online,
       currentUserId: () => userId,
-      onlineStream: const Stream<bool>.empty(),
+      onlineStream: online?.stream ?? const Stream<bool>.empty(),
       now: clock.now,
     );
   }
@@ -469,6 +472,35 @@ void main() {
       expect(h.family.members.rows['me'], isNull);
       expect(await localRow('families', 'f1'), isNull);
       expect(await localRow('family_members', 'me'), isNull);
+    });
+  });
+
+  group('auto-sync', () {
+    test('syncs once after an offline→online transition, not on repeated online events', () async {
+      final controller = StreamController<bool>.broadcast();
+      final h = Harness(online: controller);
+      h.meds.table.seed(const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson());
+      h.service.startAutoSync(debounce: Duration.zero);
+
+      controller.add(true); // already online → no transition
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(h.meds.table.sinceCalls, isEmpty);
+
+      h.online = false;
+      controller.add(false);
+      h.online = true;
+      controller.add(true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(h.meds.table.sinceCalls.length, 1);
+
+      h.service.stopAutoSync();
+      h.online = false;
+      controller.add(false);
+      h.online = true;
+      controller.add(true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(h.meds.table.sinceCalls.length, 1);
+      await controller.close();
     });
   });
 }

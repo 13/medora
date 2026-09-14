@@ -202,6 +202,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     familyRemote: ref.watch(familyDatasourceProvider),
     cursors: ref.watch(syncCursorStoreProvider),
   );
+  if (service.isAvailable) service.startAutoSync();
   ref.onDispose(service.dispose);
   return service;
 });

@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
+import 'package:medora/presentation/providers/sync_providers.dart';
 
 enum AppMode { localOnly, cloud }
 
@@ -37,6 +38,9 @@ class AppModeNotifier extends Notifier<AppMode> {
   }
 
   Future<void> set(AppMode mode) async {
+    if (mode == AppMode.cloud && state != AppMode.cloud) {
+      await ref.read(localUploadMarkerProvider).markAllForUpload();
+    }
     state = mode;
     await ref.read(sharedPreferencesProvider).setString(_kAppMode, mode.name);
   }
