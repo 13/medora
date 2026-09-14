@@ -120,7 +120,7 @@ CREATE POLICY "families_select" ON families
 
 DROP POLICY IF EXISTS "family_members_select" ON family_members;
 CREATE POLICY "family_members_select" ON family_members
-  FOR SELECT USING (user_id = auth.uid() OR is_family_owner(family_id));
+  FOR SELECT USING (user_id = auth.uid() OR is_family_member(family_id) OR is_family_owner(family_id));
 
 DROP POLICY IF EXISTS "family_members_insert" ON family_members;
 CREATE POLICY "family_members_insert" ON family_members

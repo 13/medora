@@ -177,21 +177,19 @@ void main() {
         reason: 'the family owner can read every member row');
     expect(await FamilyLocalDatasource().getFamilyById(familyId), isNotNull);
 
-    // B's device syncs: B reaches the family (via is_family_member) and their
-    // own membership row.
-    //
-    // B does NOT see A's row. `family_members_select` is
-    // `user_id = auth.uid() OR is_family_owner(family_id)`, so a non-owner
-    // member only ever reads themselves. That is the policy as it stands on
-    // both migrations; widening it to the whole roster is a deliberate
-    // product/security decision, not something this test should assume.
+    // B's device syncs: B reaches the family (via is_family_member) and can
+    // read the whole roster. `family_members_select` is
+    // `user_id = auth.uid() OR is_family_member(family_id) OR
+    // is_family_owner(family_id)`, so any member of the family - not only its
+    // owner - sees every membership row (the family screen lists members).
     final bDevice = await device(as: b.client, asUserId: b.userId);
     final rb = (await bDevice.syncAll())!;
     expect(rb.isClean, isTrue, reason: rb.failures.join('\n'));
     expect(await FamilyLocalDatasource().getFamilyById(familyId), isNotNull,
         reason: 'a plain member can read the family itself');
     final bMembers = await FamilyLocalDatasource().getMembers(familyId);
-    expect(bMembers.map((m) => m.userId), [b.userId]);
+    expect(bMembers.map((m) => m.userId), containsAll([userId, b.userId]),
+        reason: 'a plain member can read every member row in their family');
   },
       skip: configured
           ? false
