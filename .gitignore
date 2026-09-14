@@ -9,8 +9,6 @@ dart_defines.json
 .dart_tool/
 .packages
 build/
-*.g.dart
-*.freezed.dart
 
 # Miscellaneous
 *.class
