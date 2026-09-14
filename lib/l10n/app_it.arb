@@ -23,6 +23,9 @@
   "expiringSoon": "In scadenza",
   "lowStock": "Scorte basse",
   "activeTreatments": "Trattamenti attivi",
+  "statExpiring": "In scadenza",
+  "statLowStock": "Scorte basse",
+  "statTreatments": "Trattamenti",
   "allMedicationsWithinDate": "Tutti i farmaci sono in corso di validità",
   "allMedicationsWellStocked": "Tutti i farmaci sono ben forniti",
   "noActiveTreatments": "Nessun trattamento attivo",
@@ -134,6 +137,13 @@
   "skip": "Salta",
   "take": "Assumi",
   "loadingDoses": "Caricamento dosi...",
+
+  "nextDose": "Prossima dose",
+  "allDosesDone": "Tutte le dosi di oggi sono state prese",
+  "doseTaken": "Assunta",
+  "undo": "Annulla",
+  "takeAllDue": "Prendi tutte le dosi dovute",
+  "dosesDueNow": "{count} dosi dovute",
 
   "scanBarcodeTitle": "Scansiona codice AIC",
   "pointCameraAtBarcode": "Inquadra il codice AIC sulla confezione",

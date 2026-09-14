@@ -62,6 +62,15 @@ class AppLocalizationsDe extends AppLocalizations {
   String get activeTreatments => 'Aktive Behandlungen';
 
   @override
+  String get statExpiring => 'Läuft ab';
+
+  @override
+  String get statLowStock => 'Wenig Vorrat';
+
+  @override
+  String get statTreatments => 'Behandlungen';
+
+  @override
   String get allMedicationsWithinDate => 'Alle Medikamente sind haltbar';
 
   @override
@@ -403,6 +412,26 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get loadingDoses => 'Dosen werden geladen...';
+
+  @override
+  String get nextDose => 'Nächste Dosis';
+
+  @override
+  String get allDosesDone => 'Alle Dosen für heute erledigt';
+
+  @override
+  String get doseTaken => 'Eingenommen';
+
+  @override
+  String get undo => 'Rückgängig';
+
+  @override
+  String get takeAllDue => 'Alle fälligen einnehmen';
+
+  @override
+  String dosesDueNow(int count) {
+    return '$count Dosen fällig';
+  }
 
   @override
   String get scanBarcodeTitle => 'AIC-Code scannen';

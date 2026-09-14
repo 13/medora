@@ -30,6 +30,9 @@
   "expiringSoon": "Expiring Soon",
   "lowStock": "Low Stock",
   "activeTreatments": "Active Treatments",
+  "statExpiring": "Expiring",
+  "statLowStock": "Low stock",
+  "statTreatments": "Treatments",
   "allMedicationsWithinDate": "All medications are within date",
   "allMedicationsWellStocked": "All medications are well stocked",
   "noActiveTreatments": "No active treatments",
@@ -206,6 +209,18 @@
   "skip": "Skip",
   "take": "Take",
   "loadingDoses": "Loading doses...",
+
+  "nextDose": "Next dose",
+  "allDosesDone": "All doses done for today",
+  "doseTaken": "Taken",
+  "undo": "Undo",
+  "takeAllDue": "Take all due",
+  "dosesDueNow": "{count} doses due",
+  "@dosesDueNow": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
 
   "scanBarcodeTitle": "Scan AIC Code",
   "pointCameraAtBarcode": "Point camera at AIC code on package",

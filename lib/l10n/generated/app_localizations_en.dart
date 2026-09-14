@@ -62,6 +62,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activeTreatments => 'Active Treatments';
 
   @override
+  String get statExpiring => 'Expiring';
+
+  @override
+  String get statLowStock => 'Low stock';
+
+  @override
+  String get statTreatments => 'Treatments';
+
+  @override
   String get allMedicationsWithinDate => 'All medications are within date';
 
   @override
@@ -398,6 +407,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get loadingDoses => 'Loading doses...';
+
+  @override
+  String get nextDose => 'Next dose';
+
+  @override
+  String get allDosesDone => 'All doses done for today';
+
+  @override
+  String get doseTaken => 'Taken';
+
+  @override
+  String get undo => 'Undo';
+
+  @override
+  String get takeAllDue => 'Take all due';
+
+  @override
+  String dosesDueNow(int count) {
+    return '$count doses due';
+  }
 
   @override
   String get scanBarcodeTitle => 'Scan AIC Code';

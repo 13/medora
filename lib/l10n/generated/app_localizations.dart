@@ -202,6 +202,24 @@ abstract class AppLocalizations {
   /// **'Active Treatments'**
   String get activeTreatments;
 
+  /// No description provided for @statExpiring.
+  ///
+  /// In en, this message translates to:
+  /// **'Expiring'**
+  String get statExpiring;
+
+  /// No description provided for @statLowStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Low stock'**
+  String get statLowStock;
+
+  /// No description provided for @statTreatments.
+  ///
+  /// In en, this message translates to:
+  /// **'Treatments'**
+  String get statTreatments;
+
   /// No description provided for @allMedicationsWithinDate.
   ///
   /// In en, this message translates to:
@@ -813,6 +831,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Loading doses...'**
   String get loadingDoses;
+
+  /// No description provided for @nextDose.
+  ///
+  /// In en, this message translates to:
+  /// **'Next dose'**
+  String get nextDose;
+
+  /// No description provided for @allDosesDone.
+  ///
+  /// In en, this message translates to:
+  /// **'All doses done for today'**
+  String get allDosesDone;
+
+  /// No description provided for @doseTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Taken'**
+  String get doseTaken;
+
+  /// No description provided for @undo.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get undo;
+
+  /// No description provided for @takeAllDue.
+  ///
+  /// In en, this message translates to:
+  /// **'Take all due'**
+  String get takeAllDue;
+
+  /// No description provided for @dosesDueNow.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} doses due'**
+  String dosesDueNow(int count);
 
   /// No description provided for @scanBarcodeTitle.
   ///

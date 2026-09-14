@@ -64,9 +64,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Today's Doses Summary (on top) - always load immediately
-            const _TodaysDosesSummaryCard(),
+            // Now: the single next actionable dose (or a done/empty state).
+            const _NowCard(),
             const SizedBox(height: 16),
+
+            // At-a-glance counts, tappable to jump to the relevant tab.
+            const _StatTiles(),
+            const SizedBox(height: 16),
+
+            // Today's overall progress bar (only rendered when there are
+            // doses scheduled today).
+            const _TodayProgress(),
 
             // Active Treatments
             _SectionHeader(
@@ -97,42 +105,248 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with AutomaticKeepAlive
   }
 }
 
-class _TodaysDosesSummaryCard extends ConsumerWidget {
-  const _TodaysDosesSummaryCard();
+/// The single most relevant thing to do right now: take (or skip) the next
+/// due dose, or a confirmation that everything is handled.
+class _NowCard extends ConsumerStatefulWidget {
+  const _NowCard();
+
+  @override
+  ConsumerState<_NowCard> createState() => _NowCardState();
+}
+
+class _NowCardState extends ConsumerState<_NowCard> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final dosesAsync = ref.watch(todaysDoseLogsProvider);
+    final nextDose = ref.watch(nextDueDoseProvider);
+
+    return Card(
+      color: context.colors.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: AsyncValueView<List<DoseLog>>(
+          value: dosesAsync,
+          loading: SizedBox(
+            height: 72,
+            child: Center(
+              child: CircularProgressIndicator(color: context.colors.onPrimaryContainer),
+            ),
+          ),
+          data: (doses) {
+            if (nextDose != null) {
+              return _buildNextDose(context, l10n, nextDose);
+            }
+            if (doses.isNotEmpty) {
+              return _buildAllDone(context, l10n);
+            }
+            return _buildEmpty(context, l10n);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNextDose(BuildContext context, AppLocalizations l10n, DoseLog dose) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.nextDose,
+          style: context.text.labelMedium?.copyWith(
+            color: context.colors.onPrimaryContainer.withValues(alpha: 0.8),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                dose.medicationName ?? '',
+                style: context.text.headlineSmall?.copyWith(color: context.colors.onPrimaryContainer),
+              ),
+            ),
+            if (dose.isOverdue) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.medora.dangerContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  l10n.overdue,
+                  style: context.text.labelSmall?.copyWith(
+                    color: context.medora.onDangerContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${dose.displayDosage ?? ''} · ${dose.scheduledTime.timeFormatted}',
+          style: context.text.bodyMedium?.copyWith(
+            color: context.colors.onPrimaryContainer.withValues(alpha: 0.8),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _handleTake(context, l10n, dose.id),
+              icon: const Icon(Icons.check),
+              label: Text(l10n.take),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: () => ref.read(doseActionsProvider).skip(dose.id),
+              child: Text(l10n.skip),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAllDone(BuildContext context, AppLocalizations l10n) {
+    return Row(
+      children: [
+        Icon(Icons.check_circle, color: context.colors.onPrimaryContainer),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            l10n.allDosesDone,
+            style: context.text.titleMedium?.copyWith(color: context.colors.onPrimaryContainer),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmpty(BuildContext context, AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.noDosesScheduled,
+          style: context.text.titleMedium?.copyWith(color: context.colors.onPrimaryContainer),
+        ),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => context.push(AppRoutes.addTreatment),
+            child: Text(l10n.addTreatment),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleTake(BuildContext context, AppLocalizations l10n, String id) async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await ref.read(doseActionsProvider).take(id);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(l10n.doseTaken),
+          action: SnackBarAction(
+            label: l10n.undo,
+            onPressed: () => ref.read(doseActionsProvider).undoTake(id),
+          ),
+        ),
+      );
+    }
+  }
+}
+
+/// Row of three at-a-glance counts, each tapping into the relevant tab.
+class _StatTiles extends ConsumerWidget {
+  const _StatTiles();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dosesAsync = ref.watch(todaysDoseLogsProvider);
+    final l10n = AppLocalizations.of(context);
+    final expiring = ref.watch(expiringSoonProvider).value?.length ?? 0;
+    final lowStock = ref.watch(lowStockProvider).value?.length ?? 0;
+    final treatments = ref.watch(activeTreatmentsProvider).value?.length ?? 0;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              context.colors.primary,
-              Color.lerp(context.colors.primary, context.colors.surfaceTint, 0.25)!,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+    return Row(
+      children: [
+        _StatTile(
+          label: l10n.statExpiring,
+          value: expiring,
+          color: context.medora.warning,
+          onTap: () => MainShellScope.of(context)?.switchTab(1),
         ),
+        const SizedBox(width: 12),
+        _StatTile(
+          label: l10n.statLowStock,
+          value: lowStock,
+          color: context.medora.warning,
+          onTap: () => MainShellScope.of(context)?.switchTab(1),
+        ),
+        const SizedBox(width: 12),
+        _StatTile(
+          label: l10n.statTreatments,
+          value: treatments,
+          color: context.colors.primary,
+          onTap: () => MainShellScope.of(context)?.switchTab(2),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final numberColor = value == 0 ? context.colors.onSurfaceVariant : color;
+    return Expanded(
+      child: Card(
+        clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () {
-            MainShellScope.of(context)?.switchTab(3);
-          },
+          onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: AsyncValueView<List<DoseLog>>(
-              value: dosesAsync,
-              compact: true,
-              loading: SizedBox(
-                height: 60,
-                child: Center(
-                  child: CircularProgressIndicator(color: context.colors.onPrimary),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$value',
+                  style: context.text.headlineMedium?.copyWith(
+                    color: numberColor,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              data: (doses) => _DosesSummaryContent(doses: doses),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: context.text.labelMedium?.copyWith(color: context.colors.onSurfaceVariant),
+                ),
+              ],
             ),
           ),
         ),
@@ -141,52 +355,45 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
   }
 }
 
-class _DosesSummaryContent extends StatelessWidget {
-  const _DosesSummaryContent({required this.doses});
-
-  final List<DoseLog> doses;
+/// Thin progress bar summarizing today's doses, hidden when there are none.
+class _TodayProgress extends ConsumerWidget {
+  const _TodayProgress();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final total = doses.length;
-    final taken = doses.where((d) => d.status == DoseStatus.taken).length;
-    final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+    final dosesAsync = ref.watch(todaysDoseLogsProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l10n.todaysDosesTitle,
-          style: TextStyle(
-            color: context.colors.onPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
+    return dosesAsync.maybeWhen(
+      data: (doses) {
+        final total = doses.length;
+        if (total == 0) return const SizedBox.shrink();
+        final taken = doses.where((d) => d.status == DoseStatus.taken).length;
+        final pending = doses.where((d) => d.status == DoseStatus.pending).length;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: taken / total,
+                  minHeight: 4,
+                  backgroundColor: context.colors.surfaceContainerHighest,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                l10n.dosesProgress(taken, total, pending),
+                style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        if (total == 0)
-          Text(
-            l10n.noDosesScheduled,
-            style: TextStyle(color: context.colors.onPrimary.withValues(alpha: 0.7)),
-          )
-        else ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: total > 0 ? taken / total : 0,
-              backgroundColor: context.colors.onPrimary.withValues(alpha: 0.24),
-              valueColor: AlwaysStoppedAnimation<Color>(context.colors.onPrimary),
-              minHeight: 8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.dosesProgress(taken, total, pending),
-            style: TextStyle(color: context.colors.onPrimary.withValues(alpha: 0.7)),
-          ),
-        ],
-      ],
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }
