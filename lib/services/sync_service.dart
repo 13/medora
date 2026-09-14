@@ -1,8 +1,16 @@
 /// Medora - Sync Service
 ///
 /// Bidirectional sync between local SQLite and Supabase.
-/// Offline-first; last-write-wins by `updated_at` for locally pending rows;
-/// remote tombstones (`deleted_at`) always win and become local hard deletes.
+///
+/// Offline-first. A cycle pushes first, then pulls, and the push upserts
+/// unconditionally — so in practice the effective rule is **last pusher
+/// wins**: whichever device syncs last overwrites the remote row, regardless
+/// of which edit is newer. The `updated_at` comparison in
+/// [_localPendingIsNewer] is a last-write-wins tiebreak that only comes into
+/// play on the pull side, for rows whose push failed and which are therefore
+/// still pending locally.
+///
+/// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
 /// cycle.
 library;
@@ -54,6 +62,7 @@ class SyncService {
     String? Function()? currentUserId,
     Stream<bool>? onlineStream,
     DateTime Function()? now,
+    this.onFirstSuccessfulSync,
   })  : _cursors = cursors ?? SyncCursorStore.inMemory(),
         _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
         _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
@@ -70,6 +79,13 @@ class SyncService {
   final DoseLogRemoteDatasource? doseLogRemote;
   final FamilyLocalDatasource familyLocal;
   final FamilyRemoteDatasource? familyRemote;
+
+  /// Called with the signed-in user id after a clean cycle. Belt and braces
+  /// for the data-owner bookkeeping the auth screen normally does: if a sign
+  /// in ever completed without the screen recording the owner, the first
+  /// clean sync records it. The callback itself decides whether an owner is
+  /// already stored.
+  final Future<void> Function(String userId)? onFirstSuccessfulSync;
 
   final SyncCursorStore _cursors;
   final bool Function() _isOnline;
@@ -160,11 +176,25 @@ class SyncService {
     final report = SyncReport(startedAt: _now());
     try {
       await body(report);
+    } on _FetchFailedFatally catch (e) {
+      // Force pull already wiped the local database, so a whole-table fetch
+      // failure leaves the device with a hole in its data. That is a failed
+      // cycle, not a partial one.
+      debugPrint('Sync: $label aborted — ${e.table} fetch failed: ${e.cause}');
+      report.fatal = '$label: ${e.table} fetch failed';
     } catch (e, st) {
       debugPrint('Sync: fatal error during $label: $e\n$st');
       report.fatal = '$e';
     }
     report.finishedAt = _now();
+    final userId = _currentUserId();
+    if (report.isClean && userId != null && onFirstSuccessfulSync != null) {
+      try {
+        await onFirstSuccessfulSync!(userId);
+      } catch (e) {
+        debugPrint('Sync: recording the data owner failed: $e');
+      }
+    }
     _lastReport = report;
     debugPrint('Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
         'deleted ${report.deleted}, failed ${report.failures.length}');
@@ -307,7 +337,7 @@ class SyncService {
   // ── Pull ───────────────────────────────────────────────────
 
   Future<void> _pullAll(SyncReport report, {required bool force}) async {
-    await _pullFamilies(report);
+    await _pullFamilies(report, failFast: force);
     await Future.wait([
       _pullTable<MedicationModel>(
         table: 'medications',
@@ -359,6 +389,11 @@ class SyncService {
   /// Delta pull for one table: asks the remote only for rows newer than the
   /// stored cursor, applies tombstones as hard deletes, and advances the
   /// cursor (with a 1 s overlap) to the newest `updated_at` it saw.
+  ///
+  /// A failure to fetch the table at all is normally recorded and skipped, so
+  /// the other tables still sync. When [force] is set the caller has already
+  /// cleared the local database, so the same failure is rethrown as
+  /// [_FetchFailedFatally] and aborts the whole cycle instead.
   Future<void> _pullTable<T>({
     required String table,
     required SyncReport report,
@@ -376,6 +411,7 @@ class SyncService {
       rows = await fetch(since);
     } catch (e) {
       report.failures.add(SyncFailure(table, '*', 'pull: $e'));
+      if (force) throw _FetchFailedFatally(table, e);
       return;
     }
     DateTime? newest;
@@ -401,16 +437,23 @@ class SyncService {
     }
   }
 
-  Future<void> _pullFamilies(SyncReport report) async {
+  Future<void> _pullFamilies(SyncReport report, {bool failFast = false}) async {
     try {
       final membership = await familyRemote!.getCurrentMembership();
       if (membership == null) return;
       final family = await familyRemote!.getFamilyById(membership.familyId);
       if (family == null) return;
-      await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
-      report.pulled++;
+      // A row with unpushed local changes (in particular a pending_delete
+      // from "leave family" / "remove member") must not be stamped back to
+      // `synced` from the remote copy — that would silently drop the user's
+      // change before the next push ever gets to send it.
+      if (!await _isLocallyPending('families', family.id)) {
+        await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
+        report.pulled++;
+      }
       final members = await familyRemote!.getMembers(family.id);
       for (final m in members) {
+        if (await _isLocallyPending('family_members', m.id)) continue;
         await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);
         report.pulled++;
       }
@@ -420,7 +463,19 @@ class SyncService {
           family.id, members.map((m) => m.id).toSet());
     } catch (e) {
       report.failures.add(SyncFailure('families', '*', 'pull: $e'));
+      if (failFast) throw _FetchFailedFatally('families', e);
     }
+  }
+
+  /// True when the local row exists and still has unpushed changes.
+  Future<bool> _isLocallyPending(String table, String id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(table,
+        columns: ['id'],
+        where: 'id = ? AND sync_status != ?',
+        whereArgs: [id, SyncStatus.synced],
+        limit: 1);
+    return rows.isNotEmpty;
   }
 
   // ── Merge helpers (last-write-wins for locally pending rows) ──
@@ -476,4 +531,16 @@ class SyncService {
 
   @visibleForTesting
   void debugSetStateForTest(SyncState state) => _setState(state);
+}
+
+/// Internal: a whole-table fetch failed during a cycle that must not continue
+/// (force pull, where the local database has already been cleared).
+class _FetchFailedFatally implements Exception {
+  _FetchFailedFatally(this.table, this.cause);
+
+  final String table;
+  final Object cause;
+
+  @override
+  String toString() => '_FetchFailedFatally($table): $cause';
 }

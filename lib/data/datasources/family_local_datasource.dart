@@ -13,22 +13,33 @@ class FamilyLocalDatasource {
 
   // ── Families ───────────────────────────────────────────────
 
+  /// Inserts or updates a family **without** `INSERT OR REPLACE`.
+  ///
+  /// `family_members.family_id` is `REFERENCES families(id) ON DELETE CASCADE`
+  /// and the database runs with `PRAGMA foreign_keys = ON`, so an
+  /// `INSERT OR REPLACE` here would delete the existing families row — taking
+  /// every one of its member rows with it — before inserting the new one.
+  /// Every pull would then silently destroy local membership state, including
+  /// rows still waiting to be pushed. Update-then-insert keeps the row
+  /// identity, so nothing cascades.
   Future<void> upsertFamily(FamilyModel family,
       {required String syncStatus}) async {
     final db = await _db;
-    await db.insert(
-      'families',
-      {
-        'id': family.id,
-        'name': family.name,
-        'invite_code': family.inviteCode,
-        'owner_id': family.ownerId,
-        'created_at':
-            family.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
-        'sync_status': syncStatus,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final values = {
+      'id': family.id,
+      'name': family.name,
+      'invite_code': family.inviteCode,
+      'owner_id': family.ownerId,
+      'created_at':
+          family.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'sync_status': syncStatus,
+    };
+    final updated = await db.update('families', values,
+        where: 'id = ?', whereArgs: [family.id]);
+    if (updated == 0) {
+      await db.insert('families', values,
+          conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
   }
 
   Future<FamilyModel?> getFamilyById(String id) async {

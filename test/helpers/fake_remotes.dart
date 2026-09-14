@@ -20,6 +20,10 @@ class FakeRemoteTable {
   final Set<String> failIds = {};
   final List<DateTime?> sinceCalls = [];
 
+  /// When set, every delta fetch (`since`) throws — a whole-table fetch
+  /// failure rather than a per-row one.
+  Object? throwOnFetch;
+
   void _guard(String id) {
     if (failIds.contains(id)) throw StateError('remote failure for $id');
   }
@@ -52,8 +56,16 @@ class FakeRemoteTable {
   List<Map<String, dynamic>> all() =>
       rows.values.map((r) => Map<String, dynamic>.from(r)).toList();
 
+  /// Live rows only — mirrors the `.isFilter('deleted_at', null)` the
+  /// non-delta remote getters apply. Delta pulls use [since] and still see
+  /// tombstones.
+  List<Map<String, dynamic>> live() =>
+      all().where((r) => r['deleted_at'] == null).toList();
+
   List<Map<String, dynamic>> since(DateTime? since) {
     sinceCalls.add(since);
+    final failure = throwOnFetch;
+    if (failure != null) throw failure;
     if (since == null) return all();
     return all().where((r) {
       final u = r['updated_at'] as String?;
@@ -76,7 +88,7 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
 
   @override
   Future<List<MedicationModel>> getMedications() async =>
-      table.all().map(MedicationModel.fromJson).toList();
+      table.live().map(MedicationModel.fromJson).toList();
   @override
   Future<List<MedicationModel>> getMedicationsSince(DateTime? since) async =>
       table.since(since).map(MedicationModel.fromJson).toList();
@@ -107,7 +119,7 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
 
   @override
   Future<List<TreatmentModel>> getTreatments() async =>
-      table.all().map(TreatmentModel.fromJson).toList();
+      table.live().map(TreatmentModel.fromJson).toList();
   @override
   Future<List<TreatmentModel>> getTreatmentsSince(DateTime? since) async =>
       table.since(since).map(TreatmentModel.fromJson).toList();
@@ -136,7 +148,7 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
 
   @override
   Future<List<PrescriptionModel>> getPrescriptions() async =>
-      table.all().map(PrescriptionModel.fromJson).toList();
+      table.live().map(PrescriptionModel.fromJson).toList();
   @override
   Future<List<PrescriptionModel>> getPrescriptionsSince(DateTime? since) async =>
       table.since(since).map(PrescriptionModel.fromJson).toList();
@@ -171,7 +183,7 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
 
   @override
   Future<List<DoseLogModel>> getDoseLogs() async =>
-      table.all().map(DoseLogModel.fromJson).toList();
+      table.live().map(DoseLogModel.fromJson).toList();
   @override
   Future<List<DoseLogModel>> getDoseLogsSince(DateTime? since) async =>
       table.since(since).map(DoseLogModel.fromJson).toList();

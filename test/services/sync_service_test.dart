@@ -328,6 +328,31 @@ void main() {
       expect((await localRow('medications', 'a'))?['name'], 'A');
     });
 
+    test('force pull is fatal, not partial, when a whole table cannot be fetched', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson());
+      await h.service.syncAll();
+      expect(await localRow('medications', 'a'), isNotNull);
+      h.service.debugSetStateForTest(SyncState.idle);
+
+      // Force pull clears the local database first, so a failed fetch leaves
+      // a hole: the cycle must report `error`, never `partial`.
+      h.meds.table.throwOnFetch = StateError('network down');
+      final report = (await h.service.forcePull())!;
+
+      expect(report.fatal, 'force pull: medications fetch failed');
+      expect(h.service.currentState, SyncState.error);
+      expect(report.failures.any((f) => f.table == 'medications' && f.id == '*'), isTrue);
+    });
+
+    test('an ordinary sync survives a whole-table fetch failure as partial', () async {
+      final h = Harness();
+      h.meds.table.throwOnFetch = StateError('network down');
+      final report = (await h.service.syncAll())!;
+      expect(report.fatal, isNull);
+      expect(h.service.currentState, SyncState.partial);
+    });
+
     test('a pull error keeps the cursor unchanged', () async {
       final h = Harness();
       h.meds.table.seed(const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson());
@@ -458,6 +483,45 @@ void main() {
       await h.service.syncAll();
       expect(await localRow('family_members', 'stale'), isNull);
       expect(await localRow('family_members', 'me'), isNotNull);
+    });
+
+    test('re-pulling a family does not cascade-delete its local member rows', () async {
+      // `family_members.family_id` cascades on delete, so an INSERT OR
+      // REPLACE of the parent row would wipe every member row on every pull.
+      final h = Harness();
+      final local = FamilyLocalDatasource();
+      await local.upsertFamily(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a'), syncStatus: SyncStatus.synced);
+      await local.upsertMember(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'owner'), syncStatus: SyncStatus.synced);
+      await local.upsertMember(const FamilyMemberModel(id: 'mine', familyId: 'f1', userId: 'user-c', role: 'member'), syncStatus: SyncStatus.pendingCreate);
+      h.family.families.seed(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a').toJson());
+      h.family.members.seed(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'owner').toJson());
+      h.family.members.failIds.add('mine');
+
+      await h.service.syncAll();
+
+      expect(await localRow('family_members', 'mine'), isNotNull,
+          reason: 'a member row that failed to push must survive the pull');
+      expect((await localRow('family_members', 'mine'))?['sync_status'], SyncStatus.pendingCreate);
+      expect(await localRow('family_members', 'me'), isNotNull);
+    });
+
+    test('a pull does not stamp a pending_delete member back to synced', () async {
+      final h = Harness();
+      final local = FamilyLocalDatasource();
+      await local.upsertFamily(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a'), syncStatus: SyncStatus.synced);
+      await local.upsertMember(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'owner'), syncStatus: SyncStatus.synced);
+      h.family.families.seed(const FamilyModel(id: 'f1', name: 'S', inviteCode: 'X', ownerId: 'user-a').toJson());
+      h.family.members.seed(const FamilyMemberModel(id: 'me', familyId: 'f1', userId: 'user-a', role: 'owner').toJson());
+
+      // The user leaves; the push of that removal fails, so the row is still
+      // pending_delete when the pull runs and the member is still remote.
+      await local.markMemberDeleted('me');
+      h.family.members.failIds.add('me');
+      await h.service.syncAll();
+
+      expect((await localRow('family_members', 'me'))?['sync_status'], SyncStatus.pendingDelete,
+          reason: 'the pull must not overwrite the local removal before it is pushed');
+      expect(h.family.members.rows['me'], isNotNull);
     });
 
     test('a pending_delete family is dropped locally after its members are pushed', () async {
