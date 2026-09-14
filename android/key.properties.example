@@ -1,0 +1,4 @@
+storeFile=../keystore/medora-release.jks
+storePassword=CHANGE_ME
+keyAlias=medora
+keyPassword=CHANGE_ME
