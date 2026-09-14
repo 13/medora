@@ -89,8 +89,9 @@ The release build type has `isMinifyEnabled = true` with
 ### 4. CI
 
 `.github/workflows/ci.yml` → job `build-android` always builds the debug APK.
-When these four repository secrets exist it also writes the keystore, builds
-`appbundle --release` and uploads it as the `medora-release-aab` artifact:
+When the keystore secrets exist **and** the run is on `main` or a tag, it also
+writes the keystore, builds `appbundle --release` and uploads it as the
+`medora-release-aab` artifact:
 
 | Secret | Value |
 |---|---|
@@ -98,12 +99,25 @@ When these four repository secrets exist it also writes the keystore, builds
 | `ANDROID_STORE_PASSWORD` | keystore password |
 | `ANDROID_KEY_ALIAS` | `medora` |
 | `ANDROID_KEY_PASSWORD` | key password |
+| `SUPABASE_URL` | project URL — same value as `dart_defines.json` |
+| `SUPABASE_ANON_KEY` | anon/publishable key — same value as `dart_defines.json` |
 
-The gate is `env.ANDROID_KEYSTORE_BASE64 != ''` (the secrets are mapped into
+The last two are passed to the release build as
+`--dart-define=SUPABASE_URL=… --dart-define=SUPABASE_ANON_KEY=…`.
+**Without them the CI artifact is a local-only build and must not be uploaded
+to Play**: an empty define is exactly how `AppConfig` recognises "no cloud
+configuration", so the app would ship with cloud sync permanently unavailable.
+The four keystore secrets and these two are independent — CI will happily
+produce a correctly signed, cloud-less bundle if you configure only the first
+four.
+
+The gates are `env.ANDROID_KEYSTORE_BASE64 != ''` (the secrets are mapped into
 the job's `env:` because the `secrets` context is not usable in a step-level
-`if:`). With no secrets configured all three release steps are skipped and the
-job is still green — that is the expected state for this repository today.
-Nothing in CI is needed to keep local release builds working.
+`if:`) and `github.ref == 'refs/heads/main' || startsWith(github.ref,
+'refs/tags/')`, so a feature branch never uploads a production-signed bundle.
+With no secrets configured all three release steps are skipped and the job is
+still green — that is the expected state for this repository today. Nothing in
+CI is needed to keep local release builds working.
 
 ## iOS
 
