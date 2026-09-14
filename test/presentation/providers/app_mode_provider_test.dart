@@ -79,7 +79,10 @@ void main() {
     });
     tearDown(tearDownTestDatabase);
 
-    test('switching to cloud marks local rows for upload and clears cursors', () async {
+    test('switching to cloud only flips the mode; it does not mark or clear', () async {
+      // Nobody is signed in at this point, so marking here would upload
+      // whatever is on the device into whichever account signs in next. The
+      // auth screen does the marking once it knows who that is.
       final db = await AppDatabase.instance.database;
       await seedPrescription(db);
       final prefs = await SharedPreferences.getInstance();
@@ -91,9 +94,10 @@ void main() {
 
       expect(container.read(appModeProvider), AppMode.cloud);
       expect(prefs.getString('app_mode'), 'cloud');
-      expect(prefs.getString('sync.last_pull_at.medications'), isNull);
+      expect(prefs.getString('sync.last_pull_at.medications'), '2026-01-01T00:00:00.000Z',
+          reason: 'cursors are cleared at sign-in, not at mode switch');
       final rows = await db.query('medications', columns: ['sync_status']);
-      expect(rows.single['sync_status'], SyncStatus.pendingUpdate);
+      expect(rows.single['sync_status'], SyncStatus.synced);
     });
   });
 }

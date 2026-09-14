@@ -244,7 +244,7 @@ class SettingsScreen extends ConsumerWidget {
                             child: Text(l10n.turnOff),
                           )
                         : FilledButton.tonal(
-                            onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.cloud),
+                            onPressed: () => _turnOnCloud(context, ref, l10n),
                             child: Text(l10n.turnOn),
                           ),
               ),
@@ -403,6 +403,17 @@ class SettingsScreen extends ConsumerWidget {
           );
         }
       }
+    }
+  }
+
+  Future<void> _turnOnCloud(BuildContext context, WidgetRef ref, AppLocalizations l10n) async {
+    try {
+      await ref.read(appModeProvider.notifier).set(AppMode.cloud);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
+      );
     }
   }
 
@@ -635,8 +646,8 @@ class SettingsScreen extends ConsumerWidget {
   String _lastSyncText(AppLocalizations l10n, SyncReport? r) {
     final finished = r?.finishedAt;
     if (r == null || finished == null) return l10n.syncNever;
-    return l10n.lastSyncSummary(
-        finished.dateTimeFormatted, r.pushed, r.pulled, r.failures.length);
+    return l10n.lastSyncSummary(finished.dateTimeFormatted, r.pushed, r.pulled,
+        r.deleted, r.failures.length);
   }
 
   void _showSyncFailures(BuildContext context, AppLocalizations l10n, SyncReport r) {

@@ -10,6 +10,8 @@ import 'package:medora/core/supabase_config.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/sync_providers.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -41,6 +43,64 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       await auth.signUpWithEmail(email, password);
     } else {
       await auth.signInWithEmail(email, password);
+    }
+    if (!mounted) return;
+    if (ref.read(authControllerProvider) is AsyncError) return;
+    await _claimLocalDataForSignedInUser();
+  }
+
+  /// Decides what happens to the rows already on this device now that we know
+  /// who signed in.
+  ///
+  /// The common case — data created before any account, or the same account
+  /// signing back in — is marked for upload silently. Data that belongs to a
+  /// *different* account is never uploaded without asking: merging it into
+  /// the new account would leak one person's medication history into
+  /// another's.
+  Future<void> _claimLocalDataForSignedInUser() async {
+    final l10n = AppLocalizations.of(context);
+    final userId = SupabaseConfig.clientOrNull?.auth.currentUser?.id;
+    // Sign-up with e-mail confirmation on returns no session yet; there is
+    // nothing to claim until the user actually signs in.
+    if (userId == null) return;
+    final marker = ref.read(localUploadMarkerProvider);
+    try {
+      if (!await marker.hasDataFromAnotherAccount(userId)) {
+        await marker.markAllForUpload(userId);
+        await marker.setOwner(userId);
+        return;
+      }
+      if (!mounted) return;
+      final merge = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.foreignDataTitle),
+          content: Text(l10n.foreignDataBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.foreignDataDelete),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.foreignDataMerge),
+            ),
+          ],
+        ),
+      );
+      if (merge == null) return;
+      if (merge) {
+        await marker.markAllForUpload(userId);
+      } else {
+        await ref.read(localDataWiperProvider).wipe();
+      }
+      await marker.setOwner(userId);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.errorWithDetails(e.toString()))),
+      );
     }
   }
 

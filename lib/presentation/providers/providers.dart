@@ -201,6 +201,13 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
     cursors: ref.watch(syncCursorStoreProvider),
+    // Belt and braces: the auth screen records the data owner right after a
+    // sign-in, but if that ever did not happen (an app killed mid-flow, a
+    // session restored from disk) the first clean cycle records it.
+    onFirstSuccessfulSync: (userId) async {
+      final marker = ref.read(localUploadMarkerProvider);
+      if (marker.ownerUserId == null) await marker.setOwner(userId);
+    },
   );
   if (service.isAvailable) service.startAutoSync();
   ref.onDispose(service.dispose);

@@ -1255,8 +1255,14 @@ abstract class AppLocalizations {
   /// No description provided for @lastSyncSummary.
   ///
   /// In en, this message translates to:
-  /// **'Last sync {time}: {pushed} sent, {pulled} received, {failed} failed'**
-  String lastSyncSummary(String time, int pushed, int pulled, int failed);
+  /// **'Last sync {time}: {pushed} sent, {pulled} received, {deleted} deleted, {failed} failed'**
+  String lastSyncSummary(
+    String time,
+    int pushed,
+    int pulled,
+    int deleted,
+    int failed,
+  );
 
   /// No description provided for @syncFailedItems.
   ///
@@ -2329,8 +2335,32 @@ abstract class AppLocalizations {
   /// No description provided for @forcePullConfirm.
   ///
   /// In en, this message translates to:
-  /// **'This will overwrite all your local data with data from Supabase. Any unsynced local changes will be lost. Continue?'**
+  /// **'This replaces everything on this device with the data in Supabase. Local changes that have not been uploaded yet are lost and cannot be recovered. Continue?'**
   String get forcePullConfirm;
+
+  /// No description provided for @foreignDataTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Data from another account'**
+  String get foreignDataTitle;
+
+  /// No description provided for @foreignDataBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This device holds data saved under a different account. Upload and merge it into this account, or delete it from this device?'**
+  String get foreignDataBody;
+
+  /// No description provided for @foreignDataMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload and merge'**
+  String get foreignDataMerge;
+
+  /// No description provided for @foreignDataDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete local data'**
+  String get foreignDataDelete;
 
   /// No description provided for @continueLabel.
   ///

@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/services/local_upload_marker.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/sync_cursor_store.dart';
@@ -45,5 +46,7 @@ class LocalDataWiper {
     for (final key in _prefs.getKeys().where((k) => k.startsWith(SyncCursorStore.keyPrefix)).toList()) {
       await _prefs.remove(key);
     }
+    // No rows left, so this device no longer holds anyone's data.
+    await _prefs.remove(LocalUploadMarker.ownerKey);
   }
 }

@@ -6,7 +6,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
-import 'package:medora/presentation/providers/sync_providers.dart';
 
 enum AppMode { localOnly, cloud }
 
@@ -37,10 +36,11 @@ class AppModeNotifier extends Notifier<AppMode> {
     return AppMode.localOnly;
   }
 
+  /// Switching to cloud only flips the mode: nobody is signed in yet, so
+  /// marking the local rows for upload here could push one account's data
+  /// into the next account that signs in. The auth screen does the marking
+  /// once it knows who signed in (see `LocalUploadMarker`).
   Future<void> set(AppMode mode) async {
-    if (mode == AppMode.cloud && state != AppMode.cloud) {
-      await ref.read(localUploadMarkerProvider).markAllForUpload();
-    }
     state = mode;
     await ref.read(sharedPreferencesProvider).setString(_kAppMode, mode.name);
   }

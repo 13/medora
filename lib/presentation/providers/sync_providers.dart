@@ -13,5 +13,9 @@ final syncCursorStoreProvider = Provider<SyncCursorStore>(
 );
 
 final localUploadMarkerProvider = Provider<LocalUploadMarker>(
-  (ref) => LocalUploadMarker(database: AppDatabase.instance, cursors: ref.watch(syncCursorStoreProvider)),
+  (ref) => LocalUploadMarker(
+    database: AppDatabase.instance,
+    cursors: ref.watch(syncCursorStoreProvider),
+    prefs: ref.watch(sharedPreferencesProvider),
+  ),
 );
