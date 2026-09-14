@@ -2,13 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
-import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
-import 'package:medora/domain/entities/dose_log.dart';
-import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -16,62 +13,10 @@ import 'package:medora/presentation/screens/home/home_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/fake_reminder_port.dart';
+import '../../helpers/failing_dose_repo.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
-
-/// Forwards every [DoseLogRepository] method to [inner] except
-/// [markDoseTaken], which always fails — used to exercise the Now card's
-/// error handling when `DoseActions.take` reports failure.
-class _FailingTakeRepo implements DoseLogRepository {
-  _FailingTakeRepo(this.inner);
-  final DoseLogRepository inner;
-
-  @override
-  Future<Result<List<DoseLog>>> getDoseLogsByPrescription(String prescriptionId) =>
-      inner.getDoseLogsByPrescription(prescriptionId);
-
-  @override
-  Future<Result<DoseLog>> getDoseLogById(String id) => inner.getDoseLogById(id);
-
-  @override
-  Future<Result<List<DoseLog>>> getTodaysDoseLogs() => inner.getTodaysDoseLogs();
-
-  @override
-  Future<Result<List<DoseLog>>> getDoseLogsByDateRange(DateTime start, DateTime end) =>
-      inner.getDoseLogsByDateRange(start, end);
-
-  @override
-  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end) =>
-      inner.getPendingDoseLogsBetween(start, end);
-
-  @override
-  Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) =>
-      inner.markOverduePendingAsMissed(cutoff);
-
-  @override
-  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) => inner.addDoseLog(doseLog);
-
-  @override
-  Future<Result<DoseLog>> markDoseTaken(String id) async => const Result.failure('db down');
-
-  @override
-  Future<Result<DoseLog>> markDoseSkipped(String id) => inner.markDoseSkipped(id);
-
-  @override
-  Future<Result<DoseLog>> markDoseMissed(String id) => inner.markDoseMissed(id);
-
-  @override
-  Future<Result<DoseLog>> markDosePending(String id) => inner.markDosePending(id);
-
-  @override
-  Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(String prescriptionId) =>
-      inner.generateDoseLogsForPrescription(prescriptionId);
-
-  @override
-  Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(String prescriptionId) =>
-      inner.regenerateDoseLogsForPrescription(prescriptionId);
-}
 
 void main() {
   setUp(() async {
@@ -133,7 +78,7 @@ void main() {
     );
     final failingOverrides = [
       ...await overrides(),
-      doseLogRepositoryProvider.overrideWithValue(_FailingTakeRepo(inner)),
+      doseLogRepositoryProvider.overrideWithValue(FailingTakeRepo(inner)),
     ];
 
     final c = await pumpMedoraApp(tester, const HomeScreen(), overrides: failingOverrides);

@@ -382,7 +382,7 @@ class SettingsScreen extends ConsumerWidget {
         await ref.read(localDataWiperProvider).wipe();
         ref.invalidate(medicationListProvider);
         ref.invalidate(treatmentListProvider);
-        ref.invalidate(todaysDoseLogsProvider);
+        ref.invalidateDoseData();
         ref.invalidate(activePrescriptionsProvider);
       } catch (e) {
         if (context.mounted) {
@@ -498,7 +498,7 @@ class SettingsScreen extends ConsumerWidget {
                         // Invalidate all providers
                         ref.invalidate(medicationListProvider);
                         ref.invalidate(treatmentListProvider);
-                        ref.invalidate(todaysDoseLogsProvider);
+                        ref.invalidateDoseData();
                         ref.invalidate(activePrescriptionsProvider);
 
                         if (context.mounted) {

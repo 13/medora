@@ -1,15 +1,26 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/dose_log_local_datasource.dart';
+import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../helpers/failing_dose_repo.dart';
 import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
+
+/// Exposes the provider-side [DoseDataRefresh.invalidateDoseData] extension
+/// to the test, exactly as a screen's `ref` would call it.
+final invalidateDoseDataProvider =
+    Provider<void Function()>((ref) => ref.invalidateDoseData);
 
 void main() {
   late ProviderContainer c;
@@ -127,5 +138,69 @@ void main() {
     final dose = (await c.read(dosesForDayProvider(today).future)).single;
     expect(dose.status, DoseStatus.pending);
     expect(dose.takenTime, isNull);
+  });
+
+  test('a failed markDoseTaken leaves medication stock untouched', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await db.update('prescriptions', {'auto_diminish': 1},
+        where: 'id = ?', whereArgs: [s.prescriptionId]);
+    final a = await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 1)));
+
+    final failing = ProviderContainer(overrides: [
+      sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
+      syncStartupDelayProvider.overrideWithValue(Duration.zero),
+      reminderPortProvider.overrideWithValue(FakePort()),
+      doseLogRepositoryProvider.overrideWithValue(
+        FailingTakeRepo(DoseLogRepositoryImpl(
+          localDatasource: DoseLogLocalDatasource(),
+          remoteDatasource: null,
+          prescriptionLocal: PrescriptionLocalDatasource(),
+        )),
+      ),
+    ]);
+    addTearDown(failing.dispose);
+
+    expect(await failing.read(doseActionsProvider).take(a), isFalse);
+
+    final med = await db.query('medications', where: 'id = ?', whereArgs: [s.medicationId]);
+    expect(med.single['quantity'], 10);
+    final dose = await db.query('dose_logs', where: 'id = ?', whereArgs: [a]);
+    expect(dose.single['status'], 'pending');
+  });
+
+  test('invalidateDoseData makes dosesForDayProvider see writes made outside DoseActions',
+      () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));
+    expect((await c.read(dosesForDayProvider(today).future)).length, 1);
+
+    // What the prescription sheet does: write through the repositories,
+    // never through DoseActions.
+    final saved = await c.read(prescriptionRepositoryProvider).addPrescription(
+          Prescription(
+            id: const Uuid().v4(),
+            treatmentId: s.treatmentId,
+            medicationId: s.medicationId,
+            dosage: '1 tablets',
+            dosageAmount: 1,
+            intervalHours: 6,
+            durationDays: 1,
+            startTime: today.add(const Duration(hours: 9)),
+          ),
+        );
+    final prescriptionId = saved.dataOrNull!.id;
+    await c
+        .read(doseLogRepositoryProvider)
+        .generateDoseLogsForPrescription(prescriptionId);
+
+    // Stale: nothing bumped the version, so the cached list is served.
+    expect((await c.read(dosesForDayProvider(today).future)).length, 1);
+
+    c.read(invalidateDoseDataProvider)();
+    final after = await c.read(dosesForDayProvider(today).future);
+    expect(after.length, greaterThan(1));
+    expect(after.any((d) => d.prescriptionId == prescriptionId), isTrue);
   });
 }

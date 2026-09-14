@@ -772,7 +772,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
 
     if (saved) {
       ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
-      ref.invalidate(todaysDoseLogsProvider);
+      ref.invalidateDoseData();
       unawaited(ref.read(reminderSchedulerProvider).reconcile());
       ref.invalidate(activePrescriptionsProvider);
     }

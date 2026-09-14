@@ -23,6 +23,28 @@ class DoseDataVersionNotifier extends Notifier<int> {
   void bump() => state++;
 }
 
+/// Refetches every dose-derived provider.
+///
+/// [DoseActions] does this itself after each mutation, but plenty of writes
+/// happen elsewhere (saving a prescription, ending a treatment, archiving a
+/// medication, wiping local data). Those must call this, otherwise
+/// [dosesForDayProvider] keeps serving its cached list — Riverpod 3
+/// providers are not auto-dispose, so nothing re-runs on its own.
+extension DoseDataRefresh on Ref {
+  void invalidateDoseData() {
+    invalidate(todaysDoseLogsProvider);
+    read(doseDataVersionProvider.notifier).bump();
+  }
+}
+
+/// Widget-side twin of [DoseDataRefresh.invalidateDoseData].
+extension WidgetDoseDataRefresh on WidgetRef {
+  void invalidateDoseData() {
+    invalidate(todaysDoseLogsProvider);
+    read(doseDataVersionProvider.notifier).bump();
+  }
+}
+
 /// Normalizes a [DateTime] to midnight (local), for use as a calendar-day
 /// key.
 DateTime dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -53,10 +75,6 @@ final dosesForDayProvider = FutureProvider.family<List<DoseLog>, DateTime>(
 /// result either way.
 final nextDueDoseProvider = Provider<DoseLog?>((ref) {
   final doses = ref.watch(todaysDoseLogsProvider).value ?? [];
-  // Watched so future time-aware logic (e.g. reintroducing a cutoff) has
-  // the hook without needing to thread `now` through again.
-  ref.watch(nowProvider);
-
   final pending = doses.where((d) => d.status == DoseStatus.pending).toList()
     ..sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
   return pending.isEmpty ? null : pending.first;
@@ -71,17 +89,26 @@ class DoseActions {
   final Ref _ref;
 
   Future<bool> take(String id) async {
+    final ok = await _take(id);
+    await _refresh();
+    return ok;
+  }
+
+  /// Marks one dose taken without refreshing — [takeAllDue] refreshes once
+  /// for the whole batch instead of once per dose.
+  Future<bool> _take(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
     final result = await repo.markDoseTaken(id);
-    await _autoDiminish(_ref, id);
-    await _refresh();
+    // Stock only moves when the dose actually changed status; a failed
+    // write must not diminish (or, on undo, restore) the medication.
+    if (result.isSuccess) await _autoDiminish(_ref, id);
     return result.isSuccess;
   }
 
   Future<bool> undoTake(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
     final result = await repo.markDosePending(id);
-    await _autoDiminish(_ref, id, reverse: true);
+    if (result.isSuccess) await _autoDiminish(_ref, id, reverse: true);
     await _refresh();
     return result.isSuccess;
   }
@@ -118,8 +145,10 @@ class DoseActions {
       final doseResult = await repo.getDoseLogById(id);
       final dose = doseResult.dataOrNull;
       if (dose == null || dose.status != DoseStatus.pending) continue;
-      if (await take(id)) taken.add(id);
+      if (await _take(id)) taken.add(id);
     }
+    // One refresh/bump/reconcile for the whole batch, not one per dose.
+    await _refresh();
     return taken;
   }
 
