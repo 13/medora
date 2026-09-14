@@ -1383,4 +1383,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noLabel => 'No';
+
+  @override
+  String get onboardingCabinetTitle => 'Your cabinet';
+
+  @override
+  String get onboardingCabinetBody =>
+      'Add the medicines you have at home. Medora tracks quantity and expiry for you.';
+
+  @override
+  String get onboardingTreatmentsTitle => 'Treatments';
+
+  @override
+  String get onboardingTreatmentsBody =>
+      'Group medicines into a treatment with a schedule for who takes what and when.';
+
+  @override
+  String get onboardingDosesTitle => 'Daily doses';
+
+  @override
+  String get onboardingDosesBody =>
+      'Each day shows what is due. Tap Take, or let reminders nudge you.';
+
+  @override
+  String get onboardingNext => 'Next';
+
+  @override
+  String get onboardingDone => 'Done';
 }

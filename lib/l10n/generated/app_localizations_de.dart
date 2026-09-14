@@ -1399,4 +1399,31 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get noLabel => 'Nein';
+
+  @override
+  String get onboardingCabinetTitle => 'Deine Hausapotheke';
+
+  @override
+  String get onboardingCabinetBody =>
+      'Trage die Medikamente ein, die du zu Hause hast. Medora behält Menge und Verfallsdatum für dich im Blick.';
+
+  @override
+  String get onboardingTreatmentsTitle => 'Behandlungen';
+
+  @override
+  String get onboardingTreatmentsBody =>
+      'Fasse Medikamente zu einer Behandlung zusammen – mit einem Plan, wer was wann einnimmt.';
+
+  @override
+  String get onboardingDosesTitle => 'Tägliche Dosen';
+
+  @override
+  String get onboardingDosesBody =>
+      'Jeder Tag zeigt, was ansteht. Tippe auf Einnehmen oder lass dich von Erinnerungen anstupsen.';
+
+  @override
+  String get onboardingNext => 'Weiter';
+
+  @override
+  String get onboardingDone => 'Fertig';
 }

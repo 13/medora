@@ -480,5 +480,14 @@
   "colTaken": "Eingenommen",
   "colStatus": "Status",
   "yesLabel": "Ja",
-  "noLabel": "Nein"
+  "noLabel": "Nein",
+
+  "onboardingCabinetTitle": "Deine Hausapotheke",
+  "onboardingCabinetBody": "Trage die Medikamente ein, die du zu Hause hast. Medora behält Menge und Verfallsdatum für dich im Blick.",
+  "onboardingTreatmentsTitle": "Behandlungen",
+  "onboardingTreatmentsBody": "Fasse Medikamente zu einer Behandlung zusammen – mit einem Plan, wer was wann einnimmt.",
+  "onboardingDosesTitle": "Tägliche Dosen",
+  "onboardingDosesBody": "Jeder Tag zeigt, was ansteht. Tippe auf Einnehmen oder lass dich von Erinnerungen anstupsen.",
+  "onboardingNext": "Weiter",
+  "onboardingDone": "Fertig"
 }

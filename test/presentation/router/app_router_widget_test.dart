@@ -28,7 +28,9 @@ void main() {
     required String mode,
     List<Override> overrides = const [],
   }) async {
-    SharedPreferences.setMockInitialValues({'app_mode': mode});
+    // 'onboarding_seen' keeps the first-run sheet (shown by MainShellScreen)
+    // out of these routing assertions.
+    SharedPreferences.setMockInitialValues({'app_mode': mode, 'onboarding_seen': true});
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(
       overrides: [

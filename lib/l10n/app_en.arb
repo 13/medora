@@ -612,5 +612,14 @@
   "colTaken": "Taken",
   "colStatus": "Status",
   "yesLabel": "Yes",
-  "noLabel": "No"
+  "noLabel": "No",
+
+  "onboardingCabinetTitle": "Your cabinet",
+  "onboardingCabinetBody": "Add the medicines you have at home. Medora tracks quantity and expiry for you.",
+  "onboardingTreatmentsTitle": "Treatments",
+  "onboardingTreatmentsBody": "Group medicines into a treatment with a schedule for who takes what and when.",
+  "onboardingDosesTitle": "Daily doses",
+  "onboardingDosesBody": "Each day shows what is due. Tap Take, or let reminders nudge you.",
+  "onboardingNext": "Next",
+  "onboardingDone": "Done"
 }

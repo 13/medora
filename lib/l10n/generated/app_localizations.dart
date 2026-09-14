@@ -2655,6 +2655,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No'**
   String get noLabel;
+
+  /// No description provided for @onboardingCabinetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your cabinet'**
+  String get onboardingCabinetTitle;
+
+  /// No description provided for @onboardingCabinetBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Add the medicines you have at home. Medora tracks quantity and expiry for you.'**
+  String get onboardingCabinetBody;
+
+  /// No description provided for @onboardingTreatmentsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Treatments'**
+  String get onboardingTreatmentsTitle;
+
+  /// No description provided for @onboardingTreatmentsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Group medicines into a treatment with a schedule for who takes what and when.'**
+  String get onboardingTreatmentsBody;
+
+  /// No description provided for @onboardingDosesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily doses'**
+  String get onboardingDosesTitle;
+
+  /// No description provided for @onboardingDosesBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Each day shows what is due. Tap Take, or let reminders nudge you.'**
+  String get onboardingDosesBody;
+
+  /// No description provided for @onboardingNext.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get onboardingNext;
+
+  /// No description provided for @onboardingDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get onboardingDone;
 }
 
 class _AppLocalizationsDelegate

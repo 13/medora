@@ -480,5 +480,14 @@
   "colTaken": "Assunto",
   "colStatus": "Stato",
   "yesLabel": "Sì",
-  "noLabel": "No"
+  "noLabel": "No",
+
+  "onboardingCabinetTitle": "Il tuo armadietto",
+  "onboardingCabinetBody": "Aggiungi i medicinali che hai in casa. Medora tiene traccia di quantità e scadenza per te.",
+  "onboardingTreatmentsTitle": "Trattamenti",
+  "onboardingTreatmentsBody": "Raggruppa i medicinali in un trattamento con un programma di chi prende cosa e quando.",
+  "onboardingDosesTitle": "Dosi quotidiane",
+  "onboardingDosesBody": "Ogni giorno mostra cosa è previsto. Tocca Prendi oppure lasciati avvisare dai promemoria.",
+  "onboardingNext": "Avanti",
+  "onboardingDone": "Fatto"
 }

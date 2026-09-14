@@ -1393,4 +1393,31 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get noLabel => 'No';
+
+  @override
+  String get onboardingCabinetTitle => 'Il tuo armadietto';
+
+  @override
+  String get onboardingCabinetBody =>
+      'Aggiungi i medicinali che hai in casa. Medora tiene traccia di quantità e scadenza per te.';
+
+  @override
+  String get onboardingTreatmentsTitle => 'Trattamenti';
+
+  @override
+  String get onboardingTreatmentsBody =>
+      'Raggruppa i medicinali in un trattamento con un programma di chi prende cosa e quando.';
+
+  @override
+  String get onboardingDosesTitle => 'Dosi quotidiane';
+
+  @override
+  String get onboardingDosesBody =>
+      'Ogni giorno mostra cosa è previsto. Tocca Prendi oppure lasciati avvisare dai promemoria.';
+
+  @override
+  String get onboardingNext => 'Avanti';
+
+  @override
+  String get onboardingDone => 'Fatto';
 }
