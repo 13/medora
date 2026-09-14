@@ -251,7 +251,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       await localDatasource.deletePendingByPrescription(prescriptionId);
 
       // Generate fresh dose logs
-      return generateDoseLogsForPrescription(prescriptionId);
+      return await generateDoseLogsForPrescription(prescriptionId);
     } catch (e, st) {
       debugPrint('❌ regenerateDoseLogs FAILED: $e\n$st');
       return Result.failure('Failed to regenerate dose logs: $e', st);
