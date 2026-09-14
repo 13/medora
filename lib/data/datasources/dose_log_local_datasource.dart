@@ -57,6 +57,14 @@ class DoseLogLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
+  /// One dose log with its joined display fields, or null.
+  Future<DoseLogModel?> getDoseLogById(String id) async {
+    final db = await _db;
+    final rows = await db.rawQuery('$_joinQuery WHERE d.id = ? LIMIT 1', [id]);
+    if (rows.isEmpty) return null;
+    return _fromRow(rows.first);
+  }
+
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day);
@@ -164,18 +172,27 @@ class DoseLogLocalDatasource {
     });
   }
 
-  Future<void> updateStatus(String id, String status,
-      {DateTime? takenTime, required String syncStatus}) async {
+  /// Change a dose's status. Pass [clearTakenTime] to null out `taken_time`
+  /// (undo). Always writes `updated_at` so last-write-wins sync can compare.
+  Future<void> updateStatus(
+    String id,
+    String status, {
+    DateTime? takenTime,
+    bool clearTakenTime = false,
+    required String syncStatus,
+  }) async {
     final db = await _db;
     final updates = <String, dynamic>{
       'status': status,
       'sync_status': syncStatus,
+      'updated_at': DateTime.now().toIso8601String(),
     };
-    if (takenTime != null) {
+    if (clearTakenTime) {
+      updates['taken_time'] = null;
+    } else if (takenTime != null) {
       updates['taken_time'] = takenTime.toIso8601String();
     }
-    await db
-        .update('dose_logs', updates, where: 'id = ?', whereArgs: [id]);
+    await db.update('dose_logs', updates, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
@@ -225,6 +242,9 @@ class DoseLogLocalDatasource {
       createdAt: row['created_at'] != null
           ? DateTime.tryParse(row['created_at'] as String)
           : null,
+      updatedAt: row['updated_at'] != null
+          ? DateTime.tryParse(row['updated_at'] as String)
+          : null,
       medicationName: row['medication_name'] as String?,
       dosage: row['dosage'] as String?,
       dosageAmount: (row['dosage_amount'] as num?)?.toDouble(),
@@ -246,6 +266,8 @@ class DoseLogLocalDatasource {
       'notes': m.notes,
       'created_at':
           m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'updated_at':
+          m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'sync_status': syncStatus,
     };
   }

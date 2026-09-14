@@ -10,6 +10,9 @@ abstract class DoseLogRepository {
     String prescriptionId,
   );
 
+  /// One dose log by id.
+  Future<Result<DoseLog>> getDoseLogById(String id);
+
   /// Get all dose logs for today.
   Future<Result<List<DoseLog>>> getTodaysDoseLogs();
 
