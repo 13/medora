@@ -80,7 +80,7 @@ class _FormSectionState extends State<FormSection> {
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   Icon(widget.icon, color: context.colors.primary),
@@ -116,15 +116,18 @@ class _FormSectionState extends State<FormSection> {
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeInOut,
             alignment: Alignment.topCenter,
-            child: _expanded
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: widget.children,
-                    ),
-                  )
-                : const SizedBox(width: double.infinity),
+            child: Visibility(
+              visible: _expanded,
+              maintainState: true,
+              maintainAnimation: true,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: widget.children,
+                ),
+              ),
+            ),
           ),
         ],
       ),

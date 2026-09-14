@@ -25,7 +25,6 @@ class UnitDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return DropdownButtonFormField<String>(
-      key: ValueKey('unit_$value'),
       initialValue: value,
       decoration: decoration ?? InputDecoration(labelText: label),
       items: AppConstants.quantityUnitKeys.map((key) {

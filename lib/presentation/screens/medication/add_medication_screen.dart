@@ -58,7 +58,11 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
 
   // Force-expand the section containing a failing field or, in edit mode,
   // a section that already has data. See [FormSection.controller].
-  final _basicsExpanded = ValueNotifier<bool>(true);
+  // Starts false (Basics is opened by FormSection.initiallyExpanded, not by
+  // this controller) so a later `.value = true` from a validator after a
+  // manual collapse is a real transition and notifies listeners — a
+  // same-value assignment (true -> true) would be a ValueNotifier no-op.
+  final _basicsExpanded = ValueNotifier<bool>(false);
   final _stockExpanded = ValueNotifier<bool>(false);
   final _detailsExpanded = ValueNotifier<bool>(false);
 
@@ -374,7 +378,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _formController,
                   decoration: InputDecoration(
@@ -382,7 +386,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     prefixIcon: const Icon(Icons.medical_information),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
@@ -422,7 +426,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 DatePickerField(
                   label: l10n.expiryDate,
                   icon: Icons.event,
@@ -745,10 +749,11 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   /// Pop the screen if it was pushed onto a router (a no-op, e.g. in widget
   /// tests that host the screen directly without a GoRouter ancestor).
   void _popIfPossible() {
-    try {
-      if (context.canPop()) context.pop();
-    } catch (_) {
-      // No GoRouter ancestor in this context — nothing to pop.
+    final router = GoRouter.maybeOf(context);
+    if (router != null && router.canPop()) {
+      router.pop();
+    } else {
+      Navigator.of(context).maybePop();
     }
   }
 

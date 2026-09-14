@@ -106,7 +106,7 @@ Future<AifaSearchResult?> showAifaSearchSheet(BuildContext context) {
         ),
       ),
     ),
-  );
+  ).whenComplete(searchController.dispose);
 }
 
 /// Shows a modal bottom sheet listing [results] to pick from (e.g. multiple
