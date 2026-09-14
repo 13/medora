@@ -5,8 +5,10 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_service.dart';
 
@@ -285,6 +287,114 @@ void main() {
       h.meds.table.tombstone('z');
       final report = (await h.service.syncAll())!;
       expect(report.deleted, 1);
+    });
+  });
+
+  group('delta pull', () {
+    test('first pull is full, second pull asks since the newest updated_at minus 1s', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson());
+      await h.service.syncAll();
+      expect(h.meds.table.sinceCalls, [null]);
+      final cursor = await h.cursors.lastPullAt('medications');
+      expect(cursor, h.clock.now().toUtc().subtract(const Duration(seconds: 1)));
+
+      h.clock.advance(const Duration(minutes: 5));
+      h.meds.table.seed(const MedicationModel(id: 'b', name: 'B', quantity: 1).toJson());
+      h.service.debugSetStateForTest(SyncState.idle);
+      final report = (await h.service.syncAll())!;
+      expect(h.meds.table.sinceCalls.last, cursor);
+      // 'a's own updated_at sits exactly at cursor + 1s (the deliberate overlap),
+      // so it is legitimately re-fetched and idempotently re-applied alongside
+      // the genuinely new 'b' — the 1 s overlap always re-includes the row it
+      // was computed from, by construction, regardless of elapsed wall time.
+      expect(report.pulled, 2);
+      expect((await localRow('medications', 'b'))?['name'], 'B');
+    });
+
+    test('force pull clears cursors and pulls everything again', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson());
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      await h.service.forcePull();
+      expect(h.meds.table.sinceCalls.last, isNull);
+      expect((await localRow('medications', 'a'))?['name'], 'A');
+    });
+
+    test('a pull error keeps the cursor unchanged', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson());
+      await h.service.syncAll();
+      final before = await h.cursors.lastPullAt('medications');
+      h.service.debugSetStateForTest(SyncState.idle);
+      // Make apply fail for a new row: seed a row whose JSON breaks fromJson.
+      h.meds.table.rows['broken'] = {'id': 'broken', 'updated_at': h.clock.now().add(const Duration(minutes: 1)).toUtc().toIso8601String()};
+      final report = (await h.service.syncAll())!;
+      expect(report.failures.where((f) => f.table == 'medications'), isNotEmpty);
+      expect(await h.cursors.lastPullAt('medications'), before);
+    });
+  });
+
+  group('dose log last-write-wins', () {
+    test('remote wins when local pending update is older than the remote row', () async {
+      final h = Harness();
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final doseId = await seedDoseLog(db, seeded.prescriptionId, DateTime(2026, 3, 1, 8));
+      await db.update(
+        'dose_logs',
+        {
+          'sync_status': SyncStatus.pendingUpdate,
+          'updated_at': h.clock.now().toUtc().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [doseId],
+      );
+      h.doses.table.seed(
+        DoseLogModel(
+          id: doseId,
+          prescriptionId: seeded.prescriptionId,
+          scheduledTime: DateTime(2026, 3, 1, 8),
+          status: DoseStatus.taken,
+        ).toJson(),
+        updatedAt: h.clock.now().add(const Duration(minutes: 5)),
+      );
+      // Push would otherwise overwrite the remote row with the local one;
+      // make it fail so the pull-side merge decides.
+      h.doses.table.failIds.add(doseId);
+      await h.service.syncAll();
+      expect((await localRow('dose_logs', doseId))?['status'], 'taken');
+    });
+
+    test('local wins when the local pending update is newer than the remote row', () async {
+      final h = Harness();
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final doseId = await seedDoseLog(db, seeded.prescriptionId, DateTime(2026, 3, 1, 8));
+      h.doses.table.seed(
+        DoseLogModel(
+          id: doseId,
+          prescriptionId: seeded.prescriptionId,
+          scheduledTime: DateTime(2026, 3, 1, 8),
+          status: DoseStatus.taken,
+        ).toJson(),
+        updatedAt: h.clock.now(),
+      );
+      await db.update(
+        'dose_logs',
+        {
+          'sync_status': SyncStatus.pendingUpdate,
+          'updated_at': h.clock.now().add(const Duration(minutes: 5)).toUtc().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [doseId],
+      );
+      // Push would otherwise overwrite the remote row with the local one;
+      // make it fail so the pull-side merge decides.
+      h.doses.table.failIds.add(doseId);
+      await h.service.syncAll();
+      expect((await localRow('dose_logs', doseId))?['status'], 'pending');
     });
   });
 }

@@ -327,9 +327,7 @@ class SyncService {
       updatedAtOf: (d) => d.updatedAt,
       deletedAtOf: (d) => d.deletedAt,
       delete: doseLogLocal.hardDelete,
-      upsert: (d) => force
-          ? doseLogLocal.upsert(d, syncStatus: SyncStatus.synced)
-          : doseLogLocal.upsertIfSynced(d),
+      upsert: (d) => _safeUpsertDoseLog(d, force: force),
     );
   }
 
@@ -356,6 +354,7 @@ class SyncService {
       return;
     }
     DateTime? newest;
+    var anyFailure = false;
     for (final row in rows) {
       try {
         if (deletedAtOf(row) != null) {
@@ -366,12 +365,13 @@ class SyncService {
         }
         report.pulled++;
       } catch (e) {
+        anyFailure = true;
         report.failures.add(SyncFailure(table, idOf(row), 'apply: $e'));
       }
       final u = updatedAtOf(row)?.toUtc();
       if (u != null && (newest == null || u.isAfter(newest))) newest = u;
     }
-    if (newest != null) {
+    if (newest != null && !anyFailure) {
       await _cursors.setLastPullAt(table, newest.subtract(const Duration(seconds: 1)));
     }
   }
@@ -412,6 +412,11 @@ class SyncService {
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
   }
 
+  Future<void> _safeUpsertDoseLog(DoseLogModel d, {bool force = false}) async {
+    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) return;
+    await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
+  }
+
   /// True when the local row has unpushed changes that are at least as new as
   /// the remote row (so the remote row must not overwrite it). A local
   /// tombstone waiting to be pushed always wins over a live remote row — a
@@ -431,8 +436,8 @@ class SyncService {
   }
 
   void _setState(SyncState state) {
-    if (_stateController.isClosed) return;
     _currentState = state;
+    if (_stateController.isClosed) return;
     _stateController.add(state);
   }
 

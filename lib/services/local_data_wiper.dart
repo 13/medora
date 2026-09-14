@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/sync_cursor_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalDataWiper {
@@ -41,5 +42,8 @@ class LocalDataWiper {
       }
     }
     await _prefs.reload();
+    for (final key in _prefs.getKeys().where((k) => k.startsWith(SyncCursorStore.keyPrefix)).toList()) {
+      await _prefs.remove(key);
+    }
   }
 }

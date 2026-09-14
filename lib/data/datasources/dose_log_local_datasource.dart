@@ -140,33 +140,6 @@ class DoseLogLocalDatasource {
     }
   }
 
-  /// Upsert ONLY if the local row is already synced or doesn't exist.
-  /// Prevents remote pull from overwriting local pending changes
-  /// (e.g., a dose marked "taken" locally but not yet pushed).
-  Future<void> upsertIfSynced(DoseLogModel model) async {
-    final db = await _db;
-    // Check if a local row exists with pending changes
-    final existing = await db.query('dose_logs',
-        columns: ['sync_status', 'status'],
-        where: 'id = ?',
-        whereArgs: [model.id]);
-    if (existing.isNotEmpty) {
-      final localSyncStatus = existing.first['sync_status'] as String;
-      if (localSyncStatus != SyncStatus.synced) {
-        // Local row has unpushed changes — don't overwrite
-        return;
-      }
-    }
-    // Safe to upsert from remote
-    final row = _toRow(model, SyncStatus.synced);
-    final updated = await db.update('dose_logs', row,
-        where: 'id = ?', whereArgs: [model.id]);
-    if (updated == 0) {
-      await db.insert('dose_logs', row,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
-  }
-
   Future<void> upsertBatch(List<DoseLogModel> models,
       {required String syncStatus}) async {
     final db = await _db;
