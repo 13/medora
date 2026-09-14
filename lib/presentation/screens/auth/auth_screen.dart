@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -129,15 +130,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       : l10n.dontHaveAccount),
                 ),
                 const Divider(height: 32),
-                OutlinedButton(
-                  onPressed: authState.isLoading
-                      ? null
-                      : () => ref.read(authControllerProvider.notifier).signInAnonymously(),
-                  child: Text(l10n.continueAsGuest),
-                ),
-                const SizedBox(height: 12),
                 TextButton.icon(
-                  onPressed: () => ref.read(authControllerProvider.notifier).enterOfflineMode(),
+                  onPressed: () => ref.read(appModeProvider.notifier).set(AppMode.localOnly),
                   icon: const Icon(Icons.cloud_off),
                   label: Text(l10n.useOfflineMode),
                 ),

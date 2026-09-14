@@ -6,27 +6,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/family.dart';
 import 'package:medora/domain/entities/family_member.dart';
-import 'package:medora/domain/repositories/family_repository.dart';
-import 'package:medora/data/datasources/family_local_datasource.dart';
-import 'package:medora/data/datasources/family_remote_datasource.dart';
-import 'package:medora/data/repositories/family_repository_impl.dart';
-
-// ── Repository provider ──────────────────────────────────────
-
-final familyLocalDatasourceProvider = Provider<FamilyLocalDatasource>(
-  (ref) => FamilyLocalDatasource(),
-);
-
-final familyRemoteDatasourceProvider = Provider<FamilyRemoteDatasource>(
-  (ref) => FamilyRemoteDatasource(),
-);
-
-final familyRepositoryProvider = Provider<FamilyRepository>(
-  (ref) => FamilyRepositoryImpl(
-    localDatasource: ref.watch(familyLocalDatasourceProvider),
-    remoteDatasource: ref.watch(familyRemoteDatasourceProvider),
-  ),
-);
+import 'package:medora/presentation/providers/providers.dart';
 
 // ── Current family provider ──────────────────────────────────
 

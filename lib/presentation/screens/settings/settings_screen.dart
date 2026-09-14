@@ -377,8 +377,8 @@ class SettingsScreen extends ConsumerWidget {
                       Navigator.pop(ctx);
                       try {
                         // Try to delete remote data first
-                        if (SupabaseConfig.isAuthenticated) {
-                            final client = SupabaseConfig.requireClient();
+                        final client = SupabaseConfig.clientOrNull;
+                        if (client != null && SupabaseConfig.isAuthenticated) {
                             // Delete in FK order: dose_logs → prescriptions → treatments → medications
                             await client
                                 .from(AppConstants.doseLogsTable)

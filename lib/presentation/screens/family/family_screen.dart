@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/family_member.dart';
 import 'package:medora/presentation/providers/family_providers.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:share_plus/share_plus.dart';
 

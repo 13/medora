@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/auth/auth_screen.dart';
@@ -227,7 +228,7 @@ class _AuthGuardState extends ConsumerState<_AuthGuard> with WidgetsBindingObser
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authStateProvider);
-    final isOffline = ref.watch(isOfflineModeProvider);
+    final isOffline = ref.watch(appModeProvider) == AppMode.localOnly;
     final isLocked = ref.watch(isBiometricLockedProvider);
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
 

@@ -8,6 +8,7 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -46,7 +47,7 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> with Au
             icon: const Icon(Icons.settings),
             onPressed: () => context.push(AppRoutes.settings),
           ),
-          if (kIsWeb)
+          if (kIsWeb && ref.watch(appModeProvider) == AppMode.cloud)
             IconButton(
               icon: const Icon(Icons.logout),
               tooltip: l10n.signOut,

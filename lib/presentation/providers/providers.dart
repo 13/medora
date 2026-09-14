@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
@@ -15,19 +16,23 @@ import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
+import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/data/repositories/prescription_repository_impl.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
+import 'package:medora/domain/repositories/family_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
 // Local Datasource Providers
@@ -55,32 +60,46 @@ final familyLocalDatasourceProvider = Provider<FamilyLocalDatasource>(
 );
 
 // ============================================================
-// Remote Datasource Providers
+// Supabase client (null in local-only mode or unconfigured builds)
 // ============================================================
 
-final medicationDatasourceProvider = Provider<MedicationRemoteDatasource>(
-  (ref) => MedicationRemoteDatasource(),
-);
-
-final treatmentDatasourceProvider = Provider<TreatmentRemoteDatasource>(
-  (ref) => TreatmentRemoteDatasource(),
-);
-
-final prescriptionDatasourceProvider =
-    Provider<PrescriptionRemoteDatasource>(
-  (ref) => PrescriptionRemoteDatasource(),
-);
-
-final doseLogDatasourceProvider = Provider<DoseLogRemoteDatasource>(
-  (ref) => DoseLogRemoteDatasource(),
-);
-
-final familyDatasourceProvider = Provider<FamilyRemoteDatasource>(
-  (ref) => FamilyRemoteDatasource(),
-);
+final supabaseClientProvider = Provider<SupabaseClient?>((ref) {
+  final mode = ref.watch(appModeProvider);
+  if (mode != AppMode.cloud) return null;
+  return SupabaseConfig.clientOrNull;
+});
 
 // ============================================================
-// Repository Providers (offline-first)
+// Remote Datasource Providers (nullable)
+// ============================================================
+
+final medicationDatasourceProvider = Provider<MedicationRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : MedicationRemoteDatasource(client);
+});
+
+final treatmentDatasourceProvider = Provider<TreatmentRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : TreatmentRemoteDatasource(client);
+});
+
+final prescriptionDatasourceProvider = Provider<PrescriptionRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : PrescriptionRemoteDatasource(client);
+});
+
+final doseLogDatasourceProvider = Provider<DoseLogRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : DoseLogRemoteDatasource(client);
+});
+
+final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : FamilyRemoteDatasource(client);
+});
+
+// ============================================================
+// Repository Providers (offline-first; remote may be null)
 // ============================================================
 
 final medicationRepositoryProvider = Provider<MedicationRepository>(
@@ -109,6 +128,13 @@ final doseLogRepositoryProvider = Provider<DoseLogRepository>(
     localDatasource: ref.watch(doseLogLocalDatasourceProvider),
     remoteDatasource: ref.watch(doseLogDatasourceProvider),
     prescriptionLocal: ref.watch(prescriptionLocalDatasourceProvider),
+  ),
+);
+
+final familyRepositoryProvider = Provider<FamilyRepository>(
+  (ref) => FamilyRepositoryImpl(
+    localDatasource: ref.watch(familyLocalDatasourceProvider),
+    remoteDatasource: ref.watch(familyDatasourceProvider),
   ),
 );
 
