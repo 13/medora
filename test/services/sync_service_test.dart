@@ -7,6 +7,7 @@ import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
@@ -333,6 +334,35 @@ void main() {
       final report = (await h.service.syncAll())!;
       expect(report.failures.where((f) => f.table == 'medications'), isNotEmpty);
       expect(await h.cursors.lastPullAt('medications'), before);
+    });
+
+    test('cursor does not advance when a row fails to apply', () async {
+      final h = Harness();
+      final db = await AppDatabase.instance.database;
+      // A valid remote prescription (so `newest` is non-null on this table).
+      final seeded = await seedPrescription(db);
+      h.prescriptions.table.seed(
+        (await PrescriptionLocalDatasource().getPrescriptionById(seeded.prescriptionId))!
+            .toJson(),
+      );
+      // A remote prescription whose foreign keys point nowhere: `fromJson`
+      // parses it fine, but the local insert violates
+      // `PRAGMA foreign_keys = ON` and throws inside `upsert`.
+      h.prescriptions.table.seed(
+        PrescriptionModel(
+          id: 'orphan',
+          treatmentId: 'no-such-treatment',
+          medicationId: 'no-such-med',
+          dosage: '1',
+          startTime: DateTime(2026, 3, 1, 8),
+        ).toJson(),
+      );
+      final report = (await h.service.syncAll())!;
+      final failure =
+          report.failures.singleWhere((f) => f.table == 'prescriptions' && f.id == 'orphan');
+      expect(failure.error, startsWith('apply:'));
+      expect(report.pulled, 1); // only the valid prescription applied
+      expect(await h.cursors.lastPullAt('prescriptions'), isNull);
     });
   });
 
