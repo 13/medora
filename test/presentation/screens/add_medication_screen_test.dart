@@ -78,6 +78,18 @@ void main() {
     expect(find.text('Please enter a medication name'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Medication Name *'), findsOneWidget);
 
+    // Collapse Basics again (now auto-expanded from the error above), then
+    // save again: the section must still reopen and show the error, proving
+    // the manual collapse wrote back into the controller.
+    await tester.tap(find.text('Basics'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Please enter a medication name'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Medication Name *'), findsOneWidget);
+
     final list = await c.read(medicationListProvider.future);
     expect(list, isEmpty);
   });

@@ -56,13 +56,13 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   late final TextEditingController _barcodeController;
   late final TextEditingController _notesController;
 
-  // Force-expand the section containing a failing field or, in edit mode,
-  // a section that already has data. See [FormSection.controller].
-  // Starts false (Basics is opened by FormSection.initiallyExpanded, not by
-  // this controller) so a later `.value = true` from a validator after a
-  // manual collapse is a real transition and notifies listeners — a
-  // same-value assignment (true -> true) would be a ValueNotifier no-op.
-  final _basicsExpanded = ValueNotifier<bool>(false);
+  // Two-way synced with FormSection: force-expand the section containing a
+  // failing field, or, in edit mode, a section that already has data; a
+  // manual header collapse writes back into these too. See
+  // [FormSection.controller]. Basics starts expanded; Stock & storage and
+  // Details start collapsed and are opened once loaded edit-mode data shows
+  // they have content (see [_loadExistingMedication]).
+  final _basicsExpanded = ValueNotifier<bool>(true);
   final _stockExpanded = ValueNotifier<bool>(false);
   final _detailsExpanded = ValueNotifier<bool>(false);
 

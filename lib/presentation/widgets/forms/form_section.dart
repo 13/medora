@@ -7,11 +7,14 @@ import 'package:medora/core/theme_extensions.dart';
 /// A [Card] with a tappable header (icon, title, optional collapsed
 /// [summary], chevron) and an animated collapsible body.
 ///
-/// Expansion is normally driven by the header tap, but a parent can force
-/// the section open — e.g. to reveal a field that failed validation, or to
-/// start an edit-mode section open when it already has data — by passing a
-/// [controller] and setting its value to `true`. Setting it back to `false`
-/// does not collapse the section; only the header tap does that.
+/// Expansion is normally driven by the header tap, but a parent can also
+/// drive it programmatically — e.g. to force the section open to reveal a
+/// field that failed validation, or to start an edit-mode section open when
+/// it already has data — by passing a [controller]. The sync is two-way: a
+/// header tap writes the new expanded state back to the controller, and
+/// setting the controller's value (to either `true` or `false`) expands or
+/// collapses the section. This keeps a controller-driven force-expand
+/// working even after the user has manually collapsed the section.
 class FormSection extends StatefulWidget {
   const FormSection({
     super.key,
@@ -31,7 +34,9 @@ class FormSection extends StatefulWidget {
   /// Shown next to the chevron while the section is collapsed.
   final String? summary;
 
-  /// When set to `true`, forces the section open even if collapsed.
+  /// When provided, keeps the section's expanded state in sync with this
+  /// notifier in both directions: setting it forces the section open or
+  /// closed, and a manual header tap writes the new state back into it.
   final ValueNotifier<bool>? controller;
 
   @override
@@ -40,7 +45,7 @@ class FormSection extends StatefulWidget {
 
 class _FormSectionState extends State<FormSection> {
   late bool _expanded =
-      widget.initiallyExpanded || (widget.controller?.value ?? false);
+      widget.controller?.value ?? widget.initiallyExpanded;
 
   @override
   void initState() {
@@ -65,8 +70,9 @@ class _FormSectionState extends State<FormSection> {
   }
 
   void _onControllerChanged() {
-    if (widget.controller!.value && !_expanded) {
-      setState(() => _expanded = true);
+    final v = widget.controller!.value;
+    if (v != _expanded) {
+      setState(() => _expanded = v);
     }
   }
 
@@ -78,7 +84,10 @@ class _FormSectionState extends State<FormSection> {
       child: Column(
         children: [
           InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: () {
+              setState(() => _expanded = !_expanded);
+              widget.controller?.value = _expanded;
+            },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(

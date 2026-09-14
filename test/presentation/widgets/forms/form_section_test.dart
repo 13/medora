@@ -38,4 +38,46 @@ void main() {
     expect(formKey.currentState!.validate(), isFalse);
     expect(notifier.value, isTrue);
   });
+
+  testWidgets('manual collapse writes back to the controller so a later force-expand works twice', (tester) async {
+    final n = ValueNotifier<bool>(true);
+    addTearDown(n.dispose);
+
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: FormSection(
+          title: 'Section',
+          icon: Icons.info,
+          controller: n,
+          initiallyExpanded: true,
+          children: const [Text('body')],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('body'), findsOneWidget);
+
+    await tester.tap(find.text('Section'));
+    await tester.pumpAndSettle();
+
+    expect(n.value, isFalse);
+    expect(find.text('body'), findsNothing);
+
+    n.value = true;
+    await tester.pumpAndSettle();
+
+    expect(find.text('body'), findsOneWidget);
+
+    await tester.tap(find.text('Section'));
+    await tester.pumpAndSettle();
+
+    expect(n.value, isFalse);
+
+    n.value = true;
+    await tester.pumpAndSettle();
+
+    expect(find.text('body'), findsOneWidget);
+  });
 }
