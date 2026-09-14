@@ -75,6 +75,11 @@
   "loadingMedications": "Loading medications...",
 
   "editMedication": "Edit Medication",
+  "sectionBasics": "Basics",
+  "sectionStock": "Stock & storage",
+  "sectionDetails": "Details",
+  "minStockShort": "min {n}",
+  "@minStockShort": { "placeholders": { "n": { "type": "int" } } },
   "medicationNameLabel": "Medication Name *",
   "pleaseEnterMedicationName": "Please enter a medication name",
   "activeIngredient": "Active Ingredient",

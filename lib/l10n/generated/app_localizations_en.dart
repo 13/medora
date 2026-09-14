@@ -139,6 +139,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get editMedication => 'Edit Medication';
 
   @override
+  String get sectionBasics => 'Basics';
+
+  @override
+  String get sectionStock => 'Stock & storage';
+
+  @override
+  String get sectionDetails => 'Details';
+
+  @override
+  String minStockShort(int n) {
+    return 'min $n';
+  }
+
+  @override
   String get medicationNameLabel => 'Medication Name *';
 
   @override

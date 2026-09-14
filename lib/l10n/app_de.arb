@@ -48,6 +48,11 @@
   "loadingMedications": "Medikamente werden geladen...",
 
   "editMedication": "Medikament bearbeiten",
+  "sectionBasics": "Grunddaten",
+  "sectionStock": "Bestand & Lagerung",
+  "sectionDetails": "Details",
+  "minStockShort": "min {n}",
+  "@minStockShort": { "placeholders": { "n": { "type": "int" } } },
   "medicationNameLabel": "Medikamentenname *",
   "pleaseEnterMedicationName": "Bitte geben Sie einen Medikamentennamen ein",
   "activeIngredient": "Wirkstoff",

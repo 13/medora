@@ -17,6 +17,7 @@ import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
+import 'package:medora/presentation/widgets/forms/unit_dropdown.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:uuid/uuid.dart';
 
@@ -562,23 +563,6 @@ class _TreatmentDetailScreenState
         dosageText, p.intervalHours, p.durationDays);
   }
 
-  /// Build unit dropdown items for dosage selector.
-  List<DropdownMenuItem<String>> _unitItems(
-      BuildContext context, AppLocalizations l10n) {
-    return [
-      DropdownMenuItem(value: 'pieces', child: Text(l10n.unitPieces)),
-      DropdownMenuItem(value: 'pills', child: Text(l10n.unitPills)),
-      DropdownMenuItem(value: 'tablets', child: Text(l10n.unitTablets)),
-      DropdownMenuItem(value: 'capsules', child: Text(l10n.unitCapsules)),
-      DropdownMenuItem(value: 'ml', child: Text(l10n.unitMl)),
-      DropdownMenuItem(value: 'drops', child: Text(l10n.unitDrops)),
-      DropdownMenuItem(value: 'bustine', child: Text(l10n.unitBustine)),
-      DropdownMenuItem(value: 'ampoules', child: Text(l10n.unitAmpoules)),
-      DropdownMenuItem(value: 'suppositories', child: Text(l10n.unitSuppositories)),
-      DropdownMenuItem(value: 'patches', child: Text(l10n.unitPatches)),
-    ];
-  }
-
   /// Compare two nullable string lists for equality.
   static bool _listEquals(List<String>? a, List<String>? b) {
     if (a == null && b == null) return true;
@@ -776,13 +760,12 @@ class _TreatmentDetailScreenState
                               // Unit — override or use medication's unit
                               Expanded(
                                 flex: 3,
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: dosageUnitOverride ?? medUnit,
+                                child: UnitDropdown(
+                                  value: dosageUnitOverride ?? medUnit,
                                   decoration: InputDecoration(
                                     border: const OutlineInputBorder(),
                                     labelText: l10n.quantityUnit,
                                   ),
-                                  items: _unitItems(ctx, l10n),
                                   onChanged: (v) => setSheetState(
                                       () => dosageUnitOverride = v),
                                 ),

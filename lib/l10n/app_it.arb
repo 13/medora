@@ -48,6 +48,11 @@
   "loadingMedications": "Caricamento farmaci...",
 
   "editMedication": "Modifica farmaco",
+  "sectionBasics": "Dati principali",
+  "sectionStock": "Scorte e conservazione",
+  "sectionDetails": "Dettagli",
+  "minStockShort": "min {n}",
+  "@minStockShort": { "placeholders": { "n": { "type": "int" } } },
   "medicationNameLabel": "Nome del farmaco *",
   "pleaseEnterMedicationName": "Inserisci il nome del farmaco",
   "activeIngredient": "Principio attivo",

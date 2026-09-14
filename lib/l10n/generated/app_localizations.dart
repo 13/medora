@@ -340,6 +340,30 @@ abstract class AppLocalizations {
   /// **'Edit Medication'**
   String get editMedication;
 
+  /// No description provided for @sectionBasics.
+  ///
+  /// In en, this message translates to:
+  /// **'Basics'**
+  String get sectionBasics;
+
+  /// No description provided for @sectionStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Stock & storage'**
+  String get sectionStock;
+
+  /// No description provided for @sectionDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get sectionDetails;
+
+  /// No description provided for @minStockShort.
+  ///
+  /// In en, this message translates to:
+  /// **'min {n}'**
+  String minStockShort(int n);
+
   /// No description provided for @medicationNameLabel.
   ///
   /// In en, this message translates to:
