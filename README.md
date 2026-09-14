@@ -36,6 +36,9 @@ devices through Supabase.
 
 ## Quick start
 
+Medora needs Flutter 3.44.6 / Dart 3.12 or newer (it uses private named
+parameters), which is why every command below goes through `fvm`.
+
 ```bash
 fvm install                 # Flutter is pinned in .fvmrc (see https://fvm.app)
 fvm flutter pub get

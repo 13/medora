@@ -48,10 +48,16 @@ android {
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+                // A missing entry must name itself; `as String` on a null
+                // value only says "null cannot be cast to String".
+                fun required(key: String): String =
+                    keystoreProperties.getProperty(key)
+                        ?: error("android/key.properties is missing $key")
+
+                keyAlias = required("keyAlias")
+                keyPassword = required("keyPassword")
+                storeFile = file(required("storeFile"))
+                storePassword = required("storePassword")
             }
         }
     }

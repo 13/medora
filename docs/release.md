@@ -144,6 +144,14 @@ Serve `build/web/` as static files. The PWA manifest is
 or icon changes. OCR scanning, photo capture and scheduled notifications are
 unavailable in the browser and the UI hides them.
 
+## Dependency deferrals
+
+Two direct dependencies stay one patch behind on purpose: `intl` (0.20.2,
+latest 0.20.3) and `material_color_utilities` (0.13.0, latest 0.13.1) are
+pinned by the SDK through `flutter_localizations` and `flutter_test`
+(`fvm flutter pub outdated` shows both as not resolvable). They move when the
+Flutter pin in `.fvmrc` moves, not before.
+
 ## Release checklist
 
 1. `fvm flutter analyze --fatal-infos`, `fvm dart format --set-exit-if-changed .`,
