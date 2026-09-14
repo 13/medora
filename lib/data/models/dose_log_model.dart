@@ -48,17 +48,17 @@ class DoseLogModel {
     return DoseLogModel(
       id: json['id'] as String,
       prescriptionId: json['prescription_id'] as String,
-      scheduledTime: DateTime.parse(json['scheduled_time'] as String),
+      scheduledTime: DateTime.parse(json['scheduled_time'] as String).toLocal(),
       takenTime: json['taken_time'] != null
-          ? DateTime.parse(json['taken_time'] as String)
+          ? DateTime.parse(json['taken_time'] as String).toLocal()
           : null,
       status: DoseStatus.fromString(json['status'] as String? ?? 'pending'),
       notes: json['notes'] as String?,
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+          ? DateTime.parse(json['created_at'] as String).toLocal()
           : null,
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? DateTime.parse(json['updated_at'] as String).toLocal()
           : null,
       medicationName: medication?['name'] as String?,
       dosage: prescription?['dosage'] as String?,
@@ -72,17 +72,17 @@ class DoseLogModel {
     return DoseLogModel(
       id: map['id'] as String,
       prescriptionId: map['prescription_id'] as String,
-      scheduledTime: DateTime.parse(map['scheduled_time'] as String),
+      scheduledTime: DateTime.parse(map['scheduled_time'] as String).toLocal(),
       takenTime: map['taken_time'] != null
-          ? DateTime.tryParse(map['taken_time'] as String)
+          ? DateTime.tryParse(map['taken_time'] as String)?.toLocal()
           : null,
       status: DoseStatus.fromString(map['status'] as String? ?? 'pending'),
       notes: map['notes'] as String?,
       createdAt: map['created_at'] != null
-          ? DateTime.tryParse(map['created_at'] as String)
+          ? DateTime.tryParse(map['created_at'] as String)?.toLocal()
           : null,
       updatedAt: map['updated_at'] != null
-          ? DateTime.tryParse(map['updated_at'] as String)
+          ? DateTime.tryParse(map['updated_at'] as String)?.toLocal()
           : null,
       medicationName: map['medication_name'] as String?,
       dosage: map['dosage'] as String?,

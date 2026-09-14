@@ -159,6 +159,7 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (value) async {
               if (value) await ReminderService.instance.requestPermissions();
               await ref.read(remindersEnabledProvider.notifier).set(value);
+              if (value) ref.read(reminderSchedulerProvider).reset();
               await ref.read(reminderSchedulerProvider).reconcile();
             },
           ),
@@ -362,6 +363,7 @@ class SettingsScreen extends ConsumerWidget {
     if (choice == 'wipe') {
       try {
         await ref.read(localDataWiperProvider).wipe();
+        ref.read(reminderSchedulerProvider).reset();
         ref.invalidate(medicationListProvider);
         ref.invalidate(treatmentListProvider);
         ref.invalidate(todaysDoseLogsProvider);
@@ -475,6 +477,7 @@ class SettingsScreen extends ConsumerWidget {
                         }
                         // If remote deletion is successful, delete local data
                         await ref.read(localDataWiperProvider).wipe();
+                        ref.read(reminderSchedulerProvider).reset();
 
                         // Invalidate all providers
                         ref.invalidate(medicationListProvider);

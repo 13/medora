@@ -13,9 +13,13 @@ import '../helpers/test_database.dart';
 class FakePort implements ReminderPort {
   int cancelAllCalls = 0;
   final scheduled = <DoseLog>[];
+  final cancelledDoses = <String>[];
 
   @override
   Future<void> cancelAll() async => cancelAllCalls++;
+
+  @override
+  Future<void> cancelForDose(String doseId) async => cancelledDoses.add(doseId);
 
   @override
   Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) async {
@@ -97,8 +101,12 @@ void main() {
     final scheduler = make(port);
     final first = scheduler.reconcile();
     final second = scheduler.reconcile(); // arrives while first is running
-    await Future.wait([first, second]);
-    expect(port.cancelAllCalls, 2, reason: 'second request must run after the first completes');
+    final results = await Future.wait([first, second]);
+    // Diff-based reconcile: only the first pass is a full cancel; the rerun
+    // is incremental and finds nothing new to cancel or schedule.
+    expect(port.cancelAllCalls, 1, reason: 'only the first pass does a full cancel');
+    expect(results[0], 1, reason: 'outer call returns the count after both passes complete');
+    expect(results[1], 0, reason: 'the merged-in request returns immediately without doing work');
   });
 
   test('getPendingBetween only schedules doses from active prescriptions', () async {
@@ -115,5 +123,41 @@ void main() {
 
     expect(count, 1);
     expect(port.scheduled.length, 1);
+  });
+
+  test('second reconcile only cancels removed and schedules added doses', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    final a = await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 1)));
+    final b = await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 2)));
+    final port = FakePort();
+    final scheduler = make(port);
+
+    await scheduler.reconcile();
+    expect(port.cancelAllCalls, 1);
+    expect(port.scheduled.map((d) => d.id).toList(), [a, b]);
+
+    // a is taken, c appears
+    await db.update('dose_logs', {'status': 'taken'}, where: 'id = ?', whereArgs: [a]);
+    final c = await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 3)));
+    port.scheduled.clear();
+
+    final count = await scheduler.reconcile();
+    expect(port.cancelAllCalls, 1, reason: 'no full cancel on incremental run');
+    expect(port.cancelledDoses, [a]);
+    expect(port.scheduled.map((d) => d.id).toList(), [c]);
+    expect(count, 2);
+  });
+
+  test('reset() forces a full cancel on the next reconcile', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 1)));
+    final port = FakePort();
+    final scheduler = make(port);
+    await scheduler.reconcile();
+    scheduler.reset();
+    await scheduler.reconcile();
+    expect(port.cancelAllCalls, 2);
   });
 }

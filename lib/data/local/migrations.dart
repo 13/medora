@@ -14,7 +14,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 12;
+const int kSchemaVersion = 13;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -35,6 +35,17 @@ final List<Migration> kMigrations = [
       final path = row['image_path'] as String;
       final name = path.substring(path.lastIndexOf('/') + 1);
       await db.update('medications', {'image_path': name}, where: 'id = ?', whereArgs: [row['id']]);
+    }
+  }),
+  // v13: dose timestamps are stored as naive local ISO strings so that
+  // string range comparisons match local day boundaries (Phase 1 review).
+  Migration(13, (db) async {
+    for (final column in ['scheduled_time', 'taken_time', 'updated_at', 'created_at']) {
+      final rows = await db.query('dose_logs', columns: ['id', column], where: "$column LIKE '%Z'");
+      for (final row in rows) {
+        final local = DateTime.parse(row[column] as String).toLocal().toIso8601String();
+        await db.update('dose_logs', {column: local}, where: 'id = ?', whereArgs: [row['id']]);
+      }
     }
   }),
 ];
