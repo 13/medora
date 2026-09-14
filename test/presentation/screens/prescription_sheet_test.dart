@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -19,22 +20,40 @@ import '../../helpers/test_database.dart';
 /// Host screen with a single button that opens the prescription sheet —
 /// mirrors how [TreatmentDetailScreen] invokes it.
 class _Host extends ConsumerWidget {
-  const _Host({required this.treatmentId, required this.pickTime});
+  const _Host({
+    required this.treatmentId,
+    required this.pickTime,
+    this.existingPrescriptionId,
+  });
 
   final String treatmentId;
   final Future<TimeOfDay?> Function(BuildContext, TimeOfDay) pickTime;
+
+  /// When set, the sheet opens in edit mode on that prescription.
+  final String? existingPrescriptionId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: Center(
         child: ElevatedButton(
-          onPressed: () => showPrescriptionSheet(
-            context,
-            ref,
-            treatmentId: treatmentId,
-            pickTime: pickTime,
-          ),
+          onPressed: () async {
+            Prescription? existing;
+            if (existingPrescriptionId != null) {
+              existing = (await ref
+                      .read(prescriptionRepositoryProvider)
+                      .getPrescriptionById(existingPrescriptionId!))
+                  .dataOrNull;
+            }
+            if (!context.mounted) return;
+            await showPrescriptionSheet(
+              context,
+              ref,
+              treatmentId: treatmentId,
+              existing: existing,
+              pickTime: pickTime,
+            );
+          },
           child: const Text('Open'),
         ),
       ),
@@ -233,4 +252,92 @@ void main() {
       expect(find.text(l10n.required), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'switching to a unit-less medication drops the amount typed for the previous one',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final db = await AppDatabase.instance.database;
+      // seedPrescription's medication has quantity_unit 'tablets'.
+      final seeded = await seedPrescription(db);
+      await seedUnitlessMedication(db);
+
+      await pumpMedoraApp(
+        tester,
+        _Host(
+          treatmentId: seeded.treatmentId,
+          pickTime: (_, _) async => null,
+        ),
+        overrides: await overrides(),
+      );
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      // Pick the medication that has a unit and type an amount for it.
+      await tester.tap(find.byKey(const Key('medicationDropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Tachipirina').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('dosageAmountField')), '2');
+      await tester.pumpAndSettle();
+
+      // Switch to the unit-less one: the amount field is replaced by the
+      // free-text field, and the stale "2" must not survive into the save.
+      await tester.tap(find.byKey(const Key('medicationDropdown')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('NoUnitMed').last);
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+          find.byKey(const Key('dosageFreeTextField')), '20 gocce');
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Add'));
+      await tester.pumpAndSettle();
+
+      final rows = await db.query('prescriptions',
+          where: 'treatment_id = ? AND id != ?',
+          whereArgs: [seeded.treatmentId, seeded.prescriptionId]);
+      expect(rows.single['dosage'], '20 gocce');
+      expect(rows.single['dosage_amount'], isNull);
+    },
+  );
+
+  testWidgets('medication dropdown keeps an archived medication that is already selected',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = await AppDatabase.instance.database;
+    final seeded = await seedPrescription(db);
+    await db.update('medications', {'is_archived': 1},
+        where: 'id = ?', whereArgs: [seeded.medicationId]);
+
+    await pumpMedoraApp(
+      tester,
+      _Host(
+        treatmentId: seeded.treatmentId,
+        pickTime: (_, _) async => null,
+        existingPrescriptionId: seeded.prescriptionId,
+      ),
+      overrides: await overrides(),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    // Editing a prescription whose medication was archived: the archived
+    // medication must still be offered, otherwise the dropdown's
+    // initialValue matches no item and the selection is silently lost.
+    expect(find.textContaining('Tachipirina'), findsWidgets);
+    final dropdown = tester.widget<DropdownButtonFormField<String>>(
+      find.byKey(const Key('medicationDropdown')),
+    );
+    expect(dropdown.initialValue, seeded.medicationId);
+  });
 }

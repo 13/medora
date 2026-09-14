@@ -13,6 +13,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -192,7 +193,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
         ),
         const SizedBox(height: 4),
         Text(
-          '${dose.displayDosage ?? ''} · ${dose.scheduledTime.timeFormatted}',
+          '${dosageLabel(l10n, dose) ?? ''} · ${dose.scheduledTime.timeFormatted}',
           style: context.text.bodyMedium?.copyWith(
             color: context.colors.onPrimaryContainer.withValues(alpha: 0.8),
           ),

@@ -11,6 +11,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -506,7 +507,7 @@ class _TreatmentDetailScreenState
   }
 
   String _prescriptionSummary(AppLocalizations l10n, Prescription p) {
-    final dosageText = p.displayDosage();
+    final dosageText = prescriptionDosageLabel(l10n, p);
     if (p.scheduleType == 'times_per_day') {
       final times = p.scheduleTimes ?? [];
       final labels = times.map((t) {

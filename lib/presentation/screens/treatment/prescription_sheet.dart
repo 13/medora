@@ -8,6 +8,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
@@ -139,17 +140,18 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
   }
 
   /// Format expiry date + unit for display in the medication dropdown.
-  String _medLabel(Medication m) {
+  /// Both are locale-dependent: the date goes through the shared
+  /// [DateTimeX.formatted] extension, the unit through the localized
+  /// [AppConstants.unitLabel] rather than its raw storage key.
+  String _medLabel(AppLocalizations l10n, Medication m) {
     final expiry = m.expiryDate;
     final unit = m.quantityUnit;
     final parts = <String>[m.name];
     if (expiry != null) {
-      parts.add(
-        '(${expiry.day.toString().padLeft(2, '0')}.${expiry.month.toString().padLeft(2, '0')}.${expiry.year})',
-      );
+      parts.add('(${expiry.formatted})');
     }
     if (unit != null && unit.isNotEmpty) {
-      parts.add('· ${m.quantity} $unit');
+      parts.add('· ${m.quantity} ${AppConstants.unitLabel(l10n, unit)}');
     }
     return parts.join(' ');
   }
@@ -337,10 +339,15 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
             ),
             hintText: l10n.selectMedication,
           ),
-          items: medications.where((m) => !m.isArchived).map((m) {
+          // Archived medications are not offered, but one already selected
+          // (editing an old prescription) stays in the list — otherwise the
+          // dropdown's initialValue has no matching item.
+          items: medications
+              .where((m) => !m.isArchived || m.id == _selectedMedicationId)
+              .map((m) {
             return DropdownMenuItem(
               value: m.id,
-              child: Text(_medLabel(m), overflow: TextOverflow.ellipsis),
+              child: Text(_medLabel(l10n, m), overflow: TextOverflow.ellipsis),
             );
           }).toList(),
           validator: (value) =>
@@ -350,6 +357,19 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
               _selectedMedicationId = value;
               // Reset unit override so it inherits from new med.
               _dosageUnitOverride = null;
+              // Only one of the two dosage inputs is rendered for a given
+              // medication; clear the one that is about to disappear so a
+              // value typed for the previous medication cannot be saved
+              // (an amount with no unit used to save as "2 null").
+              final unit = medications
+                  .where((m) => m.id == value)
+                  .firstOrNull
+                  ?.quantityUnit;
+              if (unit == null || unit.isEmpty) {
+                _dosageAmountController.clear();
+              } else {
+                _dosageFreeController.clear();
+              }
             });
           },
         ),
@@ -630,9 +650,22 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
     final double? amount = double.tryParse(
       _dosageAmountController.text.trim().replaceAll(',', '.'),
     );
-    final String dosageText = amount != null
-        ? '${amount % 1 == 0 ? amount.toInt() : amount} ${_dosageUnitOverride ?? medUnit}'
-        : _dosageFreeController.text.trim();
+    final unit = _dosageUnitOverride ?? medUnit;
+    final freeText = _dosageFreeController.text.trim();
+    // `dosage` keeps the raw unit key (it is a display fallback, and a
+    // label localized at save time would freeze that locale into the
+    // record); rendering localizes it via `dosageLabel`. Never interpolate
+    // a null unit — that is where "2 null" came from.
+    final String dosageText;
+    if (amount != null && unit != null && unit.isNotEmpty) {
+      dosageText = '${amount % 1 == 0 ? amount.toInt() : amount} $unit';
+    } else if (freeText.isNotEmpty) {
+      dosageText = freeText;
+    } else if (amount != null) {
+      dosageText = '${amount % 1 == 0 ? amount.toInt() : amount}';
+    } else {
+      dosageText = '';
+    }
 
     int interval = int.tryParse(_intervalController.text.trim()) ?? 8;
     if (_scheduleType == 'times_per_day' && _selectedTimes.isNotEmpty) {

@@ -207,4 +207,23 @@ void main() {
     completer.complete();
     await tester.pumpAndSettle();
   });
+
+  testWidgets('dose cards render the localized unit label, never the raw key',
+      (tester) async {
+    final db = await AppDatabase.instance.database;
+    // seedPrescription stores quantity_unit 'tablets' + dosage_amount 1.
+    final s = await seedPrescription(db, medicationName: 'Brufen');
+    await seedDoseLog(db, s.prescriptionId, today.add(const Duration(hours: 8)));
+
+    await pumpMedoraApp(
+      tester,
+      const DoseScheduleScreen(),
+      overrides: await overrides(),
+      locale: const Locale('it'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 Compresse'), findsOneWidget);
+    expect(find.textContaining('tablets'), findsNothing);
+  });
 }

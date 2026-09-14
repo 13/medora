@@ -7,6 +7,7 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -628,9 +629,9 @@ class _DoseCard extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (dose.displayDosage != null)
+                    if (dosageLabel(l10n, dose) != null)
                       Text(
-                        dose.displayDosage!,
+                        dosageLabel(l10n, dose)!,
                         style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: isSmall ? 11 : 13),
                       ),
                     if (dose.prescriptionNotes?.isNotEmpty == true)

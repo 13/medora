@@ -9,6 +9,7 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
@@ -240,9 +241,9 @@ class _DoseHistoryTile extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (dose.displayDosage != null && dose.displayDosage!.isNotEmpty)
+          if (dosageLabel(l10n, dose)?.isNotEmpty ?? false)
             Text(
-              dose.displayDosage!,
+              dosageLabel(l10n, dose)!,
               style: TextStyle(fontSize: 12, color: context.colors.onSurfaceVariant),
             ),
           // Treatment and patient info with chips

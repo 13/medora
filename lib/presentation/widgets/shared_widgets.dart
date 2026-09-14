@@ -7,6 +7,7 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 
 /// Badge showing medication expiry status.
@@ -240,8 +241,8 @@ void showDoseDetailBottomSheet({
                         dose.medicationName ?? l10n.unknownMedication,
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                      if (dose.displayDosage != null)
-                        Text(dose.displayDosage!, style: TextStyle(color: context.colors.onSurfaceVariant)),
+                      if (dosageLabel(l10n, dose) != null)
+                        Text(dosageLabel(l10n, dose)!, style: TextStyle(color: context.colors.onSurfaceVariant)),
                     ],
                   ),
                 ),
