@@ -1,6 +1,5 @@
 /// Medora - Treatment Detail Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'dart:async';
 
@@ -8,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
@@ -132,7 +131,7 @@ class _TreatmentDetailScreenState
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, true),
                               child: Text(l10n.delete,
-                                  style: const TextStyle(color: Colors.red)),
+                                  style: TextStyle(color: context.colors.error)),
                             ),
                           ],
                         ),
@@ -150,8 +149,8 @@ class _TreatmentDetailScreenState
                     PopupMenuItem(
                       value: 'end',
                       child: ListTile(
-                        leading: const Icon(Icons.stop_circle,
-                            color: Colors.orange),
+                        leading: Icon(Icons.stop_circle,
+                            color: context.medora.warning),
                         title: Text(l10n.endTreatment),
                         dense: true,
                         contentPadding: EdgeInsets.zero,
@@ -161,8 +160,8 @@ class _TreatmentDetailScreenState
                     PopupMenuItem(
                       value: 'archive',
                       child: ListTile(
-                        leading: const Icon(Icons.archive,
-                            color: Colors.blueGrey),
+                        leading: Icon(Icons.archive,
+                            color: context.colors.onSurfaceVariant),
                         title: Text(l10n.archiveTreatment),
                         dense: true,
                         contentPadding: EdgeInsets.zero,
@@ -171,7 +170,7 @@ class _TreatmentDetailScreenState
                   PopupMenuItem(
                     value: 'delete',
                     child: ListTile(
-                      leading: const Icon(Icons.delete, color: Colors.red),
+                      leading: Icon(Icons.delete, color: context.colors.error),
                       title: Text(l10n.deleteTreatment),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
@@ -187,8 +186,8 @@ class _TreatmentDetailScreenState
               // Status card
               Card(
                 color: treatment.isActive
-                    ? AppTheme.primaryColor.withValues(alpha: 0.1)
-                    : Colors.grey.withValues(alpha: 0.1),
+                    ? context.colors.primaryContainer
+                    : context.colors.surfaceContainerHighest,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -201,8 +200,8 @@ class _TreatmentDetailScreenState
                                 ? Icons.healing
                                 : Icons.healing_outlined,
                             color: treatment.isActive
-                                ? AppTheme.primaryColor
-                                : Colors.grey,
+                                ? context.colors.onPrimaryContainer
+                                : context.colors.onSurfaceVariant,
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -210,8 +209,8 @@ class _TreatmentDetailScreenState
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: treatment.isActive
-                                  ? AppTheme.primaryColor
-                                  : Colors.grey,
+                                  ? context.colors.onPrimaryContainer
+                                  : context.colors.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -220,7 +219,7 @@ class _TreatmentDetailScreenState
                       if (treatment.patientTags.isNotEmpty) ...[
                         Text(l10n.treatmentPatientTags,
                             style: TextStyle(
-                                color: Colors.grey[600], fontSize: 12)),
+                                color: context.colors.onSurfaceVariant, fontSize: 12)),
                         const SizedBox(height: 4),
                         Wrap(
                           spacing: 6,
@@ -234,7 +233,7 @@ class _TreatmentDetailScreenState
                       if (treatment.symptomTags.isNotEmpty) ...[
                         Text(l10n.treatmentSymptomTags,
                             style: TextStyle(
-                                color: Colors.grey[600], fontSize: 12)),
+                                color: context.colors.onSurfaceVariant, fontSize: 12)),
                         const SizedBox(height: 4),
                         Wrap(
                           spacing: 6,
@@ -253,7 +252,7 @@ class _TreatmentDetailScreenState
                               children: [
                                 Text(l10n.startDate,
                                     style: TextStyle(
-                                        color: Colors.grey[600],
+                                        color: context.colors.onSurfaceVariant,
                                         fontSize: 12)),
                                 Text(treatment.startDate.formatted),
                               ],
@@ -265,7 +264,7 @@ class _TreatmentDetailScreenState
                               children: [
                                 Text(l10n.endDate,
                                     style: TextStyle(
-                                        color: Colors.grey[600],
+                                        color: context.colors.onSurfaceVariant,
                                         fontSize: 12)),
                                 Text(treatment.endDate
                                     .formattedOr(l10n.ongoing)),
@@ -279,7 +278,7 @@ class _TreatmentDetailScreenState
                         const SizedBox(height: 12),
                         Text(l10n.notes,
                             style: TextStyle(
-                                color: Colors.grey[600], fontSize: 12)),
+                                color: context.colors.onSurfaceVariant, fontSize: 12)),
                         const SizedBox(height: 4),
                         Text(treatment.notes!),
                       ],
@@ -319,7 +318,7 @@ class _TreatmentDetailScreenState
                         child: Column(
                           children: [
                             Icon(Icons.medication_outlined,
-                                size: 48, color: Colors.grey[400]),
+                                size: 48, color: context.colors.outline),
                             const SizedBox(height: 8),
                             Text(l10n.noPrescriptionsYet),
                             if (treatment.isActive) ...[
@@ -344,9 +343,9 @@ class _TreatmentDetailScreenState
                         background: Container(
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
-                          color: Colors.red,
-                          child: const Icon(Icons.delete,
-                              color: Colors.white),
+                          color: context.colors.error,
+                          child: Icon(Icons.delete,
+                              color: context.colors.onError),
                         ),
                         confirmDismiss: (_) async {
                           return await showDialog<bool>(
@@ -365,8 +364,8 @@ class _TreatmentDetailScreenState
                                   onPressed: () =>
                                       Navigator.pop(ctx, true),
                                   child: Text(l10n.delete,
-                                      style: const TextStyle(
-                                          color: Colors.red)),
+                                      style: TextStyle(
+                                          color: context.colors.error)),
                                 ),
                               ],
                             ),
@@ -391,10 +390,10 @@ class _TreatmentDetailScreenState
                         },
                         child: Card(
                           child: ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: AppTheme.primaryColor,
+                            leading: CircleAvatar(
+                              backgroundColor: context.colors.primary,
                               child: Icon(Icons.medication,
-                                  color: Colors.white, size: 20),
+                                  color: context.colors.onPrimary, size: 20),
                             ),
                             title: Text(
                               p.medicationName ?? l10n.unknownMedication,
@@ -410,17 +409,17 @@ class _TreatmentDetailScreenState
                                     margin: const EdgeInsets.only(top: 4),
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: Colors.grey.withValues(alpha: 0.15),
+                                      color: context.colors.surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: Text(l10n.done, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                    child: Text(l10n.done, style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant)),
                                   ),
                                 if (p.notes != null && p.notes!.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
                                       p.notes!,
-                                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                                      style: TextStyle(fontSize: 11, color: context.colors.onSurfaceVariant),
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -452,8 +451,8 @@ class _TreatmentDetailScreenState
                                   PopupMenuItem(
                                     value: 'reactivate',
                                     child: ListTile(
-                                      leading: const Icon(Icons.play_circle_outline, size: 20, color: Colors.green),
-                                      title: Text(l10n.reactivatePrescription, style: const TextStyle(color: Colors.green)),
+                                      leading: Icon(Icons.play_circle_outline, size: 20, color: context.medora.success),
+                                      title: Text(l10n.reactivatePrescription, style: TextStyle(color: context.medora.success)),
                                       dense: true,
                                       contentPadding: EdgeInsets.zero,
                                     ),
@@ -461,8 +460,8 @@ class _TreatmentDetailScreenState
                                 PopupMenuItem(
                                   value: 'delete',
                                   child: ListTile(
-                                    leading: const Icon(Icons.delete, size: 20, color: Colors.red),
-                                    title: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                                    leading: Icon(Icons.delete, size: 20, color: context.colors.error),
+                                    title: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
                                     dense: true,
                                     contentPadding: EdgeInsets.zero,
                                   ),
@@ -502,7 +501,7 @@ class _TreatmentDetailScreenState
                                         ),
                                         TextButton(
                                           onPressed: () => Navigator.pop(ctx, true),
-                                          child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                                          child: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
                                         ),
                                       ],
                                     ),
@@ -690,7 +689,7 @@ class _TreatmentDetailScreenState
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey[400],
+                      color: ctx.colors.outlineVariant,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),

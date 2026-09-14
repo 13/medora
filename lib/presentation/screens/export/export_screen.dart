@@ -1,12 +1,11 @@
 /// Medora - Export Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
@@ -51,13 +50,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
         children: [
           // Header
           Card(
-            color: AppTheme.primaryColor.withValues(alpha: 0.1),
+            color: context.colors.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  const Icon(Icons.download_outlined,
-                      color: AppTheme.primaryColor, size: 32),
+                  Icon(Icons.download_outlined,
+                      color: context.colors.onPrimaryContainer, size: 32),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -65,14 +64,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                       children: [
                         Text(
                           l10n.exportYourData,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            color: context.colors.onPrimaryContainer,
                           ),
                         ),
                         Text(
                           l10n.chooseWhatToExport,
-                          style: const TextStyle(fontSize: 13),
+                          style: TextStyle(fontSize: 13, color: context.colors.onPrimaryContainer),
                         ),
                       ],
                     ),

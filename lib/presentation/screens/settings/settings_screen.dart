@@ -1,6 +1,5 @@
 /// Medora - Settings Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
@@ -227,7 +226,7 @@ class SettingsScreen extends ConsumerWidget {
             ListTile(
               leading: Icon(
                 isOnline ? Icons.cloud_done : Icons.cloud_off,
-                color: isOnline ? AppTheme.successColor : Colors.orange,
+                color: isOnline ? context.medora.success : context.medora.warning,
               ),
               title: Text(isOnline ? l10n.online : l10n.offline),
               subtitle: Text(isOnline
@@ -238,14 +237,14 @@ class SettingsScreen extends ConsumerWidget {
                 height: 12,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isOnline ? AppTheme.successColor : Colors.orange,
+                  color: isOnline ? context.medora.success : context.medora.warning,
                 ),
               ),
             ),
             ListTile(
               leading: Icon(
                 _syncIcon(syncState),
-                color: _syncColor(syncState),
+                color: _syncColor(context, syncState),
               ),
               title: Text(l10n.syncNow),
               subtitle: Text(_syncLabel(l10n, syncState)),
@@ -272,8 +271,8 @@ class SettingsScreen extends ConsumerWidget {
                       icon: const Icon(Icons.upload_outlined, size: 18),
                       label: Text(l10n.forcePush),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.orange,
-                        side: const BorderSide(color: Colors.orange),
+                        foregroundColor: context.medora.warning,
+                        side: BorderSide(color: context.medora.warning),
                       ),
                     ),
                   ),
@@ -286,7 +285,7 @@ class SettingsScreen extends ConsumerWidget {
                       icon: const Icon(Icons.download_outlined, size: 18),
                       label: Text(l10n.forcePull),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: AppTheme.primaryColor,
+                        foregroundColor: context.colors.primary,
                       ),
                     ),
                   ),
@@ -319,9 +318,9 @@ class SettingsScreen extends ConsumerWidget {
           // ── Danger Zone ────────────────────────────────────
           _SectionTitle(l10n.dangerZone),
           ListTile(
-            leading: const Icon(Icons.delete_forever, color: Colors.red),
+            leading: Icon(Icons.delete_forever, color: context.colors.error),
             title: Text(l10n.deleteAllData,
-                style: const TextStyle(color: Colors.red)),
+                style: TextStyle(color: context.colors.error)),
             subtitle: Text(l10n.deleteAllDataDesc),
             onTap: () => _showDeleteAllDialog(context, ref, l10n),
           ),
@@ -353,7 +352,7 @@ class SettingsScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.cancel)),
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'wipe'),
-            child: Text(l10n.wipeLocalData, style: const TextStyle(color: Colors.red)),
+            child: Text(l10n.wipeLocalData, style: TextStyle(color: context.colors.error)),
           ),
           FilledButton(onPressed: () => Navigator.pop(ctx, 'keep'), child: Text(l10n.keepLocalData)),
         ],
@@ -402,7 +401,7 @@ class SettingsScreen extends ConsumerWidget {
             },
             child: Text(
               "Continue",
-              style: TextStyle(color: isPush ? Colors.orange : AppTheme.primaryColor),
+              style: TextStyle(color: isPush ? context.medora.warning : context.colors.primary),
             ),
           ),
         ],
@@ -422,7 +421,7 @@ class SettingsScreen extends ConsumerWidget {
         builder: (ctx, setDialogState) => AlertDialog(
           title: Row(
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.red),
+              Icon(Icons.warning_amber_rounded, color: context.colors.error),
               const SizedBox(width: 8),
               Text(l10n.deleteAllData),
             ],
@@ -449,8 +448,8 @@ class SettingsScreen extends ConsumerWidget {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
+                backgroundColor: context.colors.error,
+                foregroundColor: context.colors.onError,
               ),
               onPressed: controller.text == 'DELETE'
                   ? () async {
@@ -544,7 +543,7 @@ class SettingsScreen extends ConsumerWidget {
               return ListTile(
                 title: Text(opt.label),
                 trailing:
-                    isSelected ? const Icon(Icons.check, color: AppTheme.primaryColor) : null,
+                    isSelected ? Icon(Icons.check, color: context.colors.primary) : null,
                 onTap: () {
                   ref.read(localeProvider.notifier).set(opt.locale);
                   Navigator.pop(ctx);
@@ -585,12 +584,12 @@ class SettingsScreen extends ConsumerWidget {
     };
   }
 
-  Color _syncColor(SyncState state) {
+  Color _syncColor(BuildContext context, SyncState state) {
     return switch (state) {
-      SyncState.idle => Colors.grey,
-      SyncState.syncing => AppTheme.primaryColor,
-      SyncState.success => AppTheme.successColor,
-      SyncState.error => Colors.red,
+      SyncState.idle => context.colors.onSurfaceVariant,
+      SyncState.syncing => context.colors.primary,
+      SyncState.success => context.medora.success,
+      SyncState.error => context.medora.danger,
     };
   }
 
@@ -682,7 +681,9 @@ class SettingsScreen extends ConsumerWidget {
                           ),
                           child: isSelected
                               ? const Icon(Icons.check,
-                                  color: Colors.white, size: 22)
+                                  // checkmark on a user-chosen swatch, not a
+                                  // theme role — literal white by design.
+                                  color: Color(0xFFFFFFFF), size: 22)
                               : null,
                         ),
                         const SizedBox(height: 4),

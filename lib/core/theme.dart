@@ -7,41 +7,9 @@ import 'package:medora/core/theme_extensions.dart';
 class AppTheme {
   AppTheme._();
 
-  // Default Brand Colors (used for status indicators — these don't change)
-  @Deprecated('Use context.colors.primary')
-  static const Color primaryColor = Color(0xFF2E7D6F);
-  @Deprecated('Use context.medora')
-  static const Color primaryLight = Color(0xFF4CAF9E);
-  @Deprecated('Use context.medora')
-  static const Color primaryDark = Color(0xFF1B5E50);
-  @Deprecated('Use context.medora')
-  static const Color accentColor = Color(0xFFFF8A65);
-  @Deprecated('Use context.medora')
-  static const Color errorColor = Color(0xFFE53935);
-  @Deprecated('Use context.medora')
-  static const Color warningColor = Color(0xFFFFA726);
-  @Deprecated('Use context.medora')
-  static const Color successColor = Color(0xFF66BB6A);
-
-  // Status Colors
-  @Deprecated('Use context.medora')
-  static const Color expiringSoonColor = Color(0xFFFFA726);
-  @Deprecated('Use context.medora')
-  static const Color expiredColor = Color(0xFFE53935);
-  @Deprecated('Use context.medora')
-  static const Color lowStockColor = Color(0xFFFF7043);
-  @Deprecated('Use context.medora')
-  static const Color inStockColor = Color(0xFF66BB6A);
-
-  // Dose Status Colors
-  @Deprecated('Use context.medora')
-  static const Color doseTakenColor = Color(0xFF66BB6A);
-  @Deprecated('Use context.medora')
-  static const Color doseSkippedColor = Color(0xFFFFA726);
-  @Deprecated('Use context.medora')
-  static const Color doseMissedColor = Color(0xFFE53935);
-  @Deprecated('Use context.medora')
-  static const Color dosePendingColor = Color(0xFF90A4AE);
+  /// Default seed used by [lightTheme] / [darkTheme] when no user color
+  /// scheme choice is available yet.
+  static const Color _defaultSeed = Color(0xFF2E7D6F);
 
   /// Build light theme with the given color seed.
   static ThemeData lightThemeFrom(Color seedColor) {
@@ -181,6 +149,6 @@ class AppTheme {
   }
 
   // Keep backward compatibility — default themes use teal
-  static ThemeData get lightTheme => lightThemeFrom(primaryColor);
-  static ThemeData get darkTheme => darkThemeFrom(primaryColor);
+  static ThemeData get lightTheme => lightThemeFrom(_defaultSeed);
+  static ThemeData get darkTheme => darkThemeFrom(_defaultSeed);
 }

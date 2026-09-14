@@ -1,6 +1,5 @@
 /// Medora - Home / Dashboard Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -10,7 +9,7 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
@@ -116,9 +115,9 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [AppTheme.primaryColor, AppTheme.primaryDark],
+            colors: [context.colors.primary, context.colors.primaryContainer],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -131,15 +130,15 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
             padding: const EdgeInsets.all(20),
             child: dosesAsync.when(
               data: (doses) => _DosesSummaryContent(doses: doses),
-              loading: () => const SizedBox(
+              loading: () => SizedBox(
                 height: 60,
                 child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
+                  child: CircularProgressIndicator(color: context.colors.onPrimary),
                 ),
               ),
               error: (error, stack) => Text(
                 l10n.unableToLoadDoses,
-                style: const TextStyle(color: Colors.white70),
+                style: TextStyle(color: context.colors.onPrimary.withValues(alpha: 0.7)),
               ),
             ),
           ),
@@ -167,7 +166,7 @@ class _DosesSummaryContent extends StatelessWidget {
         Text(
           l10n.todaysDosesTitle,
           style: TextStyle(
-            color: Colors.white,
+            color: context.colors.onPrimary,
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
@@ -176,22 +175,22 @@ class _DosesSummaryContent extends StatelessWidget {
         if (total == 0)
           Text(
             l10n.noDosesScheduled,
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: context.colors.onPrimary.withValues(alpha: 0.7)),
           )
         else ...[
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
               value: total > 0 ? taken / total : 0,
-              backgroundColor: Colors.white24,
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              backgroundColor: context.colors.onPrimary.withValues(alpha: 0.24),
+              valueColor: AlwaysStoppedAnimation<Color>(context.colors.onPrimary),
               minHeight: 8,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             l10n.dosesProgress(taken, total, pending),
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: context.colors.onPrimary.withValues(alpha: 0.7)),
           ),
         ],
       ],
@@ -242,7 +241,7 @@ class _ExpiringSoonCard extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: AppTheme.inStockColor),
+                  Icon(Icons.check_circle, color: context.medora.success),
                   const SizedBox(width: 12),
                   Text(l10n.allMedicationsWithinDate),
                 ],
@@ -255,9 +254,9 @@ class _ExpiringSoonCard extends ConsumerWidget {
             children: meds.take(3).map((med) {
               final days = med.expiryDate?.difference(DateTime.now()).inDays;
               return ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.warning_amber_rounded,
-                  color: AppTheme.expiringSoonColor,
+                  color: context.medora.warning,
                 ),
                 title: Text(med.name),
                 subtitle: Column(
@@ -281,15 +280,15 @@ class _ExpiringSoonCard extends ConsumerWidget {
                   children: [
                     Text(
                       '${days ?? 0}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: AppTheme.expiringSoonColor,
+                        color: context.medora.warning,
                       ),
                     ),
                     Text(
                       l10n.daysLabel,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -332,7 +331,7 @@ class _LowStockCard extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: AppTheme.inStockColor),
+                  Icon(Icons.check_circle, color: context.medora.success),
                   const SizedBox(width: 12),
                   Text(l10n.allMedicationsWellStocked),
                 ],
@@ -344,9 +343,9 @@ class _LowStockCard extends ConsumerWidget {
           child: Column(
             children: meds.take(3).map((med) {
               return ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.inventory_2_outlined,
-                  color: AppTheme.lowStockColor,
+                  color: context.medora.warning,
                 ),
                 title: Text(med.name),
                 subtitle: Column(
@@ -370,15 +369,15 @@ class _LowStockCard extends ConsumerWidget {
                   children: [
                     Text(
                       '${med.quantity}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: AppTheme.lowStockColor,
+                        color: context.medora.warning,
                       ),
                     ),
                     Text(
                       l10n.leftLabel,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: context.colors.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -421,7 +420,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: AppTheme.inStockColor),
+                  Icon(Icons.check_circle, color: context.medora.success),
                   const SizedBox(width: 12),
                   Text(l10n.noActiveTreatments),
                 ],
@@ -462,7 +461,7 @@ class _ActiveTreatmentTile extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     return ListTile(
-      leading: const Icon(Icons.healing, color: AppTheme.primaryColor),
+      leading: Icon(Icons.healing, color: context.colors.primary),
       title: Text(treatment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -478,7 +477,7 @@ class _ActiveTreatmentTile extends StatelessWidget {
           ],
         ],
       ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      trailing: Icon(Icons.chevron_right, color: context.colors.outline),
       dense: true,
       onTap: () => context.push('/treatments/${treatment.id}'),
     );

@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -212,7 +213,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                   margin: const EdgeInsets.only(top: 8),
                   width: 40, height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey[400],
+                    color: ctx.colors.outlineVariant,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -244,7 +245,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                                 overflow: TextOverflow.ellipsis),
                             if (r.activeIngredient != null)
                               Text(r.activeIngredient!,
-                                  style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                                  style: TextStyle(fontSize: 11, color: ctx.colors.onSurfaceVariant)),
                           ],
                         ),
                         trailing: const Icon(Icons.chevron_right),
@@ -300,7 +301,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey[400],
+                  color: ctx.colors.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -378,7 +379,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           isSearching
                               ? ''
                               : l10n.searchMedications,
-                          style: TextStyle(color: Colors.grey[400]),
+                          style: TextStyle(color: ctx.colors.outline),
                         ),
                       )
                     : ListView.separated(
@@ -407,12 +408,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                                   Text(r.activeIngredient!,
                                       style: TextStyle(
                                           fontSize: 11,
-                                          color: Colors.grey[600])),
+                                          color: ctx.colors.onSurfaceVariant)),
                                 if (r.manufacturer != null)
                                   Text(r.manufacturer!,
                                       style: TextStyle(
                                           fontSize: 11,
-                                          color: Colors.grey[500])),
+                                          color: ctx.colors.onSurfaceVariant)),
                               ],
                             ),
                             trailing:
@@ -794,7 +795,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: context.colors.outlineVariant),
             ),
             child: _imagePath == null || kIsWeb
                 ? _photoPlaceholder(l10n)
@@ -836,9 +837,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.add_a_photo, size: 40, color: Colors.grey[400]),
+        Icon(Icons.add_a_photo, size: 40, color: context.colors.outline),
         const SizedBox(height: 8),
-        Text(l10n.addPhoto, style: TextStyle(color: Colors.grey[500])),
+        Text(l10n.addPhoto, style: TextStyle(color: context.colors.outline)),
       ],
     );
   }
@@ -1002,7 +1003,7 @@ class _DatePickerField extends StatelessWidget {
               ? '${date!.year}-${date!.month.toString().padLeft(2, '0')}-${date!.day.toString().padLeft(2, '0')}'
               : l10n.selectDate,
           style: TextStyle(
-            color: date != null ? null : Colors.grey[500],
+            color: date != null ? null : context.colors.outline,
           ),
         ),
       ),

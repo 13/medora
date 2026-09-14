@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
@@ -53,7 +54,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                         med.isArchived
                             ? Icons.unarchive
                             : Icons.archive,
-                        color: Colors.orange,
+                        color: context.medora.warning,
                       ),
                       title: Text(
                         med.isArchived
@@ -65,9 +66,9 @@ class MedicationDetailScreen extends ConsumerWidget {
                   PopupMenuItem(
                     value: 'delete',
                     child: ListTile(
-                      leading: const Icon(Icons.delete, color: Colors.red),
+                      leading: Icon(Icons.delete, color: context.colors.error),
                       title: Text(l10n.delete,
-                          style: const TextStyle(color: Colors.red)),
+                          style: TextStyle(color: context.colors.error)),
                     ),
                   ),
                 ],
@@ -98,7 +99,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, true),
                             child: Text(l10n.delete,
-                                style: const TextStyle(color: Colors.red)),
+                                style: TextStyle(color: context.colors.error)),
                           ),
                         ],
                       ),
@@ -142,9 +143,9 @@ class MedicationDetailScreen extends ConsumerWidget {
                         children: [
                           Text(
                             l10n.quantity,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
-                              color: Colors.grey,
+                              color: context.colors.onSurfaceVariant,
                             ),
                           ),
                           Text(
@@ -238,7 +239,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                                 child: Text(
                                   l10n.treatsSymptoms,
                                   style: TextStyle(
-                                    color: Colors.grey[600],
+                                    color: context.colors.onSurfaceVariant,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -268,7 +269,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                                 child: Text(
                                   l10n.patientTagsField,
                                   style: TextStyle(
-                                    color: Colors.grey[600],
+                                    color: context.colors.onSurfaceVariant,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -431,7 +432,7 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                color: Colors.grey[600],
+                color: context.colors.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),

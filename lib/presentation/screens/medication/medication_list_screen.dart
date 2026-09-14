@@ -1,6 +1,5 @@
 /// Medora - Medication List Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -10,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
@@ -161,9 +160,9 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search_off, size: 48, color: Colors.grey[400]),
+                        Icon(Icons.search_off, size: 48, color: context.colors.outline),
                         const SizedBox(height: 8),
-                        Text(l10n.noResults, style: TextStyle(color: Colors.grey[500])),
+                        Text(l10n.noResults, style: TextStyle(color: context.colors.onSurfaceVariant)),
                       ],
                     ),
                   );
@@ -190,8 +189,8 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                 onPressed: (_) {
                                   ref.read(medicationListProvider.notifier).archiveMedication(med.id);
                                 },
-                                backgroundColor: Colors.blueGrey,
-                                foregroundColor: Colors.white,
+                                backgroundColor: context.colors.secondaryContainer,
+                                foregroundColor: context.colors.onSecondaryContainer,
                                 icon: Icons.archive,
                                 label: l10n.archive,
                               ),
@@ -200,8 +199,8 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                 onPressed: (_) {
                                   ref.read(medicationListProvider.notifier).unarchiveMedication(med.id);
                                 },
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
+                                backgroundColor: context.medora.success,
+                                foregroundColor: context.medora.onSuccess,
                                 icon: Icons.unarchive,
                                 label: l10n.unarchive,
                               ),
@@ -219,7 +218,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                       ),
                                       TextButton(
                                         onPressed: () => Navigator.pop(ctx, true),
-                                        child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                                        child: Text(l10n.delete, style: TextStyle(color: context.colors.error)),
                                       ),
                                     ],
                                   ),
@@ -228,8 +227,8 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                   ref.read(medicationListProvider.notifier).deleteMedication(med.id);
                                 }
                               },
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
+                              backgroundColor: context.colors.error,
+                              foregroundColor: context.colors.onError,
                               icon: Icons.delete,
                               label: l10n.delete,
                             ),
@@ -271,14 +270,18 @@ class _MedicationTile extends StatelessWidget {
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: (isExpired || isLowStock)
-            ? (isExpired ? Colors.red[50] : Colors.orange[50])
-            : AppTheme.primaryColor.withValues(alpha: 0.1),
+        backgroundColor: isExpired
+            ? context.medora.dangerContainer
+            : isLowStock
+                ? context.medora.warningContainer
+                : context.colors.primaryContainer,
         child: Icon(
           Icons.medication,
-          color: (isExpired || isLowStock)
-              ? (isExpired ? Colors.red : Colors.orange)
-              : AppTheme.primaryColor,
+          color: isExpired
+              ? context.medora.onDangerContainer
+              : isLowStock
+                  ? context.medora.onWarningContainer
+                  : context.colors.onPrimaryContainer,
         ),
       ),
       title: Text(
@@ -309,20 +312,20 @@ class _MedicationTile extends StatelessWidget {
                   isExpired: isExpired,
                 ),
                 if (med.expiryDate != null) ...[
-                  const Text(' · ', style: TextStyle(color: Colors.grey)),
+                  Text(' · ', style: TextStyle(color: context.colors.onSurfaceVariant)),
                   Text(
                     med.expiryDate!.year == now.year
                         ? med.expiryDate!.shortFormatted
                         : med.expiryDate!.formatted,
                     style: TextStyle(
-                      color: isExpired ? Colors.red : Colors.grey[600],
+                      color: isExpired ? context.medora.danger : context.colors.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   ),
                 ],
                 if (med.isArchived) ...[
-                  const Text(' · ', style: TextStyle(color: Colors.grey)),
-                  Icon(Icons.archive, size: 12, color: Colors.blueGrey[300]),
+                  Text(' · ', style: TextStyle(color: context.colors.onSurfaceVariant)),
+                  Icon(Icons.archive, size: 12, color: context.colors.onSurfaceVariant),
                 ],
               ],
             ),
@@ -342,12 +345,12 @@ class _MedicationTile extends StatelessWidget {
           ? Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.blueGrey.withValues(alpha: 0.1),
+                color: context.colors.secondaryContainer,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 AppConstants.categoryLabel(l10n, med.category!),
-                style: TextStyle(fontSize: 10, color: Colors.blueGrey[700]),
+                style: TextStyle(fontSize: 10, color: context.colors.onSecondaryContainer),
               ),
             )
           : null,

@@ -4,7 +4,6 @@
 /// from medication packages. User can tap any detected text block
 /// to use it as an AIC code for AIFA database lookup.
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -14,7 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -272,7 +271,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.black54,
+                        color: Colors.black.withValues(alpha: 0.54), // scrim
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: _isSearching
@@ -284,20 +283,20 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                   height: 14,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Colors.white,
+                                    color: Color(0xFFFFFFFF), // on scrim
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(l10n.lookingUpBarcode,
                                     style: const TextStyle(
-                                        color: Colors.white,
+                                        color: Color(0xFFFFFFFF), // on scrim
                                         fontSize: 13)),
                               ],
                             )
                           : Text(
                               l10n.pointCameraAtBarcode,
                               style: const TextStyle(
-                                  color: Colors.white, fontSize: 13),
+                                  color: Color(0xFFFFFFFF), fontSize: 13), // on scrim
                             ),
                     ),
                   ),
@@ -321,14 +320,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                     child: Row(
                       children: [
                         Icon(Icons.text_fields,
-                            size: 18, color: Colors.grey[600]),
+                            size: 18, color: context.colors.onSurfaceVariant),
                         const SizedBox(width: 6),
                         Text(
                           l10n.ocrDetectedCodes,
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
+                            color: context.colors.onSurfaceVariant,
                           ),
                         ),
                         const Spacer(),
@@ -352,7 +351,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                             child: Text(
                               l10n.ocrScanning,
                               style: TextStyle(
-                                  color: Colors.grey[400], fontSize: 14),
+                                  color: context.colors.outline, fontSize: 14),
                             ),
                           )
                         : ListView.builder(
@@ -372,8 +371,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                     const EdgeInsets.symmetric(vertical: 2),
                                 child: Material(
                                   color: isAic
-                                      ? AppTheme.primaryColor
-                                          .withValues(alpha: 0.1)
+                                      ? context.colors.primaryContainer
                                       : null,
                                   borderRadius: BorderRadius.circular(8),
                                   child: InkWell(
@@ -393,8 +391,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                               child: Icon(
                                                 Icons.medication,
                                                 size: 16,
-                                                color:
-                                                    AppTheme.primaryColor,
+                                                color: context
+                                                    .colors.onPrimaryContainer,
                                               ),
                                             ),
                                           Expanded(
@@ -406,14 +404,15 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                                     ? FontWeight.w600
                                                     : FontWeight.normal,
                                                 color: isAic
-                                                    ? AppTheme.primaryColor
+                                                    ? context.colors
+                                                        .onPrimaryContainer
                                                     : null,
                                               ),
                                             ),
                                           ),
                                           Icon(Icons.chevron_right,
                                               size: 18,
-                                              color: Colors.grey[400]),
+                                              color: context.colors.outline),
                                         ],
                                       ),
                                     ),
@@ -512,7 +511,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey[400],
+                color: ctx.colors.outlineVariant,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -533,7 +532,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                   ),
                   Text(
                     '${results.length} ${l10n.results}',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                    style: TextStyle(color: ctx.colors.onSurfaceVariant, fontSize: 13),
                   ),
                 ],
               ),
@@ -548,10 +547,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                   final r = results[i];
                   return ListTile(
                     leading: CircleAvatar(
-                      backgroundColor:
-                          AppTheme.primaryColor.withValues(alpha: 0.15),
-                      child: const Icon(Icons.medication,
-                          color: AppTheme.primaryColor, size: 20),
+                      backgroundColor: ctx.colors.primaryContainer,
+                      child: Icon(Icons.medication,
+                          color: ctx.colors.onPrimaryContainer, size: 20),
                     ),
                     title: Text(
                       r.name,
@@ -569,11 +567,11 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                         if (r.activeIngredient != null)
                           Text(r.activeIngredient!,
                               style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[600])),
+                                  fontSize: 11, color: ctx.colors.onSurfaceVariant)),
                         if (r.manufacturer != null)
                           Text(r.manufacturer!,
                               style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[500])),
+                                  fontSize: 11, color: ctx.colors.onSurfaceVariant)),
                       ],
                     ),
                     trailing: const Icon(Icons.chevron_right),

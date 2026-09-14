@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/services/sync_service.dart';
@@ -15,17 +16,17 @@ class SyncIconButton extends ConsumerWidget {
 
     return IconButton(
       icon: isSyncing
-          ? const SizedBox(
+          ? SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: Colors.white,
+                color: context.colors.onSurface,
               ),
             )
           : Icon(
               syncState == SyncState.error ? Icons.sync_problem : Icons.sync,
-              color: syncState == SyncState.error ? Colors.orange : null,
+              color: syncState == SyncState.error ? context.medora.warning : null,
             ),
       onPressed: isSyncing
           ? null

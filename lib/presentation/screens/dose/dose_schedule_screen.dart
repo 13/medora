@@ -1,12 +1,11 @@
 /// Medora - Dose Schedule Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/extensions.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
@@ -158,14 +157,14 @@ class _DoseSummaryHeader extends StatelessWidget {
           children: [
             Text(
               DateTime.now().formatted,
-              style: TextStyle(color: Colors.grey[600], fontSize: isSmall ? 12 : 14),
+              style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: isSmall ? 12 : 14),
             ),
             const SizedBox(height: 12),
             // Taken on its own line
             _StatChip(
               count: taken,
               label: l10n.taken,
-              color: AppTheme.doseTakenColor,
+              color: context.medora.success,
               compact: isSmall,
               large: true,
             ),
@@ -176,9 +175,9 @@ class _DoseSummaryHeader extends StatelessWidget {
               spacing: isSmall ? 12 : 20,
               runSpacing: 8,
               children: [
-                _StatChip(count: pending, label: l10n.pending, color: AppTheme.dosePendingColor, compact: isSmall),
-                _StatChip(count: skipped, label: l10n.skipped, color: AppTheme.doseSkippedColor, compact: isSmall),
-                _StatChip(count: missed, label: l10n.missed, color: AppTheme.doseMissedColor, compact: isSmall),
+                _StatChip(count: pending, label: l10n.pending, color: context.medora.neutral, compact: isSmall),
+                _StatChip(count: skipped, label: l10n.skipped, color: context.medora.warning, compact: isSmall),
+                _StatChip(count: missed, label: l10n.missed, color: context.medora.danger, compact: isSmall),
               ],
             ),
             const SizedBox(height: 16),
@@ -186,8 +185,8 @@ class _DoseSummaryHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               child: LinearProgressIndicator(
                 value: total > 0 ? (taken + skipped + missed) / total : 0,
-                backgroundColor: Colors.grey[200],
-                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+                backgroundColor: context.colors.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(context.colors.primary),
                 minHeight: 6,
               ),
             ),
@@ -253,7 +252,7 @@ class _StatChip extends StatelessWidget {
           '$count',
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color),
         ),
-        Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        Text(label, style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: 12)),
       ],
     );
   }
@@ -297,7 +296,7 @@ class _DoseCard extends ConsumerWidget {
                       Text(
                         l10n.overdue,
                         style: TextStyle(
-                          color: AppTheme.doseMissedColor,
+                          color: context.medora.danger,
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
                         ),
@@ -324,13 +323,13 @@ class _DoseCard extends ConsumerWidget {
                     if (dose.displayDosage != null)
                       Text(
                         dose.displayDosage!,
-                        style: TextStyle(color: Colors.grey[600], fontSize: isSmall ? 11 : 13),
+                        style: TextStyle(color: context.colors.onSurfaceVariant, fontSize: isSmall ? 11 : 13),
                       ),
                     if (dose.prescriptionNotes != null && dose.prescriptionNotes!.isNotEmpty)
                       Text(
                         dose.prescriptionNotes!,
                         style: TextStyle(
-                          color: Colors.grey[500],
+                          color: context.colors.onSurfaceVariant,
                           fontSize: 11,
                           fontStyle: FontStyle.italic,
                         ),
@@ -350,12 +349,12 @@ class _DoseCard extends ConsumerWidget {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.medical_services, size: 11, color: Colors.grey[500]),
+                                  Icon(Icons.medical_services, size: 11, color: context.colors.onSurfaceVariant),
                                   const SizedBox(width: 3),
                                   Text(
                                     dose.treatmentName!,
                                     style: TextStyle(
-                                      color: Colors.grey[500],
+                                      color: context.colors.onSurfaceVariant,
                                       fontSize: 11,
                                       fontStyle: FontStyle.italic,
                                     ),
@@ -385,7 +384,7 @@ class _DoseCard extends ConsumerWidget {
                         child: Text(
                           dose.takenTime!.timeFormatted,
                           style: TextStyle(
-                            color: AppTheme.doseTakenColor,
+                            color: context.medora.success,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -422,7 +421,7 @@ class _DoseActions extends ConsumerWidget {
                 .markSkipped(dose.id),
             icon: const Icon(Icons.skip_next, size: 20),
             tooltip: l10n.skip,
-            color: AppTheme.doseSkippedColor,
+            color: context.medora.warning,
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),

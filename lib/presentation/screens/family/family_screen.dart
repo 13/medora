@@ -1,12 +1,11 @@
 /// Medora - Family Sharing Screen
 library;
-// ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:medora/core/theme.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/family_member.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/family_providers.dart';
@@ -69,7 +68,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.people_outline,
-                size: 80, color: Colors.grey[400]),
+                size: 80, color: context.colors.outline),
             const SizedBox(height: 16),
             Text(
               l10n.noFamilyGroup,
@@ -79,7 +78,7 @@ class _NoFamilyViewState extends ConsumerState<_NoFamilyView> {
             Text(
               l10n.noFamilyDescription,
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[600]),
+              style: TextStyle(color: context.colors.onSurfaceVariant),
             ),
             const SizedBox(height: 32),
             SizedBox(
@@ -230,22 +229,23 @@ class _FamilyDetailView extends ConsumerWidget {
       children: [
         // Family info card
         Card(
-          color: AppTheme.primaryColor.withValues(alpha: 0.1),
+          color: context.colors.primaryContainer,
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 32,
-                  backgroundColor: AppTheme.primaryColor,
-                  child: Icon(Icons.people, size: 32, color: Colors.white),
+                  backgroundColor: context.colors.primary,
+                  child: Icon(Icons.people, size: 32, color: context.colors.onPrimary),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   family.name as String,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
+                    color: context.colors.onPrimaryContainer,
                   ),
                 ),
               ],
@@ -264,7 +264,7 @@ class _FamilyDetailView extends ConsumerWidget {
                 Text(
                   l10n.inviteCode,
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: context.colors.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -276,9 +276,9 @@ class _FamilyDetailView extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.grey[100],
+                          color: context.colors.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey[300]!),
+                          border: Border.all(color: context.colors.outlineVariant),
                         ),
                         child: Text(
                           (family.inviteCode as String?) ?? '------',
@@ -359,21 +359,25 @@ class _FamilyDetailView extends ConsumerWidget {
                   child: ListTile(
                     leading: CircleAvatar(
                       backgroundColor: m.role == FamilyRole.owner
-                          ? AppTheme.primaryColor
-                          : Colors.grey,
+                          ? context.colors.primary
+                          : context.colors.secondaryContainer,
                       child: Text(
                         (m.displayName ?? '?')[0].toUpperCase(),
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: m.role == FamilyRole.owner
+                              ? context.colors.onPrimary
+                              : context.colors.onSecondaryContainer,
+                        ),
                       ),
                     ),
                     title: Text(m.displayName ?? l10n.unknown),
                     subtitle: Text(
                         m.role == FamilyRole.owner ? l10n.owner : l10n.member),
                     trailing: m.role == FamilyRole.owner
-                        ? const Icon(Icons.star, color: Colors.amber)
+                        ? Icon(Icons.star, color: context.medora.warning)
                         : IconButton(
-                            icon: const Icon(Icons.remove_circle_outline,
-                                color: Colors.red),
+                            icon: Icon(Icons.remove_circle_outline,
+                                color: context.colors.error),
                             onPressed: () async {
                               final confirm = await showDialog<bool>(
                                 context: context,
@@ -392,7 +396,7 @@ class _FamilyDetailView extends ConsumerWidget {
                                           Navigator.pop(ctx, true),
                                       child: Text(l10n.remove,
                                           style:
-                                              const TextStyle(color: Colors.red)),
+                                              TextStyle(color: context.colors.error)),
                                     ),
                                   ],
                                 ),
@@ -433,7 +437,7 @@ class _FamilyDetailView extends ConsumerWidget {
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, true),
                     child: Text(l10n.leave,
-                        style: const TextStyle(color: Colors.red)),
+                        style: TextStyle(color: context.colors.error)),
                   ),
                 ],
               ),
@@ -443,8 +447,8 @@ class _FamilyDetailView extends ConsumerWidget {
             }
           },
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red,
-            side: const BorderSide(color: Colors.red),
+            foregroundColor: context.colors.error,
+            side: BorderSide(color: context.colors.error),
           ),
           icon: const Icon(Icons.logout),
           label: Text(l10n.leaveFamily),

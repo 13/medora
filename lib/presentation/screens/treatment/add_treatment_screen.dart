@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -185,7 +186,7 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
                       ? '${_endDate!.year}-${_endDate!.month.toString().padLeft(2, '0')}-${_endDate!.day.toString().padLeft(2, '0')}'
                       : l10n.selectEndDate,
                   style: TextStyle(
-                    color: _endDate != null ? null : Colors.grey[500],
+                    color: _endDate != null ? null : context.colors.outline,
                   ),
                 ),
               ),
