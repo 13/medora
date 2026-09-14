@@ -27,14 +27,13 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncLoading();
     state = await AsyncValue.guard(_fetchTreatments);
   }
 
   Future<void> addTreatment(Treatment treatment) async {
     final repo = ref.read(treatmentRepositoryProvider);
     final result = await repo.addTreatment(treatment);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
@@ -43,7 +42,7 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   Future<void> updateTreatment(Treatment treatment) async {
     final repo = ref.read(treatmentRepositoryProvider);
     final result = await repo.updateTreatment(treatment);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
@@ -52,7 +51,7 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   Future<void> deleteTreatment(String id) async {
     final repo = ref.read(treatmentRepositoryProvider);
     final result = await repo.deleteTreatment(id);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
@@ -61,7 +60,7 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
   Future<void> endTreatment(String id) async {
     final repo = ref.read(treatmentRepositoryProvider);
     final result = await repo.endTreatment(id);
-    result.when(
+    await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),
     );
