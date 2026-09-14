@@ -545,5 +545,11 @@
   "passwordTooShort": "Password must be at least 6 characters",
   "turnOn": "Turn on",
   "turnOff": "Turn off",
-  "featureUnavailableOnPlatform": "This feature is not available on this device."
+  "featureUnavailableOnPlatform": "This feature is not available on this device.",
+  "missedGracePeriod": "Mark as missed after",
+  "missedGracePeriodDesc": "Pending doses older than this are marked missed when the app opens",
+  "minutesShort": "{minutes} min",
+  "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
+  "hoursShort": "{hours} h",
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } }
 }

@@ -252,6 +252,21 @@ class DoseLogLocalDatasource {
     );
   }
 
+  /// Mark pending doses scheduled before [cutoff] as missed. Returns the count.
+  Future<int> markOverduePendingAsMissed(DateTime cutoff) async {
+    final db = await _db;
+    return db.update(
+      'dose_logs',
+      {
+        'status': 'missed',
+        'sync_status': SyncStatus.pendingUpdate,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: "status = 'pending' AND scheduled_time < ? AND sync_status != ?",
+      whereArgs: [cutoff.toIso8601String(), SyncStatus.pendingDelete],
+    );
+  }
+
   DoseLogModel _fromRow(Map<String, dynamic> row) {
     return DoseLogModel(
       id: row['id'] as String,

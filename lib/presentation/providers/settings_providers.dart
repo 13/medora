@@ -146,6 +146,26 @@ class RemindersEnabledNotifier extends Notifier<bool> {
   }
 }
 
+// ── Missed-dose grace period ─────────────────────────────────
+const _kMissedGraceMinutes = 'missed_grace_minutes';
+const kMissedGraceOptions = [30, 60, 120, 240];
+
+final missedGraceMinutesProvider =
+    NotifierProvider<MissedGraceMinutesNotifier, int>(MissedGraceMinutesNotifier.new);
+
+class MissedGraceMinutesNotifier extends Notifier<int> {
+  @override
+  int build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    return prefs.getInt(_kMissedGraceMinutes) ?? 120;
+  }
+
+  Future<void> set(int minutes) async {
+    state = minutes;
+    await ref.read(sharedPreferencesProvider).setInt(_kMissedGraceMinutes, minutes);
+  }
+}
+
 // ── App Version ─────────────────────────────────────────────
 final appVersionProvider = FutureProvider<String>((ref) async {
   final packageInfo = await PackageInfo.fromPlatform();

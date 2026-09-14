@@ -70,6 +70,15 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   @override
+  Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
+    try {
+      return Result.success(await localDatasource.markOverduePendingAsMissed(cutoff));
+    } catch (e, st) {
+      return Result.failure('Failed to mark overdue doses: $e', st);
+    }
+  }
+
+  @override
   Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) async {
     try {
       final model = DoseLogModel.fromDomain(doseLog);

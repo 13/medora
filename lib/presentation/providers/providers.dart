@@ -28,7 +28,9 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/dose_maintenance_service.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
@@ -214,4 +216,35 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   ref.onDispose(() => subscription.cancel());
 
   return syncService.stateStream;
+});
+
+// ============================================================
+// Startup / maintenance
+// ============================================================
+
+final doseMaintenanceProvider = Provider<DoseMaintenanceService>(
+  (ref) => DoseMaintenanceService(doses: ref.watch(doseLogRepositoryProvider)),
+);
+
+/// Delay before the startup sync; tests override this with Duration.zero.
+final syncStartupDelayProvider = Provider<Duration>((_) => const Duration(seconds: 2));
+
+final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
+  return AppStartupTasks(
+    maintenance: () async {
+      final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
+      final changed = await ref.read(doseMaintenanceProvider).markOverdueAsMissed(grace: grace);
+      if (changed > 0) {
+        await ref.read(todaysDoseLogsProvider.notifier).refresh();
+        ref.read(doseDataVersionProvider.notifier).bump();
+      }
+    },
+    reminders: () => ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
+    sync: () async {
+      if (ref.read(appModeProvider) == AppMode.cloud) {
+        await ref.read(syncServiceProvider).syncAll();
+      }
+    },
+    syncDelay: ref.watch(syncStartupDelayProvider),
+  );
 });

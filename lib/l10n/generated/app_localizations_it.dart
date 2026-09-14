@@ -1219,4 +1219,21 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get featureUnavailableOnPlatform =>
       'Questa funzione non è disponibile su questo dispositivo.';
+
+  @override
+  String get missedGracePeriod => 'Segna come saltata dopo';
+
+  @override
+  String get missedGracePeriodDesc =>
+      'Le dosi in sospeso più vecchie vengono segnate come saltate all\'apertura dell\'app';
+
+  @override
+  String minutesShort(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String hoursShort(int hours) {
+    return '$hours h';
+  }
 }

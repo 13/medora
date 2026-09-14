@@ -420,5 +420,11 @@
   "passwordTooShort": "La password deve avere almeno 6 caratteri",
   "turnOn": "Attiva",
   "turnOff": "Disattiva",
-  "featureUnavailableOnPlatform": "Questa funzione non è disponibile su questo dispositivo."
+  "featureUnavailableOnPlatform": "Questa funzione non è disponibile su questo dispositivo.",
+  "missedGracePeriod": "Segna come saltata dopo",
+  "missedGracePeriodDesc": "Le dosi in sospeso più vecchie vengono segnate come saltate all'apertura dell'app",
+  "minutesShort": "{minutes} min",
+  "@minutesShort": { "placeholders": { "minutes": { "type": "int" } } },
+  "hoursShort": "{hours} h",
+  "@hoursShort": { "placeholders": { "hours": { "type": "int" } } }
 }

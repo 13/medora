@@ -1225,4 +1225,21 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get featureUnavailableOnPlatform =>
       'Diese Funktion ist auf diesem Gerät nicht verfügbar.';
+
+  @override
+  String get missedGracePeriod => 'Als verpasst markieren nach';
+
+  @override
+  String get missedGracePeriodDesc =>
+      'Ausstehende Dosen, die älter sind, werden beim Öffnen der App als verpasst markiert';
+
+  @override
+  String minutesShort(int minutes) {
+    return '$minutes Min.';
+  }
+
+  @override
+  String hoursShort(int hours) {
+    return '$hours Std.';
+  }
 }

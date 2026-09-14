@@ -2343,6 +2343,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This feature is not available on this device.'**
   String get featureUnavailableOnPlatform;
+
+  /// No description provided for @missedGracePeriod.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as missed after'**
+  String get missedGracePeriod;
+
+  /// No description provided for @missedGracePeriodDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending doses older than this are marked missed when the app opens'**
+  String get missedGracePeriodDesc;
+
+  /// No description provided for @minutesShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes} min'**
+  String minutesShort(int minutes);
+
+  /// No description provided for @hoursShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{hours} h'**
+  String hoursShort(int hours);
 }
 
 class _AppLocalizationsDelegate

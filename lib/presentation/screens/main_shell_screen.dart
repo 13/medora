@@ -4,6 +4,8 @@
 /// Home, Medications, Treatments, Doses.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -40,24 +42,30 @@ class MainShellScreen extends ConsumerStatefulWidget {
   ConsumerState<MainShellScreen> createState() => _MainShellScreenState();
 }
 
-class _MainShellScreenState extends ConsumerState<MainShellScreen> {
+class _MainShellScreenState extends ConsumerState<MainShellScreen> with WidgetsBindingObserver {
   late int _currentIndex;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
-
-    // Automatically trigger sync when the app shell is first loaded
-    // Delay sync significantly to allow UI to fully render and settle
-    // The initial frame drop is caused by provider loading, not sync itself
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          ref.read(syncServiceProvider).syncAll();
-        }
-      });
+      if (mounted) unawaited(ref.read(appStartupTasksProvider).run());
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      unawaited(ref.read(appStartupTasksProvider).run());
+    }
   }
 
   void _onNavTapped(int index) {

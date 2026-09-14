@@ -39,6 +39,7 @@ class SettingsScreen extends ConsumerWidget {
     final cloudAvailable = SupabaseConfig.isConfigured;
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
+    final graceMinutes = ref.watch(missedGraceMinutesProvider);
     final appVersionAsync = ref.watch(appVersionProvider);
     final caps = ref.watch(platformCapabilitiesProvider);
 
@@ -194,6 +195,27 @@ class SettingsScreen extends ConsumerWidget {
                 }
               }
             },
+          ),
+          ListTile(
+            leading: const Icon(Icons.timer_off_outlined),
+            title: Text(l10n.missedGracePeriod),
+            subtitle: Text(l10n.missedGracePeriodDesc),
+            trailing: DropdownButton<int>(
+              value: graceMinutes,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final m in kMissedGraceOptions)
+                  DropdownMenuItem(
+                    value: m,
+                    child: Text(m < 60 ? l10n.minutesShort(m) : l10n.hoursShort(m ~/ 60)),
+                  ),
+              ],
+              onChanged: (v) async {
+                if (v == null) return;
+                await ref.read(missedGraceMinutesProvider.notifier).set(v);
+                await ref.read(appStartupTasksProvider).run(includeSync: false);
+              },
+            ),
           ),
           const Divider(),
 
