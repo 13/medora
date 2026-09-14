@@ -40,4 +40,10 @@ void main() {
     await tester.pumpWidget(_wrap(AsyncValueView<int>(value: const AsyncLoading(), data: (_) => const SizedBox())));
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
+
+  testWidgets('emptyWhen without an empty widget still renders data', (tester) async {
+    await tester.pumpWidget(_wrap(AsyncValueView<List<int>>(
+        value: const AsyncData([]), emptyWhen: (l) => l.isEmpty, data: (_) => const Text('data'))));
+    expect(find.text('data'), findsOneWidget);
+  });
 }

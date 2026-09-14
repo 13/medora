@@ -44,9 +44,6 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
-  String get unableToLoadDoses => 'Dosen konnten nicht geladen werden';
-
-  @override
   String get addMedication => 'Medikament\nhinzufügen';
 
   @override
@@ -346,11 +343,6 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get done => 'Fertig';
-
-  @override
-  String errorLoadingPrescriptions(String message) {
-    return 'Fehler beim Laden der Verschreibungen: $message';
-  }
 
   @override
   String get medicationLabel => 'Medikament *';

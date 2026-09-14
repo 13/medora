@@ -15,7 +15,6 @@
   "todaysDoses": "Heutige Dosen",
   "noDosesScheduled": "Keine Dosen für heute geplant",
   "dosesProgress": "{taken} von {total} eingenommen · {pending} ausstehend",
-  "unableToLoadDoses": "Dosen konnten nicht geladen werden",
 
   "addMedication": "Medikament\nhinzufügen",
   "scanBarcode": "Barcode\nscannen",
@@ -115,7 +114,6 @@
   "unknownMedication": "Unbekanntes Medikament",
   "prescriptionSummary": "{dosage} · alle {hours}h · {days} Tage",
   "done": "Fertig",
-  "errorLoadingPrescriptions": "Fehler beim Laden der Verschreibungen: {message}",
   "medicationLabel": "Medikament *",
   "dosageLabel": "Dosierung *",
   "dosageHint": "z.B. 400mg",

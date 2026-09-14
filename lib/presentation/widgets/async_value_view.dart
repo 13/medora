@@ -45,7 +45,7 @@ class AsyncValueView<T> extends StatelessWidget {
         if (emptyWhen?.call(d) == true && empty != null) return empty!;
         return data(d);
       },
-      loading: () => loading ?? (compact ? const _CompactLoading() : const LoadingWidget()),
+      loading: () => loading ?? (compact ? const Card(child: _CompactLoading()) : const LoadingWidget()),
       error: (e, _) => _ErrorView(error: e, onRetry: onRetry, compact: compact),
     );
   }

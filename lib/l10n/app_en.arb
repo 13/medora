@@ -22,7 +22,6 @@
       "pending": { "type": "int" }
     }
   },
-  "unableToLoadDoses": "Unable to load doses",
 
   "addMedication": "Add\nMedication",
   "scanBarcode": "Scan\nBarcode",
@@ -180,12 +179,6 @@
     }
   },
   "done": "Done",
-  "errorLoadingPrescriptions": "Error loading prescriptions: {message}",
-  "@errorLoadingPrescriptions": {
-    "placeholders": {
-      "message": { "type": "String" }
-    }
-  },
   "medicationLabel": "Medication *",
   "dosageLabel": "Dosage *",
   "dosageHint": "e.g., 400mg",

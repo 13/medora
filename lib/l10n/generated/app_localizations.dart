@@ -166,12 +166,6 @@ abstract class AppLocalizations {
   /// **'{taken} of {total} taken · {pending} pending'**
   String dosesProgress(int taken, int total, int pending);
 
-  /// No description provided for @unableToLoadDoses.
-  ///
-  /// In en, this message translates to:
-  /// **'Unable to load doses'**
-  String get unableToLoadDoses;
-
   /// No description provided for @addMedication.
   ///
   /// In en, this message translates to:
@@ -705,12 +699,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Done'**
   String get done;
-
-  /// No description provided for @errorLoadingPrescriptions.
-  ///
-  /// In en, this message translates to:
-  /// **'Error loading prescriptions: {message}'**
-  String errorLoadingPrescriptions(String message);
 
   /// No description provided for @medicationLabel.
   ///

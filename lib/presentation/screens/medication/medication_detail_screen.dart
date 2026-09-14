@@ -24,106 +24,104 @@ class MedicationDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final medsAsync = ref.watch(medicationListProvider);
+    final med = medsAsync.value
+        ?.where((m) => m.id == medicationId)
+        .firstOrNull;
 
-    return AsyncValueView<List<Medication>>(
-      value: medsAsync,
-      onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
-      loading: Scaffold(
-        appBar: AppBar(title: Text(l10n.medication)),
-        body: const LoadingWidget(),
-      ),
-      data: (medications) {
-        final med = medications.where((m) => m.id == medicationId).firstOrNull;
-        if (med == null) {
-          return Scaffold(
-            appBar: AppBar(title: Text(l10n.medication)),
-            body: EmptyStateWidget(
-              icon: Icons.error_outline,
-              title: l10n.medicationNotFound,
-            ),
-          );
-        }
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(med.name),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: () =>
-                    context.push('/medications/${med.id}/edit'),
-              ),
-              PopupMenuButton(
-                itemBuilder: (ctx) => [
-                  PopupMenuItem(
-                    value: med.isArchived ? 'unarchive' : 'archive',
-                    child: ListTile(
-                      leading: Icon(
-                        med.isArchived
-                            ? Icons.unarchive
-                            : Icons.archive,
-                        color: context.colors.onSurfaceVariant,
-                      ),
-                      title: Text(
-                        med.isArchived
-                            ? l10n.unarchive
-                            : l10n.archive,
-                      ),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      leading: Icon(Icons.delete, color: context.colors.error),
-                      title: Text(l10n.delete,
-                          style: TextStyle(color: context.colors.error)),
-                    ),
-                  ),
-                ],
-                onSelected: (value) async {
-                  if (value == 'archive') {
-                    ref
-                        .read(medicationListProvider.notifier)
-                        .archiveMedication(med.id);
-                    if (context.mounted) context.pop();
-                  } else if (value == 'unarchive') {
-                    ref
-                        .read(medicationListProvider.notifier)
-                        .unarchiveMedication(med.id);
-                    if (context.mounted) context.pop();
-                  } else if (value == 'delete') {
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: Text(l10n.deleteMedication),
-                        content: Text(
-                          l10n.deleteMedicationConfirm(med.name),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(med?.name ?? l10n.medication),
+        actions: med == null
+            ? null
+            : [
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () =>
+                      context.push('/medications/${med.id}/edit'),
+                ),
+                PopupMenuButton(
+                  itemBuilder: (ctx) => [
+                    PopupMenuItem(
+                      value: med.isArchived ? 'unarchive' : 'archive',
+                      child: ListTile(
+                        leading: Icon(
+                          med.isArchived
+                              ? Icons.unarchive
+                              : Icons.archive,
+                          color: context.colors.onSurfaceVariant,
                         ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: Text(l10n.cancel),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: Text(l10n.delete,
-                                style: TextStyle(color: context.colors.error)),
-                          ),
-                        ],
+                        title: Text(
+                          med.isArchived
+                              ? l10n.unarchive
+                              : l10n.archive,
+                        ),
                       ),
-                    );
-                    if (confirm == true && context.mounted) {
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete, color: context.colors.error),
+                        title: Text(l10n.delete,
+                            style: TextStyle(color: context.colors.error)),
+                      ),
+                    ),
+                  ],
+                  onSelected: (value) async {
+                    if (value == 'archive') {
                       ref
                           .read(medicationListProvider.notifier)
-                          .deleteMedication(med.id);
-                      context.pop();
+                          .archiveMedication(med.id);
+                      if (context.mounted) context.pop();
+                    } else if (value == 'unarchive') {
+                      ref
+                          .read(medicationListProvider.notifier)
+                          .unarchiveMedication(med.id);
+                      if (context.mounted) context.pop();
+                    } else if (value == 'delete') {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: Text(l10n.deleteMedication),
+                          content: Text(
+                            l10n.deleteMedicationConfirm(med.name),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: Text(l10n.cancel),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: Text(l10n.delete,
+                                  style: TextStyle(color: context.colors.error)),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true && context.mounted) {
+                        ref
+                            .read(medicationListProvider.notifier)
+                            .deleteMedication(med.id);
+                        context.pop();
+                      }
                     }
-                  }
-                },
-              ),
-            ],
-          ),
-          body: ListView(
+                  },
+                ),
+              ],
+      ),
+      body: AsyncValueView<List<Medication>>(
+        value: medsAsync,
+        onRetry: () async => ref.read(medicationListProvider.notifier).refresh(),
+        data: (medications) {
+          final med = medications.where((m) => m.id == medicationId).firstOrNull;
+          if (med == null) {
+            return EmptyStateWidget(
+              icon: Icons.error_outline,
+              title: l10n.medicationNotFound,
+            );
+          }
+
+          return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               // Status badges
@@ -403,9 +401,9 @@ class MedicationDetailScreen extends ConsumerWidget {
                   orElse: () => const SizedBox.shrink(),
                 ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

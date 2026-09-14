@@ -38,39 +38,25 @@ class _TreatmentDetailScreenState
     final treatmentsAsync = ref.watch(treatmentListProvider);
     final prescriptionsAsync =
         ref.watch(prescriptionsByTreatmentProvider(widget.treatmentId));
+    final treatment = treatmentsAsync.value
+        ?.where((t) => t.id == widget.treatmentId)
+        .firstOrNull;
 
-    return AsyncValueView<List<Treatment>>(
-      value: treatmentsAsync,
-      loading: Scaffold(
-        appBar: AppBar(title: Text(l10n.treatment)),
-        body: const LoadingWidget(),
-      ),
-      data: (treatments) {
-        final treatment =
-            treatments.where((t) => t.id == widget.treatmentId).firstOrNull;
-        if (treatment == null) {
-          return Scaffold(
-            appBar: AppBar(title: Text(l10n.treatment)),
-            body: EmptyStateWidget(
-              icon: Icons.error_outline,
-              title: l10n.treatmentNotFound,
-            ),
-          );
-        }
-
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(treatment.name),
-            actions: [
-              // Edit button
-              IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: () =>
-                    context.push('/treatments/${treatment.id}/edit'),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (value) async {
-                  switch (value) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(treatment?.name ?? l10n.treatment),
+        actions: treatment == null
+            ? null
+            : [
+                // Edit button
+                IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () =>
+                      context.push('/treatments/${treatment.id}/edit'),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    switch (value) {
                     case 'end':
                       final confirm = await showDialog<bool>(
                         context: context,
@@ -186,8 +172,20 @@ class _TreatmentDetailScreenState
                 ],
               ),
             ],
-          ),
-          body: ListView(
+      ),
+      body: AsyncValueView<List<Treatment>>(
+        value: treatmentsAsync,
+        data: (treatments) {
+          final treatment =
+              treatments.where((t) => t.id == widget.treatmentId).firstOrNull;
+          if (treatment == null) {
+            return EmptyStateWidget(
+              icon: Icons.error_outline,
+              title: l10n.treatmentNotFound,
+            );
+          }
+
+          return ListView(
             padding: const EdgeInsets.all(16),
             children: [
               // Status card
@@ -541,9 +539,9 @@ class _TreatmentDetailScreenState
                 },
               ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
