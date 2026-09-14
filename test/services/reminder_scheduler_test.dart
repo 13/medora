@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
@@ -29,13 +31,22 @@ class FakePort implements ReminderPort {
   }
 }
 
-class SlowPort extends FakePort {
+/// Repository stub whose pending-dose query resolves only when the test says so.
+class _GatedDoses implements DoseLogRepository {
+  final calls = <Completer<Result<List<DoseLog>>>>[];
+
   @override
-  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    await super.scheduleForDose(dose: dose, medicationName: medicationName);
+  Future<Result<List<DoseLog>>> getPendingDoseLogsBetween(DateTime start, DateTime end) {
+    final c = Completer<Result<List<DoseLog>>>();
+    calls.add(c);
+    return c.future;
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
 }
+
+DoseLog _dose(String id, DateTime at) => DoseLog(id: id, prescriptionId: 'p', scheduledTime: at, medicationName: 'M');
 
 /// A [DoseLogRepository] whose only implemented member fails; every other
 /// call is unreachable in these tests, so it throws via [noSuchMethod].
@@ -107,27 +118,39 @@ void main() {
     expect(port.scheduled, isEmpty);
   });
 
-  test('a reconcile requested during a run is executed afterwards, not dropped', () async {
-    final db = await AppDatabase.instance.database;
-    final s = await seedPrescription(db);
-    await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 1)));
-    final port = SlowPort();
-    final scheduler = make(port);
+  test('a reconcile requested during a run is executed afterwards with fresh data', () async {
+    final port = FakePort();
+    final doses = _GatedDoses();
+    final scheduler = ReminderScheduler(port: port, doses: doses, remindersEnabled: () => true, now: () => now);
+
     final first = scheduler.reconcile();
-    final second = scheduler.reconcile(); // arrives while first is running
-    // Seeded before the rerun query runs (but after the first pass has
-    // already started), so the merged-in rerun is the one that observes it —
-    // proof that it ran after the first pass completed, not that it was
-    // dropped.
-    final extra = await seedDoseLog(db, s.prescriptionId, now.add(const Duration(hours: 5)));
-    final results = await Future.wait([first, second]);
-    // Diff-based reconcile: only the first pass is a full cancel; the rerun
-    // is incremental and only schedules the newly-seeded dose.
+    await Future<void>.delayed(Duration.zero); // let pass 1 reach its query
+    expect(doses.calls.length, 1);
+    final second = scheduler.reconcile(); // arrives while pass 1 is blocked → rerun flag
+    expect(await second, 0); // coalesced call returns immediately
+
+    doses.calls[0].complete(Result.success([_dose('a', now.add(const Duration(hours: 1)))]));
+    // pass 1 finishes, rerun starts and blocks on query 2. A few awaits
+    // separate the completion from the rerun's query (schedule loop with
+    // FakePort's async no-ops), so poll rather than relying on one delay.
+    var iterations = 0;
+    while (doses.calls.length < 2) {
+      await Future<void>.delayed(Duration.zero);
+      iterations++;
+      if (iterations > 100) {
+        fail('rerun never issued a second query');
+      }
+    }
+    expect(doses.calls.length, 2, reason: 'rerun must issue a second query');
+    doses.calls[1].complete(Result.success([
+      _dose('a', now.add(const Duration(hours: 1))),
+      _dose('b', now.add(const Duration(hours: 2))),
+    ]));
+
+    expect(await first, 2);
     expect(port.cancelAllCalls, 1, reason: 'only the first pass does a full cancel');
-    expect(results[0], 2, reason: 'outer call returns the count after both passes complete');
-    expect(results[1], 0, reason: 'the merged-in request returns immediately without doing work');
-    expect(port.scheduled.map((d) => d.id), contains(extra),
-        reason: 'the rerun picked up the dose seeded after the first pass started');
+    expect(port.scheduled.map((d) => d.id).toList(), ['a', 'b'],
+        reason: 'rerun scheduled the dose that appeared after pass 1 queried');
   });
 
   test('getPendingBetween only schedules doses from active prescriptions', () async {
