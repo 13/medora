@@ -249,7 +249,7 @@ class MedicationLocalDatasource {
       'is_archived': m.isArchived ? 1 : 0,
       'created_at': m.createdAt?.toIso8601String() ??
           DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'sync_status': syncStatus,
     };
   }
