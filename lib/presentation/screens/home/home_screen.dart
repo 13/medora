@@ -117,7 +117,10 @@ class _TodaysDosesSummaryCard extends ConsumerWidget {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [context.colors.primary, context.colors.primaryContainer],
+            colors: [
+              context.colors.primary,
+              Color.lerp(context.colors.primary, context.colors.surfaceTint, 0.25)!,
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),

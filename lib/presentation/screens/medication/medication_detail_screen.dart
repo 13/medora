@@ -54,7 +54,7 @@ class MedicationDetailScreen extends ConsumerWidget {
                         med.isArchived
                             ? Icons.unarchive
                             : Icons.archive,
-                        color: context.medora.warning,
+                        color: context.colors.onSurfaceVariant,
                       ),
                       title: Text(
                         med.isArchived

@@ -8,28 +8,11 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
-import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 
+import '../helpers/fake_reminder_port.dart';
 import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
-
-class FakePort implements ReminderPort {
-  int cancelAllCalls = 0;
-  final scheduled = <DoseLog>[];
-  final cancelledDoses = <String>[];
-
-  @override
-  Future<void> cancelAll() async => cancelAllCalls++;
-
-  @override
-  Future<void> cancelForDose(String doseId) async => cancelledDoses.add(doseId);
-
-  @override
-  Future<void> scheduleForDose({required DoseLog dose, required String medicationName}) async {
-    scheduled.add(dose);
-  }
-}
 
 /// Repository stub whose pending-dose query resolves only when the test says so.
 class _GatedDoses implements DoseLogRepository {

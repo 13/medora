@@ -189,8 +189,8 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                                 onPressed: (_) {
                                   ref.read(medicationListProvider.notifier).archiveMedication(med.id);
                                 },
-                                backgroundColor: context.colors.secondaryContainer,
-                                foregroundColor: context.colors.onSecondaryContainer,
+                                backgroundColor: context.colors.tertiaryContainer,
+                                foregroundColor: context.colors.onTertiaryContainer,
                                 icon: Icons.archive,
                                 label: l10n.archive,
                               ),

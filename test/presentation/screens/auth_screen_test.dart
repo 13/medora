@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/supabase_config.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/auth/auth_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../helpers/pump_app.dart';
 
 void main() {
   testWidgets('unconfigured build shows only the local-only path and selecting it sets AppMode.localOnly',
@@ -14,20 +14,11 @@ void main() {
     SupabaseConfig.resetForTest();
     SharedPreferences.setMockInitialValues({'app_mode': 'cloud'});
     final prefs = await SharedPreferences.getInstance();
-    final container = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
-    );
-    addTearDown(container.dispose);
 
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: AuthScreen(),
-        ),
-      ),
+    final container = await pumpMedoraApp(
+      tester,
+      const AuthScreen(),
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
     );
     await tester.pumpAndSettle();
 

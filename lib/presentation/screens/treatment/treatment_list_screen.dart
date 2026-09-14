@@ -197,8 +197,8 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                                       .read(treatmentListProvider.notifier)
                                       .deleteTreatment(t.id);
                                 },
-                                backgroundColor: context.colors.secondaryContainer,
-                                foregroundColor: context.colors.onSecondaryContainer,
+                                backgroundColor: context.colors.tertiaryContainer,
+                                foregroundColor: context.colors.onTertiaryContainer,
                                 icon: Icons.archive,
                                 label: l10n.archive,
                               ),

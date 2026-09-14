@@ -186,7 +186,7 @@ class _TreatmentDetailScreenState
               // Status card
               Card(
                 color: treatment.isActive
-                    ? context.colors.primaryContainer
+                    ? context.medora.successContainer
                     : context.colors.surfaceContainerHighest,
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -200,7 +200,7 @@ class _TreatmentDetailScreenState
                                 ? Icons.healing
                                 : Icons.healing_outlined,
                             color: treatment.isActive
-                                ? context.colors.onPrimaryContainer
+                                ? context.medora.onSuccessContainer
                                 : context.colors.onSurfaceVariant,
                           ),
                           const SizedBox(width: 8),
@@ -209,7 +209,7 @@ class _TreatmentDetailScreenState
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: treatment.isActive
-                                  ? context.colors.onPrimaryContainer
+                                  ? context.medora.onSuccessContainer
                                   : context.colors.onSurfaceVariant,
                             ),
                           ),

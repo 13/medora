@@ -3,11 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/core/theme_extensions.dart';
 
-double _contrast(Color a, Color b) {
-  final la = a.computeLuminance(), lb = b.computeLuminance();
-  final hi = la > lb ? la : lb, lo = la > lb ? lb : la;
-  return (hi + 0.05) / (lo + 0.05);
-}
+import '../helpers/contrast.dart';
 
 void main() {
   for (final (label, theme) in [('light', AppTheme.lightThemeFrom(Colors.teal)), ('dark', AppTheme.darkThemeFrom(Colors.teal))]) {
@@ -20,7 +16,7 @@ void main() {
         (m.onDanger, m.danger), (m.onDangerContainer, m.dangerContainer),
         (m.onNeutral, m.neutral), (m.onNeutralContainer, m.neutralContainer),
       ]) {
-        expect(_contrast(fg, bg), greaterThanOrEqualTo(3.0), reason: '$label pair $fg on $bg');
+        expect(contrastRatio(fg, bg), greaterThanOrEqualTo(3.0), reason: '$label pair $fg on $bg');
       }
     });
   }

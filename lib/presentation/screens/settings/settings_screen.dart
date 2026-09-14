@@ -680,10 +680,14 @@ class SettingsScreen extends ConsumerWidget {
                                 : null,
                           ),
                           child: isSelected
-                              ? const Icon(Icons.check,
-                                  // checkmark on a user-chosen swatch, not a
-                                  // theme role — literal white by design.
-                                  color: Color(0xFFFFFFFF), size: 22)
+                              ? Icon(Icons.check,
+                                  // on user-chosen swatch
+                                  color: ThemeData.estimateBrightnessForColor(
+                                              scheme.color) ==
+                                          Brightness.dark
+                                      ? const Color(0xFFFFFFFF)
+                                      : const Color(0xFF000000),
+                                  size: 22)
                               : null,
                         ),
                         const SizedBox(height: 4),

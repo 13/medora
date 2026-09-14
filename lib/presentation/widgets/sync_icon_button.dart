@@ -26,7 +26,7 @@ class SyncIconButton extends ConsumerWidget {
             )
           : Icon(
               syncState == SyncState.error ? Icons.sync_problem : Icons.sync,
-              color: syncState == SyncState.error ? context.medora.warning : null,
+              color: syncState == SyncState.error ? context.medora.danger : null,
             ),
       onPressed: isSyncing
           ? null
