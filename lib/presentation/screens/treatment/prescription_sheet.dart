@@ -244,247 +244,63 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
             Expanded(
               child: Form(
                 key: _formKey,
-                child: ListView(
+                // A SingleChildScrollView + Column keeps every field mounted
+                // at all times (unlike a ListView, which lazily unmounts
+                // off-screen children — deactivating their FormFieldState
+                // and making Form.validate() silently skip them on a small
+                // viewport / large text scale).
+                child: SingleChildScrollView(
                   controller: scrollCtrl,
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                  children: [
-                    // ── Medication ──
-                    Text(
-                      l10n.medicationLabel,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedMedicationId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 14,
-                        ),
-                        hintText: l10n.selectMedication,
-                      ),
-                      items: medications.where((m) => !m.isArchived).map((m) {
-                        return DropdownMenuItem(
-                          value: m.id,
-                          child: Text(
-                            _medLabel(m),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      validator: (value) =>
-                          value == null ? l10n.selectMedication : null,
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedMedicationId = value;
-                          // Reset unit override so it inherits from new med.
-                          _dosageUnitOverride = null;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildMedicationField(l10n, medications),
+                      const SizedBox(height: 20),
+                      _buildDosageFields(l10n, medUnit),
+                      const SizedBox(height: 20),
+                      _buildScheduleSection(l10n),
+                      const SizedBox(height: 20),
+                      _buildDurationField(l10n),
+                      const SizedBox(height: 16),
 
-                    // ── Dosage ──
-                    Text(
-                      l10n.dosageLabel,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
+                      // ── Auto-diminish toggle ──
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(l10n.autoDiminish),
+                        subtitle: Text(
+                          l10n.autoDiminishHint,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        value: _autoDiminish,
+                        onChanged: (v) => setState(() => _autoDiminish = v),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (medUnit != null) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: TextFormField(
-                              controller: _dosageAmountController,
-                              decoration: InputDecoration(
-                                border: const OutlineInputBorder(),
-                                labelText: l10n.dosageLabel,
-                                prefixIcon: const Icon(Icons.medication),
-                              ),
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              validator: (value) {
-                                final amount = double.tryParse(
-                                  (value ?? '').trim().replaceAll(',', '.'),
-                                );
-                                if (amount == null || amount < 0.25) {
-                                  return l10n.invalidNumber;
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 3,
-                            child: UnitDropdown(
-                              value: _dosageUnitOverride ?? medUnit,
-                              decoration: InputDecoration(
-                                border: const OutlineInputBorder(),
-                                labelText: l10n.quantityUnit,
-                              ),
-                              onChanged: (v) =>
-                                  setState(() => _dosageUnitOverride = v),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ] else ...[
+                      const SizedBox(height: 12),
+
+                      // ── Notes ──
                       TextFormField(
-                        controller: _dosageFreeController,
+                        controller: _notesController,
                         decoration: InputDecoration(
                           border: const OutlineInputBorder(),
-                          hintText: l10n.dosageHint,
-                          prefixIcon: const Icon(Icons.medication),
+                          labelText: l10n.notes,
+                          prefixIcon: const Icon(Icons.notes),
+                        ),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 24),
+
+                      // ── Save button ──
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton.icon(
+                          icon: Icon(_isEdit ? Icons.save : Icons.add),
+                          label: Text(_isEdit ? l10n.update : l10n.add),
+                          onPressed: () => _save(l10n, medications),
                         ),
                       ),
                     ],
-                    const SizedBox(height: 20),
-
-                    // ── Schedule ──
-                    Text(
-                      l10n.scheduleType,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SegmentedButton<String>(
-                      segments: [
-                        ButtonSegment(
-                          value: 'fixed_interval',
-                          label: Text(
-                            l10n.fixedInterval,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          icon: const Icon(Icons.timer, size: 16),
-                        ),
-                        ButtonSegment(
-                          value: 'times_per_day',
-                          label: Text(
-                            l10n.timesPerDay,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          icon: const Icon(Icons.schedule, size: 16),
-                        ),
-                      ],
-                      selected: {_scheduleType},
-                      onSelectionChanged: (s) =>
-                          setState(() => _scheduleType = s.first),
-                    ),
-                    const SizedBox(height: 12),
-
-                    if (_scheduleType == 'fixed_interval') ...[
-                      TextFormField(
-                        controller: _intervalController,
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          labelText: l10n.intervalHoursLabel,
-                          prefixIcon: const Icon(Icons.repeat),
-                        ),
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          final v = int.tryParse((value ?? '').trim());
-                          if (v == null || v < 1 || v > 48) {
-                            return l10n.intervalRange;
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        l10n.doseTimesPreview(
-                          _previewPrescription()
-                              .firstDayTimes()
-                              .map((t) => t.timeFormatted)
-                              .join(', '),
-                        ),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: context.colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-
-                    if (_scheduleType == 'times_per_day')
-                      _buildTimesPerDay(l10n),
-                    const SizedBox(height: 20),
-
-                    // ── Duration ──
-                    Text(
-                      l10n.durationDaysLabel,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _durationController,
-                      decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.date_range),
-                        suffixText: l10n.durationDaysLabel,
-                      ),
-                      keyboardType: TextInputType.number,
-                      validator: (value) {
-                        final v = int.tryParse((value ?? '').trim());
-                        if (v == null || v < 1 || v > 365) {
-                          return l10n.durationRange;
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Auto-diminish toggle ──
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.autoDiminish),
-                      subtitle: Text(
-                        l10n.autoDiminishHint,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      value: _autoDiminish,
-                      onChanged: (v) => setState(() => _autoDiminish = v),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // ── Notes ──
-                    TextFormField(
-                      controller: _notesController,
-                      decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        labelText: l10n.notes,
-                        prefixIcon: const Icon(Icons.notes),
-                      ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 24),
-
-                    // ── Save button ──
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton.icon(
-                        icon: Icon(_isEdit ? Icons.save : Icons.add),
-                        label: Text(_isEdit ? l10n.update : l10n.add),
-                        onPressed: () => _save(l10n, medications),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -494,9 +310,236 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
     );
   }
 
+  Widget _buildMedicationField(
+    AppLocalizations l10n,
+    List<Medication> medications,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.medicationLabel,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          key: const Key('medicationDropdown'),
+          initialValue: _selectedMedicationId,
+          isExpanded: true,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 14,
+            ),
+            hintText: l10n.selectMedication,
+          ),
+          items: medications.where((m) => !m.isArchived).map((m) {
+            return DropdownMenuItem(
+              value: m.id,
+              child: Text(_medLabel(m), overflow: TextOverflow.ellipsis),
+            );
+          }).toList(),
+          validator: (value) =>
+              value == null ? l10n.selectMedication : null,
+          onChanged: (value) {
+            setState(() {
+              _selectedMedicationId = value;
+              // Reset unit override so it inherits from new med.
+              _dosageUnitOverride = null;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDosageFields(AppLocalizations l10n, String? medUnit) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.dosageLabel,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (medUnit != null)
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  key: const Key('dosageAmountField'),
+                  controller: _dosageAmountController,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    labelText: l10n.dosageLabel,
+                    prefixIcon: const Icon(Icons.medication),
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse(
+                      (value ?? '').trim().replaceAll(',', '.'),
+                    );
+                    if (amount == null || amount < 0.25) {
+                      return l10n.invalidNumber;
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: UnitDropdown(
+                  value: _dosageUnitOverride ?? medUnit,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    labelText: l10n.quantityUnit,
+                  ),
+                  onChanged: (v) => setState(() => _dosageUnitOverride = v),
+                ),
+              ),
+            ],
+          )
+        else
+          TextFormField(
+            key: const Key('dosageFreeTextField'),
+            controller: _dosageFreeController,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              hintText: l10n.dosageHint,
+              prefixIcon: const Icon(Icons.medication),
+            ),
+            validator: (v) =>
+                (v ?? '').trim().isEmpty ? l10n.required : null,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildScheduleSection(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.scheduleType,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          segments: [
+            ButtonSegment(
+              value: 'fixed_interval',
+              label: Text(
+                l10n.fixedInterval,
+                style: const TextStyle(fontSize: 12),
+              ),
+              icon: const Icon(Icons.timer, size: 16),
+            ),
+            ButtonSegment(
+              value: 'times_per_day',
+              label: Text(
+                l10n.timesPerDay,
+                style: const TextStyle(fontSize: 12),
+              ),
+              icon: const Icon(Icons.schedule, size: 16),
+            ),
+          ],
+          selected: {_scheduleType},
+          onSelectionChanged: (s) => setState(() => _scheduleType = s.first),
+        ),
+        const SizedBox(height: 12),
+
+        if (_scheduleType == 'fixed_interval') ...[
+          TextFormField(
+            key: const Key('intervalHoursField'),
+            controller: _intervalController,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              labelText: l10n.intervalHoursLabel,
+              prefixIcon: const Icon(Icons.repeat),
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              final v = int.tryParse((value ?? '').trim());
+              if (v == null || v < 1 || v > 48) {
+                return l10n.intervalRange;
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.doseTimesPreview(
+              _previewPrescription()
+                  .firstDayTimes()
+                  .map((t) => t.timeFormatted)
+                  .join(', '),
+            ),
+            style: TextStyle(
+              fontSize: 12,
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+
+        if (_scheduleType == 'times_per_day') _buildTimesPerDay(l10n),
+      ],
+    );
+  }
+
+  Widget _buildDurationField(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.durationDaysLabel,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          key: const Key('durationDaysField'),
+          controller: _durationController,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.date_range),
+            suffixText: l10n.durationDaysLabel,
+          ),
+          keyboardType: TextInputType.number,
+          validator: (value) {
+            final v = int.tryParse((value ?? '').trim());
+            if (v == null || v < 1 || v > 365) {
+              return l10n.durationRange;
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildTimesPerDay(AppLocalizations l10n) {
     final sorted = List<String>.from(_selectedTimes)..sort();
     return FormField<bool>(
+      // Re-run the validator as soon as the user adds/removes a time so a
+      // stale "Select at least one time" error clears immediately, rather
+      // than waiting for the next full Form.validate() (e.g. on Save).
+      autovalidateMode: AutovalidateMode.onUserInteraction,
       validator: (_) =>
           _selectedTimes.isEmpty ? l10n.selectAtLeastOneTime : null,
       builder: (state) {
@@ -578,17 +621,18 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
   ) async {
     final valid = _formKey.currentState?.validate() ?? false;
     if (!valid) return;
+    // Defensive: every field stays mounted for validate() now, but guard
+    // anyway rather than null-asserting straight into the constructor.
+    if (_selectedMedicationId == null) return;
 
     final existing = widget.existing;
     final medUnit = _selectedMedUnit(medications);
     final double? amount = double.tryParse(
       _dosageAmountController.text.trim().replaceAll(',', '.'),
     );
-    final String dosageText = medUnit != null
-        ? '${amount! % 1 == 0 ? amount.toInt() : amount} ${_dosageUnitOverride ?? medUnit}'
+    final String dosageText = amount != null
+        ? '${amount % 1 == 0 ? amount.toInt() : amount} ${_dosageUnitOverride ?? medUnit}'
         : _dosageFreeController.text.trim();
-
-    if (dosageText.isEmpty && amount == null) return;
 
     int interval = int.tryParse(_intervalController.text.trim()) ?? 8;
     if (_scheduleType == 'times_per_day' && _selectedTimes.isNotEmpty) {
@@ -604,6 +648,8 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       dosageUnit: _dosageUnitOverride,
       intervalHours: interval,
       durationDays: int.tryParse(_durationController.text.trim()) ?? 7,
+      // New prescriptions use `_roundedNow`, captured when the sheet was
+      // opened, so the fixed-interval preview above matches what is saved.
       startTime: existing?.startTime ?? _roundedNow,
       isActive: true,
       autoDiminish: _autoDiminish,
@@ -720,6 +766,10 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       );
     }
 
+    // The sheet can be dismissed (drag/X) while the write above is in
+    // flight; `ref`/`context` on a disposed ConsumerState would throw.
+    if (!mounted) return;
+
     if (saved) {
       ref.invalidate(prescriptionsByTreatmentProvider(widget.treatmentId));
       ref.invalidate(todaysDoseLogsProvider);
@@ -727,6 +777,6 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       ref.invalidate(activePrescriptionsProvider);
     }
 
-    if (mounted) Navigator.pop(context);
+    Navigator.pop(context);
   }
 }
