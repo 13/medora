@@ -2,7 +2,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   AppTheme._();
@@ -30,10 +29,13 @@ class AppTheme {
 
   /// Build light theme with the given color seed.
   static ThemeData lightThemeFrom(Color seedColor) {
-    final textTheme = GoogleFonts.interTextTheme();
+    final textTheme = Typography.material2021(platform: TargetPlatform.android)
+        .black
+        .apply(fontFamily: 'Inter');
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Inter',
       brightness: Brightness.light,
       colorSchemeSeed: seedColor,
       textTheme: textTheme,
@@ -103,10 +105,13 @@ class AppTheme {
 
   /// Build dark theme with the given color seed.
   static ThemeData darkThemeFrom(Color seedColor) {
-    final textTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+    final textTheme = Typography.material2021(platform: TargetPlatform.android)
+        .white
+        .apply(fontFamily: 'Inter');
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Inter',
       brightness: Brightness.dark,
       colorSchemeSeed: seedColor,
       textTheme: textTheme,
