@@ -285,7 +285,7 @@ void showDoseDetailBottomSheet({
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        ref.read(todaysDoseLogsProvider.notifier).markSkipped(dose.id);
+                        ref.read(doseActionsProvider).skip(dose.id);
                         Navigator.pop(ctx);
                       },
                       icon: const Icon(Icons.skip_next),
@@ -296,7 +296,7 @@ void showDoseDetailBottomSheet({
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: () {
-                        ref.read(todaysDoseLogsProvider.notifier).markTaken(dose.id);
+                        ref.read(doseActionsProvider).take(dose.id);
                         Navigator.pop(ctx);
                       },
                       icon: const Icon(Icons.check),
@@ -310,7 +310,7 @@ void showDoseDetailBottomSheet({
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () {
-                    ref.read(todaysDoseLogsProvider.notifier).undoTaken(dose.id);
+                    ref.read(doseActionsProvider).undoTake(dose.id);
                     Navigator.pop(ctx);
                   },
                   icon: const Icon(Icons.undo),

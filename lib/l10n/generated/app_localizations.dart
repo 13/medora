@@ -850,6 +850,12 @@ abstract class AppLocalizations {
   /// **'Taken'**
   String get doseTaken;
 
+  /// No description provided for @doseSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Skipped'**
+  String get doseSkipped;
+
   /// No description provided for @undo.
   ///
   /// In en, this message translates to:
@@ -867,6 +873,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} doses due'**
   String dosesDueNow(int count);
+
+  /// No description provided for @dosesTakenCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} doses taken'**
+  String dosesTakenCount(int count);
 
   /// No description provided for @scanBarcodeTitle.
   ///
@@ -1618,11 +1630,23 @@ abstract class AppLocalizations {
   /// **'Noon'**
   String get noon;
 
+  /// No description provided for @afternoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Afternoon'**
+  String get afternoon;
+
   /// No description provided for @evening.
   ///
   /// In en, this message translates to:
   /// **'Evening'**
   String get evening;
+
+  /// No description provided for @night.
+  ///
+  /// In en, this message translates to:
+  /// **'Night'**
+  String get night;
 
   /// No description provided for @beforeSleep.
   ///

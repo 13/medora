@@ -266,17 +266,20 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     }
   }
 
-  // Thin wrappers kept so existing call sites compile unchanged.
-  // The actual mutation logic lives in [DoseActions].
-  Future<void> markTaken(String id) => ref.read(doseActionsProvider).take(id);
+}
 
-  Future<void> undoTaken(String id) =>
-      ref.read(doseActionsProvider).undoTake(id);
+/// The day currently selected on the Doses tab (midnight-normalized).
+/// Defaults to today (per [nowProvider]).
+final selectedDoseDayProvider =
+    NotifierProvider<SelectedDoseDay, DateTime>(SelectedDoseDay.new);
 
-  Future<void> markSkipped(String id) => ref.read(doseActionsProvider).skip(id);
+class SelectedDoseDay extends Notifier<DateTime> {
+  @override
+  DateTime build() => dayKey(ref.read(nowProvider)());
 
-  Future<void> markMissed(String id) =>
-      ref.read(doseActionsProvider).markMissed(id);
+  void set(DateTime day) => state = dayKey(day);
+
+  void shift(int days) => state = state.add(Duration(days: days));
 }
 
 /// Provider for dose logs by prescription.

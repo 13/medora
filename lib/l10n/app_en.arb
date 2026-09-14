@@ -213,10 +213,17 @@
   "nextDose": "Next dose",
   "allDosesDone": "All doses done for today",
   "doseTaken": "Taken",
+  "doseSkipped": "Skipped",
   "undo": "Undo",
   "takeAllDue": "Take all due",
   "dosesDueNow": "{count} doses due",
   "@dosesDueNow": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "dosesTakenCount": "{count} doses taken",
+  "@dosesTakenCount": {
     "placeholders": {
       "count": { "type": "int" }
     }
@@ -388,7 +395,9 @@
   "specificTimes": "Specific Times",
   "morning": "Morning",
   "noon": "Noon",
+  "afternoon": "Afternoon",
   "evening": "Evening",
+  "night": "Night",
   "beforeSleep": "Before Sleep",
   "selectTimes": "Select Times",
   "everyXHours": "Every {hours} hours",

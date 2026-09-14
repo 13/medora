@@ -207,7 +207,7 @@ class _NowCardState extends ConsumerState<_NowCard> {
             ),
             const SizedBox(width: 8),
             TextButton(
-              onPressed: () => ref.read(doseActionsProvider).skip(dose.id),
+              onPressed: _busy ? null : () => _handleSkip(context, l10n, dose.id),
               child: Text(l10n.skip),
             ),
           ],
@@ -264,6 +264,34 @@ class _NowCardState extends ConsumerState<_NowCard> {
             action: SnackBarAction(
               label: l10n.undo,
               onPressed: () => ref.read(doseActionsProvider).undoTake(id),
+            ),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(e.toString()))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _handleSkip(BuildContext context, AppLocalizations l10n, String id) async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final ok = await ref.read(doseActionsProvider).skip(id);
+      if (!mounted) return;
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l10n.doseSkipped),
+            action: SnackBarAction(
+              label: l10n.undo,
+              onPressed: () => ref.read(doseActionsProvider).undoSkip(id),
             ),
           ),
         );

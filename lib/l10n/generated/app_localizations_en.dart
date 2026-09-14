@@ -418,6 +418,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get doseTaken => 'Taken';
 
   @override
+  String get doseSkipped => 'Skipped';
+
+  @override
   String get undo => 'Undo';
 
   @override
@@ -426,6 +429,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String dosesDueNow(int count) {
     return '$count doses due';
+  }
+
+  @override
+  String dosesTakenCount(int count) {
+    return '$count doses taken';
   }
 
   @override
@@ -823,7 +831,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noon => 'Noon';
 
   @override
+  String get afternoon => 'Afternoon';
+
+  @override
   String get evening => 'Evening';
+
+  @override
+  String get night => 'Night';
 
   @override
   String get beforeSleep => 'Before Sleep';
