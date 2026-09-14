@@ -292,7 +292,7 @@ class ExportService {
                 children: [
                   pw.Text(
                     labels.reportTitle,
-                    style: pw.TextStyle(
+                    style: const pw.TextStyle(
                       fontSize: 24,
                       fontWeight: pw.FontWeight.bold,
                     ),
@@ -327,7 +327,7 @@ class ExportService {
           header: (context) => pw.Header(child: pw.Text(labels.medications)),
           build: (context) => [
             pw.TableHelper.fromTextArray(
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
               headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey200,
               ),
@@ -371,7 +371,7 @@ class ExportService {
           header: (context) => pw.Header(child: pw.Text(labels.treatments)),
           build: (context) => [
             pw.TableHelper.fromTextArray(
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
               headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey200,
               ),
@@ -408,7 +408,7 @@ class ExportService {
           header: (context) => pw.Header(child: pw.Text(labels.doseLog)),
           build: (context) => [
             pw.TableHelper.fromTextArray(
-              headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+              headerStyle: const pw.TextStyle(fontWeight: pw.FontWeight.bold),
               headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey200,
               ),
