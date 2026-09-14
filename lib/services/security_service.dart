@@ -28,11 +28,14 @@ class SecurityService {
     try {
       return await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
+        persistAcrossBackgrounding: true,
+        biometricOnly: true,
       );
+    } on LocalAuthException catch (e) {
+      debugPrint(
+        'SecurityService: auth error: ${e.code.name} ${e.description}',
+      );
+      return false;
     } on PlatformException catch (e) {
       debugPrint('SecurityService: auth error: $e');
       return false;
