@@ -40,7 +40,7 @@ Medora works completely offline. All data lives in a local SQLite database on th
 
 ## Optional: cloud sync with Supabase
 
-1. Create a Supabase project and run `supabase/initial_schema.sql` in the SQL editor.
+1. Create a Supabase project and run the SQL files in `supabase/migrations/` in filename order in the SQL editor.
 2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
 3. Run or build with the defines:
 

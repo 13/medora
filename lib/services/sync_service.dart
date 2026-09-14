@@ -322,24 +322,58 @@ class SyncService {
     } catch (e) { debugPrint('Sync: pull families error: $e'); }
   }
 
+  // A remote tombstone (`deleted_at`) always wins over local state and is
+  // applied as a local hard delete; every row is isolated so one bad row does
+  // not abort the rest of the table (spec §4.6).
+
   Future<void> _pullMedications({bool force = false}) async {
     try {
       final remoteMeds = await medicationRemote!.getMedications();
-      for (final m in remoteMeds) { await _safeUpsertMedication(m, force: force); }
+      for (final m in remoteMeds) {
+        try {
+          if (m.deletedAt != null) {
+            await medicationLocal.hardDelete(m.id);
+          } else {
+            await _safeUpsertMedication(m, force: force);
+          }
+        } catch (e) {
+          debugPrint('Sync: pull medications row ${m.id} error: $e');
+        }
+      }
     } catch (e) { debugPrint('Sync: pull medications error: $e'); }
   }
 
   Future<void> _pullTreatments({bool force = false}) async {
     try {
       final remote = await treatmentRemote!.getTreatments();
-      for (final t in remote) { await _safeUpsertTreatment(t, force: force); }
+      for (final t in remote) {
+        try {
+          if (t.deletedAt != null) {
+            await treatmentLocal.hardDelete(t.id);
+          } else {
+            await _safeUpsertTreatment(t, force: force);
+          }
+        } catch (e) {
+          debugPrint('Sync: pull treatments row ${t.id} error: $e');
+        }
+      }
     } catch (e) { debugPrint('Sync: pull treatments error: $e'); }
   }
 
   Future<void> _pullPrescriptions({bool force = false}) async {
     try {
       final remote = await prescriptionRemote!.getPrescriptions();
-      for (final p in remote) { await _safeUpsertPrescription(p, force: force); }
+      for (final p in remote) {
+        try {
+          if (p.deletedAt != null) {
+            await prescriptionLocal.hardDelete(p.id);
+          } else {
+            await _safeUpsertPrescription(p, force: force);
+          }
+        } catch (e) {
+          debugPrint('Sync: pull prescriptions row ${p.id} error: $e');
+        }
+      }
     } catch (e) { debugPrint('Sync: pull prescriptions error: $e'); }
   }
 
@@ -347,10 +381,16 @@ class SyncService {
     try {
       final remote = await doseLogRemote!.getDoseLogs();
       for (final d in remote) {
-        if (force) {
-          await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
-        } else {
-          await doseLogLocal.upsertIfSynced(d);
+        try {
+          if (d.deletedAt != null) {
+            await doseLogLocal.hardDelete(d.id);
+          } else if (force) {
+            await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
+          } else {
+            await doseLogLocal.upsertIfSynced(d);
+          }
+        } catch (e) {
+          debugPrint('Sync: pull dose logs row ${d.id} error: $e');
         }
       }
     } catch (e) { debugPrint('Sync: pull dose logs error: $e'); }

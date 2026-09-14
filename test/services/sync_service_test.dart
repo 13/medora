@@ -10,6 +10,7 @@ import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_service.dart';
 
 import '../helpers/fake_remotes.dart';
+import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
 class Harness {
@@ -140,6 +141,45 @@ void main() {
       h.meds.table.failIds.add('m3');
       await h.service.syncAll();
       expect((await localRow('medications', 'm3'))?['name'], 'Remote');
+    });
+
+    test('remote tombstone hard-deletes the local row even if locally pending', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'm4', name: 'Gone', quantity: 1).toJson());
+      h.meds.table.tombstone('m4');
+      await MedicationLocalDatasource().upsert(
+        const MedicationModel(id: 'm4', name: 'Gone', quantity: 1),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      // Push fails, so the row is still pending when the pull phase runs.
+      h.meds.table.failIds.add('m4');
+      await h.service.syncAll();
+      expect(await localRow('medications', 'm4'), isNull);
+    });
+
+    test('local delete pushes a tombstone and hard-deletes locally', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'm5', name: 'Bye', quantity: 1).toJson());
+      await h.service.syncAll(); // now local synced
+      await MedicationLocalDatasource().markDeleted('m5');
+      expect((await localRow('medications', 'm5'))?['deleted_at'], isNotNull);
+      await h.service.syncAll();
+      expect(h.meds.table.rows['m5']?['deleted_at'], isNotNull);
+      expect(await localRow('medications', 'm5'), isNull);
+    });
+
+    test('a remotely deleted treatment cascades to local prescriptions and dose logs', () async {
+      final h = Harness();
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      await seedDoseLog(db, seeded.prescriptionId, DateTime(2026, 3, 1, 8));
+      h.treatments.table.seed(
+          (await TreatmentLocalDatasource().getTreatmentById(seeded.treatmentId))!.toJson());
+      h.treatments.table.tombstone(seeded.treatmentId);
+      await h.service.syncAll();
+      expect(await localRow('treatments', seeded.treatmentId), isNull);
+      expect(await localRow('prescriptions', seeded.prescriptionId), isNull);
+      expect((await db.query('dose_logs')), isEmpty);
     });
 
     test('skips when offline or signed out', () async {

@@ -19,6 +19,7 @@ class TreatmentModel {
     this.notes,
     this.createdAt,
     this.updatedAt,
+    this.deletedAt,
   });
 
   final String id;
@@ -32,6 +33,9 @@ class TreatmentModel {
   final String? notes;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// Tombstone: non-null when the row is deleted (spec §4.6).
+  final DateTime? deletedAt;
 
   factory TreatmentModel.fromJson(Map<String, dynamic> json) {
     return TreatmentModel(
@@ -52,6 +56,9 @@ class TreatmentModel {
           : null,
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
+          : null,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
           : null,
     );
   }
@@ -76,6 +83,9 @@ class TreatmentModel {
       updatedAt: map['updated_at'] != null
           ? DateTime.tryParse(map['updated_at'] as String)
           : null,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.tryParse(map['deleted_at'] as String)
+          : null,
     );
   }
 
@@ -90,7 +100,8 @@ class TreatmentModel {
       'end_date': endDate?.toIso8601String().split('T').first,
       'is_active': isActive,
       'notes': notes,
-      'updated_at': updatedAt?.toIso8601String(),
+      'updated_at': updatedAt?.toUtc().toIso8601String(),
+      'deleted_at': deletedAt?.toUtc().toIso8601String(),
     };
   }
 

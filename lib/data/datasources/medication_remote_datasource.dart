@@ -82,10 +82,13 @@ class MedicationRemoteDatasource {
   }
 
   /// Delete a medication.
+  /// Soft delete (tombstone). The row stays on the server with `deleted_at`
+  /// set so other devices pull the deletion; see spec §4.6.
   Future<void> deleteMedication(String id) async {
+    final now = DateTime.now().toUtc().toIso8601String();
     await _client
         .from(AppConstants.medicationsTable)
-        .delete()
+        .update({'deleted_at': now, 'updated_at': now})
         .eq('id', id);
   }
 

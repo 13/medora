@@ -14,6 +14,7 @@ class DoseLogModel {
     this.notes,
     this.createdAt,
     this.updatedAt,
+    this.deletedAt,
     this.medicationName,
     this.dosage,
     this.dosageAmount,
@@ -32,6 +33,9 @@ class DoseLogModel {
   final String? notes;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// Tombstone: non-null when the row is deleted (spec §4.6).
+  final DateTime? deletedAt;
   final String? medicationName;
   final String? dosage;
   final double? dosageAmount;
@@ -60,6 +64,9 @@ class DoseLogModel {
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String).toLocal()
           : null,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
       medicationName: medication?['name'] as String?,
       dosage: prescription?['dosage'] as String?,
       patientTags: MedicationModel.parseTags(json['patient_tags']),
@@ -84,6 +91,9 @@ class DoseLogModel {
       updatedAt: map['updated_at'] != null
           ? DateTime.tryParse(map['updated_at'] as String)?.toLocal()
           : null,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.tryParse(map['deleted_at'] as String)
+          : null,
       medicationName: map['medication_name'] as String?,
       dosage: map['dosage'] as String?,
       dosageAmount: (map['dosage_amount'] as num?)?.toDouble(),
@@ -99,11 +109,12 @@ class DoseLogModel {
     return {
       'id': id,
       'prescription_id': prescriptionId,
-      'scheduled_time': scheduledTime.toIso8601String(),
-      'taken_time': takenTime?.toIso8601String(),
+      'scheduled_time': scheduledTime.toUtc().toIso8601String(),
+      'taken_time': takenTime?.toUtc().toIso8601String(),
       'status': status.name,
       'notes': notes,
-      'updated_at': updatedAt?.toIso8601String(),
+      'updated_at': updatedAt?.toUtc().toIso8601String(),
+      'deleted_at': deletedAt?.toUtc().toIso8601String(),
     };
   }
 
