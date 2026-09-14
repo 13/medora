@@ -23,6 +23,7 @@ class SyncStatusChip extends ConsumerWidget {
     final syncState = ref.watch(syncStateStreamProvider).value ?? SyncState.idle;
     final isSyncing = syncState == SyncState.syncing;
     final isError = syncState == SyncState.error;
+    final isPartial = syncState == SyncState.partial;
 
     final Widget avatar;
     final String label;
@@ -36,6 +37,9 @@ class SyncStatusChip extends ConsumerWidget {
     } else if (isError) {
       avatar = Icon(Icons.warning_amber_rounded, size: 18, color: context.medora.danger);
       label = l10n.syncError;
+    } else if (isPartial) {
+      avatar = Icon(Icons.warning_amber_rounded, size: 18, color: context.medora.warning);
+      label = l10n.syncPartial;
     } else {
       avatar = Icon(Icons.cloud_done_outlined, size: 18, color: context.colors.onSurfaceVariant);
       label = l10n.syncNow;

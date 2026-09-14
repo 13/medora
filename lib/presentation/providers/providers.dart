@@ -219,8 +219,9 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   // Using a manual listener on the stream instead of listenSelf 
   // to avoid compatibility issues with certain Ref types.
   final subscription = syncService.stateStream.listen((state) {
-    if (state == SyncState.success) {
-      // Refresh key data providers after a successful sync
+    if (state == SyncState.success || state == SyncState.partial) {
+      // Refresh key data providers after a sync that changed data; a partial
+      // cycle still applied every row that did not fail.
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
       ref.read(todaysDoseLogsProvider.notifier).refresh();
@@ -230,6 +231,12 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
   ref.onDispose(() => subscription.cancel());
 
   return syncService.stateStream;
+});
+
+/// The report of the most recent sync cycle; re-evaluated on every state change.
+final syncLastReportProvider = Provider<SyncReport?>((ref) {
+  ref.watch(syncStateStreamProvider);
+  return ref.watch(syncServiceProvider).lastReport;
 });
 
 // ============================================================

@@ -1240,6 +1240,36 @@ abstract class AppLocalizations {
   /// **'Sync failed — tap to retry'**
   String get syncError;
 
+  /// No description provided for @syncPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed with some errors'**
+  String get syncPartial;
+
+  /// No description provided for @syncNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Not synced yet'**
+  String get syncNever;
+
+  /// No description provided for @lastSyncSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Last sync {time}: {pushed} sent, {pulled} received, {failed} failed'**
+  String lastSyncSummary(String time, int pushed, int pulled, int failed);
+
+  /// No description provided for @syncFailedItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed items'**
+  String get syncFailedItems;
+
+  /// No description provided for @ok.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get ok;
+
   /// No description provided for @advanced.
   ///
   /// In en, this message translates to:

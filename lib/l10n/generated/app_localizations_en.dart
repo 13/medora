@@ -628,6 +628,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncError => 'Sync failed — tap to retry';
 
   @override
+  String get syncPartial => 'Completed with some errors';
+
+  @override
+  String get syncNever => 'Not synced yet';
+
+  @override
+  String lastSyncSummary(String time, int pushed, int pulled, int failed) {
+    return 'Last sync $time: $pushed sent, $pulled received, $failed failed';
+  }
+
+  @override
+  String get syncFailedItems => 'Failed items';
+
+  @override
+  String get ok => 'OK';
+
+  @override
   String get advanced => 'Advanced';
 
   @override

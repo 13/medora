@@ -632,6 +632,23 @@ class AppLocalizationsIt extends AppLocalizations {
   String get syncError => 'Sincronizzazione fallita — tocca per riprovare';
 
   @override
+  String get syncPartial => 'Completata con alcuni errori';
+
+  @override
+  String get syncNever => 'Non ancora sincronizzato';
+
+  @override
+  String lastSyncSummary(String time, int pushed, int pulled, int failed) {
+    return 'Ultima sincronizzazione $time: $pushed inviati, $pulled ricevuti, $failed falliti';
+  }
+
+  @override
+  String get syncFailedItems => 'Elementi non riusciti';
+
+  @override
+  String get ok => 'OK';
+
+  @override
   String get advanced => 'Avanzate';
 
   @override

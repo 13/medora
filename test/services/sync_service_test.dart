@@ -6,6 +6,7 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_service.dart';
 
@@ -195,6 +196,43 @@ void main() {
       expect((await db.query('dose_logs')), isEmpty);
     });
 
+    test('local newer is kept', () async {
+      final h = Harness();
+      // Remote edit at T+5min, local pending edit at T+20min → local wins.
+      h.meds.table.seed(
+        const MedicationModel(id: 'm7', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().add(const Duration(minutes: 5)),
+      );
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm7',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      // Push would overwrite remote; make it fail so the pull phase decides.
+      h.meds.table.failIds.add('m7');
+      await h.service.syncAll();
+      expect((await localRow('medications', 'm7'))?['name'], 'Local');
+    });
+
+    test('local pending_delete is not overwritten by a newer live remote row', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'm8', name: 'Old', quantity: 1).toJson());
+      await h.service.syncAll(); // local copy is synced
+      await MedicationLocalDatasource().markDeleted('m8');
+      // Another device edits the row after our delete; the tombstone push fails.
+      h.clock.advance(const Duration(minutes: 5));
+      h.meds.table.seed(const MedicationModel(id: 'm8', name: 'Newer', quantity: 2).toJson());
+      h.meds.table.failIds.add('m8');
+      await h.service.syncAll();
+      final row = await localRow('medications', 'm8');
+      expect(row?['sync_status'], SyncStatus.pendingDelete);
+      expect(row?['name'], 'Old');
+    });
+
     test('skips when offline or signed out', () async {
       final h = Harness()..online = false;
       await h.service.syncAll();
@@ -203,6 +241,50 @@ void main() {
       h.userId = null;
       await h.service.syncAll();
       expect(h.service.currentState, SyncState.idle);
+    });
+  });
+
+  group('report', () {
+    test('counts pushes and pulls and ends clean', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+          const MedicationModel(id: 'a', name: 'A', quantity: 1),
+          syncStatus: SyncStatus.pendingCreate);
+      h.treatments.table
+          .seed(TreatmentModel(id: 't', name: 'T', startDate: DateTime(2026, 3, 1)).toJson());
+      final report = await h.service.syncAll();
+      expect(report, isNotNull);
+      expect(report!.pushed, 1);
+      expect(report.pulled, greaterThanOrEqualTo(2)); // 'a' comes back from the fake + 't'
+      expect(report.failures, isEmpty);
+      expect(report.finishedAt, isNotNull);
+      expect(h.service.lastReport, same(report));
+      expect(h.service.currentState, SyncState.success);
+    });
+
+    test('a failing row is recorded and the state is partial', () async {
+      final h = Harness();
+      final local = MedicationLocalDatasource();
+      await local.upsert(const MedicationModel(id: 'ok', name: 'ok', quantity: 1),
+          syncStatus: SyncStatus.pendingCreate);
+      await local.upsert(const MedicationModel(id: 'bad', name: 'bad', quantity: 1),
+          syncStatus: SyncStatus.pendingCreate);
+      h.meds.table.failIds.add('bad');
+      final report = (await h.service.syncAll())!;
+      expect(report.pushed, 1);
+      expect(report.failures.map((f) => f.id), ['bad']);
+      expect(report.failures.single.table, 'medications');
+      expect(h.service.currentState, SyncState.partial);
+      expect((await localRow('medications', 'bad'))?['sync_status'], SyncStatus.pendingCreate);
+    });
+
+    test('tombstones are counted as deleted', () async {
+      final h = Harness();
+      h.meds.table.seed(const MedicationModel(id: 'z', name: 'z', quantity: 1).toJson());
+      await h.service.syncAll();
+      h.meds.table.tombstone('z');
+      final report = (await h.service.syncAll())!;
+      expect(report.deleted, 1);
     });
   });
 }

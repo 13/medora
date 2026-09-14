@@ -638,6 +638,23 @@ class AppLocalizationsDe extends AppLocalizations {
       'Synchronisierung fehlgeschlagen — tippen zum Wiederholen';
 
   @override
+  String get syncPartial => 'Mit Fehlern abgeschlossen';
+
+  @override
+  String get syncNever => 'Noch nicht synchronisiert';
+
+  @override
+  String lastSyncSummary(String time, int pushed, int pulled, int failed) {
+    return 'Letzte Synchronisierung $time: $pushed gesendet, $pulled empfangen, $failed fehlgeschlagen';
+  }
+
+  @override
+  String get syncFailedItems => 'Fehlgeschlagene Einträge';
+
+  @override
+  String get ok => 'OK';
+
+  @override
   String get advanced => 'Erweitert';
 
   @override
