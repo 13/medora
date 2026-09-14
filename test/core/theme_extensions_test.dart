@@ -19,6 +19,14 @@ void main() {
         expect(contrastRatio(fg, bg), greaterThanOrEqualTo(3.0), reason: '$label pair $fg on $bg');
       }
     });
+
+    test('$label theme colorScheme.primaryContainer pair is readable', () {
+      final scheme = theme.colorScheme;
+      expect(
+        contrastRatio(scheme.onPrimaryContainer, scheme.primaryContainer),
+        greaterThanOrEqualTo(3.0),
+      );
+    });
   }
 
   test('semantic aliases map to the base roles', () {

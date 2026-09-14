@@ -254,19 +254,28 @@ class _NowCardState extends ConsumerState<_NowCard> {
   Future<void> _handleTake(BuildContext context, AppLocalizations l10n, String id) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await ref.read(doseActionsProvider).take(id);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (ok) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(l10n.doseTaken),
-          action: SnackBarAction(
-            label: l10n.undo,
-            onPressed: () => ref.read(doseActionsProvider).undoTake(id),
+    try {
+      final ok = await ref.read(doseActionsProvider).take(id);
+      if (!mounted) return;
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(l10n.doseTaken),
+            action: SnackBarAction(
+              label: l10n.undo,
+              onPressed: () => ref.read(doseActionsProvider).undoTake(id),
+            ),
           ),
-        ),
-      );
+        );
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.errorWithDetails(e.toString()))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 }
