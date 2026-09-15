@@ -43,6 +43,7 @@ import 'package:medora/services/ocr_adapter.dart';
 import 'package:medora/services/scan_debug.dart';
 import 'package:medora/services/scan_region.dart';
 import 'package:medora/services/supplement_registry_service.dart';
+import 'package:medora/services/supplement_resolution.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -381,6 +382,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           );
         }
       }
+      candidates = await _resolveAgainstRegister(candidates);
+      if (!mounted || _photoPath != path) return;
       scanLog([
         '[scan] image: ${size.width.round()}x${size.height.round()}',
         ...describeCandidates(candidates),
@@ -620,6 +623,29 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         _openEan(candidate);
       case CodeKind.other:
         _leaveAndPush(addMedicationWithBarcode(candidate.code));
+    }
+  }
+
+  /// Supplement chips corrected to the register code that matches them,
+  /// when the register is already on the device. Without it (or on any
+  /// error) the chips stay as read and `_openSupplement` asks the user to
+  /// confirm an alternative at selection time.
+  Future<List<CodeCandidate>> _resolveAgainstRegister(
+    List<CodeCandidate> candidates,
+  ) async {
+    if (!candidates.any((c) => c.kind == CodeKind.supplement)) {
+      return candidates;
+    }
+    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
+      return candidates;
+    }
+    try {
+      final service = ref.read(supplementRegistryServiceProvider);
+      if (!await service.hasData()) return candidates;
+      return await resolveSupplementCandidates(candidates, service.findByCode);
+    } catch (e) {
+      debugPrint('[scan] register resolution skipped: $e');
+      return candidates;
     }
   }
 
