@@ -120,3 +120,48 @@ The user photographed a food-supplement label (`COD MINSAN: 107018`, EAN-13 prin
 - [ ] Review shows the photo with numbered overlays and a ranked list (AIC first); tapping either uses that code.
 - [ ] Return-only mode fills the Add Medication field; full mode runs the AIFA lookup as before; manual entry still works.
 - [ ] Temp photos are deleted; gates green; goldens unchanged; l10n complete; verified on the phone; release `v0.2.3+15` published.
+
+---
+
+## Amendment (2026-09-15): barcodes on the photo and the food-supplement register
+
+The user photographed a food supplement (not a medicine). Its label carries `COD MINSAN: 107018` (the Ministry of Health notification code) and an EAN-13 barcode `8057737141836`. Supplements are not in the AIFA medicines file. The Ministry publishes the register of notified supplements monthly as a PDF (`/new/sites/default/files/INTEGRATORI_NOTIFICATI_ORD_PROD_<n>.pdf`, ~4,100 pages, columns PRODOTTO / IMPRESA / CODICE); `107018` is listed as `ZINCO-C`, company `SYGNUM SRL`. A prototype parser (`pdftotext -bbox-layout` + per-page column positions) yields 113,925 rows, 1.8 MB gzipped. Open Food Facts does not know this EAN, so EANs are used for matching the user's own cabinet only.
+
+Task 1 was amended in its dispatch (candidate kinds `aic`, `supplement`, `ean`, `other`; `extractCodes` boundary fix). The following changes Task 2 and adds Task 3; the old Task 3 becomes Task 4.
+
+### Task 2 additions: decode barcodes on the same photo
+
+- Add `google_mlkit_barcode_scanning` (^0.16.1; shares `google_mlkit_commons` 0.13 with text recognition). Run `BarcodeScanner(formats: [ean13, ean8, code39, code128, dataMatrix])` on the same `InputImage` as the text recogniser (in parallel).
+- Map decoded barcodes to candidates with `CodeCandidate.eanFromBarcode` for EAN-13/EAN-8; a Code 39 / Code 128 value `A` + 9 digits (the medicine "bollino") becomes an `aic` candidate; anything else is `other`. Barcode boxes come from `Barcode.boundingBox`; merge with OCR candidates via the Task 1 dedupe rules (barcode wins).
+- Selecting a candidate: `aic` → existing AIFA flow; `supplement` → Task 3 register lookup; `ean` → look up the user's cabinet by barcode (`MedicationRepository.getMedicationByBarcode`); if found open that medication's detail, otherwise open Add Medication with the barcode prefilled; `other` → return-only mode returns it, full mode opens Add Medication with it prefilled.
+
+### Task 3: food-supplement register (data pipeline + offline lookup)
+
+**Files:**
+- Create: `tools/build_supplements_data.py` (from the validated prototype), `.github/workflows/supplements-data.yml`, `lib/services/supplement_registry_service.dart`, `test/services/supplement_registry_service_test.dart`, `test/fixtures/integratori_sample.csv`
+- Modify: scanner selection for `supplement` candidates, Settings → Data (register tile next to the AIFA tile), `lib/presentation/screens/medication/add_medication_screen.dart` (accept a supplement prefill), ARB, `docs/architecture.md`, `docs/release.md`, README.
+
+**Data pipeline:**
+- `supplements-data.yml`: `on: schedule: cron '0 5 3 * *'` (3rd of each month) + `workflow_dispatch`; ubuntu, `apt-get install -y poppler-utils`, run `tools/build_supplements_data.py --out integratori.csv.gz`, then publish to the fixed release tag `data-integratori` (create if missing, `gh release upload --clobber`), as a pre-release so `releases/latest` (the app updater) never picks it. Also upload `integratori.meta.json` `{ "rows": N, "sourceUpdated": "<aggiornato al date>", "builtAt": "<UTC>" }`.
+- The Ministry site may block GitHub runner IPs. The workflow must fail loudly (`not a PDF`) in that case; document the manual fallback in `docs/release.md`: run the script locally (from Italy) and `gh release upload data-integratori integratori.csv.gz integratori.meta.json --clobber`. The controller performs the first upload manually from the prototype output if the runner is blocked.
+
+**App:**
+```dart
+class SupplementEntry { final String code; final String product; final String company; }
+class SupplementRegistryService {
+  SupplementRegistryService({http.Client? client, Future<Database> Function()? openDatabase, DateTime Function()? now});
+  static const dataUrl = 'https://github.com/13/medora/releases/download/data-integratori/integratori.csv.gz';
+  Future<int> sync({void Function(double progress)? onProgress}); // streamed download, gunzip, batch insert into `supplements(code TEXT, product TEXT, company TEXT)` in its own sqflite DB `supplement_cache.db` with an index on code; replaces the table in one transaction; stores count + sync time in prefs
+  Future<List<SupplementEntry>> findByCode(String code); // strips non-digits and leading zeros-insensitive match
+  Future<List<SupplementEntry>> searchByName(String query, {int limit = 50});
+  Future<DateTime?> lastSync(); Future<int> count();
+}
+```
+- Mirrors `AifaCacheService` (same UX): Settings → Data tile "Food supplement register" / "Nahrungsergänzungsmittel-Register" / "Registro integratori" with last update, count and an update button; the scanner offers to download it the first time a supplement code is selected while the cache is empty (dialog; online required).
+- Scanner `supplement` selection: `findByCode`; one match → open Add Medication prefilled (name = product, manufacturer = company, category = supplement/"Nahrungsergänzungsmittel" per existing category values, barcode = the scanned code) with snackbar `autoFilledFromBarcode`; several → picker like the AIFA result picker; none → snackbar `supplementNotFound` and Add Medication with the code prefilled.
+- Tests: CSV fixture with 3 rows incl. `107018,ZINCO-C,SYGNUM SRL` and a quoted company containing a comma; `MockClient` serving the gzipped fixture; `sync` inserts rows and records count; `findByCode('107018')` and `findByCode('0107018')` match; `searchByName('zinco')` case-insensitive; a non-gzip / HTTP error leaves the previous table intact; parser script: a `python3 -m doctest`-free smoke test is not required in Dart CI, but the workflow runs the script with `--min-rows 50000`.
+- ARB (en/de/it): `supplementRegister`, `supplementRegisterHint`, `supplementNotFound`, `supplementRegisterDownloadPrompt`, `scanSupplementSelected`.
+
+### Task 4: On-device verification and release (was Task 3)
+
+In addition to the original steps: render the supplement label test image (lines from the user's photo including `COD MINSAN: 107018` and an EAN-13 barcode image generated with a barcode tool or the user's photo itself), pick it from the gallery, confirm the `supplement` and `ean` candidates, select `107018` → Add Medication prefilled with `ZINCO-C` / `SYGNUM SRL`.
