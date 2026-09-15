@@ -17,6 +17,12 @@ void main() {
     expect(PlatformCapabilities.desktop.hasInAppUpdates, isFalse);
   });
 
+  test('the supplement register is offered everywhere except web', () {
+    expect(PlatformCapabilities.web.hasSupplementRegister, isFalse);
+    expect(PlatformCapabilities.mobile.hasSupplementRegister, isTrue);
+    expect(PlatformCapabilities.desktop.hasSupplementRegister, isTrue);
+  });
+
   test('detect() on the test host (Linux) yields the desktop preset', () {
     expect(PlatformCapabilities.detect(), PlatformCapabilities.desktop);
   });

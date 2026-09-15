@@ -65,11 +65,13 @@ class BarcodeLookupDatasource {
 
   /// Regex to detect AIC-like codes in scanned text.
   /// Matches: optional leading letter + 6-9 digits (e.g. A023834118).
-  static final _aicPattern = RegExp(r'[A-Za-z]?\d{6,9}');
+  /// The digits must not touch other digits, so a 13-digit EAN barcode
+  /// (8057737141836) never yields a 9-digit prefix.
+  static final aicPattern = RegExp(r'(?<![0-9])[A-Za-z]?\d{6,9}(?![0-9])');
 
   /// Extract possible AIC codes from OCR text.
   static List<String> extractCodes(String ocrText) {
-    final matches = _aicPattern.allMatches(ocrText);
+    final matches = aicPattern.allMatches(ocrText);
     return matches
         .map((m) => cleanCode(m.group(0)!))
         .where((c) => c.length >= 6)

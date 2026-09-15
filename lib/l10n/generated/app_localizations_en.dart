@@ -475,9 +475,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanBarcodeTitle => 'Scan AIC Code';
 
   @override
-  String get pointCameraAtBarcode => 'Point camera at AIC code on package';
-
-  @override
   String get enterBarcodeManually => 'Enter code manually';
 
   @override
@@ -496,10 +493,100 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanBarcodeTooltip => 'Scan AIC Code';
 
   @override
-  String get ocrDetectedCodes => 'Detected codes — tap to search';
+  String get scanTakePhoto => 'Take photo';
 
   @override
-  String get ocrScanning => 'Scanning for AIC codes…';
+  String get scanFromGallery => 'Choose from gallery';
+
+  @override
+  String get scanRetake => 'Retake';
+
+  @override
+  String get scanRecognizing => 'Reading text…';
+
+  @override
+  String get scanChooseCode => 'Tap the code to use';
+
+  @override
+  String get scanAicCodes => 'AIC codes';
+
+  @override
+  String get scanSupplementCodes => 'Supplement codes (Ministry of Health)';
+
+  @override
+  String get scanBarcodes => 'Barcodes (EAN)';
+
+  @override
+  String get scanOtherNumbers => 'Other numbers';
+
+  @override
+  String get scanNoCodeFound =>
+      'No code found. Retake the photo closer, or type the code.';
+
+  @override
+  String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
+
+  @override
+  String get scanMedicationInCabinet => 'Already in your cabinet';
+
+  @override
+  String get supplementRegister => 'Food supplement register';
+
+  @override
+  String get supplementRegisterHint =>
+      'Ministry of Health register for supplement codes (COD MINSAN)';
+
+  @override
+  String supplementRegisterUpdated(String date) {
+    return 'Register as of $date';
+  }
+
+  @override
+  String get supplementRegisterUpdate => 'Update register';
+
+  @override
+  String get supplementRegisterDownload => 'Download';
+
+  @override
+  String get supplementRegisterDownloading => 'Downloading register…';
+
+  @override
+  String supplementRegisterSyncSuccess(int count) {
+    return 'Register updated ($count products)';
+  }
+
+  @override
+  String get supplementRegisterDownloadPrompt =>
+      'Supplement codes are looked up in the Ministry of Health register. Download it now (about 2 MB)? An internet connection is required.';
+
+  @override
+  String get supplementNotFound =>
+      'Supplement not found in the register — enter details manually';
+
+  @override
+  String get supplementSelectProduct => 'Select product';
+
+  @override
+  String scanAlternativeCodeConfirm(
+    String read,
+    String code,
+    String product,
+    String company,
+  ) {
+    return 'Code $read was not found. Did you mean $code: $product ($company)?';
+  }
+
+  @override
+  String scanAlternativeCodeConfirmNoCompany(
+    String read,
+    String code,
+    String product,
+  ) {
+    return 'Code $read was not found. Did you mean $code: $product?';
+  }
+
+  @override
+  String get scanAlternativeCodeUse => 'Use';
 
   @override
   String get settings => 'Settings';

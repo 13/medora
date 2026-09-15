@@ -946,12 +946,6 @@ abstract class AppLocalizations {
   /// **'Scan AIC Code'**
   String get scanBarcodeTitle;
 
-  /// No description provided for @pointCameraAtBarcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Point camera at AIC code on package'**
-  String get pointCameraAtBarcode;
-
   /// No description provided for @enterBarcodeManually.
   ///
   /// In en, this message translates to:
@@ -988,17 +982,164 @@ abstract class AppLocalizations {
   /// **'Scan AIC Code'**
   String get scanBarcodeTooltip;
 
-  /// No description provided for @ocrDetectedCodes.
+  /// No description provided for @scanTakePhoto.
   ///
   /// In en, this message translates to:
-  /// **'Detected codes — tap to search'**
-  String get ocrDetectedCodes;
+  /// **'Take photo'**
+  String get scanTakePhoto;
 
-  /// No description provided for @ocrScanning.
+  /// No description provided for @scanFromGallery.
   ///
   /// In en, this message translates to:
-  /// **'Scanning for AIC codes…'**
-  String get ocrScanning;
+  /// **'Choose from gallery'**
+  String get scanFromGallery;
+
+  /// No description provided for @scanRetake.
+  ///
+  /// In en, this message translates to:
+  /// **'Retake'**
+  String get scanRetake;
+
+  /// No description provided for @scanRecognizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading text…'**
+  String get scanRecognizing;
+
+  /// No description provided for @scanChooseCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap the code to use'**
+  String get scanChooseCode;
+
+  /// No description provided for @scanAicCodes.
+  ///
+  /// In en, this message translates to:
+  /// **'AIC codes'**
+  String get scanAicCodes;
+
+  /// No description provided for @scanSupplementCodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement codes (Ministry of Health)'**
+  String get scanSupplementCodes;
+
+  /// No description provided for @scanBarcodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Barcodes (EAN)'**
+  String get scanBarcodes;
+
+  /// No description provided for @scanOtherNumbers.
+  ///
+  /// In en, this message translates to:
+  /// **'Other numbers'**
+  String get scanOtherNumbers;
+
+  /// No description provided for @scanNoCodeFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No code found. Retake the photo closer, or type the code.'**
+  String get scanNoCodeFound;
+
+  /// No description provided for @scanCaptureHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Photograph the pack so the AIC code is sharp'**
+  String get scanCaptureHint;
+
+  /// No description provided for @scanMedicationInCabinet.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your cabinet'**
+  String get scanMedicationInCabinet;
+
+  /// No description provided for @supplementRegister.
+  ///
+  /// In en, this message translates to:
+  /// **'Food supplement register'**
+  String get supplementRegister;
+
+  /// No description provided for @supplementRegisterHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Ministry of Health register for supplement codes (COD MINSAN)'**
+  String get supplementRegisterHint;
+
+  /// No description provided for @supplementRegisterUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Register as of {date}'**
+  String supplementRegisterUpdated(String date);
+
+  /// No description provided for @supplementRegisterUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update register'**
+  String get supplementRegisterUpdate;
+
+  /// No description provided for @supplementRegisterDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get supplementRegisterDownload;
+
+  /// No description provided for @supplementRegisterDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading register…'**
+  String get supplementRegisterDownloading;
+
+  /// No description provided for @supplementRegisterSyncSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Register updated ({count} products)'**
+  String supplementRegisterSyncSuccess(int count);
+
+  /// No description provided for @supplementRegisterDownloadPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement codes are looked up in the Ministry of Health register. Download it now (about 2 MB)? An internet connection is required.'**
+  String get supplementRegisterDownloadPrompt;
+
+  /// No description provided for @supplementNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement not found in the register — enter details manually'**
+  String get supplementNotFound;
+
+  /// No description provided for @supplementSelectProduct.
+  ///
+  /// In en, this message translates to:
+  /// **'Select product'**
+  String get supplementSelectProduct;
+
+  /// Asks before using a register or AIFA match found only through another OCR reading of the scanned code
+  ///
+  /// In en, this message translates to:
+  /// **'Code {read} was not found. Did you mean {code}: {product} ({company})?'**
+  String scanAlternativeCodeConfirm(
+    String read,
+    String code,
+    String product,
+    String company,
+  );
+
+  /// No description provided for @scanAlternativeCodeConfirmNoCompany.
+  ///
+  /// In en, this message translates to:
+  /// **'Code {read} was not found. Did you mean {code}: {product}?'**
+  String scanAlternativeCodeConfirmNoCompany(
+    String read,
+    String code,
+    String product,
+  );
+
+  /// No description provided for @scanAlternativeCodeUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Use'**
+  String get scanAlternativeCodeUse;
 
   /// No description provided for @settings.
   ///

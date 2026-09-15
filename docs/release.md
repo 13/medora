@@ -98,6 +98,11 @@ unless you know they need otherwise. **The App Bundle already does this** —
 Play generates a per-device split from the `.aab`, so `--split-per-abi` is
 irrelevant to the Play upload and `build appbundle` stays the way to ship.
 
+The ML Kit plugins bundle their models instead of downloading them on first
+use: `google_mlkit_barcode_scanning` adds roughly 2–3 MB per ABI on top of text
+recognition. Measured `arm64-v8a` release APK: **48.8 MB for 0.2.3** (text
+recognition plus barcode scanning), up from 42.9 MB for 0.2.2.
+
 To see where the bytes go:
 
 ```bash
@@ -224,6 +229,68 @@ Serve `build/web/` as static files. The PWA manifest is
 `web/manifest.json` (name, icons, theme color) — update it when the app name
 or icon changes. OCR scanning, photo capture and scheduled notifications are
 unavailable in the browser and the UI hides them.
+
+## Food supplement register data
+
+The scanner looks up food-supplement notification codes ("COD MINSAN") in the
+Italian Ministry of Health register of notified supplements. The Ministry
+publishes it as a ~4,100-page PDF and refreshes it on the 1st of each month.
+`tools/build_supplements_data.py` turns that PDF into `integratori.csv.gz`
+(`code,product,company`, ~114,000 rows, ~1.8 MB) and `integratori.meta.json`
+(`rows`, `sourceUpdated` from the PDF's "aggiornato al" date, `builtAt`,
+`source`, `columns`). Both live on the GitHub **pre-release** `data-integratori`
+— a pre-release, so `releases/latest` (the in-app updater) keeps returning the
+app release. The app downloads them from Settings → Data or the first time a
+supplement code is scanned, and shows `sourceUpdated` in the tile.
+
+The Ministry site blocks non-browser and non-Italian traffic (a GitHub-hosted
+runner receives an HTML challenge page instead of the PDF), so there is no CI
+workflow: refresh the data **monthly, from a machine in Italy**, with Python 3,
+`poppler-utils` (`pdftotext`) and an authenticated `gh`:
+
+```bash
+tools/build_supplements_data.py --publish            # default repo 13/medora
+tools/build_supplements_data.py --publish --repo OWNER/NAME
+tools/build_supplements_data.py --pdf register.pdf   # convert a local PDF only
+tools/build_supplements_data.py --self-test          # offline self-checks
+```
+
+`--self-test` runs the script's doctests (for example `_pick_latest`, which
+picks the register PDF with the highest numeric suffix, so `_10` beats `_9`)
+without network access or `pdftotext`; run it after editing the script.
+
+`--publish` uploads both files with `gh release upload data-integratori …
+--clobber` and creates the pre-release if it is missing. The script refuses to
+publish when the download is not a PDF (the site blocked the request) or when
+fewer than `--min-rows` (default 50,000) rows were parsed (layout change). Do
+not commit the generated files.
+
+Optional automation (documented only, nothing is installed): a user crontab
+entry on the 3rd of each month,
+
+```cron
+0 9 3 * * cd ~/repo/medora && tools/build_supplements_data.py --publish >> ~/.cache/medora-supplements.log 2>&1
+```
+
+or a user systemd timer:
+
+```ini
+# ~/.config/systemd/user/medora-supplements.service
+[Service]
+Type=oneshot
+WorkingDirectory=%h/repo/medora
+ExecStart=%h/repo/medora/tools/build_supplements_data.py --publish
+
+# ~/.config/systemd/user/medora-supplements.timer
+[Timer]
+OnCalendar=*-*-03 09:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+enabled with `systemctl --user enable --now medora-supplements.timer`.
 
 ## Dependency deferrals
 

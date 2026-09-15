@@ -49,6 +49,7 @@ import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
+import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -334,4 +335,17 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
     syncDelay: ref.watch(syncStartupDelayProvider),
     minSyncInterval: const Duration(minutes: 5),
   );
+});
+
+// ============================================================
+// Food-supplement register
+// ============================================================
+
+/// The offline food-supplement register; overridden in widget tests.
+final supplementRegistryServiceProvider = Provider<SupplementRegistryService>((
+  ref,
+) {
+  final service = SupplementRegistryService(now: ref.watch(nowProvider));
+  ref.onDispose(service.close);
+  return service;
 });

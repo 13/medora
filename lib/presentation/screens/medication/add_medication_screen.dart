@@ -18,11 +18,16 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/medication/aifa_search_sheet.dart';
+import 'package:medora/presentation/screens/scanner/scan_result.dart';
+import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
+import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
 import 'package:medora/presentation/widgets/forms/date_picker_field.dart';
 import 'package:medora/presentation/widgets/forms/form_section.dart';
 import 'package:medora/presentation/widgets/forms/tag_input_field.dart';
 import 'package:medora/presentation/widgets/forms/unit_dropdown.dart';
 import 'package:medora/services/aifa_cache_service.dart';
+import 'package:medora/services/code_candidates.dart';
+import 'package:medora/services/supplement_registry_service.dart';
 import 'package:uuid/uuid.dart';
 
 class AddMedicationScreen extends ConsumerStatefulWidget {
@@ -96,8 +101,13 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _notesController = TextEditingController();
 
     _isEditMode = widget.medicationId != null;
-    if (!_isEditMode && widget.lookupResult is AifaSearchResult) {
-      _applyAifaResult(widget.lookupResult! as AifaSearchResult);
+    if (!_isEditMode) {
+      switch (widget.lookupResult) {
+        case final AifaSearchResult result:
+          _applyAifaResult(result);
+        case final SupplementEntry entry:
+          _applySupplementEntry(entry);
+      }
     }
   }
 
@@ -139,6 +149,24 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     }
     _barcodeController.text = result.code;
   }
+
+  /// Apply a food-supplement register entry: name, manufacturer, the
+  /// supplement category and the scanned code (the route's `?barcode=`,
+  /// else the register code). Opens the sections that were filled.
+  void _applySupplementEntry(SupplementEntry entry) {
+    if (entry.product.isNotEmpty) _nameController.text = entry.product;
+    if (entry.company.isNotEmpty) {
+      _manufacturerController.text = entry.company;
+    }
+    _selectedCategory = _supplementCategory;
+    if (_barcodeController.text.trim().isEmpty) {
+      _barcodeController.text = entry.code;
+    }
+    _stockExpanded.value = true;
+    _detailsExpanded.value = true;
+  }
+
+  static const _supplementCategory = 'supplement';
 
   /// Whether [med] has any data belonging to the Stock & storage section.
   bool _hasStockData(Medication med) {
@@ -199,16 +227,106 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
   }
 
-  /// Push the barcode scanner and fill [_barcodeController] with the result.
+  /// Push the barcode scanner, fill [_barcodeController] with the chosen
+  /// code and look it up where its kind belongs: AIC codes in AIFA,
+  /// supplement codes in the food-supplement register; EAN and other numbers
+  /// are only filled in.
   Future<void> _openScanner() async {
-    final barcode = await context.push<String>(AppRoutes.scanner);
-    if (barcode != null && mounted) {
-      setState(() => _barcodeController.text = barcode);
+    final result = await context.push<ScanResult>(AppRoutes.scannerReturnOnly);
+    if (result == null || !mounted) return;
+    setState(() => _barcodeController.text = result.code);
+    // The barcode field lives in Stock & storage: show what was filled.
+    _stockExpanded.value = true;
+    switch (result.kind) {
+      case CodeKind.aic:
+        await _searchBarcode(result.code, result.alternatives);
+      case CodeKind.supplement:
+        await _searchSupplement(result.code, result.alternatives);
+      case CodeKind.ean || CodeKind.other:
+        break;
     }
   }
 
-  /// Search AIFA database by code and apply the result.
-  Future<void> _searchBarcode(String barcode) async {
+  /// Look a supplement [code] up in the register (offering the first
+  /// download), then its [alternatives] (other OCR readings) in order, and
+  /// apply the chosen entry with the code that matched. A match found only
+  /// through an alternative is confirmed first; the scanned code stays in
+  /// the field when nothing matches, the picker is dismissed or the
+  /// alternative is declined.
+  Future<void> _searchSupplement(
+    String code, [
+    List<String> alternatives = const [],
+  ]) async {
+    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(supplementRegistryServiceProvider);
+    try {
+      if (!await service.hasData()) {
+        if (!mounted) return;
+        final downloaded = await confirmAndDownloadSupplementRegister(
+          context,
+          service,
+        );
+        if (!mounted || downloaded == null) return; // cancelled
+        if (!downloaded) {
+          messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+          return;
+        }
+      }
+      final found = await findSupplementByCodes(service, code, alternatives);
+      if (!mounted) return;
+      final SupplementEntry? entry;
+      switch (supplementRouteFor(found.matches)) {
+        case SupplementPrefill(entry: final only):
+          entry = only;
+        case SupplementPick(:final entries):
+          entry = await showSupplementPicker(context, entries);
+        case SupplementNotFound():
+          messenger.showSnackBar(
+            SnackBar(content: Text(l10n.supplementNotFound)),
+          );
+          return;
+      }
+      if (entry == null || !mounted) return;
+      if (found.code != code) {
+        final use = await confirmAlternativeCode(
+          context,
+          read: code,
+          code: found.code,
+          product: entry.product,
+          company: entry.company,
+        );
+        if (!mounted) return;
+        if (!use) {
+          messenger.showSnackBar(
+            SnackBar(content: Text(l10n.supplementNotFound)),
+          );
+          return;
+        }
+      }
+      setState(() {
+        _barcodeController.text = found.code;
+        _applySupplementEntry(entry!);
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.autoFilledFromBarcode)),
+      );
+    } catch (e) {
+      debugPrint('Supplement register lookup error: $e');
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    }
+  }
+
+  /// Search AIFA database by code, then by its [alternatives] (other OCR
+  /// readings) in order, and apply the result; a result found only through
+  /// an alternative is confirmed first.
+  Future<void> _searchBarcode(
+    String barcode, [
+    List<String> alternatives = const [],
+  ]) async {
     final l10n = AppLocalizations.of(context);
 
     // Show loading
@@ -230,7 +348,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
 
     try {
-      final results = await AifaCacheService.instance.search(barcode);
+      final found = await findByCodes(
+        AifaCacheService.instance.search,
+        barcode,
+        alternatives,
+      );
+      final results = found.matches;
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -252,6 +375,23 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             );
 
       if (selected == null || !mounted) return;
+      if (found.code != barcode) {
+        final use = await confirmAlternativeCode(
+          context,
+          read: barcode,
+          code: found.code,
+          product: selected.name,
+          company: selected.manufacturer,
+        );
+        if (!mounted) return;
+        if (!use) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
+          return;
+        }
+        _barcodeController.text = found.code;
+      }
 
       _applyAifaResult(selected);
       setState(() {}); // rebuild
@@ -528,17 +668,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           if (caps.hasCamera)
                             IconButton(
                               icon: const Icon(Icons.qr_code_scanner),
-                              onPressed: () async {
-                                final barcode = await context.push<String>(
-                                  '${AppRoutes.scanner}?returnOnly=true',
-                                );
-                                if (barcode != null && mounted) {
-                                  setState(
-                                    () => _barcodeController.text = barcode,
-                                  );
-                                  await _searchBarcode(barcode);
-                                }
-                              },
+                              tooltip: l10n.scanBarcodeTooltip,
+                              onPressed: _openScanner,
                             ),
                         ],
                       ),

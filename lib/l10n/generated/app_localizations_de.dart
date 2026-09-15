@@ -480,10 +480,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get scanBarcodeTitle => 'AIC-Code scannen';
 
   @override
-  String get pointCameraAtBarcode =>
-      'Kamera auf den AIC-Code der Packung richten';
-
-  @override
   String get enterBarcodeManually => 'Code manuell eingeben';
 
   @override
@@ -502,10 +498,102 @@ class AppLocalizationsDe extends AppLocalizations {
   String get scanBarcodeTooltip => 'AIC-Code scannen';
 
   @override
-  String get ocrDetectedCodes => 'Erkannte Codes — zum Suchen tippen';
+  String get scanTakePhoto => 'Foto aufnehmen';
 
   @override
-  String get ocrScanning => 'AIC-Codes werden gesucht…';
+  String get scanFromGallery => 'Aus Galerie wählen';
+
+  @override
+  String get scanRetake => 'Neues Foto';
+
+  @override
+  String get scanRecognizing => 'Text wird erkannt…';
+
+  @override
+  String get scanChooseCode => 'Tippe auf den gewünschten Code';
+
+  @override
+  String get scanAicCodes => 'AIC-Codes';
+
+  @override
+  String get scanSupplementCodes =>
+      'Nahrungsergänzungsmittel (Ministeriumscode)';
+
+  @override
+  String get scanBarcodes => 'Barcodes (EAN)';
+
+  @override
+  String get scanOtherNumbers => 'Weitere Nummern';
+
+  @override
+  String get scanNoCodeFound =>
+      'Kein Code erkannt. Fotografiere näher oder tippe den Code ein.';
+
+  @override
+  String get scanCaptureHint =>
+      'Fotografiere die Packung so, dass der AIC-Code scharf ist';
+
+  @override
+  String get scanMedicationInCabinet => 'Bereits in deiner Hausapotheke';
+
+  @override
+  String get supplementRegister => 'Nahrungsergänzungsmittel-Register';
+
+  @override
+  String get supplementRegisterHint =>
+      'Register des Gesundheitsministeriums für Codes von Nahrungsergänzungsmitteln (COD MINSAN)';
+
+  @override
+  String supplementRegisterUpdated(String date) {
+    return 'Stand: $date';
+  }
+
+  @override
+  String get supplementRegisterUpdate => 'Register aktualisieren';
+
+  @override
+  String get supplementRegisterDownload => 'Herunterladen';
+
+  @override
+  String get supplementRegisterDownloading => 'Register wird heruntergeladen…';
+
+  @override
+  String supplementRegisterSyncSuccess(int count) {
+    return 'Register aktualisiert ($count Produkte)';
+  }
+
+  @override
+  String get supplementRegisterDownloadPrompt =>
+      'Codes von Nahrungsergänzungsmitteln werden im Register des Gesundheitsministeriums nachgeschlagen. Jetzt herunterladen (ca. 2 MB)? Dafür ist eine Internetverbindung nötig.';
+
+  @override
+  String get supplementNotFound =>
+      'Nicht im Register gefunden — bitte manuell eingeben';
+
+  @override
+  String get supplementSelectProduct => 'Produkt auswählen';
+
+  @override
+  String scanAlternativeCodeConfirm(
+    String read,
+    String code,
+    String product,
+    String company,
+  ) {
+    return 'Code $read wurde nicht gefunden. Meinten Sie $code: $product ($company)?';
+  }
+
+  @override
+  String scanAlternativeCodeConfirmNoCompany(
+    String read,
+    String code,
+    String product,
+  ) {
+    return 'Code $read wurde nicht gefunden. Meinten Sie $code: $product?';
+  }
+
+  @override
+  String get scanAlternativeCodeUse => 'Verwenden';
 
   @override
   String get settings => 'Einstellungen';
