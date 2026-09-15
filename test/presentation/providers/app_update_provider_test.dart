@@ -350,43 +350,49 @@ void main() {
       );
     });
 
-    test('a restart on the installed release clears the APK and the pref', () async {
-      final apk = seedDownloadedApk();
-      SharedPreferences.setMockInitialValues({
-        kUpdateInstallingTag: 'v0.2.0+12',
-      });
-      final service = FakeUpdateService(
-        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
-      );
-      final c = await containerWith(
-        service,
-        current: const ReleaseVersion(0, 2, 0, 12),
-      );
+    test(
+      'a restart on the installed release clears the APK and the pref',
+      () async {
+        final apk = seedDownloadedApk();
+        SharedPreferences.setMockInitialValues({
+          kUpdateInstallingTag: 'v0.2.0+12',
+        });
+        final service = FakeUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await containerWith(
+          service,
+          current: const ReleaseVersion(0, 2, 0, 12),
+        );
 
-      expect(statusOf(c), isA<UpdateUnknown>());
-      expect(apk.existsSync(), isFalse);
-      expect(
-        c.read(sharedPreferencesProvider).getString(kUpdateInstallingTag),
-        isNull,
-      );
-    });
+        expect(statusOf(c), isA<UpdateUnknown>());
+        expect(apk.existsSync(), isFalse);
+        expect(
+          c.read(sharedPreferencesProvider).getString(kUpdateInstallingTag),
+          isNull,
+        );
+      },
+    );
 
-    test('a cancelled installer leaves the APK ready to install again', () async {
-      final apk = seedDownloadedApk();
-      SharedPreferences.setMockInitialValues({
-        kUpdateInstallingTag: 'v0.2.0+12',
-      });
-      final service = FakeUpdateService(
-        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
-      );
-      final c = await containerWith(service);
+    test(
+      'a cancelled installer leaves the APK ready to install again',
+      () async {
+        final apk = seedDownloadedApk();
+        SharedPreferences.setMockInitialValues({
+          kUpdateInstallingTag: 'v0.2.0+12',
+        });
+        final service = FakeUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await containerWith(service);
 
-      final status = statusOf(c);
-      expect(status, isA<UpdateReady>());
-      expect((status as UpdateReady).release.tag, 'v0.2.0+12');
-      expect(status.file.path, apk.path);
-      expect(apk.existsSync(), isTrue);
-    });
+        final status = statusOf(c);
+        expect(status, isA<UpdateReady>());
+        expect((status as UpdateReady).release.tag, 'v0.2.0+12');
+        expect(status.file.path, apk.path);
+        expect(apk.existsSync(), isTrue);
+      },
+    );
 
     test('a pending tag whose APK is gone is settled, not restored', () async {
       SharedPreferences.setMockInitialValues({
@@ -404,41 +410,47 @@ void main() {
       );
     });
 
-    test('a check after a successful install still looks for a release', () async {
-      final apk = seedDownloadedApk();
-      SharedPreferences.setMockInitialValues({
-        kUpdateInstallingTag: 'v0.2.0+12',
-      });
-      final service = FakeUpdateService(
-        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
-      );
-      final c = await containerWith(
-        service,
-        current: const ReleaseVersion(0, 2, 0, 12),
-      );
+    test(
+      'a check after a successful install still looks for a release',
+      () async {
+        final apk = seedDownloadedApk();
+        SharedPreferences.setMockInitialValues({
+          kUpdateInstallingTag: 'v0.2.0+12',
+        });
+        final service = FakeUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await containerWith(
+          service,
+          current: const ReleaseVersion(0, 2, 0, 12),
+        );
 
-      await c.read(appUpdateProvider.notifier).check();
+        await c.read(appUpdateProvider.notifier).check();
 
-      expect(service.checks, 1);
-      expect(statusOf(c), isA<UpdateUpToDate>());
-      expect(apk.existsSync(), isFalse);
-    });
+        expect(service.checks, 1);
+        expect(statusOf(c), isA<UpdateUpToDate>());
+        expect(apk.existsSync(), isFalse);
+      },
+    );
 
-    test('a check reports the cancelled install without asking GitHub', () async {
-      seedDownloadedApk();
-      SharedPreferences.setMockInitialValues({
-        kUpdateInstallingTag: 'v0.2.0+12',
-      });
-      final service = FakeUpdateService(
-        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
-      );
-      final c = await containerWith(service);
+    test(
+      'a check reports the cancelled install without asking GitHub',
+      () async {
+        seedDownloadedApk();
+        SharedPreferences.setMockInitialValues({
+          kUpdateInstallingTag: 'v0.2.0+12',
+        });
+        final service = FakeUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await containerWith(service);
 
-      await c.read(appUpdateProvider.notifier).check(force: true);
+        await c.read(appUpdateProvider.notifier).check(force: true);
 
-      expect(service.checks, 0);
-      expect(statusOf(c), isA<UpdateReady>());
-    });
+        expect(service.checks, 0);
+        expect(statusOf(c), isA<UpdateReady>());
+      },
+    );
   });
 
   group('dismiss', () {

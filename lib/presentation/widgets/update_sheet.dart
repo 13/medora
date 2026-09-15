@@ -3,6 +3,7 @@
 /// Opened from the Settings tile and the Home banner. It is the only place
 /// that starts a download, so the buttons follow the state machine directly:
 /// Download -> progress -> Install, with "Later" dismissing the release.
+/// Install stops once more to explain what Android is about to ask for.
 library;
 
 import 'package:flutter/material.dart';
@@ -30,6 +31,34 @@ String updateErrorMessage(AppLocalizations l10n, UpdateException error) =>
       UpdateErrorKind.noAsset => l10n.updateNoAsset,
       _ => l10n.updateFailed,
     };
+
+/// Explains what the system is about to ask, before the installer opens.
+///
+/// Sideloading an APK is a permission prompt the user has most likely never
+/// seen, and one that looks alarming out of context; saying up front who asks
+/// for what (and that nothing leaves the device) is the difference between a
+/// deliberate install and an abandoned one.
+Future<bool> confirmInstall(BuildContext context) async {
+  final l10n = AppLocalizations.of(context);
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.updateInstallExplainTitle),
+      content: Text(l10n.updateInstallExplainBody),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(l10n.continueAction),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
 
 class UpdateSheet extends ConsumerWidget {
   const UpdateSheet({super.key});
@@ -122,6 +151,11 @@ class _Actions extends ConsumerWidget {
       if (context.mounted) await Navigator.of(context).maybePop();
     }
 
+    Future<void> install() async {
+      if (!await confirmInstall(context)) return;
+      await notifier.install();
+    }
+
     // A download in flight offers no buttons at all: cancelling mid-stream
     // is not supported, and "Later" would leave a half-written file behind.
     if (status is UpdateDownloading) return const SizedBox.shrink();
@@ -132,10 +166,7 @@ class _Actions extends ConsumerWidget {
         TextButton(onPressed: later, child: Text(l10n.updateLater)),
         const SizedBox(width: 8),
         if (status is UpdateReady)
-          FilledButton(
-            onPressed: notifier.install,
-            child: Text(l10n.updateInstall),
-          )
+          FilledButton(onPressed: install, child: Text(l10n.updateInstall))
         else if (status is UpdateAvailable)
           FilledButton(
             onPressed: notifier.download,

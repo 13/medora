@@ -1560,6 +1560,13 @@ class AppLocalizationsIt extends AppLocalizations {
       'Nessun pacchetto di installazione per questo dispositivo';
 
   @override
+  String get updateInstallExplainTitle => 'Installa l\'aggiornamento';
+
+  @override
+  String get updateInstallExplainBody =>
+      'Android ti chiederà di consentire a Medora di installare app, poi aprirà il programma di installazione. I tuoi dati restano sul dispositivo.';
+
+  @override
   String get backupData => 'Backup dei dati';
 
   @override

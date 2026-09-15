@@ -1548,6 +1548,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateNoAsset => 'No installer for this device';
 
   @override
+  String get updateInstallExplainTitle => 'Install update';
+
+  @override
+  String get updateInstallExplainBody =>
+      'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.';
+
+  @override
   String get backupData => 'Back up data';
 
   @override

@@ -2944,6 +2944,18 @@ abstract class AppLocalizations {
   /// **'No installer for this device'**
   String get updateNoAsset;
 
+  /// No description provided for @updateInstallExplainTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Install update'**
+  String get updateInstallExplainTitle;
+
+  /// No description provided for @updateInstallExplainBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.'**
+  String get updateInstallExplainBody;
+
   /// No description provided for @backupData.
   ///
   /// In en, this message translates to:

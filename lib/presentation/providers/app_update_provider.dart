@@ -193,7 +193,9 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
     final pending = ReleaseInfo.forTag(tag);
     final current = await ref.read(currentReleaseVersionProvider.future);
     final apk = AppUpdateService.downloadedApk(dir);
-    if (pending == null || apk == null || !pending.version.isNewerThan(current)) {
+    if (pending == null ||
+        apk == null ||
+        !pending.version.isNewerThan(current)) {
       AppUpdateService.clearDownloads(dir);
       await prefs.remove(kUpdateInstallingTag);
       return null;

@@ -64,7 +64,39 @@ void main() {
     await tester.tap(find.text('Install'));
     await tester.pumpAndSettle();
 
+    // The system installer is explained before it opens.
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(
+      find.text(
+        'Android will ask you to allow Medora to install apps, then open '
+        'the installer. Your data stays on the device.',
+      ),
+      findsOneWidget,
+    );
+    expect(service.installed, isEmpty);
+
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
     expect(service.installed, hasLength(1));
+  });
+
+  testWidgets('cancelling the explanation installs nothing', (tester) async {
+    final (_, service) = await pumpSheet(tester);
+
+    await tester.tap(find.text('Download'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Install'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(service.installed, isEmpty);
+    // Still offered: the sheet is unchanged behind the dialog.
+    expect(find.text('Install'), findsOneWidget);
   });
 
   testWidgets('Later dismisses the release', (tester) async {
