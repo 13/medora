@@ -126,6 +126,7 @@ class SyncService {
 
   StreamSubscription<bool>? _onlineSub;
   Timer? _reconnectTimer;
+  Timer? _idleTimer;
   bool _wasOnline = true;
 
   /// Sync once, [debounce] after connectivity comes back. Idempotent.
@@ -265,8 +266,14 @@ class SyncService {
     _returnToIdleLater();
   }
 
+  /// Drops a finished cycle's state back to [SyncState.idle] after a moment,
+  /// so the UI has time to show the outcome. Cancellable: a new cycle (or
+  /// [dispose]) kills the pending timer, otherwise the previous cycle's timer
+  /// would fire mid-flight and lie about the current one.
   void _returnToIdleLater() {
-    Future<void>.delayed(const Duration(seconds: 2), () {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(const Duration(seconds: 2), () {
+      _idleTimer = null;
       if (_currentState == SyncState.success ||
           _currentState == SyncState.partial) {
         _setState(SyncState.idle);
@@ -709,6 +716,11 @@ class SyncService {
   }
 
   void _setState(SyncState state) {
+    // A starting cycle outlives the previous one's return-to-idle timer.
+    if (state == SyncState.syncing) {
+      _idleTimer?.cancel();
+      _idleTimer = null;
+    }
     _currentState = state;
     if (_stateController.isClosed) return;
     _stateController.add(state);
@@ -716,6 +728,8 @@ class SyncService {
 
   void dispose() {
     stopAutoSync();
+    _idleTimer?.cancel();
+    _idleTimer = null;
     if (!_stateController.isClosed) _stateController.close();
   }
 

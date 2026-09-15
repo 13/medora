@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -1106,6 +1107,74 @@ void main() {
       await first;
 
       expect(h.meds.table.sinceCalls.length, 1);
+    });
+  });
+
+  group('return to idle', () {
+    /// Drives the fake clock forward in zero-length steps until [done] runs
+    /// out of pending microtasks and same-instant timers — enough to finish a
+    /// cycle against the in-memory database without firing the 2 s idle timer.
+    void settle(FakeAsync async) {
+      for (var i = 0; i < 50; i++) {
+        async.elapse(Duration.zero);
+      }
+    }
+
+    test('a finished cycle drops back to idle after 2 s', () async {
+      await AppDatabase.instance.database; // open outside the fake zone
+      fakeAsync((async) {
+        final h = Harness();
+        unawaited(h.service.syncAll());
+        settle(async);
+        expect(h.service.currentState, SyncState.success);
+
+        async.elapse(const Duration(milliseconds: 1999));
+        expect(h.service.currentState, SyncState.success);
+        async.elapse(const Duration(milliseconds: 1));
+        expect(h.service.currentState, SyncState.idle);
+        h.service.dispose();
+      });
+    });
+
+    test(
+      'a second cycle within 2 s is not dropped to idle by the first timer',
+      () async {
+        await AppDatabase.instance.database;
+        fakeAsync((async) {
+          final h = Harness();
+          unawaited(h.service.syncAll());
+          settle(async);
+          expect(h.service.currentState, SyncState.success);
+
+          // 1.5 s later — the first cycle's idle timer is still pending.
+          async.elapse(const Duration(milliseconds: 1500));
+          unawaited(h.service.syncAll());
+          settle(async);
+          expect(h.service.currentState, SyncState.success);
+
+          // Now past 2 s from the *first* cycle: with an uncancelled timer
+          // this is where the fresh result would be wiped to idle.
+          async.elapse(const Duration(milliseconds: 600));
+          expect(h.service.currentState, SyncState.success);
+
+          // 2 s from the second cycle: idle, once.
+          async.elapse(const Duration(milliseconds: 1400));
+          expect(h.service.currentState, SyncState.idle);
+          h.service.dispose();
+        });
+      },
+    );
+
+    test('dispose cancels the pending idle timer', () async {
+      await AppDatabase.instance.database;
+      fakeAsync((async) {
+        final h = Harness();
+        unawaited(h.service.syncAll());
+        settle(async);
+        expect(h.service.currentState, SyncState.success);
+        h.service.dispose();
+        expect(async.pendingTimers, isEmpty);
+      });
     });
   });
 
