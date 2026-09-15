@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
@@ -1498,7 +1499,8 @@ class _SupplementRegisterTileState
     final status = _isSyncing
         ? l10n.supplementRegisterDownloading
         : lastSync != null && _count > 0
-        ? '${l10n.aifaLastSync(lastSync.formatted)} · $_count'
+        ? '${l10n.aifaLastSync(lastSync.formatted)} · '
+              '${NumberFormat.decimalPattern(Localizations.localeOf(context).toString()).format(_count)}'
         : l10n.aifaNeverSynced;
 
     return Column(

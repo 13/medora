@@ -81,6 +81,29 @@ void main() {
     expect(find.text('Register aktualisieren'), findsOneWidget);
   });
 
+  testWidgets('formats a large product count for the locale', (tester) async {
+    tallSurface(tester);
+    final registry = _CountingRegistry(
+      114042,
+      entries: const [_zinco],
+      lastSyncAt: DateTime(2026, 9, 15),
+    );
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await overrides(registry),
+      locale: const Locale('de'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Letzte Aktualisierung: ${DateTime(2026, 9, 15).formatted} · 114.042',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('downloads the register from the tile', (tester) async {
     tallSurface(tester);
     final registry = FakeSupplementRegistry(syncedEntries: const [_zinco]);
@@ -134,4 +157,14 @@ void main() {
     expect(find.text('About'), findsOneWidget);
     expect(find.text('Food supplement register'), findsNothing);
   });
+}
+
+/// A register reporting [total] products without holding them.
+class _CountingRegistry extends FakeSupplementRegistry {
+  _CountingRegistry(this.total, {super.entries, super.lastSyncAt});
+
+  final int total;
+
+  @override
+  Future<int> count() async => total;
 }
