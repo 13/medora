@@ -177,8 +177,17 @@
   "scanOtherNumbers": "Altri numeri",
   "scanNoCodeFound": "Nessun codice trovato. Scatta più da vicino o inserisci il codice.",
   "scanCaptureHint": "Fotografa la confezione con il codice AIC ben leggibile",
-  "scanSupplementSelected": "Codice integratore — completa i dati manualmente",
   "scanMedicationInCabinet": "Già nel tuo armadietto",
+  "supplementRegister": "Registro integratori",
+  "supplementRegisterHint": "Registro del Ministero della Salute per i codici degli integratori (COD MINSAN)",
+  "supplementRegisterUpdated": "Aggiornato al {date}",
+  "supplementRegisterUpdate": "Aggiorna registro",
+  "supplementRegisterDownload": "Scarica",
+  "supplementRegisterDownloading": "Download registro in corso…",
+  "supplementRegisterSyncSuccess": "Registro aggiornato ({count} prodotti)",
+  "supplementRegisterDownloadPrompt": "I codici degli integratori vengono cercati nel registro del Ministero della Salute. Scaricarlo ora (circa 2 MB)? Serve una connessione a internet.",
+  "supplementNotFound": "Integratore non trovato nel registro — inserisci i dati manualmente",
+  "supplementSelectProduct": "Seleziona prodotto",
 
   "settings": "Impostazioni",
 

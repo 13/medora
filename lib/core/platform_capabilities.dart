@@ -16,6 +16,7 @@ class PlatformCapabilities {
     required this.hasFileShare,
     required this.hasBiometrics,
     required this.hasInAppUpdates,
+    required this.hasSupplementRegister,
   });
 
   /// Camera + ML Kit OCR (mobile only).
@@ -33,12 +34,17 @@ class PlatformCapabilities {
   /// Downloading and installing an APK from GitHub Releases (Android only).
   final bool hasInAppUpdates;
 
+  /// The offline food-supplement register (gzip download into a file-backed
+  /// SQLite database; everything except web).
+  final bool hasSupplementRegister;
+
   static const web = PlatformCapabilities(
     hasCamera: false,
     hasLocalNotifications: false,
     hasFileShare: false,
     hasBiometrics: false,
     hasInAppUpdates: false,
+    hasSupplementRegister: false,
   );
   static const mobile = PlatformCapabilities(
     hasCamera: true,
@@ -46,6 +52,7 @@ class PlatformCapabilities {
     hasFileShare: true,
     hasBiometrics: true,
     hasInAppUpdates: true,
+    hasSupplementRegister: true,
   );
   static const desktop = PlatformCapabilities(
     hasCamera: false,
@@ -53,6 +60,7 @@ class PlatformCapabilities {
     hasFileShare: true,
     hasBiometrics: false,
     hasInAppUpdates: false,
+    hasSupplementRegister: true,
   );
 
   /// Like [mobile], but iOS has no sideloading - the App Store updates the app.
@@ -62,6 +70,7 @@ class PlatformCapabilities {
     hasFileShare: true,
     hasBiometrics: true,
     hasInAppUpdates: false,
+    hasSupplementRegister: true,
   );
 
   factory PlatformCapabilities.detect() {
@@ -78,7 +87,8 @@ class PlatformCapabilities {
       other.hasLocalNotifications == hasLocalNotifications &&
       other.hasFileShare == hasFileShare &&
       other.hasBiometrics == hasBiometrics &&
-      other.hasInAppUpdates == hasInAppUpdates;
+      other.hasInAppUpdates == hasInAppUpdates &&
+      other.hasSupplementRegister == hasSupplementRegister;
 
   @override
   int get hashCode => Object.hash(
@@ -87,6 +97,7 @@ class PlatformCapabilities {
     hasFileShare,
     hasBiometrics,
     hasInAppUpdates,
+    hasSupplementRegister,
   );
 }
 

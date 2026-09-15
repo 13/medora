@@ -23,6 +23,7 @@ import 'package:medora/presentation/widgets/forms/form_section.dart';
 import 'package:medora/presentation/widgets/forms/tag_input_field.dart';
 import 'package:medora/presentation/widgets/forms/unit_dropdown.dart';
 import 'package:medora/services/aifa_cache_service.dart';
+import 'package:medora/services/supplement_registry_service.dart';
 import 'package:uuid/uuid.dart';
 
 class AddMedicationScreen extends ConsumerStatefulWidget {
@@ -96,8 +97,13 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _notesController = TextEditingController();
 
     _isEditMode = widget.medicationId != null;
-    if (!_isEditMode && widget.lookupResult is AifaSearchResult) {
-      _applyAifaResult(widget.lookupResult! as AifaSearchResult);
+    if (!_isEditMode) {
+      switch (widget.lookupResult) {
+        case final AifaSearchResult result:
+          _applyAifaResult(result);
+        case final SupplementEntry entry:
+          _applySupplementEntry(entry);
+      }
     }
   }
 
@@ -139,6 +145,24 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     }
     _barcodeController.text = result.code;
   }
+
+  /// Apply a food-supplement register entry: name, manufacturer, the
+  /// supplement category and the scanned code (the route's `?barcode=`,
+  /// else the register code). Opens the sections that were filled.
+  void _applySupplementEntry(SupplementEntry entry) {
+    if (entry.product.isNotEmpty) _nameController.text = entry.product;
+    if (entry.company.isNotEmpty) {
+      _manufacturerController.text = entry.company;
+    }
+    _selectedCategory = _supplementCategory;
+    if (_barcodeController.text.trim().isEmpty) {
+      _barcodeController.text = entry.code;
+    }
+    _stockExpanded.value = true;
+    _detailsExpanded.value = true;
+  }
+
+  static const _supplementCategory = 'supplement';
 
   /// Whether [med] has any data belonging to the Stock & storage section.
   bool _hasStockData(Medication med) {

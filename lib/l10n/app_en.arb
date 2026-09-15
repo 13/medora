@@ -259,8 +259,23 @@
   "scanOtherNumbers": "Other numbers",
   "scanNoCodeFound": "No code found. Retake the photo closer, or type the code.",
   "scanCaptureHint": "Photograph the pack so the AIC code is sharp",
-  "scanSupplementSelected": "Supplement code — details can be added manually",
   "scanMedicationInCabinet": "Already in your cabinet",
+  "supplementRegister": "Food supplement register",
+  "supplementRegisterHint": "Ministry of Health register for supplement codes (COD MINSAN)",
+  "supplementRegisterUpdated": "Register as of {date}",
+  "@supplementRegisterUpdated": {
+    "placeholders": { "date": { "type": "String" } }
+  },
+  "supplementRegisterUpdate": "Update register",
+  "supplementRegisterDownload": "Download",
+  "supplementRegisterDownloading": "Downloading register…",
+  "supplementRegisterSyncSuccess": "Register updated ({count} products)",
+  "@supplementRegisterSyncSuccess": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "supplementRegisterDownloadPrompt": "Supplement codes are looked up in the Ministry of Health register. Download it now (about 2 MB)? An internet connection is required.",
+  "supplementNotFound": "Supplement not found in the register — enter details manually",
+  "supplementSelectProduct": "Select product",
 
   "settings": "Settings",
   "about": "About",

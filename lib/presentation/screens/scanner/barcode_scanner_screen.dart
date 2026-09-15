@@ -22,17 +22,21 @@ import 'package:go_router/go_router.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
+import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
+import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/barcode_adapter.dart';
 import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/image_size.dart';
 import 'package:medora/services/ocr_adapter.dart';
+import 'package:medora/services/supplement_registry_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -387,17 +391,66 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       case CodeKind.ean:
         _openEan(candidate);
       case CodeKind.other:
-        _leaveAndPush(_addMedicationLocation(candidate.code));
+        _leaveAndPush(addMedicationWithBarcode(candidate.code));
     }
   }
 
-  /// Placeholder until the supplement register lookup exists: Add Medication
-  /// with the code prefilled.
-  void _openSupplement(CodeCandidate candidate) {
+  /// Looks the code up in the food-supplement register (offering the
+  /// first download), then opens Add Medication prefilled, a picker for
+  /// several products, or Add Medication with just the code.
+  Future<void> _openSupplement(CodeCandidate candidate) async {
+    final code = candidate.code;
+    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
+      _leaveAndPush(addMedicationWithBarcode(code));
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    final service = ref.read(supplementRegistryServiceProvider);
+    setState(() => _isSearching = true);
+    try {
+      if (!await service.hasData()) {
+        if (!mounted) return;
+        setState(() => _isSearching = false);
+        final downloaded = await confirmAndDownloadSupplementRegister(
+          context,
+          service,
+        );
+        if (!mounted || downloaded == null) return; // cancelled
+        if (!downloaded) {
+          _showError(); // offline or the download failed
+          return;
+        }
+        setState(() => _isSearching = true);
+      }
+      final matches = await service.findByCode(code);
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+      switch (supplementRouteFor(matches)) {
+        case SupplementPrefill(:final entry):
+          _selectSupplement(entry, code);
+        case SupplementPick(:final entries):
+          final picked = await showSupplementPicker(context, entries);
+          if (picked != null && mounted) _selectSupplement(picked, code);
+        case SupplementNotFound():
+          _leaveAndPush(
+            addMedicationWithBarcode(code),
+            message: l10n.supplementNotFound,
+          );
+      }
+    } catch (e) {
+      debugPrint('Supplement register lookup error: $e');
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+      _showError();
+    }
+  }
+
+  void _selectSupplement(SupplementEntry entry, String code) {
     final l10n = AppLocalizations.of(context);
     _leaveAndPush(
-      _addMedicationLocation(candidate.code),
-      message: l10n.scanSupplementSelected,
+      addMedicationWithBarcode(code),
+      message: l10n.autoFilledFromBarcode,
+      extra: entry,
     );
   }
 
@@ -422,7 +475,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           message: l10n.scanMedicationInCabinet,
         );
       } else {
-        _leaveAndPush(_addMedicationLocation(candidate.code));
+        _leaveAndPush(addMedicationWithBarcode(candidate.code));
       }
     } catch (e) {
       debugPrint('Cabinet barcode lookup error: $e');
@@ -431,9 +484,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       _showError();
     }
   }
-
-  String _addMedicationLocation(String code) =>
-      '${AppRoutes.addMedication}?barcode=${Uri.encodeQueryComponent(code)}';
 
   /// Replaces the scanner (its photo is deleted in `dispose`) with
   /// [location], optionally with a snackbar [message].
@@ -809,7 +859,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Future<void> _selectResult(AifaSearchResult result, String code) async {
     final l10n = AppLocalizations.of(context);
     _leaveAndPush(
-      _addMedicationLocation(code),
+      addMedicationWithBarcode(code),
       message: l10n.autoFilledFromBarcode,
       extra: result,
     );

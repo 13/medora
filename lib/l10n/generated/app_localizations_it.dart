@@ -532,11 +532,44 @@ class AppLocalizationsIt extends AppLocalizations {
       'Fotografa la confezione con il codice AIC ben leggibile';
 
   @override
-  String get scanSupplementSelected =>
-      'Codice integratore — completa i dati manualmente';
+  String get scanMedicationInCabinet => 'Già nel tuo armadietto';
 
   @override
-  String get scanMedicationInCabinet => 'Già nel tuo armadietto';
+  String get supplementRegister => 'Registro integratori';
+
+  @override
+  String get supplementRegisterHint =>
+      'Registro del Ministero della Salute per i codici degli integratori (COD MINSAN)';
+
+  @override
+  String supplementRegisterUpdated(String date) {
+    return 'Aggiornato al $date';
+  }
+
+  @override
+  String get supplementRegisterUpdate => 'Aggiorna registro';
+
+  @override
+  String get supplementRegisterDownload => 'Scarica';
+
+  @override
+  String get supplementRegisterDownloading => 'Download registro in corso…';
+
+  @override
+  String supplementRegisterSyncSuccess(int count) {
+    return 'Registro aggiornato ($count prodotti)';
+  }
+
+  @override
+  String get supplementRegisterDownloadPrompt =>
+      'I codici degli integratori vengono cercati nel registro del Ministero della Salute. Scaricarlo ora (circa 2 MB)? Serve una connessione a internet.';
+
+  @override
+  String get supplementNotFound =>
+      'Integratore non trovato nel registro — inserisci i dati manualmente';
+
+  @override
+  String get supplementSelectProduct => 'Seleziona prodotto';
 
   @override
   String get settings => 'Impostazioni';

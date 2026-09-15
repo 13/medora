@@ -16,6 +16,7 @@ devices through Supabase.
 - **Medication inventory** — name, active ingredient, category, quantity, expiry date, barcode, storage location, photo and notes.
 - **Expiry & stock alerts** — flags medications expiring within 30 days and anything at or below the low-stock threshold. Expiry is a date, not a moment: something stamped "expires today" is good for the whole of that day.
 - **AIC code scanner** — photograph an Italian package (or pick a photo from the gallery); on-device ML Kit reads the text and barcodes, highlights every AIC, supplement, EAN and other code on the photo, and the code you tap is looked up in the AIFA database (cached locally after a one-time download) or in your own cabinet.
+- **Food supplement register** — supplement codes ("COD MINSAN") are looked up offline in the Italian Ministry of Health register of notified supplements (downloaded once from Settings → Data or on the first scan, refreshed monthly), prefilling name, company and category.
 - **Treatments** — illness/treatment plans with symptoms, start and end dates, and notes.
 - **Prescriptions** — attach a medication to a treatment with dosage, interval and duration.
 - **Dose schedule** — auto-generated dose entries with pending / taken / skipped / missed status; stale pending doses become "missed" after a configurable grace period.

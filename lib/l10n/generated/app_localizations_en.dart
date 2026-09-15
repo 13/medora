@@ -527,11 +527,44 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
 
   @override
-  String get scanSupplementSelected =>
-      'Supplement code — details can be added manually';
+  String get scanMedicationInCabinet => 'Already in your cabinet';
 
   @override
-  String get scanMedicationInCabinet => 'Already in your cabinet';
+  String get supplementRegister => 'Food supplement register';
+
+  @override
+  String get supplementRegisterHint =>
+      'Ministry of Health register for supplement codes (COD MINSAN)';
+
+  @override
+  String supplementRegisterUpdated(String date) {
+    return 'Register as of $date';
+  }
+
+  @override
+  String get supplementRegisterUpdate => 'Update register';
+
+  @override
+  String get supplementRegisterDownload => 'Download';
+
+  @override
+  String get supplementRegisterDownloading => 'Downloading register…';
+
+  @override
+  String supplementRegisterSyncSuccess(int count) {
+    return 'Register updated ($count products)';
+  }
+
+  @override
+  String get supplementRegisterDownloadPrompt =>
+      'Supplement codes are looked up in the Ministry of Health register. Download it now (about 2 MB)? An internet connection is required.';
+
+  @override
+  String get supplementNotFound =>
+      'Supplement not found in the register — enter details manually';
+
+  @override
+  String get supplementSelectProduct => 'Select product';
 
   @override
   String get settings => 'Settings';

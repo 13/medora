@@ -534,11 +534,44 @@ class AppLocalizationsDe extends AppLocalizations {
       'Fotografiere die Packung so, dass der AIC-Code scharf ist';
 
   @override
-  String get scanSupplementSelected =>
-      'Nahrungsergänzungsmittel-Code — Angaben bitte manuell ergänzen';
+  String get scanMedicationInCabinet => 'Bereits in deiner Hausapotheke';
 
   @override
-  String get scanMedicationInCabinet => 'Bereits in deiner Hausapotheke';
+  String get supplementRegister => 'Nahrungsergänzungsmittel-Register';
+
+  @override
+  String get supplementRegisterHint =>
+      'Register des Gesundheitsministeriums für Codes von Nahrungsergänzungsmitteln (COD MINSAN)';
+
+  @override
+  String supplementRegisterUpdated(String date) {
+    return 'Stand: $date';
+  }
+
+  @override
+  String get supplementRegisterUpdate => 'Register aktualisieren';
+
+  @override
+  String get supplementRegisterDownload => 'Herunterladen';
+
+  @override
+  String get supplementRegisterDownloading => 'Register wird heruntergeladen…';
+
+  @override
+  String supplementRegisterSyncSuccess(int count) {
+    return 'Register aktualisiert ($count Produkte)';
+  }
+
+  @override
+  String get supplementRegisterDownloadPrompt =>
+      'Codes von Nahrungsergänzungsmitteln werden im Register des Gesundheitsministeriums nachgeschlagen. Jetzt herunterladen (ca. 2 MB)? Dafür ist eine Internetverbindung nötig.';
+
+  @override
+  String get supplementNotFound =>
+      'Nicht im Register gefunden — bitte manuell eingeben';
+
+  @override
+  String get supplementSelectProduct => 'Produkt auswählen';
 
   @override
   String get settings => 'Einstellungen';

@@ -138,12 +138,13 @@ Task 1 was amended in its dispatch (candidate kinds `aic`, `supplement`, `ean`, 
 ### Task 3: food-supplement register (data pipeline + offline lookup)
 
 **Files:**
-- Create: `tools/build_supplements_data.py` (from the validated prototype), `.github/workflows/supplements-data.yml`, `lib/services/supplement_registry_service.dart`, `test/services/supplement_registry_service_test.dart`, `test/fixtures/integratori_sample.csv`
+- Create: `tools/build_supplements_data.py` (from the validated prototype), `lib/services/supplement_registry_service.dart`, `test/services/supplement_registry_service_test.dart`, `test/fixtures/integratori_sample.csv`
 - Modify: scanner selection for `supplement` candidates, Settings → Data (register tile next to the AIFA tile), `lib/presentation/screens/medication/add_medication_screen.dart` (accept a supplement prefill), ARB, `docs/architecture.md`, `docs/release.md`, README.
 
-**Data pipeline:**
-- `supplements-data.yml`: `on: schedule: cron '0 5 3 * *'` (3rd of each month) + `workflow_dispatch`; ubuntu, `apt-get install -y poppler-utils`, run `tools/build_supplements_data.py --out integratori.csv.gz`, then publish to the fixed release tag `data-integratori` (create if missing, `gh release upload --clobber`), as a pre-release so `releases/latest` (the app updater) never picks it. Also upload `integratori.meta.json` `{ "rows": N, "sourceUpdated": "<aggiornato al date>", "builtAt": "<UTC>" }`.
-- The Ministry site may block GitHub runner IPs. The workflow must fail loudly (`not a PDF`) in that case; document the manual fallback in `docs/release.md`: run the script locally (from Italy) and `gh release upload data-integratori integratori.csv.gz integratori.meta.json --clobber`. The controller performs the first upload manually from the prototype output if the runner is blocked.
+**Data pipeline (revised 2026-09-15 after a probe):** a GitHub-hosted runner is blocked by the Ministry site (it received a 12,777-byte HTML challenge page instead of the register page and the PDF), while the same requests from the developer's machine in Italy return the real PDF. Therefore **no scheduled GitHub Actions workflow**:
+- `tools/build_supplements_data.py --publish [--repo OWNER/NAME]` (default `13/medora`), run monthly from a machine in Italy with `poppler-utils` and an authenticated `gh`: builds `integratori.csv.gz`, writes `integratori.meta.json` (`rows`, `sourceUpdated` from the PDF's "aggiornato al dd/mm/yyyy", `builtAt` UTC, `source`, `columns`), creates the pre-release `data-integratori` if missing and uploads both with `gh release upload --clobber`. A pre-release, so `releases/latest` (the app updater) never picks it. The script refuses to publish when the download is not a PDF and keeps the `--min-rows 50000` guard.
+- `docs/release.md` "Food supplement register data" documents the monthly refresh and an optional user cron/systemd timer (documented only). No `.github/workflows/supplements-data.yml`.
+- The app shows the register's `sourceUpdated` date in the Settings tile.
 
 **App:**
 ```dart
@@ -159,7 +160,7 @@ class SupplementRegistryService {
 ```
 - Mirrors `AifaCacheService` (same UX): Settings → Data tile "Food supplement register" / "Nahrungsergänzungsmittel-Register" / "Registro integratori" with last update, count and an update button; the scanner offers to download it the first time a supplement code is selected while the cache is empty (dialog; online required).
 - Scanner `supplement` selection: `findByCode`; one match → open Add Medication prefilled (name = product, manufacturer = company, category = supplement/"Nahrungsergänzungsmittel" per existing category values, barcode = the scanned code) with snackbar `autoFilledFromBarcode`; several → picker like the AIFA result picker; none → snackbar `supplementNotFound` and Add Medication with the code prefilled.
-- Tests: CSV fixture with 3 rows incl. `107018,ZINCO-C,SYGNUM SRL` and a quoted company containing a comma; `MockClient` serving the gzipped fixture; `sync` inserts rows and records count; `findByCode('107018')` and `findByCode('0107018')` match; `searchByName('zinco')` case-insensitive; a non-gzip / HTTP error leaves the previous table intact; parser script: a `python3 -m doctest`-free smoke test is not required in Dart CI, but the workflow runs the script with `--min-rows 50000`.
+- Tests: CSV fixture with 3 rows incl. `107018,ZINCO-C,SYGNUM SRL` and a quoted company containing a comma; `MockClient` serving the gzipped fixture; `sync` inserts rows and records count; `findByCode('107018')` and `findByCode('0107018')` match; `searchByName('zinco')` case-insensitive; a non-gzip / HTTP error leaves the previous table intact; parser script: a `python3 -m doctest`-free smoke test is not required in Dart CI, but the publish script keeps the `--min-rows 50000` guard.
 - ARB (en/de/it): `supplementRegister`, `supplementRegisterHint`, `supplementNotFound`, `supplementRegisterDownloadPrompt`, `scanSupplementSelected`.
 
 ### Task 4: On-device verification and release (was Task 3)

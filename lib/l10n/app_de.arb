@@ -177,8 +177,17 @@
   "scanOtherNumbers": "Weitere Nummern",
   "scanNoCodeFound": "Kein Code erkannt. Fotografiere näher oder tippe den Code ein.",
   "scanCaptureHint": "Fotografiere die Packung so, dass der AIC-Code scharf ist",
-  "scanSupplementSelected": "Nahrungsergänzungsmittel-Code — Angaben bitte manuell ergänzen",
   "scanMedicationInCabinet": "Bereits in deiner Hausapotheke",
+  "supplementRegister": "Nahrungsergänzungsmittel-Register",
+  "supplementRegisterHint": "Register des Gesundheitsministeriums für Codes von Nahrungsergänzungsmitteln (COD MINSAN)",
+  "supplementRegisterUpdated": "Stand: {date}",
+  "supplementRegisterUpdate": "Register aktualisieren",
+  "supplementRegisterDownload": "Herunterladen",
+  "supplementRegisterDownloading": "Register wird heruntergeladen…",
+  "supplementRegisterSyncSuccess": "Register aktualisiert ({count} Produkte)",
+  "supplementRegisterDownloadPrompt": "Codes von Nahrungsergänzungsmitteln werden im Register des Gesundheitsministeriums nachgeschlagen. Jetzt herunterladen (ca. 2 MB)? Dafür ist eine Internetverbindung nötig.",
+  "supplementNotFound": "Nicht im Register gefunden — bitte manuell eingeben",
+  "supplementSelectProduct": "Produkt auswählen",
 
   "settings": "Einstellungen",
 

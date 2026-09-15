@@ -1048,17 +1048,71 @@ abstract class AppLocalizations {
   /// **'Photograph the pack so the AIC code is sharp'**
   String get scanCaptureHint;
 
-  /// No description provided for @scanSupplementSelected.
-  ///
-  /// In en, this message translates to:
-  /// **'Supplement code — details can be added manually'**
-  String get scanSupplementSelected;
-
   /// No description provided for @scanMedicationInCabinet.
   ///
   /// In en, this message translates to:
   /// **'Already in your cabinet'**
   String get scanMedicationInCabinet;
+
+  /// No description provided for @supplementRegister.
+  ///
+  /// In en, this message translates to:
+  /// **'Food supplement register'**
+  String get supplementRegister;
+
+  /// No description provided for @supplementRegisterHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Ministry of Health register for supplement codes (COD MINSAN)'**
+  String get supplementRegisterHint;
+
+  /// No description provided for @supplementRegisterUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Register as of {date}'**
+  String supplementRegisterUpdated(String date);
+
+  /// No description provided for @supplementRegisterUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update register'**
+  String get supplementRegisterUpdate;
+
+  /// No description provided for @supplementRegisterDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get supplementRegisterDownload;
+
+  /// No description provided for @supplementRegisterDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading register…'**
+  String get supplementRegisterDownloading;
+
+  /// No description provided for @supplementRegisterSyncSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Register updated ({count} products)'**
+  String supplementRegisterSyncSuccess(int count);
+
+  /// No description provided for @supplementRegisterDownloadPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement codes are looked up in the Ministry of Health register. Download it now (about 2 MB)? An internet connection is required.'**
+  String get supplementRegisterDownloadPrompt;
+
+  /// No description provided for @supplementNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement not found in the register — enter details manually'**
+  String get supplementNotFound;
+
+  /// No description provided for @supplementSelectProduct.
+  ///
+  /// In en, this message translates to:
+  /// **'Select product'**
+  String get supplementSelectProduct;
 
   /// No description provided for @settings.
   ///

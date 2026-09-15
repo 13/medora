@@ -109,6 +109,22 @@ the app's temporary directory, never a user's original. The image size for
 the review comes from the encoded header (`ImageDescriptor`, EXIF-upright),
 not a full decode.
 
+Food-supplement codes resolve through `SupplementRegistryService`
+(`supplementRegistryServiceProvider`; `http.Client`, `openDatabase` and `now`
+seams). It downloads `integratori.csv.gz` and `integratori.meta.json` from the
+GitHub pre-release `data-integratori` (built monthly from the Ministry of
+Health PDF by `tools/build_supplements_data.py`, see `docs/release.md`),
+gunzips and parses the CSV off the UI isolate (`compute`) and replaces the
+`supplements` table of its own `supplement_cache.db` in one transaction, so a
+failed download keeps the previous data. Count, last download and the
+register's `sourceUpdated` date live in shared preferences. `findByCode`
+matches digits without leading zeros. Selecting a supplement candidate offers
+the first download (online), then `supplementRouteFor` decides: one match →
+Add Medication prefilled with a `SupplementEntry` extra (name, manufacturer,
+category `supplement`, barcode), several → a picker, none → Add Medication
+with the code. The feature is gated by
+`PlatformCapabilities.hasSupplementRegister` (not on web).
+
 ## In-app updates (Android)
 
 `AppUpdateService` is pure Dart over `package:http`: read `/releases/latest` for
