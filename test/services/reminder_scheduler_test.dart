@@ -386,7 +386,11 @@ void main() {
 
       final second = await scheduler.reconcile();
 
-      expect(scheduler.lastError, isNotNull);
+      expect(
+        scheduler.lastError,
+        contains('scheduleForDose failed'),
+        reason: 'the port failure message must reach lastError intact',
+      );
       expect(
         second,
         1,
@@ -403,7 +407,7 @@ void main() {
     final scheduler = make(port);
 
     await scheduler.reconcile();
-    expect(scheduler.lastError, isNotNull);
+    expect(scheduler.lastError, contains('scheduleForDose failed'));
 
     port.throwOnSchedule = false;
     final count = await scheduler.reconcile();

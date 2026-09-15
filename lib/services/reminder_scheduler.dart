@@ -34,12 +34,13 @@ class ReminderScheduler {
   bool _running = false;
   bool _rerunRequested = false;
 
-  /// The error from the most recent reconcile attempt, or null when the
+  /// The message from the most recent reconcile attempt, or null when the
   /// last attempt succeeded. A failed attempt keeps the previous snapshot
   /// and notification set untouched — this is purely for callers that want
-  /// to surface "reminders may be out of date" somewhere.
-  Object? get lastError => _lastError;
-  Object? _lastError;
+  /// to surface "reminders may be out of date" somewhere, so it is already
+  /// a string rather than an arbitrary thrown object.
+  String? get lastError => _lastError;
+  String? _lastError;
 
   /// Returns the number of doses that received notifications.
   ///
@@ -135,7 +136,7 @@ class ReminderScheduler {
       debugPrint(
         'Reminders: reconcile failed talking to the notification port: $e',
       );
-      _lastError = e;
+      _lastError = '$e';
       return _scheduled?.length ?? 0;
     }
 
