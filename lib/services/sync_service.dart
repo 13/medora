@@ -17,7 +17,9 @@
 ///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
-/// cycle.
+/// cycle. A row that fails to push repeatedly is backed off exponentially
+/// (`SyncFailureStore`) so it stops poisoning every cycle, and the user can
+/// give up on it with [discardFailedRow].
 library;
 
 import 'dart:async';
@@ -43,6 +45,7 @@ import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/sync_cursor_store.dart';
+import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_report.dart';
 
 export 'package:medora/services/sync_report.dart';
@@ -63,12 +66,14 @@ class SyncService {
     required this.familyLocal,
     required this.familyRemote,
     SyncCursorStore? cursors,
+    SyncFailureStore? failures,
     bool Function()? isOnline,
     String? Function()? currentUserId,
     Stream<bool>? onlineStream,
     DateTime Function()? now,
     this.onFirstSuccessfulSync,
   }) : _cursors = cursors ?? SyncCursorStore.inMemory(),
+       _failures = failures ?? SyncFailureStore.inMemory(),
        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
        _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
        _onlineStream =
@@ -94,6 +99,7 @@ class SyncService {
   final Future<void> Function(String userId)? onFirstSuccessfulSync;
 
   final SyncCursorStore _cursors;
+  final SyncFailureStore _failures;
   final bool Function() _isOnline;
   final String? Function() _currentUserId;
   final Stream<bool> _onlineStream;
@@ -210,6 +216,7 @@ class SyncService {
     debugPrint(
       'Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
       'deleted ${report.deleted}, skipped-stale ${report.skippedStale}, '
+      'skipped-backoff ${report.skippedBackoff}, '
       'failed ${report.failures.length}',
     );
     _setState(
@@ -415,14 +422,37 @@ class SyncService {
     final rows = await db.query(table, where: where, whereArgs: whereArgs);
     for (var i = 0; i < rows.length; i++) {
       final row = rows[i];
+      final id = '${row['id']}';
+      final failure = await _failures.get(table, id);
+      if (failure != null && failure.isBackingOffAt(_now())) {
+        report.skippedBackoff++;
+        continue;
+      }
       try {
         if (await processRow(row)) report.pushed++;
+        if (failure != null) await _failures.clear(table, id);
       } catch (e) {
-        report.failures.add(SyncFailure(table, '${row['id']}', 'push: $e'));
+        await _failures.recordFailure(table, id, _now());
+        report.failures.add(SyncFailure(table, id, 'push: $e'));
       }
       // Yield to the UI every few rows.
       if (i % 5 == 2) await Future<void>.delayed(Duration.zero);
     }
+  }
+
+  /// Give up on a row that keeps failing to push: stamp it `synced` locally
+  /// so the next pull replaces it with the server copy, and forget its
+  /// backoff. Exposed for the settings failures dialog.
+  Future<void> discardFailedRow(String table, String id) async {
+    final db = await AppDatabase.instance.database;
+    await db.update(
+      table,
+      {'sync_status': SyncStatus.synced},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    await _failures.clear(table, id);
+    debugPrint('Sync: discarded the local change to $table/$id');
   }
 
   // ── Pull ───────────────────────────────────────────────────

@@ -225,6 +225,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
     cursors: ref.watch(syncCursorStoreProvider),
+    failures: ref.watch(syncFailureStoreProvider),
     // Belt and braces: the auth screen records the data owner right after a
     // sign-in, but if that ever did not happen (an app killed mid-flow, a
     // session restored from disk) the first clean cycle records it.

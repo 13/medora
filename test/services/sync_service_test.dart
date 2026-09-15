@@ -15,6 +15,7 @@ import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
+import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 
 import '../helpers/fake_remotes.dart';
@@ -30,6 +31,7 @@ class Harness {
     doses = FakeDoseLogRemote(clock.now);
     family = FakeFamilyRemote(clock.now);
     cursors = SyncCursorStore.inMemory();
+    failures = SyncFailureStore.inMemory();
     service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
       medicationRemote: meds,
@@ -42,6 +44,7 @@ class Harness {
       familyLocal: FamilyLocalDatasource(),
       familyRemote: family,
       cursors: cursors,
+      failures: failures,
       isOnline: () => this.online,
       currentUserId: () => userId,
       onlineStream: online?.stream ?? const Stream<bool>.empty(),
@@ -58,6 +61,7 @@ class Harness {
   late final FakeDoseLogRemote doses;
   late final FakeFamilyRemote family;
   late final SyncCursorStore cursors;
+  late final SyncFailureStore failures;
   late final SyncService service;
 }
 
@@ -478,6 +482,89 @@ void main() {
       final report = (await h.service.syncAll())!;
       expect(report.deleted, 1);
     });
+  });
+
+  group('failing-row backoff', () {
+    Future<void> seedFailingMedication(Harness h) async {
+      await MedicationLocalDatasource().upsert(
+        const MedicationModel(id: 'bad', name: 'bad', quantity: 1),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      h.meds.table.failIds.add('bad');
+    }
+
+    test(
+      'a failed row is recorded and skipped until its backoff is up',
+      () async {
+        final h = Harness();
+        await seedFailingMedication(h);
+
+        final first = (await h.service.syncAll())!;
+        expect(first.failures.map((f) => f.id), ['bad']);
+        expect(first.skippedBackoff, 0);
+        expect((await h.failures.get('medications', 'bad'))?.count, 1);
+
+        // One minute later the 2-minute backoff has not elapsed: skipped, and
+        // the failure is not re-reported.
+        h.clock.advance(const Duration(minutes: 1));
+        h.service.debugSetStateForTest(SyncState.idle);
+        final second = (await h.service.syncAll())!;
+        expect(second.skippedBackoff, 1);
+        expect(second.failures.where((f) => f.table == 'medications'), isEmpty);
+        expect((await h.failures.get('medications', 'bad'))?.count, 1);
+
+        // Past the backoff it is retried — and fails again, doubling the count.
+        h.clock.advance(const Duration(minutes: 2));
+        h.service.debugSetStateForTest(SyncState.idle);
+        final third = (await h.service.syncAll())!;
+        expect(third.skippedBackoff, 0);
+        expect(third.failures.map((f) => f.id), ['bad']);
+        expect((await h.failures.get('medications', 'bad'))?.count, 2);
+      },
+    );
+
+    test('a row that pushes again clears its failure record', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+      expect(await h.failures.get('medications', 'bad'), isNotNull);
+
+      h.meds.table.failIds.remove('bad');
+      h.clock.advance(const Duration(minutes: 5));
+      h.service.debugSetStateForTest(SyncState.idle);
+      final report = (await h.service.syncAll())!;
+
+      expect(report.pushed, 1);
+      expect(report.failures, isEmpty);
+      expect(await h.failures.get('medications', 'bad'), isNull);
+      expect(h.meds.table.rows['bad'], isNotNull);
+    });
+
+    test(
+      'discardFailedRow marks the row synced and clears the record',
+      () async {
+        final h = Harness();
+        await seedFailingMedication(h);
+        await h.service.syncAll();
+        expect(await h.failures.get('medications', 'bad'), isNotNull);
+
+        await h.service.discardFailedRow('medications', 'bad');
+
+        expect(
+          (await localRow('medications', 'bad'))?['sync_status'],
+          SyncStatus.synced,
+        );
+        expect(await h.failures.get('medications', 'bad'), isNull);
+
+        // The next cycle no longer tries to push it at all.
+        h.clock.advance(const Duration(hours: 1));
+        h.service.debugSetStateForTest(SyncState.idle);
+        final report = (await h.service.syncAll())!;
+        expect(report.pushed, 0);
+        expect(report.failures, isEmpty);
+        expect(report.skippedBackoff, 0);
+      },
+    );
   });
 
   group('delta pull', () {

@@ -314,7 +314,7 @@ class SettingsScreen extends ConsumerWidget {
                       ? const Icon(Icons.chevron_right)
                       : null,
                   onTap: (lastReport?.hasFailures ?? false)
-                      ? () => _showSyncFailures(context, l10n, lastReport!)
+                      ? () => _showSyncFailures(ref, context, l10n, lastReport!)
                       : null,
                 ),
                 ExpansionTile(
@@ -713,41 +713,64 @@ class SettingsScreen extends ConsumerWidget {
   String _lastSyncText(AppLocalizations l10n, SyncReport? r) {
     final finished = r?.finishedAt;
     if (r == null || finished == null) return l10n.syncNever;
-    return l10n.lastSyncSummary(
+    final summary = l10n.lastSyncSummary(
       finished.dateTimeFormatted,
       r.pushed,
       r.pulled,
       r.deleted,
       r.failures.length,
     );
+    // Rows inside their retry backoff are not failures, so they only earn a
+    // mention when there actually are some.
+    if (r.skippedBackoff == 0) return summary;
+    return '$summary · ${l10n.syncSkippedBackoff(r.skippedBackoff)}';
   }
 
   void _showSyncFailures(
+    WidgetRef ref,
     BuildContext context,
     AppLocalizations l10n,
     SyncReport r,
   ) {
+    // Rows the user gives up on, so the dialog can drop them without waiting
+    // for another cycle to rebuild the report.
+    final discarded = <String>{};
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.syncFailedItems),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              for (final f in r.failures)
-                ListTile(
-                  dense: true,
-                  title: Text('${f.table} · ${f.id}'),
-                  subtitle: Text(f.error),
-                ),
-            ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text(l10n.syncFailedItems),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final f in r.failures)
+                  if (!discarded.contains('${f.table}/${f.id}'))
+                    ListTile(
+                      dense: true,
+                      title: Text('${f.table} · ${f.id}'),
+                      subtitle: Text(f.error),
+                      trailing: TextButton(
+                        onPressed: () async {
+                          await ref
+                              .read(syncServiceProvider)
+                              .discardFailedRow(f.table, f.id);
+                          setState(() => discarded.add('${f.table}/${f.id}'));
+                        },
+                        child: Text(l10n.discardLocalChange),
+                      ),
+                    ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.ok),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.ok)),
-        ],
       ),
     );
   }

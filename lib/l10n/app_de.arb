@@ -216,6 +216,8 @@
   "syncNever": "Noch nicht synchronisiert",
   "lastSyncSummary": "Letzte Synchronisierung {time}: {pushed} gesendet, {pulled} empfangen, {deleted} gelöscht, {failed} fehlgeschlagen",
   "syncFailedItems": "Fehlgeschlagene Einträge",
+  "syncSkippedBackoff": "{n} warten auf einen neuen Versuch",
+  "discardLocalChange": "Lokale Änderung verwerfen",
   "ok": "OK",
   "advanced": "Erweitert",
   "familySharing": "Familienfreigabe",

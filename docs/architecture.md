@@ -61,7 +61,14 @@ minutes (`settings_providers.dart:159`).
 `SyncService` (`lib/services/sync_service.dart`) runs a cycle as push, then pull:
 
 - **Push** uploads rows whose `sync_status` is pending; a row that throws becomes
-  a `SyncFailure` and the batch continues.
+  a `SyncFailure` and the batch continues. A row that keeps failing is backed
+  off exponentially — `SyncFailureStore` (`lib/services/sync_failure_store.dart`)
+  maps `table/id` to a failure count and the last attempt, and the push skips a
+  row until `min(2^count minutes, 6 h)` after that attempt (counted in
+  `SyncReport.skippedBackoff`, not a failure). A successful push clears the
+  entry; `SyncService.discardFailedRow(table, id)` stamps the row `synced` so
+  the next pull replaces it with the server copy, and the settings failures
+  dialog offers exactly that per row.
 - **Pull** is a delta per table: it asks the remote only for rows newer than the
   stored cursor, applies tombstones (`deleted_at`) as hard local deletes, and
   advances the cursor to the newest `updated_at` it saw minus **1 second** of

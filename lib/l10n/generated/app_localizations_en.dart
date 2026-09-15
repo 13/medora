@@ -648,6 +648,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get syncFailedItems => 'Failed items';
 
   @override
+  String syncSkippedBackoff(int n) {
+    return '$n waiting to retry';
+  }
+
+  @override
+  String get discardLocalChange => 'Discard local change';
+
+  @override
   String get ok => 'OK';
 
   @override
