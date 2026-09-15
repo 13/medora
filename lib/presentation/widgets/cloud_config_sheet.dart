@@ -55,6 +55,10 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
   late bool _keepStoredKey;
   String? _urlError;
   String? _keyError;
+
+  /// Why the last Save attempt did not go through; shown inside the sheet so
+  /// the user can correct the values instead of losing them.
+  String? _saveError;
   _ProbeState _probe = _ProbeState.idle;
   bool _saving = false;
 
@@ -116,10 +120,24 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
 
   Future<void> _save(AppLocalizations l10n) async {
     if (!_validate(l10n) || _saving) return;
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
     final credentials = _current.normalized;
-    await ref.read(cloudCredentialsProvider.notifier).save(credentials);
-    final active = await ref.read(cloudActivatorProvider)(credentials);
+    final bool active;
+    try {
+      await ref.read(cloudCredentialsProvider.notifier).save(credentials);
+      active = await ref.read(cloudActivatorProvider)(credentials);
+    } catch (e) {
+      // Storing or activating can fail (no preferences backend, a Supabase
+      // client that refuses these values). Say so and leave the sheet open
+      // with everything the user typed still in it.
+      if (mounted) setState(() => _saveError = l10n.errorWithDetails('$e'));
+      return;
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
     if (!mounted) return;
     Navigator.pop(
       context,
@@ -127,6 +145,13 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
           ? CloudConfigOutcome.savedAndActive
           : CloudConfigOutcome.savedNeedsRestart,
     );
+  }
+
+  /// A typed value changed: the probe result and the save failure both
+  /// describe the values as they were, so they no longer apply.
+  void _invalidateResults() {
+    _probe = _ProbeState.idle;
+    _saveError = null;
   }
 
   Future<void> _paste() async {
@@ -137,7 +162,7 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
       _keepStoredKey = false;
       _key.text = text;
       _keyError = null;
-      _probe = _ProbeState.idle;
+      _invalidateResults();
     });
   }
 
@@ -181,7 +206,7 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
               ),
               onChanged: (_) => setState(() {
                 _urlError = null;
-                _probe = _ProbeState.idle;
+                _invalidateResults();
               }),
             ),
             const SizedBox(height: 16),
@@ -189,7 +214,7 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
               _StoredKeyRow(
                 onReplace: () => setState(() {
                   _keepStoredKey = false;
-                  _probe = _ProbeState.idle;
+                  _invalidateResults();
                 }),
               )
             else
@@ -211,7 +236,7 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
                 ),
                 onChanged: (_) => setState(() {
                   _keyError = null;
-                  _probe = _ProbeState.idle;
+                  _invalidateResults();
                 }),
               ),
             if (_keepStoredKey && _keyError != null)
@@ -266,6 +291,29 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
                           color: _probe == _ProbeState.reachable
                               ? context.medora.success
                               : context.colors.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_saveError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 18,
+                      color: context.colors.error,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _saveError!,
+                        style: text.bodySmall?.copyWith(
+                          color: context.colors.error,
                         ),
                       ),
                     ),

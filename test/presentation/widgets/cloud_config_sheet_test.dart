@@ -121,6 +121,44 @@ void main() {
     expect(outcome, CloudConfigOutcome.savedNeedsRestart);
   });
 
+  testWidgets('a failing activation keeps the sheet open and says why', (
+    tester,
+  ) async {
+    await open(
+      tester,
+      extraOverrides: [
+        cloudActivatorProvider.overrideWithValue(
+          (_) async => throw StateError('supabase says no'),
+        ),
+      ],
+    );
+
+    await tester.enterText(find.byKey(CloudConfigSheet.urlFieldKey), _url);
+    await tester.enterText(find.byKey(CloudConfigSheet.keyFieldKey), _key);
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(outcome, isNull, reason: 'the sheet must stay open');
+    expect(find.textContaining('supabase says no'), findsOneWidget);
+    // Still usable: the values are untouched and Save can be tried again.
+    expect(
+      tester
+          .widget<TextField>(find.byKey(CloudConfigSheet.urlFieldKey))
+          .controller
+          ?.text,
+      _url,
+    );
+    final save = tester.widget<FilledButton>(
+      find.ancestor(of: find.text('Save'), matching: find.byType(FilledButton)),
+    );
+    expect(save.onPressed, isNotNull, reason: '_saving must be reset');
+
+    // A second, working attempt still goes through.
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('supabase says no'), findsOneWidget);
+  });
+
   testWidgets('test connection reports the probe result and sends the key as '
       'a header', (tester) async {
     http.Request? seen;
