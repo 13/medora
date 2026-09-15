@@ -4,8 +4,11 @@
 /// recognizing (ML Kit text recognition and barcode scanning run in parallel
 /// on the still photo) and review (the photo with every detected code
 /// numbered; the user taps the one to use). Photos taken here are temporary
-/// files, deleted on retake, when leaving the screen and in `dispose`;
-/// gallery picks are never deleted.
+/// files, deleted on retake, when leaving the screen and in `dispose`.
+/// Gallery picks are deleted the same way only when the picker handed us a
+/// copy inside the app's temporary directory (Android copies picks into the
+/// app cache); a path outside it could be the user's original and is never
+/// touched.
 library;
 
 import 'dart:async';
@@ -28,12 +31,45 @@ import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/barcode_adapter.dart';
 import 'package:medora/services/code_candidates.dart';
+import 'package:medora/services/image_size.dart';
 import 'package:medora/services/ocr_adapter.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 class BarcodeScannerScreen extends ConsumerStatefulWidget {
   const BarcodeScannerScreen({super.key, this.returnBarcodeOnly = false});
 
   final bool returnBarcodeOnly;
+
+  /// The laid-out size of the camera preview for a sensor [previewSize]
+  /// (always landscape): portrait swaps width and height.
+  static Size previewChildSize(Size previewSize, Orientation orientation) =>
+      orientation == Orientation.portrait
+      ? Size(previewSize.height, previewSize.width)
+      : previewSize;
+
+  /// The normalised (0..1) focus point for a [tap] in [viewport], where the
+  /// preview is cover-fitted (centred, cropped on the overflowing axis).
+  @visibleForTesting
+  static Offset focusPointFor({
+    required Offset tap,
+    required Size viewport,
+    required Size previewSize,
+    required Orientation orientation,
+  }) {
+    final child = previewChildSize(previewSize, orientation);
+    if (child.isEmpty || viewport.isEmpty) return const Offset(0.5, 0.5);
+    final scale = math.max(
+      viewport.width / child.width,
+      viewport.height / child.height,
+    );
+    final dx = (viewport.width - child.width * scale) / 2;
+    final dy = (viewport.height - child.height * scale) / 2;
+    return Offset(
+      ((tap.dx - dx) / (child.width * scale)).clamp(0.0, 1.0),
+      ((tap.dy - dy) / (child.height * scale)).clamp(0.0, 1.0),
+    );
+  }
 
   @override
   ConsumerState<BarcodeScannerScreen> createState() =>
@@ -54,6 +90,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   _ScanStage _stage = _ScanStage.capture;
   bool _isSearching = false;
+  bool _picking = false;
   bool _isCameraReady = false;
   bool _cameraFailed = false;
   bool _torchOn = false;
@@ -103,6 +140,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   // ── Camera ─────────────────────────────────────────────────
 
   Future<void> _initializeCamera() async {
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
       if (!mounted) return;
@@ -116,7 +154,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         orElse: () => cameras.first,
       );
 
-      final controller = CameraController(
+      controller = CameraController(
         backCamera,
         ResolutionPreset.veryHigh,
         enableAudio: false,
@@ -140,7 +178,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       if (_stage != _ScanStage.capture) await _pausePreview();
     } catch (e) {
       debugPrint('Camera init error: $e');
-      if (!mounted) return;
+      // A newer initialisation (or a lifecycle pause) replaced this one.
+      if (!mounted || _cameraController != controller) return;
       setState(() {
         _isCameraReady = false;
         _cameraFailed = true;
@@ -150,21 +189,19 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   }
 
   /// Focuses at [local], a point in the cover-fitted preview of [viewport].
-  Future<void> _focusAt(Offset local, Size viewport) async {
+  Future<void> _focusAt(
+    Offset local,
+    Size viewport,
+    Orientation orientation,
+  ) async {
     final controller = _cameraController;
     final previewSize = controller?.value.previewSize;
     if (controller == null || !_isCameraReady || previewSize == null) return;
-    // The preview is portrait: the sensor's width is the laid-out height.
-    final child = Size(previewSize.height, previewSize.width);
-    final scale = math.max(
-      viewport.width / child.width,
-      viewport.height / child.height,
-    );
-    final dx = (viewport.width - child.width * scale) / 2;
-    final dy = (viewport.height - child.height * scale) / 2;
-    final point = Offset(
-      ((local.dx - dx) / (child.width * scale)).clamp(0.0, 1.0),
-      ((local.dy - dy) / (child.height * scale)).clamp(0.0, 1.0),
+    final point = BarcodeScannerScreen.focusPointFor(
+      tap: local,
+      viewport: viewport,
+      previewSize: previewSize,
+      orientation: orientation,
     );
     try {
       await controller.setFocusPoint(point);
@@ -236,14 +273,34 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   }
 
   Future<void> _pickFromGallery() async {
-    if (_stage != _ScanStage.capture) return;
+    if (_stage != _ScanStage.capture || _picking) return;
+    setState(() => _picking = true);
     try {
       final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (picked == null || !mounted) return;
-      await _recognize(picked.path, isTemp: false);
+      final isCacheCopy = await _isInTemporaryDirectory(picked.path);
+      if (!mounted) {
+        if (isCacheCopy) unawaited(_deleteFile(picked.path));
+        return;
+      }
+      await _recognize(picked.path, isTemp: isCacheCopy);
     } catch (e) {
       debugPrint('Gallery pick error: $e');
       if (mounted) _showError();
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  /// Whether [path] is a picker copy in the app's temporary directory (safe
+  /// to delete) rather than a user's original file.
+  Future<bool> _isInTemporaryDirectory(String path) async {
+    try {
+      final temp = await getTemporaryDirectory();
+      return p.isWithin(p.canonicalize(temp.path), p.canonicalize(path));
+    } catch (e) {
+      debugPrint('Temporary directory unavailable: $e');
+      return false;
     }
   }
 
@@ -261,7 +318,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       final (recognized, barcodes, size) = await (
         _textRecognizer.processImage(input),
         _barcodeScanner.processImage(input),
-        _decodeSize(path),
+        readImageSize(path),
       ).wait;
       if (!mounted || _photoPath != path) return;
       final candidates = findCodeCandidates(
@@ -279,13 +336,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       _showError();
       await _retake();
     }
-  }
-
-  Future<Size> _decodeSize(String path) async {
-    final image = await decodeImageFromList(await File(path).readAsBytes());
-    final size = Size(image.width.toDouble(), image.height.toDouble());
-    image.dispose();
-    return size;
   }
 
   Future<void> _retake() async {
@@ -385,17 +435,15 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   String _addMedicationLocation(String code) =>
       '${AppRoutes.addMedication}?barcode=${Uri.encodeQueryComponent(code)}';
 
-  /// Closes the scanner (its photo is deleted in `dispose`) and opens
+  /// Replaces the scanner (its photo is deleted in `dispose`) with
   /// [location], optionally with a snackbar [message].
-  void _leaveAndPush(String location, {String? message}) {
+  void _leaveAndPush(String location, {String? message, Object? extra}) {
     if (message != null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
     }
-    context.pop();
-    // Fire and forget: `push` completes only when the pushed route pops.
-    unawaited(context.push(location));
+    context.pushReplacement(location, extra: extra);
   }
 
   // ── UI ─────────────────────────────────────────────────────
@@ -436,7 +484,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Widget _buildCapture(AppLocalizations l10n) {
     final controller = _cameraController;
     final previewSize = controller?.value.previewSize;
-    final canShoot = _isCameraReady && controller != null && !_isSearching;
+    final busy = _isSearching || _picking;
+    final canShoot = _isCameraReady && controller != null && !busy;
     return ColoredBox(
       color: Colors.black, // scrim
       child: Column(
@@ -446,23 +495,33 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
               children: [
                 if (_isCameraReady && controller != null && previewSize != null)
                   LayoutBuilder(
-                    builder: (context, constraints) => GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapUp: (details) =>
-                          _focusAt(details.localPosition, constraints.biggest),
-                      child: SizedBox.expand(
-                        child: ClipRect(
-                          child: FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: previewSize.height,
-                              height: previewSize.width,
-                              child: CameraPreview(controller),
+                    builder: (context, constraints) {
+                      final orientation = MediaQuery.orientationOf(context);
+                      final child = BarcodeScannerScreen.previewChildSize(
+                        previewSize,
+                        orientation,
+                      );
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTapUp: (details) => _focusAt(
+                          details.localPosition,
+                          constraints.biggest,
+                          orientation,
+                        ),
+                        child: SizedBox.expand(
+                          child: ClipRect(
+                            child: FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: child.width,
+                                height: child.height,
+                                child: CameraPreview(controller),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   )
                 else if (!_cameraFailed)
                   const Center(
@@ -521,7 +580,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                     iconSize: 28,
                     color: _onScrim,
                     tooltip: l10n.scanFromGallery,
-                    onPressed: _isSearching ? null : _pickFromGallery,
+                    onPressed: busy ? null : _pickFromGallery,
                     icon: const Icon(Icons.photo_library_outlined),
                   ),
                   Tooltip(
@@ -546,7 +605,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                     iconSize: 28,
                     color: _onScrim,
                     tooltip: l10n.enterBarcodeManually,
-                    onPressed: _isSearching
+                    onPressed: busy
                         ? null
                         : () => _showManualEntryDialog(context),
                     icon: const Icon(Icons.keyboard),
@@ -749,14 +808,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   Future<void> _selectResult(AifaSearchResult result, String code) async {
     final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.autoFilledFromBarcode)));
-    context.pop();
-    // Fire and forget: `push` completes only when the pushed route pops, and
-    // this method is awaited by its callers.
-    unawaited(
-      context.push('${AppRoutes.addMedication}?barcode=$code', extra: result),
+    _leaveAndPush(
+      _addMedicationLocation(code),
+      message: l10n.autoFilledFromBarcode,
+      extra: result,
     );
   }
 

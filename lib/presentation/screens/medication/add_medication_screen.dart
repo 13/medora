@@ -201,9 +201,11 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
 
   /// Push the barcode scanner and fill [_barcodeController] with the result.
   Future<void> _openScanner() async {
-    final barcode = await context.push<String>(AppRoutes.scanner);
+    final barcode = await context.push<String>(AppRoutes.scannerReturnOnly);
     if (barcode != null && mounted) {
       setState(() => _barcodeController.text = barcode);
+      // The barcode field lives in Stock & storage: show what was filled.
+      _stockExpanded.value = true;
     }
   }
 
@@ -530,7 +532,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                               icon: const Icon(Icons.qr_code_scanner),
                               onPressed: () async {
                                 final barcode = await context.push<String>(
-                                  '${AppRoutes.scanner}?returnOnly=true',
+                                  AppRoutes.scannerReturnOnly,
                                 );
                                 if (barcode != null && mounted) {
                                   setState(

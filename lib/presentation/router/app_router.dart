@@ -39,6 +39,9 @@ class AppRoutes {
   static const doses = '/doses';
   static const doseHistory = '/doses/history';
   static const scanner = '/scanner';
+
+  /// The scanner in return-only mode: pops with the chosen code (String).
+  static const scannerReturnOnly = '$scanner?returnOnly=true';
   static const settings = '/settings';
   static const family = '/family';
   static const export = '/export';

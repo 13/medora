@@ -101,8 +101,13 @@ decoded barcodes. `ScanReviewView` shows the photo with numbered markers and
 the same list. Selecting routes by kind: AIC → AIFA cache search (result
 picker → Add Medication), supplement → Add Medication prefilled, EAN → the
 cabinet medication with that barcode (else Add Medication), other → Add
-Medication prefilled. Camera photos are temporary files deleted on retake, on
-leaving the screen and in `dispose`; gallery picks are never deleted.
+Medication prefilled; leaving replaces the scanner route (`pushReplacement`).
+Add Medication always opens the scanner return-only. Camera photos are
+temporary files deleted on retake, on leaving the screen and in `dispose`; a
+gallery pick is deleted the same way only when it is the picker's copy inside
+the app's temporary directory, never a user's original. The image size for
+the review comes from the encoded header (`ImageDescriptor`, EXIF-upright),
+not a full decode.
 
 ## In-app updates (Android)
 
