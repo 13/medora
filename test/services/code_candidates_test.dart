@@ -670,6 +670,54 @@ void main() {
       ]);
       expect(describe(result), 'ean:8057737141836 other:057737');
     });
+
+    test('an EAN after a number and punctuation is still an EAN', () {
+      // Review I2: `N. ` / `N, ` before the EAN joined the groups into a run
+      // that is no EAN shape, so the EAN came out as "other".
+      for (final text in [
+        'SCAD. 2026. 8057737141836',
+        'Lotto 24031, 8057737141836',
+        'Lotto 2401. 8057737141836',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.ean).map((c) => c.code), [
+          '8057737141836',
+        ], reason: text);
+        expect(
+          result.map((c) => c.code),
+          isNot(contains(contains('20268057737141836'))),
+          reason: text,
+        );
+      }
+    });
+
+    test('a whole EAN-13 next to other numbers is still an EAN', () {
+      for (final text in [
+        'EAN 8057737141836 20 g',
+        'COD MINSAN: 107018 8057737141836',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.ean).map((c) => c.code), [
+          '8057737141836',
+        ], reason: text);
+        expect(_ofKind(result, CodeKind.other), isEmpty, reason: text);
+      }
+      expect(
+        describe(
+          findCodeCandidates([_line('COD MINSAN: 107018 8057737141836', 0)]),
+        ),
+        'supplement:107018 ean:8057737141836',
+      );
+    });
+
+    test('a spaced EAN after a number and a dot is an EAN', () {
+      final result = findCodeCandidates([
+        _line('SCAD. 2026. 8 057737 141836', 0),
+      ]);
+      expect(_ofKind(result, CodeKind.ean).map((c) => c.code), [
+        '8057737141836',
+      ]);
+    });
   });
 
   test('codeLabelKinds names the labels present', () {

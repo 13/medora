@@ -327,14 +327,20 @@ final _quantitySuffix = RegExp(
 final _onlyDigitRun = RegExp(r'^[0-9]{3,9}$');
 
 /// A run of digit groups, with no letter or digit directly before it,
-/// separated by a single space or by up to two quotes, apostrophes,
-/// backticks, commas or dots with an optional space on either side (OCR of
-/// `8 057737 141836` can read `8 "057737"141836`).
+/// separated by a single space, by up to two quotes, apostrophes or
+/// backticks with an optional space on either side, or by up to two of
+/// those, commas or dots with an optional space before them only (OCR of
+/// `8 057737 141836` can read `8 "057737"141836`). A comma or dot followed
+/// by a space ends the run: `SCAD. 2026. 8057737141836` is a date, then an
+/// EAN.
 final _digitGroups = RegExp(
-  '(?<![A-Za-z0-9])[0-9]+(?:(?: |\\s?$_groupPunctuation{1,2}\\s?)[0-9]+)*',
+  '(?<![A-Za-z0-9])[0-9]+'
+  '(?:(?: |\\s?$_groupQuotes{1,2}\\s|\\s?$_groupPunctuation{1,2})[0-9]+)*',
 );
+const _groupQuotes = '["\'`\u2018\u2019\u201C\u201D]';
 const _groupPunctuation = '["\'`,.\u2018\u2019\u201C\u201D]';
 final _nonDigits = RegExp(r'[^0-9]+');
+final _digitRun = RegExp(r'[0-9]+');
 final _allDigits = RegExp(r'^[0-9]+$');
 
 /// Group lengths an EAN-13 / EAN-8 is printed in.
@@ -356,16 +362,28 @@ class _Span {
 /// an EAN, a failed one an "other" candidate with the joined digits. A single
 /// 8-digit run with a failed checksum is left to the later rules (it may be
 /// a supplement or AIC code), and so are groups joined by punctuation (see
-/// [_digitGroups]) unless they form a valid EAN.
+/// [_digitGroups]) unless they form a valid EAN; `4,4` groups join only
+/// with a space (`1234.5670` is a price). In a run that is no EAN shape, a
+/// single 13-digit group with a valid checksum is still an EAN
+/// (`EAN 8057737141836 20 g`).
 List<({String code, CodeKind kind, _Span span})> _findEans(String text) {
   final result = <({String code, CodeKind kind, _Span span})>[];
   for (final run in _digitGroups.allMatches(text)) {
     final runText = run[0]!;
     final groups = runText.split(_nonDigits);
-    if (!_eanShapes.contains(groups.map((g) => g.length).join(','))) continue;
+    final shape = groups.map((g) => g.length).join(',');
+    final punctuated = runText.contains(RegExp(_groupPunctuation));
+    if (!_eanShapes.contains(shape) || (punctuated && shape == '4,4')) {
+      for (final group in _digitRun.allMatches(runText)) {
+        final code = group[0]!;
+        if (code.length != 13 || !isValidEan(code)) continue;
+        final span = _Span(run.start + group.start, run.start + group.end);
+        result.add((code: code, kind: CodeKind.ean, span: span));
+      }
+      continue;
+    }
     final code = groups.join();
     final span = _Span(run.start, run.end);
-    final punctuated = runText.contains(RegExp(_groupPunctuation));
     if (isValidEan(code)) {
       result.add((code: code, kind: CodeKind.ean, span: span));
     } else if (!punctuated && (groups.length > 1 || code.length == 13)) {
