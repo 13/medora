@@ -640,5 +640,23 @@
   "onboardingDosesTitle": "Daily doses",
   "onboardingDosesBody": "Each day shows what is due. Tap Take, or let reminders nudge you.",
   "onboardingNext": "Next",
-  "onboardingDone": "Done"
+  "onboardingDone": "Done",
+
+  "checkForUpdates": "Check for updates",
+  "checkingForUpdates": "Checking for updates…",
+  "upToDate": "Up to date",
+  "updateAvailable": "Update available: {version}",
+  "@updateAvailable": { "placeholders": { "version": { "type": "String" } } },
+  "updateDownload": "Download",
+  "updateInstall": "Install",
+  "updateLater": "Later",
+  "updateReleaseNotes": "What's new",
+  "updatePublished": "Released {date}",
+  "@updatePublished": { "placeholders": { "date": { "type": "String" } } },
+  "updateBannerTitle": "Medora {version} is available",
+  "@updateBannerTitle": { "placeholders": { "version": { "type": "String" } } },
+  "updateView": "View",
+  "updateFailed": "Could not check for updates",
+  "updateChecksumFailed": "The download could not be verified",
+  "updateNoAsset": "No installer for this device"
 }

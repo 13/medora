@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches pubspec version
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PUB="$(sed -n 's/^version: //p' pubspec.yaml)"
+          test "$TAG" = "$PUB" || { echo "tag $TAG != pubspec $PUB"; exit 1; }
+          echo "version=${TAG%%+*}" >> "$GITHUB_OUTPUT"
+          echo "build=${TAG##*+}" >> "$GITHUB_OUTPUT"
+      - name: Require release signing secrets
+        run: test -n "$ANDROID_KEYSTORE_BASE64" || { echo "ANDROID_KEYSTORE_BASE64 secret missing"; exit 1; }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version-file: .fvmrc, cache: true }
+      - name: Configure release signing
+        run: |
+          mkdir -p android/keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/keystore/medora-release.jks
+          printf 'storeFile=../keystore/medora-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$ANDROID_STORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" > android/key.properties
+      - run: flutter pub get
+      - name: Build APKs and bundle
+        run: |
+          DEFINES="--dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+          flutter build apk --release --split-per-abi $DEFINES
+          flutter build apk --release $DEFINES
+          flutter build appbundle --release $DEFINES
+      - name: Name assets
+        env: { V: "${{ steps.ver.outputs.version }}", B: "${{ steps.ver.outputs.build }}" }
+        run: |
+          mkdir -p dist
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "build/app/outputs/flutter-apk/app-$abi-release.apk" "dist/medora-$V-$B-$abi.apk"
+          done
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/medora-$V-$B-universal.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/medora-$V-$B.aab"
+          (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Create GitHub release
+        env: { GH_TOKEN: "${{ github.token }}", V: "${{ steps.ver.outputs.version }}", B: "${{ steps.ver.outputs.build }}" }
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Medora $V ($B)" --generate-notes

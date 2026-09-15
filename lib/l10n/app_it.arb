@@ -506,5 +506,20 @@
   "onboardingDosesTitle": "Dosi quotidiane",
   "onboardingDosesBody": "Ogni giorno mostra cosa è previsto. Tocca Prendi oppure lasciati avvisare dai promemoria.",
   "onboardingNext": "Avanti",
-  "onboardingDone": "Fatto"
+  "onboardingDone": "Fatto",
+
+  "checkForUpdates": "Cerca aggiornamenti",
+  "checkingForUpdates": "Ricerca aggiornamenti…",
+  "upToDate": "Aggiornato",
+  "updateAvailable": "Aggiornamento disponibile: {version}",
+  "updateDownload": "Scarica",
+  "updateInstall": "Installa",
+  "updateLater": "Più tardi",
+  "updateReleaseNotes": "Novità",
+  "updatePublished": "Pubblicato il {date}",
+  "updateBannerTitle": "Medora {version} è disponibile",
+  "updateView": "Mostra",
+  "updateFailed": "Impossibile cercare aggiornamenti",
+  "updateChecksumFailed": "Impossibile verificare il download",
+  "updateNoAsset": "Nessun pacchetto di installazione per questo dispositivo"
 }

@@ -111,6 +111,13 @@ user-facing string goes into all three ARBs (`app_en`, `app_de`, `app_it`); two
 sweep tests fail the build on hardcoded strings and on raw `Colors.*` in the
 presentation layer.
 
+### Updates
+
+Android builds distributed from GitHub Releases check once a day for a newer
+release and can also be checked on demand from **Settings → About**. See
+[`docs/release.md`](docs/release.md#cutting-a-release) for how a release is
+cut and named.
+
 ## Documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — layers, app modes, the local schema ledger, reminders, sync, theming and the test layout.

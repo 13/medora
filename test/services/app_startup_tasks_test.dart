@@ -15,6 +15,70 @@ void main() {
     expect(calls, ['maintenance', 'reminders', 'sync']);
   });
 
+  test('the update check runs last, after sync', () async {
+    final calls = <String>[];
+    final tasks = AppStartupTasks(
+      maintenance: () async => calls.add('maintenance'),
+      reminders: () async => calls.add('reminders'),
+      sync: () async => calls.add('sync'),
+      updateCheck: () async => calls.add('updateCheck'),
+      syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
+      minUpdateCheckInterval: Duration.zero,
+    );
+    await tasks.run();
+    expect(calls, ['maintenance', 'reminders', 'sync', 'updateCheck']);
+  });
+
+  test('the update check still runs when sync is skipped', () async {
+    final calls = <String>[];
+    final tasks = AppStartupTasks(
+      maintenance: () async {},
+      reminders: () async {},
+      sync: () async => calls.add('sync'),
+      updateCheck: () async => calls.add('updateCheck'),
+      syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
+      minUpdateCheckInterval: Duration.zero,
+    );
+    await tasks.run(includeSync: false);
+    expect(calls, ['updateCheck']);
+  });
+
+  test('a failing update check does not escape run()', () async {
+    final tasks = AppStartupTasks(
+      maintenance: () async {},
+      reminders: () async {},
+      sync: () async {},
+      updateCheck: () async => throw StateError('offline'),
+      syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
+      minUpdateCheckInterval: Duration.zero,
+    );
+    await expectLater(tasks.run(), completes);
+  });
+
+  test('the update check is skipped inside minUpdateCheckInterval', () async {
+    var checks = 0;
+    var clock = DateTime(2026, 3, 1, 9);
+    final tasks = AppStartupTasks(
+      maintenance: () async {},
+      reminders: () async {},
+      sync: () async {},
+      updateCheck: () async => checks++,
+      syncDelay: Duration.zero,
+      minSyncInterval: Duration.zero,
+      now: () => clock,
+    );
+    await tasks.run();
+    clock = clock.add(const Duration(hours: 5));
+    await tasks.run();
+    expect(checks, 1);
+    clock = clock.add(const Duration(hours: 19));
+    await tasks.run();
+    expect(checks, 2);
+  });
+
   test('includeSync=false skips sync', () async {
     final calls = <String>[];
     final tasks = AppStartupTasks(

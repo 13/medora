@@ -22,6 +22,7 @@ import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_status_chip.dart';
+import 'package:medora/presentation/widgets/update_banner.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -62,6 +63,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // A pending update, if one is known and not dismissed; hidden
+            // otherwise, so it costs Home nothing in the normal case.
+            const UpdateBanner(),
+
             // Now: the single next actionable dose (or a done/empty state).
             const _NowCard(),
             const SizedBox(height: 16),

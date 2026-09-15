@@ -1475,4 +1475,52 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get onboardingDone => 'Done';
+
+  @override
+  String get checkForUpdates => 'Check for updates';
+
+  @override
+  String get checkingForUpdates => 'Checking for updates…';
+
+  @override
+  String get upToDate => 'Up to date';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Update available: $version';
+  }
+
+  @override
+  String get updateDownload => 'Download';
+
+  @override
+  String get updateInstall => 'Install';
+
+  @override
+  String get updateLater => 'Later';
+
+  @override
+  String get updateReleaseNotes => 'What\'s new';
+
+  @override
+  String updatePublished(String date) {
+    return 'Released $date';
+  }
+
+  @override
+  String updateBannerTitle(String version) {
+    return 'Medora $version is available';
+  }
+
+  @override
+  String get updateView => 'View';
+
+  @override
+  String get updateFailed => 'Could not check for updates';
+
+  @override
+  String get updateChecksumFailed => 'The download could not be verified';
+
+  @override
+  String get updateNoAsset => 'No installer for this device';
 }

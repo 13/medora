@@ -149,6 +149,53 @@ With no secrets configured all three release steps are skipped and the job is
 still green — that is the expected state for this repository today. Nothing in
 CI is needed to keep local release builds working.
 
+## Cutting a release
+
+Releases are cut from `main` by pushing a tag; `.github/workflows/release.yml`
+does the rest.
+
+```bash
+tools/release.sh 0.1.0+10
+```
+
+This bumps `version:` in `pubspec.yaml`, commits `chore(release): v0.1.0+10`,
+tags `v0.1.0+10` and pushes both to `origin main`. It refuses to run off
+`main`, with a dirty working tree, or with a `+build` that does not increase
+over the current `pubspec.yaml` version.
+
+The pushed tag triggers the `Release` workflow, which:
+
+1. Checks the tag matches `version:` in `pubspec.yaml` (`tools/release.sh`
+   guarantees this, but the workflow re-checks in case a tag is pushed by
+   hand) and fails immediately if the four `ANDROID_*` signing secrets are not
+   configured — it never falls back to the debug key.
+2. Builds `flutter build apk --release --split-per-abi`, the universal APK and
+   the `.aab`, all signed, with `SUPABASE_URL`/`SUPABASE_ANON_KEY` defines when
+   those secrets are configured (empty defines build the same local-only
+   artifact described above).
+3. Copies the outputs to `dist/` under predictable names and writes a
+   checksum file:
+
+   - `medora-<version>-<build>-arm64-v8a.apk`
+   - `medora-<version>-<build>-armeabi-v7a.apk`
+   - `medora-<version>-<build>-x86_64.apk`
+   - `medora-<version>-<build>-universal.apk`
+   - `medora-<version>-<build>.aab`
+   - `SHA256SUMS.txt`
+
+4. Publishes a GitHub release on the tag (`gh release create`, title
+   `Medora <version> (<build>)`, auto-generated notes) with those files
+   attached.
+
+Download the assets from the repository's **Releases** page. The in-app
+update check reads the `releases/latest` API endpoint, which GitHub only
+populates from full releases — a pre-release (tag containing `-beta`/`-rc`) is
+never offered to users as an in-app update.
+
+If this repository is ever distributed through Google Play instead of GitHub
+Releases, build with `--dart-define=UPDATE_REPO=` (empty) so the Play build
+never checks GitHub for updates — Play does not allow apps to self-update.
+
 ## iOS
 
 Signing is handled by Xcode, not by this repo: open `ios/Runner.xcworkspace`,
