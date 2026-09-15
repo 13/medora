@@ -1667,6 +1667,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cloudTestFailed => 'Could not reach the project with these values';
 
   @override
+  String get cloudProbeBadKey => 'Reachable, but the key was rejected';
+
+  @override
+  String get cloudProbeTimeout => 'The project did not answer in time';
+
+  @override
+  String cloudProbeHttpError(int code) {
+    return 'The project answered HTTP $code';
+  }
+
+  @override
   String get cloudInvalidUrl =>
       'Enter the full project URL, starting with https://';
 

@@ -3154,6 +3154,24 @@ abstract class AppLocalizations {
   /// **'Could not reach the project with these values'**
   String get cloudTestFailed;
 
+  /// No description provided for @cloudProbeBadKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Reachable, but the key was rejected'**
+  String get cloudProbeBadKey;
+
+  /// No description provided for @cloudProbeTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The project did not answer in time'**
+  String get cloudProbeTimeout;
+
+  /// No description provided for @cloudProbeHttpError.
+  ///
+  /// In en, this message translates to:
+  /// **'The project answered HTTP {code}'**
+  String cloudProbeHttpError(int code);
+
   /// No description provided for @cloudInvalidUrl.
   ///
   /// In en, this message translates to:

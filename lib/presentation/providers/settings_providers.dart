@@ -3,6 +3,7 @@
 /// Persisted providers for theme mode, locale, and security preferences.
 library;
 
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -291,19 +292,59 @@ final cloudActivatorProvider =
 /// would leave the button spinning for minutes.
 const cloudProbeTimeout = Duration(seconds: 10);
 
+/// What a "Test connection" probe found.
+///
+/// The three failures are worth telling apart: a rejected key means the URL
+/// is right and the key is not, an HTTP error means the project is answering
+/// but not the way Supabase does, and silence means the host is wrong or the
+/// device is offline. One "could not reach it" for all three sent people
+/// re-typing the wrong half of their configuration.
+enum CloudProbeOutcome {
+  /// HTTP 200 - these credentials work.
+  ok,
+
+  /// 401 or 403: the project answered and refused the key.
+  badKey,
+
+  /// Any other status: something is there, but it is not this project's
+  /// auth endpoint.
+  httpError,
+
+  /// No answer within [cloudProbeTimeout].
+  timedOut,
+
+  /// The project could not be reached at all.
+  unreachable,
+}
+
+/// A probe result: the outcome and, when the project answered, its status.
+typedef CloudProbe = ({CloudProbeOutcome outcome, int? status});
+
 /// Asks a Supabase project whether it answers for these credentials.
 ///
-/// Throws (like any HTTP call) when it cannot reach the project at all, and
-/// times out after [cloudProbeTimeout]; the caller reads either as "no".
-Future<bool> probeCloudCredentials(
+/// Never throws: a transport failure is [CloudProbeOutcome.unreachable] and
+/// no answer within [cloudProbeTimeout] is [CloudProbeOutcome.timedOut].
+Future<CloudProbe> probeCloudCredentials(
   http.Client client,
   CloudCredentials credentials,
 ) async {
-  final response = await client
-      .get(
-        Uri.parse('${credentials.normalizedUrl}/auth/v1/settings'),
-        headers: {'apikey': credentials.normalizedKey},
-      )
-      .timeout(cloudProbeTimeout);
-  return response.statusCode == 200;
+  final http.Response response;
+  try {
+    response = await client
+        .get(
+          Uri.parse('${credentials.normalizedUrl}/auth/v1/settings'),
+          headers: {'apikey': credentials.normalizedKey},
+        )
+        .timeout(cloudProbeTimeout);
+  } on TimeoutException {
+    return (outcome: CloudProbeOutcome.timedOut, status: null);
+  } on Exception {
+    return (outcome: CloudProbeOutcome.unreachable, status: null);
+  }
+  final status = response.statusCode;
+  return switch (status) {
+    200 => (outcome: CloudProbeOutcome.ok, status: status),
+    401 || 403 => (outcome: CloudProbeOutcome.badKey, status: status),
+    _ => (outcome: CloudProbeOutcome.httpError, status: status),
+  };
 }

@@ -1680,6 +1680,18 @@ class AppLocalizationsIt extends AppLocalizations {
       'Impossibile raggiungere il progetto con questi valori';
 
   @override
+  String get cloudProbeBadKey =>
+      'Raggiungibile, ma la chiave è stata rifiutata';
+
+  @override
+  String get cloudProbeTimeout => 'Il progetto non ha risposto in tempo';
+
+  @override
+  String cloudProbeHttpError(int code) {
+    return 'Il progetto ha risposto con HTTP $code';
+  }
+
+  @override
   String get cloudInvalidUrl =>
       'Inserisci l\'URL completo del progetto, che inizia con https://';
 

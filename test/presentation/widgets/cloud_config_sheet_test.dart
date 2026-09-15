@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -209,7 +210,81 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.textContaining('Could not reach'), findsOneWidget);
+    expect(find.text('The project did not answer in time'), findsOneWidget);
+  });
+
+  testWidgets('a rejected key is told apart from an unreachable project', (
+    tester,
+  ) async {
+    for (final status in [401, 403]) {
+      await open(
+        tester,
+        extraOverrides: [
+          cloudHttpClientProvider.overrideWithValue(
+            MockClient((_) async => http.Response('nope', status)),
+          ),
+        ],
+      );
+
+      await tester.enterText(find.byKey(CloudConfigSheet.urlFieldKey), _url);
+      await tester.enterText(find.byKey(CloudConfigSheet.keyFieldKey), _key);
+      await tester.tap(find.text('Test connection'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Reachable, but the key was rejected'),
+        findsOneWidget,
+        reason: 'HTTP $status',
+      );
+      expect(
+        find.text('Could not reach the project with these values'),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+    }
+  });
+
+  testWidgets('any other status is reported with its code', (tester) async {
+    await open(
+      tester,
+      extraOverrides: [
+        cloudHttpClientProvider.overrideWithValue(
+          MockClient((_) async => http.Response('nope', 503)),
+        ),
+      ],
+    );
+
+    await tester.enterText(find.byKey(CloudConfigSheet.urlFieldKey), _url);
+    await tester.enterText(find.byKey(CloudConfigSheet.keyFieldKey), _key);
+    await tester.tap(find.text('Test connection'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The project answered HTTP 503'), findsOneWidget);
+  });
+
+  testWidgets('a host that refuses the connection is unreachable', (
+    tester,
+  ) async {
+    await open(
+      tester,
+      extraOverrides: [
+        cloudHttpClientProvider.overrideWithValue(
+          MockClient((_) async => throw const SocketException('no route')),
+        ),
+      ],
+    );
+
+    await tester.enterText(find.byKey(CloudConfigSheet.urlFieldKey), _url);
+    await tester.enterText(find.byKey(CloudConfigSheet.keyFieldKey), _key);
+    await tester.tap(find.text('Test connection'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Could not reach the project with these values'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a failing probe never shows the key', (tester) async {
@@ -227,7 +302,7 @@ void main() {
     await tester.tap(find.text('Test connection'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Could not reach'), findsOneWidget);
+    expect(find.text('Reachable, but the key was rejected'), findsOneWidget);
     // The failure never spells the key out, and the field keeps it obscured.
     final labels = tester
         .widgetList<Text>(find.byType(Text))
