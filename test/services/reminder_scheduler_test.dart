@@ -352,7 +352,11 @@ void main() {
       expect(port.cancelAllCalls, 0);
       expect(port.scheduled, isEmpty);
       expect(count, 0);
-      expect(scheduler.lastError, isNotNull);
+      expect(
+        scheduler.lastError,
+        'db down',
+        reason: 'the repository failure message must reach lastError intact',
+      );
     },
   );
 

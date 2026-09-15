@@ -81,15 +81,20 @@ class ReminderScheduler {
       now,
       now.add(horizon),
     );
+    String? loadError;
     final pending = result.when(
       success: (d) => d,
       failure: (msg) {
         debugPrint('Reminders: could not load pending doses: $msg');
+        loadError = msg;
         return null;
       },
     );
     if (pending == null) {
-      _lastError = StateError('could not load pending doses');
+      // Report what actually went wrong, not a synthesised placeholder — the
+      // repository's message is the only clue a caller surfacing "reminders
+      // may be out of date" has.
+      _lastError = loadError ?? 'could not load pending doses';
       return _scheduled?.length ?? 0;
     }
 
