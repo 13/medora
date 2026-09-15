@@ -285,14 +285,25 @@ final cloudActivatorProvider =
       };
     });
 
+/// How long the "Test connection" probe waits before calling it a failure.
+///
+/// A wrong host can leave the request hanging until the OS gives up, which
+/// would leave the button spinning for minutes.
+const cloudProbeTimeout = Duration(seconds: 10);
+
 /// Asks a Supabase project whether it answers for these credentials.
+///
+/// Throws (like any HTTP call) when it cannot reach the project at all, and
+/// times out after [cloudProbeTimeout]; the caller reads either as "no".
 Future<bool> probeCloudCredentials(
   http.Client client,
   CloudCredentials credentials,
 ) async {
-  final response = await client.get(
-    Uri.parse('${credentials.normalizedUrl}/auth/v1/settings'),
-    headers: {'apikey': credentials.normalizedKey},
-  );
+  final response = await client
+      .get(
+        Uri.parse('${credentials.normalizedUrl}/auth/v1/settings'),
+        headers: {'apikey': credentials.normalizedKey},
+      )
+      .timeout(cloudProbeTimeout);
   return response.statusCode == 200;
 }

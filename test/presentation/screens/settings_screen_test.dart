@@ -208,6 +208,9 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Not configured — tap Configure'), findsOneWidget);
+    // One entry point while there is nothing configured: the status tile's
+    // own button, not a second tile saying the same thing.
+    expect(find.text('Cloud configuration'), findsNothing);
 
     await tester.tap(find.text('Configure').last);
     await tester.pumpAndSettle();
@@ -243,5 +246,15 @@ void main() {
     );
     expect(find.text('Configured on this device'), findsOneWidget);
     expect(find.text('anon-key'), findsNothing);
+
+    // With a configuration in place the tile is how it is edited or cleared.
+    await tester.scrollUntilVisible(
+      find.text('Cloud configuration'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Cloud configuration'));
+    await tester.pumpAndSettle();
+    expect(find.text('Project URL'), findsOneWidget);
   });
 }

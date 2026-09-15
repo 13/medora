@@ -1630,6 +1630,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get configureCloud => 'Cloud-Sync einrichten';
 
   @override
+  String get cloudConfiguration => 'Cloud-Konfiguration';
+
+  @override
   String get configure => 'Einrichten';
 
   @override

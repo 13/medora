@@ -3046,6 +3046,12 @@ abstract class AppLocalizations {
   /// **'Configure cloud sync'**
   String get configureCloud;
 
+  /// No description provided for @cloudConfiguration.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud configuration'**
+  String get cloudConfiguration;
+
   /// No description provided for @configure.
   ///
   /// In en, this message translates to:

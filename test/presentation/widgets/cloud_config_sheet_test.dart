@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -182,6 +184,32 @@ void main() {
     expect(seen?.url.toString(), '$_url/auth/v1/settings');
     expect(seen?.headers['apikey'], _key);
     expect(find.textContaining('answered'), findsOneWidget);
+  });
+
+  testWidgets('a probe that never answers gives up instead of spinning', (
+    tester,
+  ) async {
+    await open(
+      tester,
+      extraOverrides: [
+        cloudHttpClientProvider.overrideWithValue(
+          MockClient((_) => Completer<http.Response>().future),
+        ),
+      ],
+    );
+
+    await tester.enterText(find.byKey(CloudConfigSheet.urlFieldKey), _url);
+    await tester.enterText(find.byKey(CloudConfigSheet.keyFieldKey), _key);
+    await tester.tap(find.text('Test connection'));
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    await tester.pump(cloudProbeTimeout + const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.textContaining('Could not reach'), findsOneWidget);
   });
 
   testWidgets('a failing probe never shows the key', (tester) async {

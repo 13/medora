@@ -547,6 +547,7 @@
   "backupNewerVersion": "Questo backup proviene da una versione più recente di Medora. Aggiorna l'app e riprova.",
   "backupCorrupt": "Impossibile leggere questo backup. Non è stato modificato nulla.",
   "configureCloud": "Configura la sincronizzazione cloud",
+  "cloudConfiguration": "Configurazione cloud",
   "configure": "Configura",
   "cloudConfiguredOnDevice": "Configurato su questo dispositivo",
   "cloudConfiguredFromBuild": "Configurato da questa build",

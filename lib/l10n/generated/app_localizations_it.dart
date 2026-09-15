@@ -1622,6 +1622,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get configureCloud => 'Configura la sincronizzazione cloud';
 
   @override
+  String get cloudConfiguration => 'Configurazione cloud';
+
+  @override
   String get configure => 'Configura';
 
   @override

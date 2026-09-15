@@ -1610,6 +1610,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get configureCloud => 'Configure cloud sync';
 
   @override
+  String get cloudConfiguration => 'Cloud configuration';
+
+  @override
   String get configure => 'Configure';
 
   @override

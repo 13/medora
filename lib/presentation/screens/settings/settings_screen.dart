@@ -301,14 +301,19 @@ class SettingsScreen extends ConsumerWidget {
                         child: Text(l10n.turnOn),
                       ),
               ),
-              ListTile(
-                leading: const Icon(Icons.tune),
-                title: Text(l10n.configureCloud),
-                subtitle: Text(l10n.cloudConfigIntro),
-                trailing: const Icon(Icons.chevron_right),
-                isThreeLine: true,
-                onTap: () => _configureCloud(context, ref, l10n),
-              ),
+              // One entry point at a time: while the tile above still offers
+              // "Configure", this one would say the same thing twice. Once
+              // there is a configuration, it becomes the way to edit or clear
+              // it.
+              if (cloudAvailable || storedCredentials != null)
+                ListTile(
+                  leading: const Icon(Icons.tune),
+                  title: Text(l10n.cloudConfiguration),
+                  subtitle: Text(l10n.cloudConfigIntro),
+                  trailing: const Icon(Icons.chevron_right),
+                  isThreeLine: true,
+                  onTap: () => _configureCloud(context, ref, l10n),
+                ),
               if (appMode == AppMode.cloud) ...[
                 ListTile(
                   leading: Icon(
