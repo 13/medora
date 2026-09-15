@@ -1,7 +1,7 @@
 # Medora — architecture overview
 
 Offline-first Flutter app: everything works with no network and no account, and
-Supabase sync is an optional layer on top. This file is the map; the full design
+Supabase sync is an optional layer on top. This file is the map; the design
 rationale lives in `docs/superpowers/specs/`.
 
 ## Layers
@@ -10,188 +10,131 @@ rationale lives in `docs/superpowers/specs/`.
 
 | Directory | Responsibility |
 |---|---|
-| `lib/core/` | Constants, theme + `MedoraColors` theme extension, `AppConfig` (dart-defines), `Result`, `Now` clock, platform capabilities. |
+| `lib/core/` | Constants, theme + `MedoraColors` extension, `AppConfig` (dart-defines), `Result`, the `Now` clock, platform capabilities. |
 | `lib/domain/` | Entities (`medication`, `treatment`, `prescription`, `dose_log`, `family`, `family_member`) and repository interfaces. No Flutter, no SQL. |
-| `lib/data/` | `local/` (sqflite database + migration ledger), `datasources/` (one local and one remote datasource per aggregate), `models/` (JSON/row mapping), `repositories/` (interface implementations). |
-| `lib/services/` | Cross-cutting behaviour: sync, reminders, dose maintenance, export, photo storage, AIFA cache, connectivity, biometrics. |
+| `lib/data/` | `local/` (sqflite + migration ledger), `datasources/` (one local and one remote per aggregate), `models/`, `repositories/`. |
+| `lib/services/` | Sync, reminders, dose maintenance, export, backup, photos, AIFA cache, connectivity, biometrics, updates. |
 | `lib/presentation/` | Riverpod providers, go_router routes, screens and widgets. |
-| `lib/l10n/` | `app_en.arb` / `app_de.arb` / `app_it.arb` plus generated delegates. |
+| `lib/l10n/` | `app_en.arb`/`app_de.arb`/`app_it.arb` plus generated delegates. |
+
+## Provider layout
+
+`providers.dart` is the wiring file — datasources, repositories, services,
+startup tasks — and it imports the small focused files, never the other way
+round, so the graph stays acyclic: `now_provider.dart` (`nowProvider`, the one
+clock seam, alone because nearly every screen needs it and nothing else),
+`settings_providers.dart` (prefs, theme/locale/colour, reminders, biometrics,
+grace period, `BuildInfo`, cloud credentials, the connection probe), and
+`app_config_`, `app_mode_`, `sync_`, `auth_`, `app_update_provider.dart`.
 
 ## App modes
 
-`AppMode { localOnly, cloud }` (`lib/presentation/providers/app_mode_provider.dart:10`)
-is persisted in `SharedPreferences`. Cloud mode also needs usable Supabase
-credentials. `SupabaseConfig.resolve` (`lib/core/supabase_config.dart`) picks
-them in one order — **Settings > dart-defines > none**: a complete
-`CloudCredentials` pair entered in Settings (`cloud.supabase_url`,
-`cloud.supabase_anon_key`) wins over `SUPABASE_URL`/`SUPABASE_ANON_KEY` baked
-into the build, and `configuredFrom` records which of the two won. Without
-either the remote datasources are never constructed and settings offers to
-configure cloud sync instead. `Supabase.initialize` runs once per process, so
-credentials saved while it is already running set `SupabaseConfig.pendingRestart`
-and the cloud tile asks for a restart. The anon key lives only in
-`SharedPreferences`: it is never logged and never shown again once saved.
-Repositories always write locally first, so local-only is not a degraded
-mode — it is the base case.
+`AppMode { localOnly, cloud }` is persisted in `SharedPreferences`; cloud mode
+also needs usable credentials. `SupabaseConfig.resolve` picks them **Settings >
+dart-defines > none** — a pair entered in Settings (`cloud.supabase_url`,
+`cloud.supabase_anon_key`) beats the `SUPABASE_URL`/`SUPABASE_ANON_KEY` baked
+into the build — and without either the remote datasources are never built.
+`Supabase.initialize` runs once per process, so credentials saved while it is
+already running set `pendingRestart`; the anon key lives only in
+`SharedPreferences`, is never logged and never shown again. Repositories always
+write locally first — local-only is the base case, not a degraded mode — and
+`debugSetConfiguredForTest` flips `isConfigured` without creating a client, so
+widget tests can render a configured build.
 
-## Local database and migrations
+## Local data: schema, backup and restore
 
-`lib/data/local/migrations.dart` holds an append-only ledger: a `Migration`
-carries a version number and a function. `kSchemaVersion` is **13**
-(`migrations.dart:17`) and must equal the last entry; existing migrations are never
-edited. The ledger holds v11 tombstone columns, v12 photos stored as bare
-filenames, and v13 dose timestamps normalised to naive local ISO strings so string
-range comparisons line up with local day boundaries.
+`lib/data/local/migrations.dart` is an append-only ledger of `Migration`
+(version + function); `kSchemaVersion` is **13** and must equal the last entry,
+and existing migrations are never edited: v11 added tombstone columns, v12 bare
+photo filenames, v13 naive-local dose timestamps so string ranges line up with
+local day boundaries. `BackupService` writes the database and photo folder into one versioned JSON
+envelope (`format: "medora-backup"`, `version`, `schemaVersion`, `createdAt`,
+`appVersion`, `tables`, base64 `photos`); rows go out exactly as stored, minus
+`sync_status`. `inspect` validates it first, so a backup from a newer build is
+refused rather than half-applied, and `restore` applies the file in one
+transaction in foreign-key order: one that cannot be applied in full leaves the
+device as it was. `replace` clears the tables first; `merge`
+upserts by id, and the backup must be **strictly** newer by `updated_at` to win.
+Restored rows are stamped `synced`, or `pending_update` under `markPending`
+(cloud) — except `family_members`, since RLS only accepts the user's own row.
+Settings covers the run with an un-dismissable "Restoring…" dialog, then resets
+the reminders and invalidates the caches. The whole envelope is held in memory,
+so the export unticks photos above `largePhotoBytes` (150 MB).
 
-## Backup and restore
+## Reminders, doses and expiry
 
-`BackupService` (`lib/services/backup_service.dart`) writes the whole local
-database and the photo folder into one versioned JSON envelope:
-`{format: "medora-backup", version: 1, schemaVersion: kSchemaVersion, createdAt,
-appVersion, tables: {...}, photos: {<filename>: <base64>}}`. Rows are exported
-exactly as stored - naive-local ISO timestamps, tombstones included - minus
-`sync_status`, which is local bookkeeping. Settings -> Data shares the file
-through the same share sheet as the CSV/PDF export, and picks one back with
-`file_picker`.
+`ReminderScheduler` is the single owner of "which notifications exist": each
+`reconcile` loads the pending doses inside a **7-day** horizon, earliest first,
+capped at **60** platform notifications — **2** per dose, so **30** doses — and
+after the first run applies only the delta against the previous snapshot of id +
+scheduled time, so a dose whose time moved is re-scheduled.
+`DoseMaintenanceService.markOverdueAsMissed` flips pending doses older than a
+grace period to *missed* (**120 min** by default, from 30/60/120/240).
+Expiry is a **date**, so comparisons round to whole calendar days through
+`calendarDaysBetween`: a medication stamped "expires today" is good for all of
+today, `expiredAt(now)` is true only once `daysUntilExpiry` goes negative — the
+rule `ExpiryBadge` and the Home countdown already used — and `isExpiringSoon` is
+the 30-day window before it.
 
-`inspect` validates the envelope before anything is touched and throws
-`BackupException(BackupErrorKind)`: `notABackup`, `newerFormat` or
-`newerSchema` (a backup from a newer build is refused, never half-applied),
-`corrupt`, `io`. `restore` applies the file inside a single transaction, in
-foreign-key order (families, family_members, medications, treatments,
-prescriptions, dose_logs), so a file that cannot be applied in full leaves the
-device exactly as it was. `RestoreMode.replace` clears the tables first;
-`RestoreMode.merge` upserts by id and keeps whichever copy has the newer
-`updated_at` - the backup has to be **strictly** newer to win, so a tie or a
-missing timestamp keeps the local row, and `families`/`family_members` (which
-carry no `updated_at`) are never overwritten: an id that already exists on the
-device keeps whatever the device holds. Restored rows are stamped `synced`, or
-`pending_update` when the caller passes `markPending` (cloud mode) so the next
-cycle uploads them - except `family_members`, which stays `synced` whatever the
-caller asks: RLS only ever accepts the signed-in user's own member row, and the
-one row that does belong to them is picked up by the
-`LocalUploadMarker.markAllForUpload` that follows the restore.
-Photos are written after the transaction commits and are never deleted.
+## In-app updates (Android)
 
-Settings drives the rest: after a restore it resets and reconciles the
-reminders, invalidates the dose/medication/treatment caches and, in cloud mode,
-calls `LocalUploadMarker.markAllForUpload` to clear the pull cursors. The
-exported file is written into the cache and deleted again once the share sheet
-returns - it is plain, unencrypted JSON and must not linger there.
-
-**Size limits.** Both halves hold the whole envelope in memory: the export
-encodes it in one `jsonEncode`, and a restore decodes the file in one
-`jsonDecode`. The rows are small; the photos are not, and base64 grows them by
-about a third. So the export asks first (`BackupPhotosDialog`, fed by
-`BackupService.estimatePhotoBytes`/`countPhotos`) and unticks "include photos"
-by default above `BackupService.largePhotoBytes` (**150 MB**). A restore has no
-such lever - it takes the file it is given - so a backup made without photos is
-also the one that will read back on a small device.
-
-## Reminders
-
-`ReminderScheduler` (`lib/services/reminder_scheduler.dart`) is the single owner of
-"which notifications exist". Each `reconcile` loads the pending doses inside a **7-day**
-horizon (`horizon`, line 25), earliest first, capped at **60** pending platform
-notifications (`maxNotifications`, line 26) — **2** per dose (`notificationsPerDose`,
-line 27), so **30** doses (line 96). The first run cancels everything and schedules the
-desired set; later runs diff against the previous run's snapshot of id + scheduled time
-and only cancel/schedule the delta, so a dose whose time moved (say after a cloud pull)
-is re-scheduled. With reminders disabled it cancels everything and schedules nothing.
-`ReminderService` is the platform adapter (`flutter_local_notifications`) and routes a
-notification tap through the router, not a stored `BuildContext`.
-
-## Dose maintenance
-
-`DoseMaintenanceService.markOverdueAsMissed` (`lib/services/dose_maintenance_service.dart:17`)
-flips pending doses older than a grace period to *missed* so history and stats
-stay honest. The grace period is a setting — **120 minutes (2 h)** by default
-(`lib/presentation/providers/settings_providers.dart:170`), chosen from 30/60/120/240
-minutes (`settings_providers.dart:159`).
-
-## Expiry
-
-Expiry is a **date**, so every comparison rounds to whole calendar days
-through `calendarDaysBetween` (`lib/core/clock.dart`). A medication stamped
-"expires today" is good for the whole of today: `Medication.expiredAt(now)` is
-true only once `daysUntilExpiry` goes negative, which is the same rule the
-`ExpiryBadge` (`lib/presentation/widgets/shared_widgets.dart`) and the Home
-countdown already used. `isExpiringSoon` is the 30-day window before that.
+`AppUpdateService` is pure Dart over `package:http`: read `/releases/latest` for
+`AppConfig.updateRepo`, compare the tag with the running build, pick the APK for
+the device's ABI (else universal), stream it into `<support dir>/updates/` while
+hashing, verify size and `SHA256SUMS.txt`, hand it over — any failure deletes
+the partial file. `AppUpdateNotifier` owns the states (`Unknown →
+Checking → Available → Downloading → Ready`) and the gates: Android, a configured
+repo, a connection, a 24 h throttle. **Cancelling:** `download` takes
+an `isCancelled` seam asked once per chunk; `cancelDownload()` sets it and puts
+the state back to `UpdateAvailable` while the service unwinds the stream and
+deletes the file. **Installing:** Android never reports back, so `install()`
+writes the tag first (`update.installing_tag`) and the next `build()`/`check()`
+settles it — running this release means it worked (`clearDownloads`, pref
+cleared), otherwise the APK still on disk becomes `UpdateReady` and Install,
+explained beforehand because Android asks to allow installs, is offered again.
 
 ## Sync
 
-`SyncService` (`lib/services/sync_service.dart`) runs a cycle as push, then pull:
-
-- **Push** uploads rows whose `sync_status` is pending; a row that throws becomes
-  a `SyncFailure` and the batch continues. A row that keeps failing is backed
-  off exponentially — `SyncFailureStore` (`lib/services/sync_failure_store.dart`)
-  maps `table/id` to a failure count and the last attempt, and the push skips a
-  row until `min(2^count minutes, 6 h)` after that attempt (counted in
-  `SyncReport.skippedBackoff`, not a failure). A successful push clears the
-  entry; `SyncService.discardFailedRow(table, id)` stamps the row `synced` so
-  the next pull replaces it with the server copy, and the settings failures
-  dialog offers exactly that per row.
-- **Pull** is a delta per table: it asks the remote only for rows newer than the
-  stored cursor, applies tombstones (`deleted_at`) as hard local deletes, and
-  advances the cursor to the newest `updated_at` it saw minus **1 second** of
-  overlap (`sync_service.dart:469`), so a row written in the same second is not
-  missed. The cursor advances only when the whole table applied cleanly.
-- **Conflicts** resolve **last write wins by `updated_at`**, enforced on both
-  sides. Before upserting a `pending_update` row the push reads the remote
-  row's `updated_at` (`getUpdatedAt` on each remote datasource) and, if the
-  remote copy is strictly newer, skips the push and leaves the row pending so
-  the pull phase overwrites it — counted in `SyncReport.skippedStale`, not as a
-  failure. `pending_create` rows and `pending_delete` tombstones push
-  unconditionally, and `forcePush` skips the comparison. On the pull side
-  `_localPendingIsNewer` keeps a locally pending row that is at least as new as
-  the remote copy, and a local tombstone waiting to be pushed always beats a
-  live remote row — a pull must never resurrect a deleted row.
-- **Reporting**: each cycle fills a `SyncReport` (`lib/services/sync_report.dart`)
-  — pushed/pulled/deleted counters, per-row `SyncFailure`s, and a `fatal` field
-  for an aborted cycle. Settings renders the last report.
-- **Force push** uploads every local row regardless of status; **force pull** wipes
-  local rows and re-downloads, and a table that cannot be fetched after the wipe
-  aborts the cycle instead of reporting a partial success.
-- **Families** are pulled separately. Joining goes through the `join_family`
-  security-definer RPC (`lib/data/datasources/family_remote_datasource.dart:37`)
-  so a non-owner can join without a SELECT policy on `families`.
-- Auto-sync fires once, **2 s** after connectivity returns (`sync_service.dart:126`).
-- A plain `syncAll()` asked for **while a cycle is running** is queued rather
-  than dropped: the running cycle re-runs once when it finishes, so a change
-  made mid-cycle does not wait for the next trigger. Repeated requests collapse
-  into a single re-run, and `forcePush`/`forcePull` are never queued.
-- Server-side schema, RLS policies and the tombstone cascade triggers live in
-  `supabase/migrations/`.
+`SyncService` runs a cycle as push, then pull. **Push** uploads pending rows; one
+that throws becomes a `SyncFailure` and the batch continues, and a row that keeps
+failing is skipped until `min(2^count minutes, 6 h)` after its last attempt.
+**Pull** is a delta per table: only rows newer than the stored cursor, tombstones
+(`deleted_at`) applied as hard local deletes, and the cursor advanced to the
+newest `updated_at` seen minus **1 second** of overlap, only when the whole table
+applied cleanly. **Conflicts** resolve **last write wins by
+`updated_at`** on both sides: the push reads the remote value first and leaves a
+row it would clobber for the pull to overwrite, while the pull keeps a locally
+pending row at least as new as the remote copy and never resurrects a row a
+local tombstone has deleted. `forcePush` skips that comparison; **force pull**
+wipes local rows and re-downloads, aborting if a table cannot be fetched
+afterwards. Families are pulled separately, through the `join_family`
+security-definer RPC. Each cycle fills a `SyncReport` that Settings renders,
+offering `discardFailedRow` per failed row; auto-sync fires **2 s** after
+connectivity returns, and a mid-cycle `syncAll()` is queued. Schema, RLS and
+triggers live in `supabase/migrations/`.
 
 ## Theme and localization rules
 
 Colors come from the Material 3 scheme plus the `MedoraColors` theme extension
-(`lib/core/theme_extensions.dart`), reached via `context.medora`. Two guard tests
-keep this from eroding:
-
-- `test/presentation/theme_sweep_test.dart` fails on any `Colors.*` (except
-  `transparent`/`black`) or legacy `AppTheme.*Color` reference under
-  `lib/presentation`.
-- `test/presentation/l10n_sweep_test.dart` fails on a capitalised literal
-  string in a `Text`/`label`/`title`/`tooltip` position under
-  `lib/presentation` or `lib/services` unless the line uses `l10n.` or carries
-  `// l10n-exempt`.
-
-`test/core/theme_extensions_test.dart` asserts every semantic foreground/background
-pair clears a 3.0 contrast ratio in both themes, and `test/core/theme_test.dart`
-that the bundled Inter family is used (no runtime font download). Every
-user-facing string exists in all three ARBs; the `fvm flutter gen-l10n` output
-is committed and CI fails if it drifts.
+(`lib/core/theme_extensions.dart`), reached via `context.medora`. Three sweeps
+keep this from eroding: `theme_sweep_test.dart` fails on any `Colors.*` (except
+`transparent`/`black`) or legacy `AppTheme.*Color` under `lib/presentation`;
+`l10n_sweep_test.dart` on a capitalised literal in a `Text`/`label`/`title`/
+`tooltip` position under `lib/presentation` or `lib/services` without `l10n.` or
+`// l10n-exempt`; `clock_sweep_test.dart` on `DateTime.now()` outside
+`lib/core/clock.dart`. Every semantic colour pair clears 3.0 contrast in both
+themes, every string exists in all three ARBs, and the committed `gen-l10n`
+output must not drift from the ARBs.
 
 ## Testing layout
 
-| Path | What lives there |
-|---|---|
-| `test/core`, `test/domain`, `test/data`, `test/services` | Unit tests, including an in-memory sqflite database (`test/helpers/test_database.dart`) and fake remotes. |
-| `test/presentation` | Widget tests for screens, providers and the router, plus the theme and l10n sweeps. |
-| `test/goldens` | Home, doses (including the two-due "Take all due" bar) and add-medication screens in light and dark. Regenerate deliberately with `fvm flutter test --update-goldens test/goldens/`. |
-| `test/integration` | `sync_convergence_test.dart` — two simulated devices against a real Supabase; skipped without `SUPABASE_URL`/`SUPABASE_ANON_KEY` defines. |
-
-CI (`.github/workflows/ci.yml`) runs the gen-l10n drift check, `dart format`,
-`flutter analyze --fatal-infos` and the tests, then builds web and an Android APK;
-the integration job is manual or label-triggered.
+`test/core|domain|data|services` hold unit tests over an in-memory sqflite
+database (`test/helpers/test_database.dart`) and fake remotes;
+`test/presentation` the widget tests and the three sweeps; `test/goldens` Home,
+add-medication and doses (twice: an ordinary day and the two-due "Take all due"
+bar) in light and dark, regenerated deliberately with `fvm flutter test
+--update-goldens test/goldens/`; `test/integration` the two-device convergence
+test, skipped without the `SUPABASE_URL`/`SUPABASE_ANON_KEY` defines. CI
+(`.github/workflows/ci.yml`) runs the gen-l10n drift check, `dart format`,
+`flutter analyze --fatal-infos` and the tests, then builds web and an Android
+APK; the integration job is manual or label-triggered.
