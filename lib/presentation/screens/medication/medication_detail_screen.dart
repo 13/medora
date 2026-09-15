@@ -1,8 +1,6 @@
 /// Medora - Medication Detail Screen
 library;
 
-import 'dart:async';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +19,31 @@ class MedicationDetailScreen extends ConsumerWidget {
   const MedicationDetailScreen({super.key, required this.medicationId});
 
   final String medicationId;
+
+  /// Awaits a medication mutation and only leaves the screen once it landed.
+  /// A failure is reported in a SnackBar and the screen stays put, so the user
+  /// is not returned to a list that still shows the medication unchanged.
+  static Future<void> _runAndPop(
+    BuildContext context,
+    ScaffoldMessengerState messenger,
+    AppLocalizations l10n,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.errorWithDetails(_message(e)))),
+      );
+      return;
+    }
+    if (context.mounted) context.pop();
+  }
+
+  /// `Exception('db down')` stringifies as "Exception: db down"; the
+  /// repository message alone reads better in the SnackBar.
+  static String _message(Object e) =>
+      e is Exception ? e.toString().replaceFirst('Exception: ', '') : '$e';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,23 +90,22 @@ class MedicationDetailScreen extends ConsumerWidget {
                     ),
                   ],
                   onSelected: (value) async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    final notifier = ref.read(medicationListProvider.notifier);
                     if (value == 'archive') {
-                      // Fire and forget: pop immediately, the list provider
-                      // refreshes itself when the write lands.
-                      unawaited(
-                        ref
-                            .read(medicationListProvider.notifier)
-                            .archiveMedication(med.id),
+                      await _runAndPop(
+                        context,
+                        messenger,
+                        l10n,
+                        () => notifier.archiveMedication(med.id),
                       );
-                      if (context.mounted) context.pop();
                     } else if (value == 'unarchive') {
-                      // Fire and forget: pop immediately (see above).
-                      unawaited(
-                        ref
-                            .read(medicationListProvider.notifier)
-                            .unarchiveMedication(med.id),
+                      await _runAndPop(
+                        context,
+                        messenger,
+                        l10n,
+                        () => notifier.unarchiveMedication(med.id),
                       );
-                      if (context.mounted) context.pop();
                     } else if (value == 'delete') {
                       final confirm = await showDialog<bool>(
                         context: context,
@@ -105,15 +127,13 @@ class MedicationDetailScreen extends ConsumerWidget {
                           ],
                         ),
                       );
-                      if (confirm == true && context.mounted) {
-                        // Fire and forget: pop immediately (see above).
-                        unawaited(
-                          ref
-                              .read(medicationListProvider.notifier)
-                              .deleteMedication(med.id),
-                        );
-                        context.pop();
-                      }
+                      if (confirm != true || !context.mounted) return;
+                      await _runAndPop(
+                        context,
+                        messenger,
+                        l10n,
+                        () => notifier.deleteMedication(med.id),
+                      );
                     }
                   },
                 ),
