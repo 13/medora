@@ -81,6 +81,8 @@ List<CodeCandidate> findCodeCandidates(
   int limit = 20,
 }) {
   final found = <CodeCandidate>[];
+  // Where each accepted EAN was read: its OCR line boxes and barcode boxes.
+  final eanAreas = <String, List<Rect>>{};
   final labelPartners = _labelPartners(lines);
 
   for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -118,6 +120,9 @@ List<CodeCandidate> findCodeCandidates(
     for (final ean in _findEans(text)) {
       claimed.add(ean.span);
       add(ean.code, ean.kind, ean.span);
+      if (ean.kind == CodeKind.ean) {
+        (eanAreas[ean.code] ??= []).add(line.box);
+      }
     }
 
     // Supplement code: the first number after the label on a labelled line,
@@ -167,6 +172,9 @@ List<CodeCandidate> findCodeCandidates(
 
   // Merge barcode-decoded candidates: their box wins over the OCR one.
   for (final barcode in barcodes) {
+    if (barcode.kind == CodeKind.ean) {
+      (eanAreas[barcode.code] ??= []).add(barcode.box);
+    }
     final index = found.indexWhere(
       (c) => c.kind == barcode.kind && c.code == barcode.code,
     );
@@ -191,10 +199,20 @@ List<CodeCandidate> findCodeCandidates(
   final eanCodes = codesOf(CodeKind.ean);
   final aicCodes = codesOf(CodeKind.aic)..removeAll(supplementCodes);
 
+  // A digit run inside an EAN, read where that EAN was read, is a piece of
+  // the EAN's printed digits (e.g. `057737` of `8 "057737"141836`).
+  bool isEanPiece(CodeCandidate c) =>
+      (c.kind == CodeKind.aic || c.kind == CodeKind.other) &&
+      _allDigits.hasMatch(c.code) &&
+      eanAreas.entries.any(
+        (e) => e.key.contains(c.code) && e.value.any(c.box.overlaps),
+      );
+
   final seen = <String>{};
   final kept = <CodeCandidate>[];
   for (final c in found) {
     if (c.kind == CodeKind.aic && supplementCodes.contains(c.code)) continue;
+    if (isEanPiece(c)) continue;
     if (c.kind == CodeKind.other &&
         (supplementCodes.contains(c.code) ||
             eanCodes.contains(c.code) ||
@@ -281,9 +299,16 @@ final _quantitySuffix = RegExp(
 /// A line holding nothing but a possible labelled code.
 final _onlyDigitRun = RegExp(r'^[0-9]{3,9}$');
 
-/// A run of digit groups separated by single spaces, with no letter or digit
-/// directly before it.
-final _digitGroups = RegExp(r'(?<![A-Za-z0-9])[0-9]+(?: [0-9]+)*');
+/// A run of digit groups, with no letter or digit directly before it,
+/// separated by a single space or by up to two quotes, apostrophes,
+/// backticks, commas or dots with an optional space on either side (OCR of
+/// `8 057737 141836` can read `8 "057737"141836`).
+final _digitGroups = RegExp(
+  '(?<![A-Za-z0-9])[0-9]+(?:(?: |\\s?$_groupPunctuation{1,2}\\s?)[0-9]+)*',
+);
+const _groupPunctuation = '["\'`,.\u2018\u2019\u201C\u201D]';
+final _nonDigits = RegExp(r'[^0-9]+');
+final _allDigits = RegExp(r'^[0-9]+$');
 
 /// Group lengths an EAN-13 / EAN-8 is printed in.
 /// `1,12` and `12,1` are how on-device OCR merges a printed `8 057737 141836`.
@@ -303,17 +328,20 @@ class _Span {
 /// Finds EAN-shaped digit runs (see [_eanShapes]): a valid checksum yields
 /// an EAN, a failed one an "other" candidate with the joined digits. A single
 /// 8-digit run with a failed checksum is left to the later rules (it may be
-/// a supplement or AIC code).
+/// a supplement or AIC code), and so are groups joined by punctuation (see
+/// [_digitGroups]) unless they form a valid EAN.
 List<({String code, CodeKind kind, _Span span})> _findEans(String text) {
   final result = <({String code, CodeKind kind, _Span span})>[];
   for (final run in _digitGroups.allMatches(text)) {
-    final groups = run[0]!.split(' ');
+    final runText = run[0]!;
+    final groups = runText.split(_nonDigits);
     if (!_eanShapes.contains(groups.map((g) => g.length).join(','))) continue;
     final code = groups.join();
     final span = _Span(run.start, run.end);
+    final punctuated = runText.contains(RegExp(_groupPunctuation));
     if (isValidEan(code)) {
       result.add((code: code, kind: CodeKind.ean, span: span));
-    } else if (groups.length > 1 || code.length == 13) {
+    } else if (!punctuated && (groups.length > 1 || code.length == 13)) {
       result.add((code: code, kind: CodeKind.other, span: span));
     }
   }

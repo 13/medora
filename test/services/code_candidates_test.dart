@@ -548,4 +548,67 @@ void main() {
       expect(describe(result), 'other:10T018');
     });
   });
+
+  group('findCodeCandidates: EAN digit groups with punctuation', () {
+    String describe(List<CodeCandidate> list) =>
+        list.map((c) => '${c.kind.name}:${c.code}').join(' ');
+
+    test('8 "057737"141836 is one EAN and nothing else', () {
+      final result = findCodeCandidates([_line('8 "057737"141836', 0)]);
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('quotes, apostrophes, backticks, commas and dots join groups', () {
+      for (final text in [
+        "8 '057737'141836",
+        '8 `057737` 141836',
+        '8,057737,141836',
+        '8.057737.141836',
+        '8 \u201C057737\u201D141836',
+        '"8057737"141836',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(describe(result), 'ean:8057737141836', reason: text);
+      }
+    });
+
+    test('punctuation-joined groups with a bad checksum are no EAN', () {
+      final result = findCodeCandidates([_line('8 "057737"141837', 0)]);
+      expect(_ofKind(result, CodeKind.ean), isEmpty);
+      expect(result.map((c) => c.code), isNot(contains('8057737141837')));
+    });
+
+    test('decimals and dates are not joined', () {
+      for (final text in ['1.500', '12,5 mg', '03.2027']) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.ean), isEmpty, reason: text);
+      }
+    });
+
+    test('an EAN sub-run overlapping the EAN line is dropped', () {
+      final result = findCodeCandidates([
+        const OcrLine('8 057737141836', Rect.fromLTWH(831, 2008, 1201, 183)),
+        const OcrLine('057737', Rect.fromLTWH(1000, 2050, 300, 80)),
+        const OcrLine('141836 x', Rect.fromLTWH(1400, 2050, 300, 80)),
+      ]);
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('an EAN sub-run overlapping the barcode box is dropped', () {
+      const barcodeBox = Rect.fromLTWH(841, 1842, 1116, 252);
+      final result = findCodeCandidates(
+        [const OcrLine('141836', Rect.fromLTWH(1500, 2000, 300, 80))],
+        barcodes: [CodeCandidate.eanFromBarcode('8057737141836', barcodeBox)!],
+      );
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('an EAN sub-run elsewhere on the pack is kept', () {
+      final result = findCodeCandidates([
+        const OcrLine('8 057737141836', Rect.fromLTWH(831, 2008, 1201, 183)),
+        const OcrLine('Lotto 057737', Rect.fromLTWH(0, 100, 300, 80)),
+      ]);
+      expect(describe(result), 'ean:8057737141836 other:057737');
+    });
+  });
 }
