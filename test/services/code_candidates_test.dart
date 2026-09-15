@@ -603,6 +603,28 @@ void main() {
       expect(result.single.alternatives, ['134567891']);
     });
 
+    test('only the code after an AIC label is repaired and labelled', () {
+      // Review M4: the second token was repaired to a labelled 6-digit AIC.
+      final result = findCodeCandidates([_line('AIC 012345678 S12345', 0)]);
+      expect(_ofKind(result, CodeKind.aic).map((c) => c.code), ['012345678']);
+      expect(result.map((c) => c.code), isNot(contains('512345')));
+      expect(
+        describe(findCodeCandidates([_line('AIC 012345678 123456', 0)])),
+        isNot(contains('aic:123456')),
+      );
+    });
+
+    test('a punctuated 4+4 digit price is not an EAN-8', () {
+      // Review M4: 12345670 has a valid EAN-8 checksum.
+      final result = findCodeCandidates([_line('Prezzo 1234.5670', 0)]);
+      expect(_ofKind(result, CodeKind.ean), isEmpty);
+      expect(result.map((c) => c.code), isNot(contains('12345670')));
+      expect(
+        describe(findCodeCandidates([_line('1234 5670', 0)])),
+        'ean:12345670',
+      );
+    });
+
     test('lookalikes without a label are not repaired', () {
       final result = findCodeCandidates([_line('Lotto 10T018', 0)]);
       expect(describe(result), 'other:10T018');
