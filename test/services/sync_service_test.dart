@@ -1290,6 +1290,23 @@ void main() {
       },
     );
 
+    test('a queued re-run is dropped when the device goes offline', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate);
+
+      final first = h.service.syncAll();
+      await pumpEventQueue();
+      expect(await h.service.syncAll(), isNull); // queued
+      h.online = false;
+
+      gate.complete();
+      await first;
+
+      expect(h.meds.table.sinceCalls.length, 1);
+      expect(h.service.currentState, isNot(SyncState.syncing));
+    });
+
     test('force operations asked for during a cycle are not queued', () async {
       final h = Harness();
       final gate = Completer<void>();

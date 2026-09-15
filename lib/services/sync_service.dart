@@ -186,8 +186,8 @@ class SyncService {
   /// unsynced until the next trigger. Force operations are explicit user
   /// actions and are never queued.
   ///
-  /// Returns the report of *this* call's own cycle; a queued re-run is what
-  /// [lastReport] ends up holding.
+  /// Returns the report of *this* call's own first cycle; a queued re-run is
+  /// what [lastReport] ends up holding.
   Future<SyncReport?> _run(
     String label,
     Future<void> Function(SyncReport) body, {
@@ -214,17 +214,24 @@ class SyncService {
     }
 
     _rerunRequested = false;
-    _setState(SyncState.syncing);
-    final report = SyncReport(startedAt: _now());
-    try {
+    SyncReport? first;
+    do {
+      _rerunRequested = false;
+      _setState(SyncState.syncing);
+      final report = SyncReport(startedAt: _now());
+      first ??= report;
       await _cycle(label, report, body);
-      return report;
-    } finally {
-      if (_rerunRequested) {
+      if (!queueable || !_rerunRequested) break;
+      // A queued re-run answers to the same guards as a fresh request: if
+      // the device went offline or the user signed out while the cycle ran,
+      // it is dropped rather than run against nothing.
+      if (!_isOnline() || _currentUserId() == null) {
+        debugPrint('Sync: queued $label dropped (offline or signed out)');
         _rerunRequested = false;
-        await syncAll();
       }
-    }
+    } while (_rerunRequested);
+    _rerunRequested = false;
+    return first;
   }
 
   Future<void> _cycle(
