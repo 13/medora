@@ -171,12 +171,19 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
 
   bool _disposed = false;
 
-  /// Set by [cancelDownload] and read by the service once per chunk.
-  bool _cancelRequested = false;
+  /// Which download owns the state.
+  ///
+  /// [download] takes the next number for itself and [cancelDownload] burns
+  /// the current one, so "was I cancelled?" and "am I still the download the
+  /// user is waiting for?" are the same question - and a download started
+  /// while an older one is still unwinding cannot be answered by that older
+  /// one. Nothing resets it: a generation is spent once and never returns.
+  int _downloadGeneration = 0;
 
-  /// The state a cancelled download goes back to: [UpdateDownloading] does
-  /// not carry the asset, and offering Download again needs it.
-  UpdateAvailable? _cancelTarget;
+  /// The release the current generation is downloading, so cancelling can put
+  /// it back on offer - [UpdateDownloading] does not carry the asset. Set by
+  /// [download] beside the generation it belongs to.
+  UpdateAvailable? _downloadTarget;
 
   @override
   Future<UpdateStatus> build() async {
@@ -279,11 +286,16 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   }
 
   /// Downloads and verifies the available APK.
+  ///
+  /// Every step reports only while this call is still the current
+  /// generation: a cancelled download, or one a newer download replaced,
+  /// unwinds in silence rather than writing progress over what took its
+  /// place.
   Future<void> download() async {
     final status = state.value;
     if (status is! UpdateAvailable) return;
-    _cancelRequested = false;
-    _cancelTarget = status;
+    final gen = ++_downloadGeneration;
+    _downloadTarget = status;
     _emit(UpdateDownloading(status.release, 0));
     try {
       final dir = await ref.read(updateDownloadDirProvider.future);
@@ -293,22 +305,28 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
             status.release,
             status.asset,
             dir,
-            onProgress: (progress) =>
-                _emit(UpdateDownloading(status.release, progress)),
-            isCancelled: () => _cancelRequested,
+            onProgress: (progress) {
+              if (gen != _downloadGeneration) return;
+              _emit(UpdateDownloading(status.release, progress));
+            },
+            isCancelled: () => gen != _downloadGeneration,
           );
-      // A cancel that arrived while the last chunks were being verified has
-      // already put the state back; the file it beat is cleared by the next
-      // download, which empties `updates/` before it writes.
-      if (_cancelRequested) return;
+      if (gen != _downloadGeneration) {
+        // A cancel that arrived while the last chunks were being verified:
+        // the APK finished anyway and nobody asked for it. A download that
+        // took over instead clears `updates/` itself before it writes, so
+        // only tidy up when none is running.
+        if (state.value is! UpdateDownloading) {
+          AppUpdateService.clearDownloads(dir);
+        }
+        return;
+      }
       _emit(UpdateReady(status.release, file));
     } on UpdateException catch (error) {
       // Cancelling is not a failure and [cancelDownload] already said so.
       if (error.kind == UpdateErrorKind.cancelled) return;
+      if (gen != _downloadGeneration) return;
       _emit(UpdateFailed(error));
-    } finally {
-      _cancelRequested = false;
-      _cancelTarget = null;
     }
   }
 
@@ -316,12 +334,13 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   ///
   /// The state goes back to [UpdateAvailable] at once - the user asked for
   /// the progress bar to go away - while the service unwinds the stream and
-  /// removes the partial file on its own schedule.
+  /// removes the partial file on its own schedule. Burning the generation is
+  /// what tells that download it no longer owns anything.
   void cancelDownload() {
     final status = state.value;
     if (status is! UpdateDownloading) return;
-    _cancelRequested = true;
-    final target = _cancelTarget;
+    _downloadGeneration++;
+    final target = _downloadTarget;
     if (target != null) _emit(target);
   }
 

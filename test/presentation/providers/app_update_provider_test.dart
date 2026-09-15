@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,63 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/fake_update_service.dart';
+
+/// A download that stalls until the test lets it through, one [Completer] per
+/// call, and that reports a chunk *after* it learns it was cancelled - which
+/// is exactly the moment a stale download could write over a live one.
+class _StalledUpdateService extends FakeUpdateService {
+  _StalledUpdateService({required super.release});
+
+  final gates = <Completer<void>>[];
+
+  /// The progress the nth call reports before and after its gate.
+  static double markOf(int call) => 0.1 * call;
+
+  @override
+  Future<File> download(
+    ReleaseInfo release,
+    ReleaseAsset asset,
+    Directory dir, {
+    void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final gate = Completer<void>();
+    gates.add(gate);
+    final mark = markOf(gates.length);
+    onProgress?.call(mark);
+    await gate.future;
+    if (isCancelled?.call() ?? false) {
+      onProgress?.call(mark + 0.5);
+      throw const UpdateException(UpdateErrorKind.cancelled, 'cancelled');
+    }
+    onProgress?.call(1);
+    return File(p.join(dir.path, asset.name))..writeAsBytesSync(const [1, 2]);
+  }
+}
+
+/// A download that never looks at [isCancelled] and always finishes, leaving
+/// the APK in `updates/` the way a cancel on the very last chunk would.
+class _UncancellableUpdateService extends FakeUpdateService {
+  _UncancellableUpdateService({required super.release});
+
+  final gate = Completer<void>();
+
+  @override
+  Future<File> download(
+    ReleaseInfo release,
+    ReleaseAsset asset,
+    Directory dir, {
+    void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    onProgress?.call(0.5);
+    await gate.future;
+    final updates = Directory(p.join(dir.path, AppUpdateService.updatesFolder))
+      ..createSync(recursive: true);
+    return File(p.join(updates.path, asset.name))
+      ..writeAsBytesSync(const [1, 2]);
+  }
+}
 
 void main() {
   const current = fakeCurrentVersion;
@@ -305,6 +363,107 @@ void main() {
       await notifier.download();
 
       expect(statusOf(c), isA<UpdateReady>());
+    });
+
+    test(
+      'a re-download while the cancelled one unwinds keeps the state',
+      () async {
+        final service = _StalledUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await withAvailable(service);
+        final notifier = c.read(appUpdateProvider.notifier);
+
+        final seen = <UpdateStatus>[];
+        final sub = c.listen(appUpdateProvider, (_, next) {
+          final value = next.value;
+          if (value != null) seen.add(value);
+        });
+        addTearDown(sub.close);
+
+        final first = notifier.download();
+        await pumpEventQueue();
+        expect(service.gates, hasLength(1));
+
+        notifier.cancelDownload();
+        expect(statusOf(c), isA<UpdateAvailable>());
+
+        final second = notifier.download();
+        await pumpEventQueue();
+        expect(service.gates, hasLength(2));
+
+        // The cancelled download only now reaches its last chunk.
+        service.gates.first.complete();
+        await first;
+        expect(
+          statusOf(c),
+          isA<UpdateDownloading>(),
+          reason: 'the second download still owns the state',
+        );
+
+        service.gates.last.complete();
+        await second;
+        expect(statusOf(c), isA<UpdateReady>());
+
+        final progress = seen.whereType<UpdateDownloading>().map(
+          (s) => s.progress,
+        );
+        expect(
+          progress,
+          isNot(contains(_StalledUpdateService.markOf(1) + 0.5)),
+          reason: 'the cancelled download reported after it was told to stop',
+        );
+      },
+    );
+
+    test(
+      'a second cancel stops the download that replaced the first',
+      () async {
+        final service = _StalledUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await withAvailable(service);
+        final notifier = c.read(appUpdateProvider.notifier);
+
+        final first = notifier.download();
+        await pumpEventQueue();
+        notifier.cancelDownload();
+        final second = notifier.download();
+        await pumpEventQueue();
+        expect(statusOf(c), isA<UpdateDownloading>());
+
+        notifier.cancelDownload();
+        expect(statusOf(c), isA<UpdateAvailable>());
+
+        service.gates.first.complete();
+        service.gates.last.complete();
+        await first;
+        await second;
+
+        expect(statusOf(c), isA<UpdateAvailable>());
+        expect(
+          (statusOf(c) as UpdateAvailable).release.tag,
+          'v0.2.0+12',
+          reason: 'the release is still the one to download',
+        );
+      },
+    );
+
+    test('an APK that lands after the cancel is not kept', () async {
+      final service = _UncancellableUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await withAvailable(service);
+      final notifier = c.read(appUpdateProvider.notifier);
+
+      final done = notifier.download();
+      await pumpEventQueue();
+      notifier.cancelDownload();
+      service.gate.complete();
+      await done;
+
+      expect(statusOf(c), isA<UpdateAvailable>());
+      expect(AppUpdateService.downloadedApk(root), isNull);
     });
 
     test('install hands the downloaded file to the service', () async {
