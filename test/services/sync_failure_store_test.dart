@@ -71,6 +71,43 @@ void main() {
       );
     });
 
+    test('listAll returns every tracked row, newest attempt first', () async {
+      SharedPreferences.setMockInitialValues({'theme_mode': 'dark'});
+      final prefs = await SharedPreferences.getInstance();
+      final store = SyncFailureStore(prefs);
+
+      await store.recordFailure('medications', 'm1', t0);
+      await store.recordFailure(
+        'dose_logs',
+        'd1',
+        t0.add(const Duration(minutes: 5)),
+      );
+      await store.recordFailure(
+        'dose_logs',
+        'd1',
+        t0.add(const Duration(minutes: 5)),
+      );
+
+      final rows = await store.listAll();
+
+      expect(rows.map((r) => '${r.table}/${r.id}'), [
+        'dose_logs/d1',
+        'medications/m1',
+      ]);
+      expect(rows.first.count, 2);
+      expect(rows.first.lastAttempt, t0.add(const Duration(minutes: 5)));
+      expect(await SyncFailureStore.inMemory().listAll(), isEmpty);
+    });
+
+    test('listAll works without SharedPreferences', () async {
+      final store = SyncFailureStore.inMemory();
+      await store.recordFailure('treatments', 't1', t0);
+      final rows = await store.listAll();
+      expect(rows.single.table, 'treatments');
+      expect(rows.single.id, 't1');
+      expect(rows.single.count, 1);
+    });
+
     test('a corrupt stored value reads back as null', () async {
       SharedPreferences.setMockInitialValues({
         '${SyncFailureStore.keyPrefix}medications/broken': 'not json',

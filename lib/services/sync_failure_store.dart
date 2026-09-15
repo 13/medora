@@ -59,6 +59,25 @@ class SyncRowFailure {
   String toString() => 'SyncRowFailure(count: $count, at: $lastAttempt)';
 }
 
+/// One tracked row: where it lives and how its pushes have been going.
+class SyncFailedRow {
+  const SyncFailedRow({
+    required this.table,
+    required this.id,
+    required this.failure,
+  });
+
+  final String table;
+  final String id;
+  final SyncRowFailure failure;
+
+  int get count => failure.count;
+  DateTime get lastAttempt => failure.lastAttempt;
+
+  @override
+  String toString() => 'SyncFailedRow($table/$id, $failure)';
+}
+
 class SyncFailureStore {
   SyncFailureStore(SharedPreferences prefs) : _prefs = prefs;
 
@@ -115,6 +134,42 @@ class SyncFailureStore {
     final key = rowKey(table, id);
     _memory.remove(key);
     await _prefs?.remove('$keyPrefix$key');
+  }
+
+  /// Every row the store is tracking, most recently attempted first.
+  ///
+  /// The failures dialog needs this: a row inside its backoff window is
+  /// skipped rather than retried, so it never appears in the current cycle's
+  /// report and would otherwise be unreachable.
+  Future<List<SyncFailedRow>> listAll() async {
+    final entries = <SyncFailedRow>[];
+    final prefs = _prefs;
+    if (prefs == null) {
+      for (final entry in _memory.entries) {
+        final row = _splitKey(entry.key);
+        if (row == null) continue;
+        entries.add(
+          SyncFailedRow(table: row.$1, id: row.$2, failure: entry.value),
+        );
+      }
+    } else {
+      for (final key in prefs.getKeys().where((k) => k.startsWith(keyPrefix))) {
+        final row = _splitKey(key.substring(keyPrefix.length));
+        if (row == null) continue;
+        final record = await get(row.$1, row.$2);
+        if (record == null) continue;
+        entries.add(SyncFailedRow(table: row.$1, id: row.$2, failure: record));
+      }
+    }
+    entries.sort((a, b) => b.lastAttempt.compareTo(a.lastAttempt));
+    return entries;
+  }
+
+  /// Splits a `table/id` row key; null when it is not one.
+  static (String, String)? _splitKey(String key) {
+    final slash = key.indexOf('/');
+    if (slash <= 0 || slash == key.length - 1) return null;
+    return (key.substring(0, slash), key.substring(slash + 1));
   }
 
   Future<void> clearAll() async {

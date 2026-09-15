@@ -186,4 +186,98 @@ void main() {
     );
     expect(summary, findsOneWidget);
   });
+
+  testWidgets('a row waiting out its backoff is still reachable and can be '
+      'discarded', (tester) async {
+    final now = DateTime.utc(2026, 3, 4, 12);
+    var clock = now;
+    final failures = SyncFailureStore.inMemory();
+    final meds = FakeMedicationRemote(() => clock);
+    final service = SyncService(
+      medicationLocal: MedicationLocalDatasource(),
+      medicationRemote: meds,
+      treatmentLocal: TreatmentLocalDatasource(),
+      treatmentRemote: FakeTreatmentRemote(() => clock),
+      prescriptionLocal: PrescriptionLocalDatasource(),
+      prescriptionRemote: FakePrescriptionRemote(() => clock),
+      doseLogLocal: DoseLogLocalDatasource(),
+      doseLogRemote: FakeDoseLogRemote(() => clock),
+      familyLocal: FamilyLocalDatasource(),
+      familyRemote: FakeFamilyRemote(() => clock),
+      failures: failures,
+      isOnline: () => true,
+      currentUserId: () => 'user-a',
+      onlineStream: const Stream<bool>.empty(),
+      now: () => clock,
+    );
+    addTearDown(service.dispose);
+
+    await MedicationLocalDatasource().upsert(
+      const MedicationModel(id: 'bad', name: 'bad', quantity: 1),
+      syncStatus: SyncStatus.pendingCreate,
+    );
+    meds.table.seed(
+      const MedicationModel(id: 'bad', name: 'Server', quantity: 4).toJson(),
+    );
+    // The row already failed once; this cycle skips it inside its backoff
+    // window, so the report has no failures at all.
+    await failures.recordFailure('medications', 'bad', now);
+    meds.table.failIds.add('bad');
+    clock = now.add(const Duration(seconds: 30));
+    final report = (await service.syncAll())!;
+    expect(report.failures, isEmpty);
+    expect(report.skippedBackoff, 1);
+    await tester.pump(const Duration(seconds: 3));
+
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(
+          await SharedPreferences.getInstance(),
+        ),
+        syncStartupDelayProvider.overrideWithValue(Duration.zero),
+        reminderPortProvider.overrideWithValue(FakePort()),
+        platformCapabilitiesProvider.overrideWithValue(
+          PlatformCapabilities.mobile,
+        ),
+        syncFailureStoreProvider.overrideWithValue(failures),
+        syncServiceProvider.overrideWithValue(service),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    final summary = find.textContaining('waiting to retry');
+    await tester.scrollUntilVisible(
+      summary,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final summaryTile = find.ancestor(
+      of: summary,
+      matching: find.byType(ListTile),
+    );
+    await tester.ensureVisible(summaryTile);
+    await tester.pumpAndSettle();
+    await tester.tap(summaryTile);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('medications · bad'),
+      findsOneWidget,
+      reason: 'a backed-off row must still be listed',
+    );
+    await tester.tap(find.text('Discard local change'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('medications · bad'), findsNothing);
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: ['bad'],
+    );
+    expect(rows.single['name'], 'Server');
+    expect(await failures.get('medications', 'bad'), isNull);
+  });
 }

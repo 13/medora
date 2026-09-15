@@ -17,11 +17,13 @@ import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
+import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/reminder_service.dart';
+import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -310,10 +312,13 @@ class SettingsScreen extends ConsumerWidget {
                   dense: true,
                   leading: const Icon(Icons.history),
                   title: Text(_lastSyncText(l10n, lastReport)),
-                  trailing: (lastReport?.hasFailures ?? false)
+                  // Rows inside their backoff window are skipped, not failed,
+                  // so they never reach the report's failure list — the tile
+                  // still has to open for them.
+                  trailing: _hasStuckRows(lastReport)
                       ? const Icon(Icons.chevron_right)
                       : null,
-                  onTap: (lastReport?.hasFailures ?? false)
+                  onTap: _hasStuckRows(lastReport)
                       ? () => _showSyncFailures(ref, context, l10n, lastReport!)
                       : null,
                 ),
@@ -726,18 +731,46 @@ class SettingsScreen extends ConsumerWidget {
     return '$summary · ${l10n.syncSkippedBackoff(r.skippedBackoff)}';
   }
 
-  void _showSyncFailures(
+  /// True when the last cycle left rows behind — failed outright, or skipped
+  /// because they are waiting out their retry backoff.
+  static bool _hasStuckRows(SyncReport? r) =>
+      r != null && (r.hasFailures || r.skippedBackoff > 0);
+
+  Future<void> _showSyncFailures(
     WidgetRef ref,
     BuildContext context,
     AppLocalizations l10n,
     SyncReport r,
-  ) {
+  ) async {
+    // The report only knows about rows that were tried this cycle; the store
+    // also holds the ones skipped inside their backoff window.
+    var stored = const <SyncFailedRow>[];
+    try {
+      stored = await ref.read(syncFailureStoreProvider).listAll();
+    } catch (e) {
+      debugPrint('Settings: could not read the failure store: $e');
+    }
+    if (!context.mounted) return;
+
+    final rows = <({String table, String id, String? detail})>[
+      for (final f in r.failures) (table: f.table, id: f.id, detail: f.error),
+    ];
+    final seen = {for (final row in rows) '${row.table}/${row.id}'};
+    for (final s in stored) {
+      if (seen.add('${s.table}/${s.id}')) {
+        rows.add((table: s.table, id: s.id, detail: null));
+      }
+    }
+
     // Rows the user gives up on, so the dialog can drop them without waiting
     // for another cycle to rebuild the report.
     final discarded = <String>{};
-    showDialog<void>(
+    // The row whose discard is in flight: its button (and every other one)
+    // stays disabled until the server has answered.
+    String? busy;
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
+      builder: (dialogContext) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           title: Text(l10n.syncFailedItems),
           content: SizedBox(
@@ -752,19 +785,39 @@ class SettingsScreen extends ConsumerWidget {
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
                 ),
-                for (final f in r.failures)
+                for (final f in rows)
                   if (!discarded.contains('${f.table}/${f.id}'))
                     ListTile(
                       dense: true,
                       title: Text('${f.table} · ${f.id}'),
-                      subtitle: Text(f.error),
+                      subtitle: f.detail == null ? null : Text(f.detail!),
                       trailing: TextButton(
-                        onPressed: () async {
-                          await ref
-                              .read(syncServiceProvider)
-                              .discardFailedRow(f.table, f.id);
-                          setState(() => discarded.add('${f.table}/${f.id}'));
-                        },
+                        onPressed: busy != null
+                            ? null
+                            : () async {
+                                final key = '${f.table}/${f.id}';
+                                setState(() => busy = key);
+                                try {
+                                  await ref
+                                      .read(syncServiceProvider)
+                                      .discardFailedRow(f.table, f.id);
+                                  if (!ctx.mounted) return;
+                                  setState(() {
+                                    discarded.add(key);
+                                    busy = null;
+                                  });
+                                } catch (e) {
+                                  if (!ctx.mounted) return;
+                                  setState(() => busy = null);
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        l10n.errorWithDetails(e.toString()),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
                         child: Text(l10n.discardLocalChange),
                       ),
                     ),
