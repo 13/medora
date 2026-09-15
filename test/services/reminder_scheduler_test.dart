@@ -352,7 +352,11 @@ void main() {
       expect(port.cancelAllCalls, 0);
       expect(port.scheduled, isEmpty);
       expect(count, 0);
-      expect(scheduler.lastError, isNotNull);
+      expect(
+        scheduler.lastError,
+        'db down',
+        reason: 'the repository failure message must reach lastError intact',
+      );
     },
   );
 
@@ -382,7 +386,11 @@ void main() {
 
       final second = await scheduler.reconcile();
 
-      expect(scheduler.lastError, isNotNull);
+      expect(
+        scheduler.lastError,
+        contains('scheduleForDose failed'),
+        reason: 'the port failure message must reach lastError intact',
+      );
       expect(
         second,
         1,
@@ -399,7 +407,7 @@ void main() {
     final scheduler = make(port);
 
     await scheduler.reconcile();
-    expect(scheduler.lastError, isNotNull);
+    expect(scheduler.lastError, contains('scheduleForDose failed'));
 
     port.throwOnSchedule = false;
     final count = await scheduler.reconcile();

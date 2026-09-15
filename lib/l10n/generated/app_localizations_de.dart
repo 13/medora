@@ -658,6 +658,18 @@ class AppLocalizationsDe extends AppLocalizations {
   String get syncFailedItems => 'Fehlgeschlagene Einträge';
 
   @override
+  String syncSkippedBackoff(int n) {
+    return '$n warten auf einen neuen Versuch';
+  }
+
+  @override
+  String get discardLocalChange => 'Lokale Änderung verwerfen';
+
+  @override
+  String get discardLocalChangeHint =>
+      'Ersetzt Ihre nicht synchronisierte Änderung durch die Version vom Server';
+
+  @override
   String get ok => 'OK';
 
   @override

@@ -7,6 +7,7 @@ import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/sync_cursor_store.dart';
+import 'package:medora/services/sync_failure_store.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -114,12 +115,15 @@ void main() {
     },
   );
 
-  test('wipe removes sync pull cursors but keeps other prefs', () async {
+  test('wipe removes sync pull cursors and failure records but keeps other '
+      'prefs', () async {
     SharedPreferences.setMockInitialValues({
       'sync.last_pull_at.medications': '2026-01-01T00:00:00.000Z',
       'theme_mode': 'dark',
     });
     final prefs = await SharedPreferences.getInstance();
+    final failures = SyncFailureStore(prefs);
+    await failures.recordFailure('medications', 'm1', DateTime.utc(2026));
     final photos = PhotoStorage(
       rootDirectory: () async => throw StateError('no fs'),
     );
@@ -133,6 +137,11 @@ void main() {
     ).wipe();
 
     expect(prefs.getString('${SyncCursorStore.keyPrefix}medications'), isNull);
+    expect(await failures.listAll(), isEmpty);
+    expect(
+      prefs.getKeys().where((k) => k.startsWith(SyncFailureStore.keyPrefix)),
+      isEmpty,
+    );
     expect(prefs.getString('theme_mode'), 'dark');
   });
 }

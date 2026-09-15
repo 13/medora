@@ -1270,6 +1270,24 @@ abstract class AppLocalizations {
   /// **'Failed items'**
   String get syncFailedItems;
 
+  /// No description provided for @syncSkippedBackoff.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} waiting to retry'**
+  String syncSkippedBackoff(int n);
+
+  /// No description provided for @discardLocalChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard local change'**
+  String get discardLocalChange;
+
+  /// No description provided for @discardLocalChangeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Replaces your unsynced change with the server copy'**
+  String get discardLocalChangeHint;
+
   /// No description provided for @ok.
   ///
   /// In en, this message translates to:

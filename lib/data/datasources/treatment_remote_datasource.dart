@@ -34,6 +34,20 @@ class TreatmentRemoteDatasource {
         .toList();
   }
 
+  /// The remote row's `updated_at`, or null when the row is not there.
+  ///
+  /// The push phase uses it to leave a remote row alone when it is newer than
+  /// the local pending edit (true last-write-wins).
+  Future<DateTime?> getUpdatedAt(String id) async {
+    final response = await _client
+        .from(AppConstants.treatmentsTable)
+        .select('updated_at')
+        .eq('id', id)
+        .maybeSingle();
+    final raw = response?['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
+  }
+
   Future<List<TreatmentModel>> getActiveTreatments() async {
     final response = await _client
         .from(AppConstants.treatmentsTable)
@@ -47,14 +61,15 @@ class TreatmentRemoteDatasource {
         .toList();
   }
 
-  Future<TreatmentModel> getTreatmentById(String id) async {
+  /// The single row with [id], or null when the server does not have it.
+  Future<TreatmentModel?> getTreatmentById(String id) async {
     final response = await _client
         .from(AppConstants.treatmentsTable)
         .select()
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-    return TreatmentModel.fromJson(response);
+    return response == null ? null : TreatmentModel.fromJson(response);
   }
 
   /// Add a new treatment.

@@ -36,6 +36,20 @@ class PrescriptionRemoteDatasource {
         .toList();
   }
 
+  /// The remote row's `updated_at`, or null when the row is not there.
+  ///
+  /// The push phase uses it to leave a remote row alone when it is newer than
+  /// the local pending edit (true last-write-wins).
+  Future<DateTime?> getUpdatedAt(String id) async {
+    final response = await _client
+        .from(AppConstants.prescriptionsTable)
+        .select('updated_at')
+        .eq('id', id)
+        .maybeSingle();
+    final raw = response?['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
+  }
+
   Future<List<PrescriptionModel>> getPrescriptionsByTreatment(
     String treatmentId,
   ) async {
@@ -64,14 +78,15 @@ class PrescriptionRemoteDatasource {
         .toList();
   }
 
-  Future<PrescriptionModel> getPrescriptionById(String id) async {
+  /// The single row with [id], or null when the server does not have it.
+  Future<PrescriptionModel?> getPrescriptionById(String id) async {
     final response = await _client
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-    return PrescriptionModel.fromJson(response);
+    return response == null ? null : PrescriptionModel.fromJson(response);
   }
 
   /// Add a new prescription.

@@ -7,6 +7,7 @@ import 'package:medora/services/local_upload_marker.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/sync_cursor_store.dart';
+import 'package:medora/services/sync_failure_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalDataWiper {
@@ -40,10 +41,17 @@ class LocalDataWiper {
       }
     }
     await _prefs.reload();
+    // Pull cursors and per-row push failures both describe rows that no
+    // longer exist; leaving them behind would make the next sync skip a
+    // fresh row it has never actually tried.
     for (final key
         in _prefs
             .getKeys()
-            .where((k) => k.startsWith(SyncCursorStore.keyPrefix))
+            .where(
+              (k) =>
+                  k.startsWith(SyncCursorStore.keyPrefix) ||
+                  k.startsWith(SyncFailureStore.keyPrefix),
+            )
             .toList()) {
       await _prefs.remove(key);
     }

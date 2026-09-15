@@ -20,3 +20,16 @@ int calendarDaysBetween(DateTime from, DateTime to) => DateTime.utc(
   to.month,
   to.day,
 ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+
+/// The `updated_at` to stamp on a row whose stored value is [previous].
+///
+/// Normally [now], but never earlier than one millisecond after [previous]:
+/// a device clock that jumps backwards (an NTP correction, a manual change,
+/// a second device in another timezone writing the row) would otherwise
+/// stamp an edit that looks older than the copy it replaces, and
+/// last-write-wins sync would throw the edit away.
+DateTime nextUpdatedAt(DateTime? previous, DateTime now) {
+  if (previous == null) return now;
+  final floor = previous.add(const Duration(milliseconds: 1));
+  return now.isAfter(floor) ? now : floor;
+}

@@ -18,11 +18,19 @@ class FakeRemoteTable {
   final DateTime Function() clock;
   final Map<String, Map<String, dynamic>> rows = {};
   final Set<String> failIds = {};
+
+  /// Ids whose single-row fetch ([get]) throws — a server that cannot be
+  /// reached while the user is discarding a stuck row.
+  final Set<String> failGetIds = {};
   final List<DateTime?> sinceCalls = [];
 
   /// When set, every delta fetch (`since`) throws — a whole-table fetch
   /// failure rather than a per-row one.
   Object? throwOnFetch;
+
+  /// Optional gate awaited before every [since] and [upsert]. A test can hold
+  /// a cycle open on a `Completer` and call back into the service meanwhile.
+  Future<void> Function()? beforeCall;
 
   void _guard(String id) {
     if (failIds.contains(id)) throw StateError('remote failure for $id');
@@ -30,7 +38,8 @@ class FakeRemoteTable {
 
   /// Insert keeps the client's `updated_at` (or stamps now); update stamps now
   /// like the `update_updated_at` trigger.
-  void upsert(Map<String, dynamic> json) {
+  Future<void> upsert(Map<String, dynamic> json) async {
+    await beforeCall?.call();
     final id = json['id'] as String;
     _guard(id);
     final now = clock().toUtc().toIso8601String();
@@ -62,7 +71,8 @@ class FakeRemoteTable {
   List<Map<String, dynamic>> live() =>
       all().where((r) => r['deleted_at'] == null).toList();
 
-  List<Map<String, dynamic>> since(DateTime? since) {
+  Future<List<Map<String, dynamic>>> since(DateTime? since) async {
+    await beforeCall?.call();
     sinceCalls.add(since);
     final failure = throwOnFetch;
     if (failure != null) throw failure;
@@ -71,6 +81,20 @@ class FakeRemoteTable {
       final u = r['updated_at'] as String?;
       return u != null && DateTime.parse(u).toUtc().isAfter(since.toUtc());
     }).toList();
+  }
+
+  /// One row by id, or null when it is absent — mirrors
+  /// `.eq('id', id).maybeSingle()`.
+  Map<String, dynamic>? get(String id) {
+    if (failGetIds.contains(id)) throw StateError('remote get failure for $id');
+    return rows[id];
+  }
+
+  /// The stored `updated_at` for [id], or null when the row is absent —
+  /// mirrors `select('updated_at').eq('id', id).maybeSingle()`.
+  DateTime? updatedAt(String id) {
+    final raw = rows[id]?['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
   }
 
   /// Test helper: seed a row that is already synced remotely.
@@ -88,14 +112,20 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
+
+  @override
   Future<List<MedicationModel>> getMedications() async =>
       table.live().map(MedicationModel.fromJson).toList();
   @override
   Future<List<MedicationModel>> getMedicationsSince(DateTime? since) async =>
-      table.since(since).map(MedicationModel.fromJson).toList();
+      (await table.since(since)).map(MedicationModel.fromJson).toList();
   @override
-  Future<MedicationModel> getMedicationById(String id) async =>
-      MedicationModel.fromJson(table.rows[id]!);
+  Future<MedicationModel?> getMedicationById(String id) async {
+    final row = table.get(id);
+    return row == null ? null : MedicationModel.fromJson(row);
+  }
+
   @override
   Future<List<MedicationModel>> searchMedications(String query) async =>
       (await getMedications()).where((m) => m.name.contains(query)).toList();
@@ -113,7 +143,7 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   @override
   Future<void> updateQuantity(String id, int delta) async {
     final row = table.rows[id]!;
-    table.upsert({...row, 'quantity': (row['quantity'] as int) + delta});
+    await table.upsert({...row, 'quantity': (row['quantity'] as int) + delta});
   }
 }
 
@@ -123,17 +153,23 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
+
+  @override
   Future<List<TreatmentModel>> getTreatments() async =>
       table.live().map(TreatmentModel.fromJson).toList();
   @override
   Future<List<TreatmentModel>> getTreatmentsSince(DateTime? since) async =>
-      table.since(since).map(TreatmentModel.fromJson).toList();
+      (await table.since(since)).map(TreatmentModel.fromJson).toList();
   @override
   Future<List<TreatmentModel>> getActiveTreatments() async =>
       (await getTreatments()).where((t) => t.isActive).toList();
   @override
-  Future<TreatmentModel> getTreatmentById(String id) async =>
-      TreatmentModel.fromJson(table.rows[id]!);
+  Future<TreatmentModel?> getTreatmentById(String id) async {
+    final row = table.get(id);
+    return row == null ? null : TreatmentModel.fromJson(row);
+  }
+
   @override
   Future<void> addTreatment(TreatmentModel model) async =>
       table.upsert(model.toJson());
@@ -156,12 +192,16 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
+
+  @override
   Future<List<PrescriptionModel>> getPrescriptions() async =>
       table.live().map(PrescriptionModel.fromJson).toList();
   @override
   Future<List<PrescriptionModel>> getPrescriptionsSince(
     DateTime? since,
-  ) async => table.since(since).map(PrescriptionModel.fromJson).toList();
+  ) async =>
+      (await table.since(since)).map(PrescriptionModel.fromJson).toList();
   @override
   Future<List<PrescriptionModel>> getPrescriptionsByTreatment(
     String treatmentId,
@@ -172,8 +212,11 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   Future<List<PrescriptionModel>> getActivePrescriptions() async =>
       (await getPrescriptions()).where((p) => p.isActive).toList();
   @override
-  Future<PrescriptionModel> getPrescriptionById(String id) async =>
-      PrescriptionModel.fromJson(table.rows[id]!);
+  Future<PrescriptionModel?> getPrescriptionById(String id) async {
+    final row = table.get(id);
+    return row == null ? null : PrescriptionModel.fromJson(row);
+  }
+
   @override
   Future<void> addPrescription(PrescriptionModel model) async =>
       table.upsert(model.toJson());
@@ -198,11 +241,20 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
+
+  @override
   Future<List<DoseLogModel>> getDoseLogs() async =>
       table.live().map(DoseLogModel.fromJson).toList();
   @override
   Future<List<DoseLogModel>> getDoseLogsSince(DateTime? since) async =>
-      table.since(since).map(DoseLogModel.fromJson).toList();
+      (await table.since(since)).map(DoseLogModel.fromJson).toList();
+  @override
+  Future<DoseLogModel?> getDoseLogById(String id) async {
+    final row = table.get(id);
+    return row == null ? null : DoseLogModel.fromJson(row);
+  }
+
   @override
   Future<List<DoseLogModel>> getTodaysDoseLogs() async => getDoseLogs();
   @override
@@ -211,7 +263,7 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   @override
   Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
     for (final m in models) {
-      table.upsert(m.toJson());
+      await table.upsert(m.toJson());
     }
   }
 
@@ -242,7 +294,7 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
 
   @override
   Future<FamilyModel> createFamily(FamilyModel family) async {
-    families.upsert(family.toJson());
+    await families.upsert(family.toJson());
     return FamilyModel.fromJson(families.rows[family.id]!);
   }
 
@@ -263,7 +315,7 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
 
   @override
   Future<FamilyMemberModel> addMember(FamilyMemberModel member) async {
-    members.upsert(member.toJson());
+    await members.upsert(member.toJson());
     return FamilyMemberModel.fromJson(members.rows[member.id]!);
   }
 
@@ -287,7 +339,10 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
 
   @override
   Future<String> regenerateInviteCode(String familyId) async {
-    families.upsert({...families.rows[familyId]!, 'invite_code': 'NEWCODE'});
+    await families.upsert({
+      ...families.rows[familyId]!,
+      'invite_code': 'NEWCODE',
+    });
     return 'NEWCODE';
   }
 
@@ -308,7 +363,7 @@ class FakeFamilyRemote implements FamilyRemoteDatasource {
       displayName: displayName,
       role: 'member',
     );
-    members.upsert(member.toJson());
+    await members.upsert(member.toJson());
     return (
       family: family,
       member: FamilyMemberModel.fromJson(members.rows[member.id]!),

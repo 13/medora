@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
@@ -101,8 +102,11 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> updateMedication(Medication medication) async {
     try {
+      final previous = await localDatasource.getMedicationById(medication.id);
       final model = MedicationModel.fromDomain(
-        medication.copyWith(updatedAt: DateTime.now()),
+        medication.copyWith(
+          updatedAt: nextUpdatedAt(previous?.updatedAt, DateTime.now()),
+        ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground((r) => r.updateMedication(model), model.id);
@@ -157,7 +161,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
         notes: existing.notes,
         isArchived: existing.isArchived,
         createdAt: existing.createdAt,
-        updatedAt: DateTime.now(),
+        updatedAt: nextUpdatedAt(existing.updatedAt, DateTime.now()),
       );
       await localDatasource.upsert(
         updated,

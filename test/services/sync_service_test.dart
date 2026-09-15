@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -15,6 +16,7 @@ import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
+import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 
 import '../helpers/fake_remotes.dart';
@@ -22,14 +24,18 @@ import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
 class Harness {
-  Harness({DateTime? start, StreamController<bool>? online})
-    : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
+  Harness({
+    DateTime? start,
+    StreamController<bool>? online,
+    FamilyLocalDatasource? familyLocal,
+  }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = FakeMedicationRemote(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
     prescriptions = FakePrescriptionRemote(clock.now);
     doses = FakeDoseLogRemote(clock.now);
     family = FakeFamilyRemote(clock.now);
     cursors = SyncCursorStore.inMemory();
+    failures = SyncFailureStore.inMemory();
     service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
       medicationRemote: meds,
@@ -39,9 +45,10 @@ class Harness {
       prescriptionRemote: prescriptions,
       doseLogLocal: DoseLogLocalDatasource(),
       doseLogRemote: doses,
-      familyLocal: FamilyLocalDatasource(),
+      familyLocal: familyLocal ?? FamilyLocalDatasource(),
       familyRemote: family,
       cursors: cursors,
+      failures: failures,
       isOnline: () => this.online,
       currentUserId: () => userId,
       onlineStream: online?.stream ?? const Stream<bool>.empty(),
@@ -58,7 +65,16 @@ class Harness {
   late final FakeDoseLogRemote doses;
   late final FakeFamilyRemote family;
   late final SyncCursorStore cursors;
+  late final SyncFailureStore failures;
   late final SyncService service;
+}
+
+/// A local family store whose final "drop the family row" step fails, so the
+/// dedicated pending_delete batch records a push failure for the row.
+class FailingFamilyDelete extends FamilyLocalDatasource {
+  @override
+  Future<void> deleteFamily(String id) async =>
+      throw StateError('cannot drop family $id');
 }
 
 /// Hand-advanced clock shared by the service and the fake remotes.
@@ -281,6 +297,177 @@ void main() {
       },
     );
 
+    test(
+      'a stale pending update is not pushed and the remote copy wins',
+      () async {
+        final h = Harness();
+        // Local edit at T+10min, remote edit at T+20min. No failIds trick:
+        // the push itself must notice the remote row is newer and stand down.
+        await MedicationLocalDatasource().upsert(
+          MedicationModel(
+            id: 'm9',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: h.clock.now().add(const Duration(minutes: 10)),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
+        h.meds.table.seed(
+          const MedicationModel(id: 'm9', name: 'Remote', quantity: 1).toJson(),
+          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+        );
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.skippedStale, 1);
+        expect(report.pushed, 0);
+        expect(report.failures, isEmpty);
+        expect(h.service.currentState, SyncState.success);
+        expect(h.meds.table.rows['m9']?['name'], 'Remote');
+        final row = await localRow('medications', 'm9');
+        expect(row?['name'], 'Remote');
+        expect(row?['sync_status'], SyncStatus.synced);
+      },
+    );
+
+    test(
+      'a stale skipped push rewinds the cursor so the pull refetches the row',
+      () async {
+        final h = Harness();
+        final t = h.clock.now();
+        // The server stamped the winning remote row at T+20 …
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'm9b',
+            name: 'Remote',
+            quantity: 1,
+          ).toJson(),
+          updatedAt: t.add(const Duration(minutes: 20)),
+        );
+        // … but this device's cursor already sits past it: `updated_at` is
+        // server-clock on the remote side and device-clock locally, so a
+        // delta pull asking for `> cursor` would never return the row again.
+        await h.cursors.setLastPullAt(
+          'medications',
+          t.add(const Duration(minutes: 30)),
+        );
+        await MedicationLocalDatasource().upsert(
+          MedicationModel(
+            id: 'm9b',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: t.add(const Duration(minutes: 10)),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.skippedStale, 1);
+        expect(report.failures, isEmpty);
+        final row = await localRow('medications', 'm9b');
+        expect(
+          row?['name'],
+          'Remote',
+          reason: 'the skipped row must be replaced by the pull it relies on',
+        );
+        expect(row?['sync_status'], SyncStatus.synced);
+      },
+    );
+
+    test('a pending update newer than the remote row is pushed', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm10',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm10', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().add(const Duration(minutes: 5)),
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.skippedStale, 0);
+      expect(report.pushed, 1);
+      expect(h.meds.table.rows['m10']?['name'], 'Local');
+      expect((await localRow('medications', 'm10'))?['name'], 'Local');
+    });
+
+    test(
+      'a pending create and a tombstone push even against a newer remote row',
+      () async {
+        final h = Harness();
+        final local = MedicationLocalDatasource();
+        // pending_create whose id already exists remotely, newer.
+        await local.upsert(
+          MedicationModel(
+            id: 'm11',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: h.clock.now(),
+          ),
+          syncStatus: SyncStatus.pendingCreate,
+        );
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'm11',
+            name: 'Remote',
+            quantity: 1,
+          ).toJson(),
+          updatedAt: h.clock.now().add(const Duration(hours: 1)),
+        );
+        // pending_delete against a newer remote row.
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'm12',
+            name: 'Doomed',
+            quantity: 1,
+          ).toJson(),
+          updatedAt: h.clock.now().add(const Duration(hours: 1)),
+        );
+        await local.upsert(
+          const MedicationModel(id: 'm12', name: 'Doomed', quantity: 1),
+          syncStatus: SyncStatus.synced,
+        );
+        await local.markDeleted('m12');
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.skippedStale, 0);
+        expect(h.meds.table.rows['m11']?['name'], 'Local');
+        expect(h.meds.table.rows['m12']?['deleted_at'], isNotNull);
+      },
+    );
+
+    test('force push ignores a newer remote row', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm13',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm13', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().add(const Duration(hours: 1)),
+      );
+
+      final report = (await h.service.forcePush())!;
+
+      expect(report.skippedStale, 0);
+      expect(report.pushed, 1);
+      expect(h.meds.table.rows['m13']?['name'], 'Local');
+    });
+
     test('skips when offline or signed out', () async {
       final h = Harness()..online = false;
       await h.service.syncAll();
@@ -351,6 +538,175 @@ void main() {
       h.meds.table.tombstone('z');
       final report = (await h.service.syncAll())!;
       expect(report.deleted, 1);
+    });
+  });
+
+  group('failing-row backoff', () {
+    Future<void> seedFailingMedication(Harness h) async {
+      await MedicationLocalDatasource().upsert(
+        const MedicationModel(id: 'bad', name: 'bad', quantity: 1),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      h.meds.table.failIds.add('bad');
+    }
+
+    test(
+      'a failed row is recorded and skipped until its backoff is up',
+      () async {
+        final h = Harness();
+        await seedFailingMedication(h);
+
+        final first = (await h.service.syncAll())!;
+        expect(first.failures.map((f) => f.id), ['bad']);
+        expect(first.skippedBackoff, 0);
+        expect((await h.failures.get('medications', 'bad'))?.count, 1);
+
+        // One minute later the 2-minute backoff has not elapsed: skipped, and
+        // the failure is not re-reported.
+        h.clock.advance(const Duration(minutes: 1));
+        h.service.debugSetStateForTest(SyncState.idle);
+        final second = (await h.service.syncAll())!;
+        expect(second.skippedBackoff, 1);
+        expect(second.failures.where((f) => f.table == 'medications'), isEmpty);
+        expect((await h.failures.get('medications', 'bad'))?.count, 1);
+
+        // Past the backoff it is retried — and fails again, doubling the count.
+        h.clock.advance(const Duration(minutes: 2));
+        h.service.debugSetStateForTest(SyncState.idle);
+        final third = (await h.service.syncAll())!;
+        expect(third.skippedBackoff, 0);
+        expect(third.failures.map((f) => f.id), ['bad']);
+        expect((await h.failures.get('medications', 'bad'))?.count, 2);
+      },
+    );
+
+    test('a row that pushes again clears its failure record', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+      expect(await h.failures.get('medications', 'bad'), isNotNull);
+
+      h.meds.table.failIds.remove('bad');
+      h.clock.advance(const Duration(minutes: 5));
+      h.service.debugSetStateForTest(SyncState.idle);
+      final report = (await h.service.syncAll())!;
+
+      expect(report.pushed, 1);
+      expect(report.failures, isEmpty);
+      expect(await h.failures.get('medications', 'bad'), isNull);
+      expect(h.meds.table.rows['bad'], isNotNull);
+    });
+
+    test(
+      'discardFailedRow takes the server copy and clears the record',
+      () async {
+        final h = Harness();
+        await seedFailingMedication(h);
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'bad',
+            name: 'Server',
+            quantity: 7,
+          ).toJson(),
+          updatedAt: h.clock.now().add(const Duration(hours: 2)),
+        );
+        await h.service.syncAll();
+        expect(await h.failures.get('medications', 'bad'), isNotNull);
+
+        await h.service.discardFailedRow('medications', 'bad');
+
+        final row = await localRow('medications', 'bad');
+        expect(
+          row?['name'],
+          'Server',
+          reason: 'discarding must replace the local row, not just stamp it',
+        );
+        expect(row?['quantity'], 7);
+        expect(row?['sync_status'], SyncStatus.synced);
+        expect(await h.failures.get('medications', 'bad'), isNull);
+
+        // The next cycle no longer tries to push it at all.
+        h.clock.advance(const Duration(hours: 1));
+        h.service.debugSetStateForTest(SyncState.idle);
+        final report = (await h.service.syncAll())!;
+        expect(report.pushed, 0);
+        expect(report.failures, isEmpty);
+        expect(report.skippedBackoff, 0);
+      },
+    );
+
+    test('force pull forgets every failure record', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+      expect(await h.failures.get('medications', 'bad'), isNotNull);
+
+      h.service.debugSetStateForTest(SyncState.idle);
+      await h.service.forcePull();
+
+      expect(
+        await h.failures.listAll(),
+        isEmpty,
+        reason: 'the rows those records described no longer exist',
+      );
+    });
+
+    test('discardFailedRow deletes a row the server does not have', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+
+      await h.service.discardFailedRow('medications', 'bad');
+
+      expect(await localRow('medications', 'bad'), isNull);
+      expect(await h.failures.get('medications', 'bad'), isNull);
+    });
+
+    test('discarding a pending_delete keeps the server copy', () async {
+      final h = Harness();
+      final local = MedicationLocalDatasource();
+      h.meds.table.seed(
+        const MedicationModel(
+          id: 'doomed',
+          name: 'Server',
+          quantity: 1,
+        ).toJson(),
+      );
+      await local.upsert(
+        const MedicationModel(id: 'doomed', name: 'Server', quantity: 1),
+        syncStatus: SyncStatus.synced,
+      );
+      await local.markDeleted('doomed');
+      h.meds.table.failIds.add('doomed');
+      await h.service.syncAll();
+      expect(await h.failures.get('medications', 'doomed'), isNotNull);
+
+      await h.service.discardFailedRow('medications', 'doomed');
+
+      final row = await localRow('medications', 'doomed');
+      expect(row?['name'], 'Server');
+      expect(row?['sync_status'], SyncStatus.synced);
+      expect(row?['deleted_at'], isNull);
+      expect(h.meds.table.rows['doomed']?['deleted_at'], isNull);
+    });
+
+    test('discardFailedRow rethrows and leaves the row pending when the fetch '
+        'fails', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+      h.meds.table.failGetIds.add('bad');
+
+      await expectLater(
+        h.service.discardFailedRow('medications', 'bad'),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        (await localRow('medications', 'bad'))?['sync_status'],
+        SyncStatus.pendingCreate,
+      );
+      expect(await h.failures.get('medications', 'bad'), isNotNull);
     });
   });
 
@@ -788,6 +1144,61 @@ void main() {
       },
     );
 
+    test('a failing family leave keeps escalating its backoff', () async {
+      // Families are visited by two push batches per cycle. The first one
+      // must leave tombstones entirely alone: when it visited them it also
+      // cleared the failure record the second batch had just written, and
+      // the backoff count was reset to 1 on every cycle.
+      final local = FailingFamilyDelete();
+      final h = Harness(familyLocal: local);
+      await local.upsertFamily(
+        const FamilyModel(
+          id: 'f1',
+          name: 'S',
+          inviteCode: 'X',
+          ownerId: 'owner',
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      await local.upsertMember(
+        const FamilyMemberModel(
+          id: 'me',
+          familyId: 'f1',
+          userId: 'user-a',
+          role: 'member',
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      h.family.members.seed(
+        const FamilyMemberModel(
+          id: 'me',
+          familyId: 'f1',
+          userId: 'user-a',
+          role: 'member',
+        ).toJson(),
+      );
+      await local.markMemberDeleted('me');
+      await local.markFamilyDeleted('f1');
+
+      final first = (await h.service.syncAll())!;
+      expect(first.failures.map((f) => '${f.table}/${f.id}'), ['families/f1']);
+      expect((await h.failures.get('families', 'f1'))?.count, 1);
+
+      // Past the 2-minute backoff the row is retried and fails again.
+      h.clock.advance(const Duration(minutes: 3));
+      h.service.debugSetStateForTest(SyncState.idle);
+      final second = (await h.service.syncAll())!;
+
+      expect(second.failures.map((f) => '${f.table}/${f.id}'), ['families/f1']);
+      expect(
+        (await h.failures.get('families', 'f1'))?.count,
+        2,
+        reason:
+            'the backoff must grow, not restart, while the push keeps '
+            'failing',
+      );
+    });
+
     test(
       'a pending_delete family is dropped locally after its members are pushed',
       () async {
@@ -827,6 +1238,158 @@ void main() {
         expect(await localRow('family_members', 'me'), isNull);
       },
     );
+  });
+
+  group('queued cycles', () {
+    /// Holds the first call into the medications fake open until [gate]
+    /// completes, so the test can call back into a running cycle.
+    void gateFirstCall(Harness h, Completer<void> gate) {
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        await gate.future;
+      };
+    }
+
+    test('a sync asked for during a cycle runs once more afterwards', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate);
+
+      final first = h.service.syncAll();
+      await pumpEventQueue();
+      expect(h.service.currentState, SyncState.syncing);
+
+      // Requested mid-cycle: dropped before, queued now.
+      expect(await h.service.syncAll(), isNull);
+
+      gate.complete();
+      await first;
+
+      expect(h.meds.table.sinceCalls.length, 2);
+    });
+
+    test(
+      'several requests during one cycle collapse into one re-run',
+      () async {
+        final h = Harness();
+        final gate = Completer<void>();
+        gateFirstCall(h, gate);
+
+        final first = h.service.syncAll();
+        await pumpEventQueue();
+        expect(await h.service.syncAll(), isNull);
+        expect(await h.service.syncAll(), isNull);
+        expect(await h.service.syncAll(), isNull);
+
+        gate.complete();
+        await first;
+
+        expect(h.meds.table.sinceCalls.length, 2);
+      },
+    );
+
+    test('a queued re-run is dropped when the device goes offline', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate);
+
+      final first = h.service.syncAll();
+      await pumpEventQueue();
+      expect(await h.service.syncAll(), isNull); // queued
+      h.online = false;
+
+      gate.complete();
+      await first;
+
+      expect(h.meds.table.sinceCalls.length, 1);
+      expect(h.service.currentState, isNot(SyncState.syncing));
+    });
+
+    test('force operations asked for during a cycle are not queued', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate);
+
+      final first = h.service.syncAll();
+      await pumpEventQueue();
+      expect(await h.service.forcePush(), isNull);
+      expect(await h.service.forcePull(), isNull);
+
+      gate.complete();
+      await first;
+
+      expect(h.meds.table.sinceCalls.length, 1);
+    });
+  });
+
+  group('return to idle', () {
+    /// Drives the fake clock forward in zero-length steps until [done] runs
+    /// out of pending microtasks and same-instant timers — enough to finish a
+    /// cycle against the in-memory database without firing the 2 s idle timer.
+    void settle(FakeAsync async) {
+      for (var i = 0; i < 50; i++) {
+        async.elapse(Duration.zero);
+      }
+    }
+
+    test('a finished cycle drops back to idle after 2 s', () async {
+      await AppDatabase.instance.database; // open outside the fake zone
+      fakeAsync((async) {
+        final h = Harness();
+        unawaited(h.service.syncAll());
+        settle(async);
+        expect(h.service.currentState, SyncState.success);
+
+        async.elapse(const Duration(milliseconds: 1999));
+        expect(h.service.currentState, SyncState.success);
+        async.elapse(const Duration(milliseconds: 1));
+        expect(h.service.currentState, SyncState.idle);
+        h.service.dispose();
+      });
+    });
+
+    test(
+      'a second cycle within 2 s is not dropped to idle by the first timer',
+      () async {
+        await AppDatabase.instance.database;
+        fakeAsync((async) {
+          final h = Harness();
+          unawaited(h.service.syncAll());
+          settle(async);
+          expect(h.service.currentState, SyncState.success);
+
+          // 1.5 s later — the first cycle's idle timer is still pending.
+          async.elapse(const Duration(milliseconds: 1500));
+          unawaited(h.service.syncAll());
+          settle(async);
+          expect(h.service.currentState, SyncState.success);
+
+          // Now past 2 s from the *first* cycle: with an uncancelled timer
+          // this is where the fresh result would be wiped to idle.
+          async.elapse(const Duration(milliseconds: 600));
+          expect(h.service.currentState, SyncState.success);
+
+          // 2 s from the second cycle: idle, once.
+          async.elapse(const Duration(milliseconds: 1400));
+          expect(h.service.currentState, SyncState.idle);
+          h.service.dispose();
+        });
+      },
+    );
+
+    test('dispose cancels the pending idle timer', () async {
+      await AppDatabase.instance.database;
+      fakeAsync((async) {
+        final h = Harness();
+        unawaited(h.service.syncAll());
+        settle(async);
+        expect(h.service.currentState, SyncState.success);
+        h.service.dispose();
+        expect(async.pendingTimers, isEmpty);
+      });
+    });
   });
 
   group('auto-sync', () {

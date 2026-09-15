@@ -37,15 +37,30 @@ class MedicationRemoteDatasource {
         .toList();
   }
 
+  /// The remote row's `updated_at`, or null when the row is not there.
+  ///
+  /// The push phase uses it to leave a remote row alone when it is newer than
+  /// the local pending edit (true last-write-wins).
+  Future<DateTime?> getUpdatedAt(String id) async {
+    final response = await _client
+        .from(AppConstants.medicationsTable)
+        .select('updated_at')
+        .eq('id', id)
+        .maybeSingle();
+    final raw = response?['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
+  }
+
   /// Get a single medication by ID.
-  Future<MedicationModel> getMedicationById(String id) async {
+  /// The single row with [id], or null when the server does not have it.
+  Future<MedicationModel?> getMedicationById(String id) async {
     final response = await _client
         .from(AppConstants.medicationsTable)
         .select()
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-    return MedicationModel.fromJson(response);
+    return response == null ? null : MedicationModel.fromJson(response);
   }
 
   /// Search medications by name or active ingredient.
@@ -94,6 +109,7 @@ class MedicationRemoteDatasource {
   /// Update medication quantity by delta.
   Future<void> updateQuantity(String id, int delta) async {
     final current = await getMedicationById(id);
+    if (current == null) return;
     final newQuantity = (current.quantity + delta).clamp(0, 999999);
 
     await _client

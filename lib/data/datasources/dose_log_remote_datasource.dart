@@ -35,6 +35,31 @@ class DoseLogRemoteDatasource {
         .toList();
   }
 
+  /// The remote row's `updated_at`, or null when the row is not there.
+  ///
+  /// The push phase uses it to leave a remote row alone when it is newer than
+  /// the local pending edit (true last-write-wins).
+  Future<DateTime?> getUpdatedAt(String id) async {
+    final response = await _client
+        .from(AppConstants.doseLogsTable)
+        .select('updated_at')
+        .eq('id', id)
+        .maybeSingle();
+    final raw = response?['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
+  }
+
+  /// The single row with [id], or null when the server does not have it.
+  Future<DoseLogModel?> getDoseLogById(String id) async {
+    final response = await _client
+        .from(AppConstants.doseLogsTable)
+        .select('*, prescriptions(id, medications(name))')
+        .eq('id', id)
+        .maybeSingle();
+
+    return response == null ? null : DoseLogModel.fromJson(response);
+  }
+
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
