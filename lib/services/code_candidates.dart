@@ -7,6 +7,7 @@
 /// the mapping from ML Kit results.
 library;
 
+import 'dart:math' as math;
 import 'dart:ui' show Rect;
 
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
@@ -106,7 +107,7 @@ List<CodeCandidate> findCodeCandidates(
 
   for (var lineIndex = 0; lineIndex < allLines.length; lineIndex++) {
     final line = allLines[lineIndex];
-    final (:text, :repairs) = _repairCodeTokens(line.text);
+    final (:text, :repairs, :prefixes) = _repairCodeTokens(line.text);
     final elementSpans = _elementSpans(line);
     final claimed = <_Span>[];
 
@@ -136,7 +137,7 @@ List<CodeCandidate> findCodeCandidates(
         box: boxFor(span),
         alternatives: codeOf == null
             ? const []
-            : _alternativeCodes(text, span, repairs, code, codeOf),
+            : _alternativeCodes(text, span, repairs, prefixes, code, codeOf),
       );
       found.add(candidate);
       lineOf[candidate] = lineIndex;
@@ -161,9 +162,9 @@ List<CodeCandidate> findCodeCandidates(
     final label = _supplementLabel.firstMatch(text);
     var supplement = label == null
         ? null
-        : _labelledCode(text, label.end, claimed);
+        : _labelledCode(text, label.end, claimed, prefixes: prefixes);
     if (supplement == null && labelPartners.contains(lineIndex)) {
-      supplement = _labelledCode(text, 0, claimed);
+      supplement = _labelledCode(text, 0, claimed, prefixes: prefixes);
     }
     if (supplement != null) {
       claimed.add(supplement);
@@ -206,6 +207,7 @@ List<CodeCandidate> findCodeCandidates(
   }
 
   // Merge barcode-decoded candidates: their box wins over the OCR one.
+  final fromBarcode = <CodeCandidate>{};
   for (final barcode in barcodes) {
     if (barcode.kind == CodeKind.ean) {
       (eanAreas[barcode.code] ??= []).add(barcode.box);
@@ -215,6 +217,7 @@ List<CodeCandidate> findCodeCandidates(
     );
     if (index < 0) {
       found.add(barcode);
+      fromBarcode.add(barcode);
     } else {
       final ocrText = found[index].sourceText;
       found[index] = CodeCandidate(
@@ -224,10 +227,12 @@ List<CodeCandidate> findCodeCandidates(
         box: barcode.box,
         alternatives: found[index].alternatives,
       );
+      fromBarcode.add(found[index]);
     }
   }
 
   _dropConflictingReadings(found, repairCounts, lineOf, lines.length);
+  _dropRereadJunk(found, lineOf, fromBarcode, lines.length);
 
   Set<String> codesOf(CodeKind kind) => {
     for (final c in found)
@@ -321,6 +326,44 @@ void _dropConflictingReadings(
     }
   }
   found.removeWhere(dropped.contains);
+}
+
+/// How much of the smaller box two readings must share to count as readings
+/// of the same printing.
+const double _rereadOverlap = 0.5;
+
+double _overlapFraction(Rect a, Rect b) {
+  final i = a.intersect(b);
+  if (i.width <= 0 || i.height <= 0) return 0;
+  final smaller = math.min(a.width * a.height, b.width * b.height);
+  return smaller <= 0 ? 0 : (i.width * i.height) / smaller;
+}
+
+/// Drops the garbled "other" tokens of the photo pass that a later, better
+/// reading covers: a photo-pass `other` (line index < [regionStart]) whose
+/// box shares at least [_rereadOverlap] of the smaller box with a
+/// region-pass candidate of another kind, or with any decoded barcode, is
+/// OCR noise from the same printing — the region pass read it at a higher
+/// resolution and the barcode scanner read it from the bars.
+void _dropRereadJunk(
+  List<CodeCandidate> found,
+  Map<CodeCandidate, int> lineOf,
+  Set<CodeCandidate> fromBarcode,
+  int regionStart,
+) {
+  final better = [
+    for (final c in found)
+      if (fromBarcode.contains(c) ||
+          (c.kind != CodeKind.other && (lineOf[c] ?? -1) >= regionStart))
+        c,
+  ];
+  if (better.isEmpty) return;
+  found.removeWhere(
+    (c) =>
+        c.kind == CodeKind.other &&
+        (lineOf[c] ?? regionStart) < regionStart &&
+        better.any((b) => _overlapFraction(c.box, b.box) >= _rereadOverlap),
+  );
 }
 
 /// The code kinds whose label appears in [lines]: [CodeKind.supplement]
@@ -459,17 +502,35 @@ List<({String code, CodeKind kind, _Span span})> _findEans(String text) {
   return result;
 }
 
-/// The first acceptable supplement code in [text] at or after [from]: see
-/// [_labelledDigitRun], skipping [claimed] spans and quantities or dates
-/// ([_quantitySuffix]).
-_Span? _labelledCode(String text, int from, List<_Span> claimed) {
-  for (final m in _labelledDigitRun.allMatches(text, from)) {
-    final span = _Span(m.start, m.end);
-    if (claimed.any((c) => c.overlaps(span))) continue;
-    if (_quantitySuffix.matchAsPrefix(text, m.end) != null) continue;
-    return span;
-  }
-  return null;
+/// What may stand between a label (or the start of a partner line) and the
+/// code: separators, and an "n."-style number word. Anything else — a word
+/// like `compresse`, another number — means the number is not the code.
+/// Unanchored on purpose: it is only ever used with [RegExp.matchAsPrefix],
+/// which anchors at the offset given, while a leading `^` would assert the
+/// start of the whole line and so never match after a label.
+final _afterLabel = RegExp(
+  r'[\s.:,;\-–—#°]*(?:n(?:r|o|um)?[.°:]?\s*)?',
+  caseSensitive: false,
+);
+
+/// The supplement code directly after [from] in [text]: only [_afterLabel]
+/// separators (and a prefix letter recorded by [_repairCodeTokens]) may
+/// stand in front of it. Null when the run there is no [_labelledDigitRun],
+/// is [claimed], or is a quantity or date ([_quantitySuffix]).
+_Span? _labelledCode(
+  String text,
+  int from,
+  List<_Span> claimed, {
+  Map<int, String> prefixes = const {},
+}) {
+  var start = _afterLabel.matchAsPrefix(text, from)?.end ?? from;
+  if (prefixes.containsKey(start)) start += 1;
+  final m = _labelledDigitRun.matchAsPrefix(text, start);
+  if (m == null) return null;
+  final span = _Span(m.start, m.end);
+  if (claimed.any((c) => c.overlaps(span))) return null;
+  if (_quantitySuffix.matchAsPrefix(text, m.end) != null) return null;
+  return span;
 }
 
 /// Indexes of the lines that hold the code of a supplement label printed
@@ -482,19 +543,32 @@ Set<int> _labelPartners(List<OcrLine> lines) {
   final partners = <int>{};
   for (var i = 0; i < lines.length; i++) {
     final label = lines[i];
-    final labelText = _repairCodeTokens(label.text).text;
+    final repairedLabel = _repairCodeTokens(label.text);
+    final labelText = repairedLabel.text;
     final match = _supplementLabel.firstMatch(labelText);
     if (match == null) continue;
     final eanSpans = [for (final e in _findEans(labelText)) e.span];
-    if (_labelledCode(labelText, match.end, eanSpans) != null) continue;
+    if (_labelledCode(
+          labelText,
+          match.end,
+          eanSpans,
+          prefixes: repairedLabel.prefixes,
+        ) !=
+        null) {
+      continue;
+    }
 
     int? sameRow;
     for (var j = 0; j < lines.length; j++) {
       if (j == i) continue;
       final other = lines[j];
       if (!_onSameRowRightOf(label, other)) continue;
-      final spans = [for (final e in _findEans(other.text)) e.span];
-      if (_labelledCode(other.text, 0, spans) == null) continue;
+      final repaired = _repairCodeTokens(other.text);
+      final spans = [for (final e in _findEans(repaired.text)) e.span];
+      if (_labelledCode(repaired.text, 0, spans, prefixes: repaired.prefixes) ==
+          null) {
+        continue;
+      }
       if (sameRow == null || other.box.left < lines[sameRow].box.left) {
         sameRow = j;
       }
@@ -531,6 +605,14 @@ bool _followsLabel(OcrLine label, OcrLine next) {
 /// The most alternatives a candidate carries ([CodeCandidate.alternatives]).
 const maxCodeAlternatives = 16;
 
+/// The longest supplement code a repaired reading may claim on its own.
+/// The register holds ~86,100 six-digit codes and only ~65 longer ones, so a
+/// leading letter read as a digit is far more likely to be a prefix.
+const int maxRepairedSupplementDigits = 6;
+
+/// The longest AIC code: nine digits after an optional letter prefix.
+const int maxRepairedAicDigits = 9;
+
 /// OCR letters read in place of digits, mapped by [_repairCodeTokens].
 const _digitLookalikes = {
   'O': '0', 'o': '0', 'Q': '0', 'D': '0', //
@@ -559,17 +641,36 @@ final _edgePunctuation = RegExp(r'^[.:,;]+|[.:,;]+$');
 /// character is a lookalike and it does not end in a quantity unit
 /// (`100g`); e.g. `COD MINSAN: 10T018` becomes `COD MINSAN: 107018`.
 /// [repairs] maps each replaced position to the original character.
-({String text, Map<int, String> repairs}) _repairCodeTokens(String text) {
+/// A token exactly one character too long for its kind's codes
+/// ([maxRepairedSupplementDigits], [maxRepairedAicDigits]) that starts with
+/// a lookalike letter is read as a prefix plus a code: the letter is left
+/// unrepaired (so spans and element boxes still line up) and [prefixes]
+/// maps its position to the digit it would otherwise have become.
+({String text, Map<int, String> repairs, Map<int, String> prefixes})
+_repairCodeTokens(String text) {
   final repairs = <int, String>{};
+  final prefixes = <int, String>{};
   final labels = [
     if (_supplementLabel.firstMatch(text) case final m?)
       (end: m.end, aic: false),
     if (_aicLabel.firstMatch(text) case final m?) (end: m.end, aic: true),
   ];
-  if (labels.isEmpty) return (text: text, repairs: repairs);
+  if (labels.isEmpty) {
+    return (text: text, repairs: repairs, prefixes: prefixes);
+  }
   final chars = text.split('');
 
-  void repair(int start, String token) {
+  void repair(int start, String token, int maxDigits) {
+    // A leading letter before a label's code (`IT07O18`) is a prefix, not a
+    // digit: repairing it whole would claim a run longer than this kind's
+    // codes, while dropping it leaves exactly that length.
+    if (token.length == maxDigits + 1 &&
+        !_digit.hasMatch(token[0]) &&
+        _digitLookalikes.containsKey(token[0])) {
+      prefixes[start] = _digitLookalikes[token[0]]!;
+      repair(start + 1, token.substring(1), maxDigits);
+      return;
+    }
     final digits = _digit.allMatches(token).length;
     if (digits < 3 || digits * 2 < token.length) return;
     if (token.length > 9 || digits == token.length) return;
@@ -591,16 +692,17 @@ final _edgePunctuation = RegExp(r'^[.:,;]+|[.:,;]+$');
   }
 
   for (final (:end, :aic) in labels) {
+    final maxDigits = aic ? maxRepairedAicDigits : maxRepairedSupplementDigits;
     for (final m in _nonSpaceRun.allMatches(text, end).take(2)) {
       final raw = m[0]!;
       final leading = _edgePunctuation.matchAsPrefix(raw)?.end ?? 0;
       final token = raw.replaceAll(_edgePunctuation, '');
-      repair(m.start + leading, token);
+      repair(m.start + leading, token, maxDigits);
       // After an AIC label only the first token with a digit is the code.
       if (aic && _digit.hasMatch(token)) break;
     }
   }
-  return (text: chars.join(), repairs: repairs);
+  return (text: chars.join(), repairs: repairs, prefixes: prefixes);
 }
 
 /// The other codes [span] of the repaired [text] reads as when its
@@ -611,6 +713,7 @@ List<String> _alternativeCodes(
   String text,
   _Span span,
   Map<int, String> repairs,
+  Map<int, String> prefixes,
   String code,
   String Function(String) codeOf,
 ) {
@@ -618,34 +721,46 @@ List<String> _alternativeCodes(
     for (var i = span.start; i < span.end; i++)
       if (_ambiguousLookalikes.containsKey(repairs[i])) i,
   ];
-  if (positions.isEmpty) return const [];
-  // Every non-empty subset of positions, as bit masks, fewest bits first;
-  // ties keep the order in which lower positions change first.
-  final masks = [for (var m = 1; m < 1 << positions.length; m++) m];
-  int bits(int m) => m.toRadixString(2).replaceAll('0', '').length;
-  int reversed(int m) {
-    var r = 0;
-    for (var b = 0; b < positions.length; b++) {
-      if (m & (1 << b) != 0) r |= 1 << (positions.length - 1 - b);
-    }
-    return r;
-  }
-
-  masks.sort((a, b) {
-    final cmp = bits(a).compareTo(bits(b));
-    return cmp != 0 ? cmp : reversed(b).compareTo(reversed(a));
-  });
+  final prefix = prefixes[span.start - 1];
+  if (positions.isEmpty && prefix == null) return const [];
   final result = <String>{};
-  for (final mask in masks) {
-    final chars = text.substring(span.start, span.end).split('');
-    for (var b = 0; b < positions.length; b++) {
-      if (mask & (1 << b) == 0) continue;
-      final i = positions[b];
-      chars[i - span.start] = _ambiguousLookalikes[repairs[i]]!;
+  if (positions.isNotEmpty) {
+    // Every non-empty subset of positions, as bit masks, fewest bits first;
+    // ties keep the order in which lower positions change first.
+    final masks = [for (var m = 1; m < 1 << positions.length; m++) m];
+    int bits(int m) => m.toRadixString(2).replaceAll('0', '').length;
+    int reversed(int m) {
+      var r = 0;
+      for (var b = 0; b < positions.length; b++) {
+        if (m & (1 << b) != 0) r |= 1 << (positions.length - 1 - b);
+      }
+      return r;
     }
-    final alternative = codeOf(chars.join());
-    if (alternative != code) result.add(alternative);
-    if (result.length == maxCodeAlternatives) break;
+
+    masks.sort((a, b) {
+      final cmp = bits(a).compareTo(bits(b));
+      return cmp != 0 ? cmp : reversed(b).compareTo(reversed(a));
+    });
+    for (final mask in masks) {
+      final chars = text.substring(span.start, span.end).split('');
+      for (var b = 0; b < positions.length; b++) {
+        if (mask & (1 << b) == 0) continue;
+        final i = positions[b];
+        chars[i - span.start] = _ambiguousLookalikes[repairs[i]]!;
+      }
+      final alternative = codeOf(chars.join());
+      if (alternative != code) result.add(alternative);
+      if (result.length == maxCodeAlternatives) break;
+    }
+  }
+  // The prefix read as its digit after all: the same readings, one digit
+  // longer. Only for codes whose length is not fixed (not AIC).
+  if (prefix != null && code.length != maxRepairedAicDigits) {
+    for (final reading in [code, ...result]) {
+      if (result.length == maxCodeAlternatives) break;
+      final alternative = codeOf('$prefix$reading');
+      if (alternative != code) result.add(alternative);
+    }
   }
   return result.toList();
 }
