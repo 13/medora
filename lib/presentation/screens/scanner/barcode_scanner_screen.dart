@@ -3,7 +3,10 @@
 /// Three stages: capture (camera preview, shutter, gallery, manual entry),
 /// recognizing (ML Kit text recognition and barcode scanning run in parallel
 /// on the still photo) and review (the photo with every detected code
-/// numbered; the user taps the one to use). Photos taken here are temporary
+/// numbered; the user taps the one to use). When the whole photo leaves
+/// something to find (see `scan_region.dart`), text recognition and barcode
+/// scanning run again on a temporary PNG crop around the text found, deleted
+/// right after. Photos taken here are temporary
 /// files, deleted on retake, when leaving the screen and in `dispose`.
 /// Gallery picks are deleted the same way only when the picker handed us a
 /// copy inside the app's temporary directory (Android copies picks into the
@@ -38,6 +41,7 @@ import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/image_size.dart';
 import 'package:medora/services/ocr_adapter.dart';
 import 'package:medora/services/scan_debug.dart';
+import 'package:medora/services/scan_region.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -353,10 +357,24 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         barcodes = await _scanBarcodesDownscaled(path, size);
         if (!mounted || _photoPath != path) return;
       }
-      final candidates = findCodeCandidates(
-        lines ?? const [],
+      var allLines = lines ?? const <OcrLine>[];
+      var candidates = findCodeCandidates(allLines, barcodes: barcodes);
+      if (needsRegionPass(
+        lines: allLines,
         barcodes: barcodes,
-      );
+        candidates: candidates,
+      )) {
+        final region = await _recognizeRegion(path, size, [
+          for (final line in allLines) line.box,
+          for (final barcode in barcodes) barcode.box,
+        ]);
+        if (!mounted || _photoPath != path) return;
+        if (region != null) {
+          allLines = [...allLines, ...region.lines];
+          barcodes = [...barcodes, ...region.barcodes];
+          candidates = findCodeCandidates(allLines, barcodes: barcodes);
+        }
+      }
       scanLog([
         '[scan] image: ${size.width.round()}x${size.height.round()}',
         ...describeCandidates(candidates),
@@ -374,13 +392,21 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
-  /// The OCR lines of [input]; null (logged) when text recognition fails,
-  /// so decoded barcodes can still be offered.
-  Future<List<OcrLine>?> _recognizeText(InputImage input) async {
+  /// The OCR lines of [input], boxes moved by [offset] (a crop's position in
+  /// the photo); null (logged) when text recognition fails, so decoded
+  /// barcodes can still be offered.
+  Future<List<OcrLine>?> _recognizeText(
+    InputImage input, {
+    Offset offset = Offset.zero,
+    String? pass,
+  }) async {
     try {
-      final lines = ocrLinesFrom(await _textRecognizer.processImage(input));
+      final lines = offsetOcrLines(
+        ocrLinesFrom(await _textRecognizer.processImage(input)),
+        offset,
+      );
       scanLog([
-        '[scan] text lines: ${lines.length}',
+        '[scan] text lines${pass == null ? '' : ' ($pass)'}: ${lines.length}',
         ...describeOcrLines(lines),
       ]);
       return lines;
@@ -406,6 +432,50 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     } catch (e, stack) {
       debugPrint('[scan] barcode scanning failed ($pass): $e\n$stack');
       return null;
+    }
+  }
+
+  /// Text recognition and barcode scanning on the crop of the photo at
+  /// [path] (of pixel [size]) around [boxes] (see [textRegionCrop]), with
+  /// boxes mapped back to the photo. The crop is a PNG in a fresh directory
+  /// under the app's temporary directory, deleted when done. Null when there
+  /// is no useful crop or the pass fails (logged); the first pass stands.
+  Future<({List<OcrLine> lines, List<CodeCandidate> barcodes})?>
+  _recognizeRegion(String path, Size size, List<Rect> boxes) async {
+    final crop = textRegionCrop(boxes, size);
+    if (crop == null) return null;
+    Directory? dir;
+    try {
+      dir = await (await getTemporaryDirectory()).createTemp('scan_region_');
+      final out = p.join(dir.path, 'region.png');
+      final written = await writeImageCrop(path, crop, out);
+      if (written == null) return null;
+      scanLog([
+        '[scan] region pass ${written.width.round()}x${written.height.round()} '
+            '@ ${written.left.round()},${written.top.round()}',
+      ]);
+      final input = InputImage.fromFilePath(out);
+      final (lines, found) = await (
+        _recognizeText(input, offset: written.topLeft, pass: 'region'),
+        _scanBarcodes(input, pass: 'region, crop pixels'),
+      ).wait;
+      return (
+        lines: lines ?? const <OcrLine>[],
+        barcodes: offsetCandidates(found ?? const [], written.topLeft),
+      );
+    } catch (e, stack) {
+      debugPrint('[scan] region pass failed: $e\n$stack');
+      return null;
+    } finally {
+      if (dir != null) await _deleteDirectory(dir);
+    }
+  }
+
+  Future<void> _deleteDirectory(Directory dir) async {
+    try {
+      await dir.delete(recursive: true);
+    } on FileSystemException catch (e) {
+      debugPrint('[scan] temporary crop not deleted: $e');
     }
   }
 

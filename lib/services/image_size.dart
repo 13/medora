@@ -1,6 +1,7 @@
 /// Medora - image dimensions without decoding pixels
 library;
 
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -51,6 +52,59 @@ Future<({Uint8List rgba, int width, int height})?> decodeDownscaledRgba(
       height: image.height,
     );
   } finally {
+    image?.dispose();
+    codec?.dispose();
+    descriptor?.dispose();
+    buffer.dispose();
+  }
+}
+
+/// Writes the [crop] (image pixels, rounded out to whole pixels and clamped
+/// to the image) of the upright image at [path] to [outPath] as a PNG, and
+/// returns the crop actually written; null when it is empty or the image
+/// cannot be read back. The image is decoded at full resolution.
+Future<ui.Rect?> writeImageCrop(
+  String path,
+  ui.Rect crop,
+  String outPath,
+) async {
+  final buffer = await ui.ImmutableBuffer.fromFilePath(path);
+  ui.ImageDescriptor? descriptor;
+  ui.Codec? codec;
+  ui.Image? image;
+  ui.Picture? picture;
+  ui.Image? cropped;
+  try {
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+    final left = math.max(0, crop.left.floor());
+    final top = math.max(0, crop.top.floor());
+    final right = math.min(descriptor.width, crop.right.ceil());
+    final bottom = math.min(descriptor.height, crop.bottom.ceil());
+    if (right <= left || bottom <= top) return null;
+    final src = ui.Rect.fromLTRB(
+      left.toDouble(),
+      top.toDouble(),
+      right.toDouble(),
+      bottom.toDouble(),
+    );
+    codec = await descriptor.instantiateCodec();
+    image = (await codec.getNextFrame()).image;
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawImageRect(
+      image,
+      src,
+      ui.Rect.fromLTWH(0, 0, src.width, src.height),
+      ui.Paint(),
+    );
+    picture = recorder.endRecording();
+    cropped = await picture.toImage(right - left, bottom - top);
+    final png = await cropped.toByteData(format: ui.ImageByteFormat.png);
+    if (png == null) return null;
+    await File(outPath).writeAsBytes(png.buffer.asUint8List(), flush: true);
+    return src;
+  } finally {
+    cropped?.dispose();
+    picture?.dispose();
     image?.dispose();
     codec?.dispose();
     descriptor?.dispose();

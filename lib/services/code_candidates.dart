@@ -240,6 +240,16 @@ List<CodeCandidate> findCodeCandidates(
   return kept.length > limit ? kept.sublist(0, limit) : kept;
 }
 
+/// The code kinds whose label appears in [lines]: [CodeKind.supplement]
+/// for a Ministry of Health label (COD MINSAN, ...), [CodeKind.aic] for an
+/// AIC label.
+Set<CodeKind> codeLabelKinds(List<OcrLine> lines) => {
+  for (final line in lines) ...[
+    if (_supplementLabel.hasMatch(line.text)) CodeKind.supplement,
+    if (_aicLabel.hasMatch(line.text)) CodeKind.aic,
+  ],
+};
+
 /// Whether [digits] is an EAN-13 or EAN-8 with a valid check digit.
 bool isValidEan(String digits) {
   if (digits.length != 13 && digits.length != 8) return false;

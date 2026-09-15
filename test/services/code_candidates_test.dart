@@ -611,4 +611,15 @@ void main() {
       expect(describe(result), 'ean:8057737141836 other:057737');
     });
   });
+
+  test('codeLabelKinds names the labels present', () {
+    Set<CodeKind> kinds(List<String> texts) =>
+        codeLabelKinds([for (final t in texts) _line(t, 0)]);
+    expect(kinds(['COD MINSAN: @']), {CodeKind.supplement});
+    expect(kinds(['A.I.C. n.', 'Notifica n. 1054']), {
+      CodeKind.aic,
+      CodeKind.supplement,
+    });
+    expect(kinds(['Integratore alimentare', '8 057737141836']), isEmpty);
+  });
 }

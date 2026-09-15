@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -29,5 +30,25 @@ void main() {
       () => decodeDownscaledRgba(path, 40),
     );
     expect(notLarger, isNull);
+  });
+
+  testWidgets('writes an upright crop of the photo as a PNG', (tester) async {
+    const path = 'test/fixtures/exif_orientation_6.jpg';
+    final dir = Directory.systemTemp.createTempSync('scan_crop_test_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final out = '${dir.path}/crop.png';
+
+    final written = await tester.runAsync(
+      () => writeImageCrop(path, const Rect.fromLTRB(4.5, 10.2, 30, 30), out),
+    );
+    // Rounded out to whole pixels and clamped to the upright 20x40 image.
+    expect(written, const Rect.fromLTRB(4, 10, 20, 30));
+    final size = await tester.runAsync(() => readImageSize(out));
+    expect(size, const Size(16, 20));
+
+    final empty = await tester.runAsync(
+      () => writeImageCrop(path, const Rect.fromLTRB(25, 0, 30, 10), out),
+    );
+    expect(empty, isNull);
   });
 }
