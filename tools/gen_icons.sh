@@ -26,7 +26,7 @@ MONO="assets/icon/medora_icon_mono.png"
 
 rsvg-convert -w 1024 -h 1024 "$SVG" -o "$PILL"
 
-magick "$PILL" -resize 66% -background none -gravity center -extent 1024x1024 "$FG"
+magick "$PILL" -resize 84% -background none -gravity center -extent 1024x1024 "$FG"
 
 magick "$FG" -fill white -colorize 100 "$MONO"
 
