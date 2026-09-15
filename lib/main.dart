@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:medora/core/app_config.dart';
+import 'package:medora/core/cloud_credentials_prefs.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/db_setup.dart'
@@ -32,7 +33,7 @@ Future<void> main() async {
     'Supabase',
     () => SupabaseConfig.initialize(
       AppConfig.fromEnvironment(),
-      override: CloudCredentials.fromPrefs(prefs),
+      override: readCloudCredentials(prefs),
     ),
   );
 

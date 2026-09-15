@@ -15,8 +15,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:medora/core/app_config.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/services/app_update_service.dart';
@@ -95,11 +95,6 @@ String? updateTagOf(UpdateStatus? status) => switch (status) {
 };
 
 // ── Seams ────────────────────────────────────────────────────
-
-/// Build-time configuration; overridden in tests that need a specific repo.
-final appConfigProvider = Provider<AppConfig>(
-  (_) => AppConfig.fromEnvironment(),
-);
 
 /// The one [AppUpdateService] instance; it owns an HTTP client, so it is
 /// closed with the scope.

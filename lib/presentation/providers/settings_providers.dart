@@ -10,8 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:medora/core/app_config.dart';
+import 'package:medora/core/cloud_credentials_prefs.dart';
 import 'package:medora/core/supabase_config.dart';
-import 'package:medora/presentation/providers/app_update_provider.dart';
+import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -239,7 +240,7 @@ final cloudCredentialsProvider =
 class CloudCredentialsNotifier extends Notifier<CloudCredentials?> {
   @override
   CloudCredentials? build() =>
-      CloudCredentials.fromPrefs(ref.watch(sharedPreferencesProvider));
+      readCloudCredentials(ref.watch(sharedPreferencesProvider));
 
   /// Stores [credentials] on this device. The key is never logged.
   Future<void> save(CloudCredentials credentials) async {

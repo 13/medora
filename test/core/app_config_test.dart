@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/app_config.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -167,36 +166,6 @@ void main() {
       expect(creds.isComplete, isTrue);
       expect(creds.normalizedUrl, 'https://abc.supabase.co');
       expect(creds.normalizedKey, 'key');
-    });
-
-    test('fromPrefs reads both keys, or null when either is missing', () async {
-      SharedPreferences.setMockInitialValues({
-        CloudCredentials.prefsUrlKey: 'https://abc.supabase.co',
-        CloudCredentials.prefsKeyKey: 'anon-key',
-      });
-      final prefs = await SharedPreferences.getInstance();
-      expect(
-        CloudCredentials.fromPrefs(prefs),
-        const CloudCredentials(
-          url: 'https://abc.supabase.co',
-          anonKey: 'anon-key',
-        ),
-      );
-
-      SharedPreferences.setMockInitialValues({
-        CloudCredentials.prefsUrlKey: 'https://abc.supabase.co',
-        CloudCredentials.prefsKeyKey: '  ',
-      });
-      expect(
-        CloudCredentials.fromPrefs(await SharedPreferences.getInstance()),
-        isNull,
-      );
-
-      SharedPreferences.setMockInitialValues({});
-      expect(
-        CloudCredentials.fromPrefs(await SharedPreferences.getInstance()),
-        isNull,
-      );
     });
   });
 }

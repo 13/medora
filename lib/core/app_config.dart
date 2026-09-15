@@ -4,8 +4,6 @@
 /// When absent, the app runs in local-only mode and cloud sync is unavailable.
 library;
 
-import 'package:shared_preferences/shared_preferences.dart';
-
 class AppConfig {
   const AppConfig({
     required this.supabaseUrl,
@@ -76,15 +74,10 @@ class AppConfig {
 class CloudCredentials {
   const CloudCredentials({required this.url, required this.anonKey});
 
-  /// Reads the pair stored by Settings, or null when either half is missing.
-  static CloudCredentials? fromPrefs(SharedPreferences prefs) {
-    final url = prefs.getString(prefsUrlKey)?.trim() ?? '';
-    final key = prefs.getString(prefsKeyKey)?.trim() ?? '';
-    if (url.isEmpty || key.isEmpty) return null;
-    return CloudCredentials(url: url, anonKey: key);
-  }
-
   /// `SharedPreferences` key holding the project URL.
+  ///
+  /// Reading the stored pair back is `readCloudCredentials` in
+  /// `lib/core/cloud_credentials_prefs.dart`.
   static const prefsUrlKey = 'cloud.supabase_url';
 
   /// `SharedPreferences` key holding the anon/publishable key.
