@@ -27,6 +27,10 @@ class SupabaseConfig {
   static bool _initialized = false;
   static CloudConfigSource _source = CloudConfigSource.none;
 
+  /// Set by [debugSetConfiguredForTest]: the app is "configured" but no
+  /// Supabase client exists, so [clientOrNull] must not reach for one.
+  static bool _configuredWithoutClient = false;
+
   /// True after a successful [initialize] with usable credentials.
   static bool get isConfigured => _initialized;
 
@@ -39,8 +43,14 @@ class SupabaseConfig {
   static bool pendingRestart = false;
 
   /// The Supabase client, or null when cloud is not configured.
+  ///
+  /// `Supabase.instance` throws when `initialize` never ran, so the test-only
+  /// "configured, but no client" state ([debugSetConfiguredForTest]) is
+  /// checked first.
   static SupabaseClient? get clientOrNull =>
-      _initialized ? Supabase.instance.client : null;
+      _initialized && !_configuredWithoutClient
+      ? Supabase.instance.client
+      : null;
 
   /// The Supabase client; throws [AuthException] when not configured.
   static SupabaseClient requireClient() {
@@ -104,10 +114,26 @@ class SupabaseConfig {
   /// Whether we have a valid Supabase session.
   static bool get isAuthenticated => clientOrNull?.auth.currentSession != null;
 
+  /// Test-only: answer [isConfigured] with [configured] without creating a
+  /// client.
+  ///
+  /// Widget tests need the screens that a configured build shows - the cloud
+  /// tile, the sign-in form - and those only ask [isConfigured]. Standing up a
+  /// real `Supabase.initialize` for that would need a network and a project,
+  /// so only the flag flips; [clientOrNull] stays null and anything that
+  /// actually talks to Supabase has to be overridden by the test.
+  @visibleForTesting
+  static void debugSetConfiguredForTest(bool configured) {
+    _initialized = configured;
+    _configuredWithoutClient = configured;
+    _source = configured ? CloudConfigSource.settings : CloudConfigSource.none;
+  }
+
   /// Test-only: forget initialization state.
   @visibleForTesting
   static void resetForTest() {
     _initialized = false;
+    _configuredWithoutClient = false;
     _source = CloudConfigSource.none;
     pendingRestart = false;
   }

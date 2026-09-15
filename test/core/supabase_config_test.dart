@@ -100,4 +100,29 @@ void main() {
     expect(SupabaseConfig.pendingRestart, isFalse);
     expect(SupabaseConfig.configuredFrom, CloudConfigSource.none);
   });
+
+  group('debugSetConfiguredForTest', () {
+    tearDown(SupabaseConfig.resetForTest);
+
+    test('reports configured without ever reaching for a client', () {
+      SupabaseConfig.debugSetConfiguredForTest(true);
+
+      expect(SupabaseConfig.isConfigured, isTrue);
+      expect(SupabaseConfig.configuredFrom, CloudConfigSource.settings);
+      // `Supabase.instance` throws when initialize never ran, so the getters
+      // that would touch it must answer without it.
+      expect(SupabaseConfig.clientOrNull, isNull);
+      expect(SupabaseConfig.currentUserId, isNull);
+      expect(SupabaseConfig.isAuthenticated, isFalse);
+      expect(SupabaseConfig.requireClient, throwsA(isA<Exception>()));
+    });
+
+    test('false, and resetForTest, put it back', () {
+      SupabaseConfig.debugSetConfiguredForTest(true);
+      SupabaseConfig.debugSetConfiguredForTest(false);
+
+      expect(SupabaseConfig.isConfigured, isFalse);
+      expect(SupabaseConfig.clientOrNull, isNull);
+    });
+  });
 }

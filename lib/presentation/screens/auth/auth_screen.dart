@@ -59,7 +59,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   /// another's.
   Future<void> _claimLocalDataForSignedInUser() async {
     final l10n = AppLocalizations.of(context);
-    final userId = SupabaseConfig.clientOrNull?.auth.currentUser?.id;
+    final userId = ref.read(currentUserProvider)?.id;
     // Sign-up with e-mail confirmation on returns no session yet; there is
     // nothing to claim until the user actually signs in.
     if (userId == null) return;
@@ -173,11 +173,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     Row(
                       children: [
                         const Expanded(child: Divider()),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            l10n.orSignInForCloud,
-                            style: theme.textTheme.bodySmall,
+                        // Flexible, not fixed: the label is a sentence, and
+                        // the German one at a large text scale is wider than
+                        // the 420 the form is capped at.
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              l10n.orSignInForCloud,
+                              style: theme.textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ),
                         const Expanded(child: Divider()),
