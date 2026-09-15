@@ -187,6 +187,42 @@ void main() {
     expect(find.textContaining('answered'), findsOneWidget);
   });
 
+  testWidgets('a probe whose answer arrives after an edit is dropped', (
+    tester,
+  ) async {
+    final answer = Completer<http.Response>();
+    await open(
+      tester,
+      extraOverrides: [
+        cloudHttpClientProvider.overrideWithValue(
+          MockClient((_) => answer.future),
+        ),
+      ],
+    );
+
+    await tester.enterText(find.byKey(CloudConfigSheet.urlFieldKey), _url);
+    await tester.enterText(find.byKey(CloudConfigSheet.keyFieldKey), _key);
+    await tester.tap(find.text('Test connection'));
+    await tester.pump();
+
+    // The user corrects the URL while the first project is still answering.
+    await tester.enterText(
+      find.byKey(CloudConfigSheet.urlFieldKey),
+      'https://ijklmnop.supabase.co',
+    );
+    await tester.pump();
+
+    answer.complete(http.Response('{}', 200));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('The project answered'),
+      findsNothing,
+      reason: 'that answer was about the URL the user replaced',
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
   testWidgets('a probe that never answers gives up instead of spinning', (
     tester,
   ) async {

@@ -122,11 +122,19 @@ class SupabaseConfig {
   /// real `Supabase.initialize` for that would need a network and a project,
   /// so only the flag flips; [clientOrNull] stays null and anything that
   /// actually talks to Supabase has to be overridden by the test.
+  ///
+  /// The body sits inside an `assert`, so a release build drops it entirely:
+  /// nothing shipped can claim to be configured without credentials.
   @visibleForTesting
   static void debugSetConfiguredForTest(bool configured) {
-    _initialized = configured;
-    _configuredWithoutClient = configured;
-    _source = configured ? CloudConfigSource.settings : CloudConfigSource.none;
+    assert(() {
+      _initialized = configured;
+      _configuredWithoutClient = configured;
+      _source = configured
+          ? CloudConfigSource.settings
+          : CloudConfigSource.none;
+      return true;
+    }());
   }
 
   /// Test-only: forget initialization state.

@@ -114,18 +114,23 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
 
   Future<void> _test(AppLocalizations l10n) async {
     if (!_validate(l10n)) return;
+    // Stamped with what it tested: a project can take up to
+    // [cloudProbeTimeout] to answer, and "these credentials work" shown
+    // against credentials the user has since retyped is worse than no answer
+    // at all.
+    final tested = _current.normalized;
     setState(() {
       _probing = true;
       _probe = null;
     });
     final probe = await probeCloudCredentials(
       ref.read(cloudHttpClientProvider),
-      _current,
+      tested,
     );
     if (!mounted) return;
     setState(() {
       _probing = false;
-      _probe = probe;
+      if (_current.normalized == tested) _probe = probe;
     });
   }
 
