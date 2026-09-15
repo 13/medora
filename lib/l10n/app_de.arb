@@ -513,6 +513,7 @@
   "updateInstall": "Installieren",
   "updateLater": "Später",
   "updateReleaseNotes": "Neu in dieser Version",
+  "updatePublished": "Veröffentlicht {date}",
   "updateBannerTitle": "Medora {version} ist verfügbar",
   "updateView": "Ansehen",
   "updateFailed": "Suche nach Updates fehlgeschlagen",

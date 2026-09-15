@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
@@ -16,6 +17,11 @@ class UpdateBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(platformCapabilitiesProvider).hasInAppUpdates ||
+        !ref.watch(appConfigProvider).hasInAppUpdates) {
+      return const SizedBox.shrink();
+    }
+
     final status = ref.watch(appUpdateProvider).value;
     final release = switch (status) {
       UpdateAvailable(:final release) => release,
@@ -43,13 +49,16 @@ class UpdateBanner extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                l10n.updateBannerTitle(release.version.label),
+                l10n.updateBannerTitle('v${release.version.version}'),
                 style: context.text.bodyMedium?.copyWith(
                   color: context.colors.onPrimaryContainer,
                 ),
               ),
             ),
             TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: context.colors.onPrimaryContainer,
+              ),
               onPressed: () => showUpdateSheet(context),
               child: Text(l10n.updateView),
             ),

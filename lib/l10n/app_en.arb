@@ -647,6 +647,8 @@
   "updateInstall": "Install",
   "updateLater": "Later",
   "updateReleaseNotes": "What's new",
+  "updatePublished": "Released {date}",
+  "@updatePublished": { "placeholders": { "date": { "type": "String" } } },
   "updateBannerTitle": "Medora {version} is available",
   "@updateBannerTitle": { "placeholders": { "version": { "type": "String" } } },
   "updateView": "View",

@@ -96,4 +96,23 @@ void main() {
 
     expect(find.text('Check for updates'), findsNothing);
   });
+
+  testWidgets('an empty UPDATE_REPO renders nothing', (tester) async {
+    final service = FakeUpdateService(
+      release: fakeRelease(const ReleaseVersion(0, 2, 0, 12)),
+    );
+    await pumpMedoraApp(
+      tester,
+      const Scaffold(body: UpdateTile()),
+      overrides: await updateOverrides(
+        service: service,
+        downloadDir: root,
+        now: () => clock,
+        repo: '',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check for updates'), findsNothing);
+  });
 }

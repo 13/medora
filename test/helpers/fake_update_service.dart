@@ -81,6 +81,10 @@ ReleaseInfo fakeRelease(ReleaseVersion version) => ReleaseInfo(
 );
 
 /// Everything [appUpdateProvider] needs, with no plugin or network in reach.
+///
+/// [isOnline], when given, replaces the fixed [online] flag - pass a closure
+/// over a mutable local so a single test can flip connectivity mid-run
+/// without re-overriding the provider (which a `ProviderContainer` forbids).
 Future<List<Override>> updateOverrides({
   required AppUpdateService service,
   required Directory downloadDir,
@@ -88,6 +92,7 @@ Future<List<Override>> updateOverrides({
   PlatformCapabilities caps = PlatformCapabilities.mobile,
   String repo = 'acme/medora',
   bool online = true,
+  bool Function()? isOnline,
   ReleaseVersion current = fakeCurrentVersion,
 }) async {
   final prefs = await SharedPreferences.getInstance();
@@ -100,7 +105,7 @@ Future<List<Override>> updateOverrides({
     appUpdateServiceProvider.overrideWithValue(service),
     currentReleaseVersionProvider.overrideWith((ref) async => current),
     updateDownloadDirProvider.overrideWith((ref) async => downloadDir),
-    updateIsOnlineProvider.overrideWithValue(() => online),
+    updateIsOnlineProvider.overrideWithValue(isOnline ?? () => online),
     nowProvider.overrideWithValue(now),
   ];
 }

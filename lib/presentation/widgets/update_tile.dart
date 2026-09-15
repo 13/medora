@@ -17,7 +17,8 @@ class UpdateTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!ref.watch(platformCapabilitiesProvider).hasInAppUpdates) {
+    if (!ref.watch(platformCapabilitiesProvider).hasInAppUpdates ||
+        !ref.watch(appConfigProvider).hasInAppUpdates) {
       return const SizedBox.shrink();
     }
 

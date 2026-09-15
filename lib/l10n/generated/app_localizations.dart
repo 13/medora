@@ -2842,6 +2842,12 @@ abstract class AppLocalizations {
   /// **'What\'s new'**
   String get updateReleaseNotes;
 
+  /// No description provided for @updatePublished.
+  ///
+  /// In en, this message translates to:
+  /// **'Released {date}'**
+  String updatePublished(String date);
+
   /// No description provided for @updateBannerTitle.
   ///
   /// In en, this message translates to:

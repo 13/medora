@@ -54,7 +54,7 @@ void main() {
     await container.read(appUpdateProvider.notifier).check();
     await tester.pumpAndSettle();
 
-    expect(find.text('Medora 0.2.0 (12) is available'), findsOneWidget);
+    expect(find.text('Medora v0.2.0 is available'), findsOneWidget);
     expect(find.text('View'), findsOneWidget);
   });
 
@@ -68,7 +68,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
 
-    expect(find.text('Medora 0.2.0 (12) is available'), findsNothing);
+    expect(find.text('Medora v0.2.0 is available'), findsNothing);
     expect(container.read(updateDismissedTagProvider), 'v0.2.0+12');
   });
 
@@ -80,7 +80,7 @@ void main() {
     await container.read(appUpdateProvider.notifier).check();
     await tester.pumpAndSettle();
 
-    expect(find.text('Medora 0.2.0 (12) is available'), findsNothing);
+    expect(find.text('Medora v0.2.0 is available'), findsNothing);
   });
 
   testWidgets('an up-to-date app shows no banner', (tester) async {
@@ -89,5 +89,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('View'), findsNothing);
+  });
+
+  testWidgets('an empty UPDATE_REPO renders nothing, release or not', (
+    tester,
+  ) async {
+    final service = FakeUpdateService(
+      release: fakeRelease(const ReleaseVersion(0, 2, 0, 12)),
+    );
+    final container = await pumpMedoraApp(
+      tester,
+      const Scaffold(body: UpdateBanner()),
+      overrides: await updateOverrides(
+        service: service,
+        downloadDir: root,
+        now: () => clock,
+        repo: '',
+      ),
+    );
+    await container.read(appUpdateProvider.notifier).check(force: true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('View'), findsNothing);
+    expect(service.checks, 0);
   });
 }

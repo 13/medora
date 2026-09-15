@@ -171,6 +171,7 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
 
   @override
   Future<UpdateStatus> build() async {
+    _disposed = false;
     ref.onDispose(() => _disposed = true);
     return const UpdateUnknown();
   }
@@ -190,8 +191,12 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   ///
   /// [force] is the Settings button: it skips the 24 h throttle but not the
   /// platform, configuration and connectivity gates - none of those can be
-  /// satisfied by trying harder.
+  /// satisfied by trying harder. A download already in flight (or a verified
+  /// APK waiting to install) is never clobbered by a fresh check, forced or
+  /// not.
   Future<void> check({bool force = false}) async {
+    final current = state.value;
+    if (current is UpdateDownloading || current is UpdateReady) return;
     if (!_enabled) {
       _emit(const UpdateUnknown());
       return;

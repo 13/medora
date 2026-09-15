@@ -50,6 +50,7 @@ void main() {
     final (_, service) = await pumpSheet(tester);
 
     expect(find.text('Medora 0.2.0 (12)'), findsOneWidget);
+    expect(find.text('Released Mar 1, 2026'), findsOneWidget);
     expect(find.text("What's new"), findsOneWidget);
     expect(find.text('Fixed the thing.'), findsOneWidget);
     expect(find.text('Install'), findsNothing);

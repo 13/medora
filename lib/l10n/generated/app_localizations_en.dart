@@ -1491,6 +1491,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateReleaseNotes => 'What\'s new';
 
   @override
+  String updatePublished(String date) {
+    return 'Released $date';
+  }
+
+  @override
   String updateBannerTitle(String version) {
     return 'Medora $version is available';
   }

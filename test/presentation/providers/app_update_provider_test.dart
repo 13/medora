@@ -117,12 +117,37 @@ void main() {
       'offline resolves to the previous state without a network call',
       () async {
         final service = FakeUpdateService(release: releaseOf(current));
-        final c = await containerWith(service, online: false);
+        var online = true;
+        final c = ProviderContainer(
+          overrides: await updateOverrides(
+            service: service,
+            downloadDir: root,
+            now: () => clock,
+            isOnline: () => online,
+          ),
+        );
+        addTearDown(c.dispose);
+        await c.read(appUpdateProvider.future);
 
+        // Seed a real prior status first, so "resolves to the previous
+        // state" is actually exercised rather than coinciding with the
+        // UpdateUnknown a fresh notifier starts with.
+        await c.read(appUpdateProvider.notifier).check(force: true);
+        expect(statusOf(c), isA<UpdateUpToDate>());
+        final lastCheckAt = c
+            .read(sharedPreferencesProvider)
+            .getString(kUpdateLastCheckAt);
+        expect(lastCheckAt, isNotNull);
+
+        online = false;
         await c.read(appUpdateProvider.notifier).check(force: true);
 
-        expect(service.checks, 0);
-        expect(statusOf(c), isA<UpdateUnknown>());
+        expect(service.checks, 1);
+        expect(statusOf(c), isA<UpdateUpToDate>());
+        expect(
+          c.read(sharedPreferencesProvider).getString(kUpdateLastCheckAt),
+          lastCheckAt,
+        );
       },
     );
 
@@ -257,6 +282,40 @@ void main() {
 
       expect(service.installed, isEmpty);
     });
+
+    test('a check does not clobber a download in flight', () async {
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await withAvailable(service);
+
+      final downloadDone = c.read(appUpdateProvider.notifier).download();
+      expect(statusOf(c), isA<UpdateDownloading>());
+
+      await c.read(appUpdateProvider.notifier).check(force: true);
+      expect(statusOf(c), isA<UpdateDownloading>());
+      expect(service.checks, 1);
+
+      await downloadDone;
+      expect(statusOf(c), isA<UpdateReady>());
+    });
+
+    test(
+      'a check does not clobber a verified download waiting to install',
+      () async {
+        final service = FakeUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await withAvailable(service);
+        await c.read(appUpdateProvider.notifier).download();
+        expect(statusOf(c), isA<UpdateReady>());
+
+        await c.read(appUpdateProvider.notifier).check(force: true);
+
+        expect(statusOf(c), isA<UpdateReady>());
+        expect(service.checks, 1);
+      },
+    );
   });
 
   group('dismiss', () {

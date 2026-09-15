@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
@@ -60,6 +61,15 @@ class UpdateSheet extends ConsumerWidget {
                   color: context.colors.onSurfaceVariant,
                 ),
               ),
+              if (release.publishedAt case final publishedAt?) ...[
+                const SizedBox(height: 2),
+                Text(
+                  l10n.updatePublished(publishedAt.formatted),
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
               if (release.notes.trim().isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(l10n.updateReleaseNotes, style: context.text.titleSmall),
