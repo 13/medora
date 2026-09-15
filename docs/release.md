@@ -78,6 +78,36 @@ fvm flutter build apk --release --dart-define-from-file=dart_defines.json
 # → build/app/outputs/flutter-apk/app-release.apk
 ```
 
+### Artifact size
+
+A plain `build apk` is a **fat APK**: it carries the Flutter engine and the
+compiled Dart for every ABI (`armeabi-v7a`, `arm64-v8a`, `x86_64`) even though
+a given phone runs exactly one. For sideloading, split it:
+
+```bash
+fvm flutter build apk --release --split-per-abi --dart-define-from-file=dart_defines.json
+# → app-armeabi-v7a-release.apk, app-arm64-v8a-release.apk, app-x86_64-release.apk
+```
+
+Each file is roughly a third of the fat APK; hand users the `arm64-v8a` one
+unless you know they need otherwise. **The App Bundle already does this** —
+Play generates a per-device split from the `.aab`, so `--split-per-abi` is
+irrelevant to the Play upload and `build appbundle` stays the way to ship.
+
+To see where the bytes go:
+
+```bash
+fvm flutter build apk --release --analyze-size --target-platform android-arm64
+```
+
+It prints the top contributors and writes a JSON snapshot under
+`~/.flutter-devtools/` that `dart devtools --appSizeBase=<file>` opens as a
+treemap. Assets are the part worth watching: everything under `flutter:
+assets:` in `pubspec.yaml` is bundled verbatim, so an asset that is only used
+by the README (the screenshots) must never be listed there, and text fonts are
+**not** tree-shaken the way the Material icon font is — each declared Inter
+weight costs its full file.
+
 Drop `--dart-define-from-file` to ship a local-only build: without
 `SUPABASE_URL` and `SUPABASE_ANON_KEY` the app runs entirely offline and the
 cloud-sync section of settings says so. `dart_defines.json` is git-ignored;
