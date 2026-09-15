@@ -86,7 +86,10 @@ jobs:
             --dart-define=GIT_SHA=${GITHUB_SHA::7} \
             --dart-define=BUILD_CHANNEL=ci
       # Only main and tags produce a production-signed bundle; a feature
-      # branch must not upload one as an artifact.
+      # branch must not upload one as an artifact. It is also the one
+      # artifact here a user can install as a release - production keystore,
+      # real Supabase configuration - so About must say "release". Every
+      # other build in this workflow stays `ci`.
       - name: Release bundle (when secrets exist, on main or a tag)
         if: env.ANDROID_KEYSTORE_BASE64 != '' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
         run: |
@@ -95,7 +98,7 @@ jobs:
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             --dart-define=BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
             --dart-define=GIT_SHA=${GITHUB_SHA::7} \
-            --dart-define=BUILD_CHANNEL=ci
+            --dart-define=BUILD_CHANNEL=release
       - name: Upload the release bundle (when secrets exist, on main or a tag)
         if: env.ANDROID_KEYSTORE_BASE64 != '' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
         uses: actions/upload-artifact@v4

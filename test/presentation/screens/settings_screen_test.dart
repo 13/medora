@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/app_config.dart';
@@ -159,6 +160,18 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('AIFA-Datenbank'), findsOneWidget);
+      // The German title is the longest of the three; on the narrowest phone
+      // it must still fit the tile on a single line rather than wrap or
+      // ellipsize behind the trailing control.
+      final title = tester.renderObject<RenderParagraph>(
+        find.text('AIFA-Datenbank'),
+      );
+      expect(
+        title.textSize.height,
+        lessThanOrEqualTo(title.preferredLineHeight * 1.5),
+        reason: 'the AIFA tile title wrapped onto a second line at 360px',
+      );
+      expect(title.didExceedMaxLines, isFalse);
     },
   );
 
