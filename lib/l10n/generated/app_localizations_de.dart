@@ -1621,6 +1621,9 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get restoreInProgress => 'Wird wiederhergestellt …';
+
+  @override
   String restoreDone(int rows) {
     return '$rows Datensätze wiederhergestellt';
   }

@@ -3034,6 +3034,12 @@ abstract class AppLocalizations {
   /// **'Created {created} · {rows} rows · {photos} photos'**
   String restoreSummary(String created, int rows, int photos);
 
+  /// No description provided for @restoreInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Restoring…'**
+  String get restoreInProgress;
+
   /// No description provided for @restoreDone.
   ///
   /// In en, this message translates to:

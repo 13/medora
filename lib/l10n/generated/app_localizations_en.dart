@@ -1601,6 +1601,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get restoreInProgress => 'Restoring…';
+
+  @override
   String restoreDone(int rows) {
     return 'Restored $rows rows';
   }

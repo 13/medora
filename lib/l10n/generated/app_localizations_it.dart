@@ -1613,6 +1613,9 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
+  String get restoreInProgress => 'Ripristino in corso…';
+
+  @override
   String restoreDone(int rows) {
     return 'Ripristinate $rows righe';
   }

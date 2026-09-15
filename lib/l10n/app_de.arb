@@ -545,6 +545,7 @@
   "restoreMerge": "Mit diesem Gerät zusammenführen",
   "restoreReplaceWarning": "Alles auf diesem Gerät wird zuerst gelöscht und durch die Sicherung ersetzt.",
   "restoreSummary": "Erstellt {created} · {rows} Datensätze · {photos} Fotos",
+  "restoreInProgress": "Wird wiederhergestellt …",
   "restoreDone": "{rows} Datensätze wiederhergestellt",
   "backupNotABackup": "Diese Datei ist keine Medora-Sicherung.",
   "backupNewerVersion": "Diese Sicherung stammt aus einer neueren Medora-Version. Bitte aktualisiere die App.",

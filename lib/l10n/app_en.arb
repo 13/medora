@@ -684,6 +684,7 @@
   "restoreReplaceWarning": "Everything on this device is deleted first and replaced by the backup.",
   "restoreSummary": "Created {created} · {rows} rows · {photos} photos",
   "@restoreSummary": { "placeholders": { "created": { "type": "String" }, "rows": { "type": "int" }, "photos": { "type": "int" } } },
+  "restoreInProgress": "Restoring…",
   "restoreDone": "Restored {rows} rows",
   "@restoreDone": { "placeholders": { "rows": { "type": "int" } } },
   "backupNotABackup": "That file is not a Medora backup.",

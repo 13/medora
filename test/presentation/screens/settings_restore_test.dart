@@ -13,6 +13,7 @@
 /// is a [_RecordingBackupService] that replays what was parsed there.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -114,6 +115,36 @@ class _RecordingBackupService implements BackupService {
 
   @override
   Future<int> estimatePhotoBytes() async => 0;
+}
+
+/// A restore that does not finish until the test lets it, so the progress
+/// dialog can be looked at while it is up.
+class _GatedRestoreService extends _RecordingBackupService {
+  _GatedRestoreService({required super.manifest, required super.rows});
+
+  final gate = Completer<void>();
+
+  @override
+  Future<BackupManifest> restore(
+    File file, {
+    required RestoreMode mode,
+    bool markPending = false,
+  }) async {
+    await gate.future;
+    return super.restore(file, mode: mode, markPending: markPending);
+  }
+}
+
+/// A restore that fails after the dialog is up.
+class _ThrowingRestoreService extends _RecordingBackupService {
+  _ThrowingRestoreService({required super.manifest, required super.rows});
+
+  @override
+  Future<BackupManifest> restore(
+    File file, {
+    required RestoreMode mode,
+    bool markPending = false,
+  }) async => throw StateError('the transaction rolled back');
 }
 
 void main() {
@@ -228,6 +259,44 @@ void main() {
       greaterThan(cancelledBefore),
       reason: 'the reminders are reset and reconciled after a restore',
     );
+  });
+
+  testWidgets('the restore is blocked behind a progress dialog', (
+    tester,
+  ) async {
+    final service = _GatedRestoreService(manifest: manifest, rows: rows);
+    await tapRestore(tester, await overrides(service));
+
+    await tester.tap(find.text('Restore'));
+    // Explicit pumps, not pumpAndSettle: the spinner never stops animating.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    // The restore is still running: the screen says so and takes no taps.
+    expect(find.text('Restoring…'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Restored ${manifest.totalRows} rows'), findsNothing);
+
+    service.gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    // Gone once the rows are in, and the result is reported as usual.
+    expect(find.text('Restoring…'), findsNothing);
+    expect(find.text('Restored ${manifest.totalRows} rows'), findsOneWidget);
+  });
+
+  testWidgets('a restore that throws still takes the progress dialog down', (
+    tester,
+  ) async {
+    final service = _ThrowingRestoreService(manifest: manifest, rows: rows);
+    await tapRestore(tester, await overrides(service));
+
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restoring…'), findsNothing);
+    expect(find.textContaining('the transaction rolled back'), findsOneWidget);
   });
 
   testWidgets('cloud mode marks the restored rows for upload, and merge is '

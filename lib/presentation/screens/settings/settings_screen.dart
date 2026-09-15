@@ -1,6 +1,7 @@
 /// Medora - Settings Screen
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -624,19 +625,65 @@ class SettingsScreen extends ConsumerWidget {
       final mode = await showRestoreDialog(context, manifest);
       if (mode == null) return;
 
+      if (!context.mounted) return;
+
       final isCloud = ref.read(appModeProvider) == AppMode.cloud;
-      final applied = await service.restore(
-        file,
-        mode: mode,
-        markPending: isCloud,
-      );
-      await _afterRestore(ref, isCloud: isCloud);
+      // Rewriting the whole database and re-reconciling the reminders takes
+      // long enough on a full cabinet for the screen to look idle, and a
+      // second tap on "Restore" while the first is running would read the
+      // file twice. Block until it is done.
+      final closeProgress = _showRestoreProgress(context, l10n);
+      final BackupManifest applied;
+      try {
+        applied = await service.restore(file, mode: mode, markPending: isCloud);
+        await _afterRestore(ref, isCloud: isCloud);
+      } finally {
+        closeProgress();
+      }
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.restoreDone(applied.totalRows))),
       );
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(_backupError(l10n, e))));
     }
+  }
+
+  /// Puts up the un-dismissable "Restoring…" dialog; the returned callback
+  /// takes it down again, and is safe to call more than once.
+  VoidCallback _showRestoreProgress(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
+    final navigator = Navigator.of(context);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 20),
+                Expanded(child: Text(l10n.restoreInProgress)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    var closed = false;
+    return () {
+      if (closed) return;
+      closed = true;
+      navigator.pop();
+    };
   }
 
   /// Every cached view of the database is stale after a restore.
