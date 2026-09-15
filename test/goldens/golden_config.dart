@@ -9,6 +9,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -121,6 +122,9 @@ Future<void> pumpGolden(
     reminderPortProvider.overrideWithValue(FakePort()),
     platformCapabilitiesProvider.overrideWithValue(PlatformCapabilities.mobile),
     nowProvider.overrideWithValue(() => goldenNow),
+    // Goldens see an app that knows of no update, so the Home banner is
+    // hidden and home_*.png stays byte-identical.
+    appUpdateProvider.overrideWith(_NoUpdate.new),
     medicationListProvider.overrideWith(_FixedMedications.new),
     treatmentListProvider.overrideWith(_FixedTreatments.new),
     todaysDoseLogsProvider.overrideWith(_FixedTodaysDoses.new),
@@ -162,4 +166,9 @@ class _FixedTreatments extends TreatmentListNotifier {
 class _FixedTodaysDoses extends TodaysDoseLogsNotifier {
   @override
   Future<List<DoseLog>> build() async => goldenDoses();
+}
+
+class _NoUpdate extends AppUpdateNotifier {
+  @override
+  Future<UpdateStatus> build() async => const UpdateUnknown();
 }

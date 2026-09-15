@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/clock.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -31,6 +32,7 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
+import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -307,6 +309,13 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         await ref.read(syncServiceProvider).syncAll();
       }
     },
+    // Least urgent step, so it runs last - and only where an update could
+    // actually be installed: Android, with a repo configured at build time.
+    updateCheck:
+        ref.read(platformCapabilitiesProvider).hasInAppUpdates &&
+            ref.read(appConfigProvider).hasInAppUpdates
+        ? () => ref.read(appUpdateProvider.notifier).check()
+        : null,
     syncDelay: ref.watch(syncStartupDelayProvider),
     minSyncInterval: const Duration(minutes: 5),
   );

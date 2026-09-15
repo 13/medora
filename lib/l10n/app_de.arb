@@ -503,5 +503,19 @@
   "onboardingDosesTitle": "Tägliche Dosen",
   "onboardingDosesBody": "Jeder Tag zeigt, was ansteht. Tippe auf Einnehmen oder lass dich von Erinnerungen anstupsen.",
   "onboardingNext": "Weiter",
-  "onboardingDone": "Fertig"
+  "onboardingDone": "Fertig",
+
+  "checkForUpdates": "Nach Updates suchen",
+  "checkingForUpdates": "Suche nach Updates …",
+  "upToDate": "Aktuell",
+  "updateAvailable": "Update verfügbar: {version}",
+  "updateDownload": "Herunterladen",
+  "updateInstall": "Installieren",
+  "updateLater": "Später",
+  "updateReleaseNotes": "Neu in dieser Version",
+  "updateBannerTitle": "Medora {version} ist verfügbar",
+  "updateView": "Ansehen",
+  "updateFailed": "Suche nach Updates fehlgeschlagen",
+  "updateChecksumFailed": "Der Download konnte nicht überprüft werden",
+  "updateNoAsset": "Kein Installationspaket für dieses Gerät"
 }

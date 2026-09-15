@@ -1480,4 +1480,48 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get onboardingDone => 'Fertig';
+
+  @override
+  String get checkForUpdates => 'Nach Updates suchen';
+
+  @override
+  String get checkingForUpdates => 'Suche nach Updates …';
+
+  @override
+  String get upToDate => 'Aktuell';
+
+  @override
+  String updateAvailable(String version) {
+    return 'Update verfügbar: $version';
+  }
+
+  @override
+  String get updateDownload => 'Herunterladen';
+
+  @override
+  String get updateInstall => 'Installieren';
+
+  @override
+  String get updateLater => 'Später';
+
+  @override
+  String get updateReleaseNotes => 'Neu in dieser Version';
+
+  @override
+  String updateBannerTitle(String version) {
+    return 'Medora $version ist verfügbar';
+  }
+
+  @override
+  String get updateView => 'Ansehen';
+
+  @override
+  String get updateFailed => 'Suche nach Updates fehlgeschlagen';
+
+  @override
+  String get updateChecksumFailed =>
+      'Der Download konnte nicht überprüft werden';
+
+  @override
+  String get updateNoAsset => 'Kein Installationspaket für dieses Gerät';
 }

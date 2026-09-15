@@ -2793,6 +2793,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Done'**
   String get onboardingDone;
+
+  /// No description provided for @checkForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for updates'**
+  String get checkForUpdates;
+
+  /// No description provided for @checkingForUpdates.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking for updates…'**
+  String get checkingForUpdates;
+
+  /// No description provided for @upToDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to date'**
+  String get upToDate;
+
+  /// No description provided for @updateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Update available: {version}'**
+  String updateAvailable(String version);
+
+  /// No description provided for @updateDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Download'**
+  String get updateDownload;
+
+  /// No description provided for @updateInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get updateInstall;
+
+  /// No description provided for @updateLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get updateLater;
+
+  /// No description provided for @updateReleaseNotes.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s new'**
+  String get updateReleaseNotes;
+
+  /// No description provided for @updateBannerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Medora {version} is available'**
+  String updateBannerTitle(String version);
+
+  /// No description provided for @updateView.
+  ///
+  /// In en, this message translates to:
+  /// **'View'**
+  String get updateView;
+
+  /// No description provided for @updateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check for updates'**
+  String get updateFailed;
+
+  /// No description provided for @updateChecksumFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The download could not be verified'**
+  String get updateChecksumFailed;
+
+  /// No description provided for @updateNoAsset.
+  ///
+  /// In en, this message translates to:
+  /// **'No installer for this device'**
+  String get updateNoAsset;
 }
 
 class _AppLocalizationsDelegate

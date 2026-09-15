@@ -19,6 +19,7 @@ import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/update_tile.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/reminder_service.dart';
@@ -399,6 +400,8 @@ class SettingsScreen extends ConsumerWidget {
                   appVersionAsync.maybeWhen(data: (v) => v, orElse: () => '…'),
                 ),
               ),
+              // Renders nothing where in-app updates are unavailable.
+              const UpdateTile(),
             ],
           ),
           const SizedBox(height: 32),
