@@ -437,6 +437,54 @@ void main() {
       expect(describe(result), 'supplement:107018');
     });
 
+    test('two passes reading one label differently give one chip', () {
+      // Review M2: 10T018 (107018, alt 101018) and T07018 (707018, alt
+      // 107018) are the same printed code; 107018 is supported by both.
+      final result = findCodeCandidates(
+        const [
+          OcrLine('COD MINSAN: 10T018', Rect.fromLTWH(800, 1400, 565, 64)),
+        ],
+        regionLines: const [
+          OcrLine('COD MINSAN: T07018', Rect.fromLTWH(805, 1402, 560, 64)),
+        ],
+      );
+      expect(describe(result), 'supplement:107018');
+    });
+
+    test('of two overlapping readings the one with fewer repairs wins', () {
+      final result = findCodeCandidates(
+        const [
+          OcrLine('COD MINSAN: T0T018', Rect.fromLTWH(800, 1400, 565, 64)),
+        ],
+        regionLines: const [
+          OcrLine('COD MINSAN: 10T018', Rect.fromLTWH(805, 1402, 560, 64)),
+        ],
+      );
+      expect(describe(result), 'supplement:107018');
+
+      final clean = findCodeCandidates(
+        const [
+          OcrLine('COD MINSAN: 107018', Rect.fromLTWH(800, 1400, 565, 64)),
+        ],
+        regionLines: const [
+          OcrLine('COD MINSAN: T07018', Rect.fromLTWH(805, 1402, 560, 64)),
+        ],
+      );
+      expect(describe(clean), 'supplement:107018');
+    });
+
+    test('different codes in different places are both kept', () {
+      final result = findCodeCandidates(
+        const [
+          OcrLine('COD MINSAN: 107018', Rect.fromLTWH(800, 1400, 565, 64)),
+        ],
+        regionLines: const [
+          OcrLine('COD MINSAN: T07019', Rect.fromLTWH(805, 2400, 560, 64)),
+        ],
+      );
+      expect(describe(result), 'supplement:107018 supplement:707019');
+    });
+
     test('a number-only line far from the label is not its code', () {
       final result = findCodeCandidates(const [
         OcrLine('COD MINSAN:', Rect.fromLTWH(0, 100, 240, 40)),

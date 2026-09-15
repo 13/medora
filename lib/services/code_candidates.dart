@@ -100,6 +100,9 @@ List<CodeCandidate> findCodeCandidates(
     for (final i in _labelPartners(regionLines)) lines.length + i,
   };
   final allLines = [...lines, ...regionLines];
+  // Per OCR candidate (by identity): repaired characters and source line.
+  final repairCounts = <CodeCandidate, int>{};
+  final lineOf = <CodeCandidate, int>{};
 
   for (var lineIndex = 0; lineIndex < allLines.length; lineIndex++) {
     final line = allLines[lineIndex];
@@ -126,17 +129,20 @@ List<CodeCandidate> findCodeCandidates(
       _Span span, {
       String Function(String)? codeOf,
     }) {
-      found.add(
-        CodeCandidate(
-          code: code,
-          kind: kind,
-          sourceText: line.text.trim(),
-          box: boxFor(span),
-          alternatives: codeOf == null
-              ? const []
-              : _alternativeCodes(text, span, repairs, code, codeOf),
-        ),
+      final candidate = CodeCandidate(
+        code: code,
+        kind: kind,
+        sourceText: line.text.trim(),
+        box: boxFor(span),
+        alternatives: codeOf == null
+            ? const []
+            : _alternativeCodes(text, span, repairs, code, codeOf),
       );
+      found.add(candidate);
+      lineOf[candidate] = lineIndex;
+      repairCounts[candidate] = repairs.keys
+          .where((i) => i >= span.start && i < span.end)
+          .length;
     }
 
     // EAN-13 / EAN-8 printed as a whole digit run (a failed checksum yields
@@ -221,6 +227,8 @@ List<CodeCandidate> findCodeCandidates(
     }
   }
 
+  _dropConflictingReadings(found, repairCounts, lineOf, lines.length);
+
   Set<String> codesOf(CodeKind kind) => {
     for (final c in found)
       if (c.kind == kind) c.code,
@@ -268,6 +276,51 @@ List<CodeCandidate> findCodeCandidates(
   });
 
   return kept.length > limit ? kept.sublist(0, limit) : kept;
+}
+
+/// Removes from [found] the weaker of two AIC or supplement readings of one
+/// printed code: same kind, different codes of one length, at least one with
+/// a repaired lookalike, one from the photo pass and one from the region
+/// pass (line index >= [regionStart]), with overlapping boxes. The reading with fewer
+/// repaired lookalikes ([repairCounts]) wins; then the one the other lists
+/// as an alternative; then the region pass (line index >= [regionStart]),
+/// read at a higher resolution; then the first.
+void _dropConflictingReadings(
+  List<CodeCandidate> found,
+  Map<CodeCandidate, int> repairCounts,
+  Map<CodeCandidate, int> lineOf,
+  int regionStart,
+) {
+  bool beats(CodeCandidate a, CodeCandidate b) {
+    final ra = repairCounts[a] ?? 0;
+    final rb = repairCounts[b] ?? 0;
+    if (ra != rb) return ra < rb;
+    final aSupported = b.alternatives.contains(a.code);
+    final bSupported = a.alternatives.contains(b.code);
+    if (aSupported != bSupported) return aSupported;
+    final aRegion = lineOf[a]! >= regionStart;
+    final bRegion = lineOf[b]! >= regionStart;
+    return aRegion && !bRegion;
+  }
+
+  final dropped = <CodeCandidate>{};
+  for (var i = 0; i < found.length; i++) {
+    final a = found[i];
+    if (a.kind != CodeKind.aic && a.kind != CodeKind.supplement) continue;
+    for (var j = i + 1; j < found.length && !dropped.contains(a); j++) {
+      final b = found[j];
+      if (dropped.contains(b) || b.kind != a.kind || b.code == a.code) continue;
+      final lineA = lineOf[a];
+      final lineB = lineOf[b];
+      if (lineA == null || lineB == null) continue;
+      if ((lineA >= regionStart) == (lineB >= regionStart)) continue;
+      if (a.code.length != b.code.length) continue;
+      if ((repairCounts[a] ?? 0) == 0 && (repairCounts[b] ?? 0) == 0) continue;
+      if (!a.box.overlaps(b.box)) continue;
+      dropped.add(beats(a, b) ? b : a);
+    }
+  }
+  found.removeWhere(dropped.contains);
 }
 
 /// The code kinds whose label appears in [lines]: [CodeKind.supplement]
