@@ -502,6 +502,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ocrScanning => 'Scanning for AIC codes…';
 
   @override
+  String get scanTakePhoto => 'Take photo';
+
+  @override
+  String get scanFromGallery => 'Choose from gallery';
+
+  @override
+  String get scanRetake => 'Retake';
+
+  @override
+  String get scanRecognizing => 'Reading text…';
+
+  @override
+  String get scanChooseCode => 'Tap the code to use';
+
+  @override
+  String get scanAicCodes => 'AIC codes';
+
+  @override
+  String get scanSupplementCodes => 'Supplement codes (Ministry of Health)';
+
+  @override
+  String get scanBarcodes => 'Barcodes (EAN)';
+
+  @override
+  String get scanOtherNumbers => 'Other numbers';
+
+  @override
+  String get scanNoCodeFound =>
+      'No code found. Retake the photo closer, or type the code.';
+
+  @override
+  String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
+
+  @override
   String get settings => 'Settings';
 
   @override

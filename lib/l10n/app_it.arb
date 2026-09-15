@@ -169,6 +169,17 @@
   "scanBarcodeTooltip": "Scansiona codice AIC",
   "ocrDetectedCodes": "Codici rilevati — tocca per cercare",
   "ocrScanning": "Ricerca codici AIC in corso…",
+  "scanTakePhoto": "Scatta foto",
+  "scanFromGallery": "Scegli dalla galleria",
+  "scanRetake": "Rifai foto",
+  "scanRecognizing": "Riconoscimento del testo…",
+  "scanChooseCode": "Tocca il codice da usare",
+  "scanAicCodes": "Codici AIC",
+  "scanSupplementCodes": "Codici integratori (Ministero della Salute)",
+  "scanBarcodes": "Codici a barre (EAN)",
+  "scanOtherNumbers": "Altri numeri",
+  "scanNoCodeFound": "Nessun codice trovato. Scatta più da vicino o inserisci il codice.",
+  "scanCaptureHint": "Fotografa la confezione con il codice AIC ben leggibile",
 
   "settings": "Impostazioni",
 

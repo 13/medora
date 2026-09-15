@@ -169,6 +169,17 @@
   "scanBarcodeTooltip": "AIC-Code scannen",
   "ocrDetectedCodes": "Erkannte Codes — zum Suchen tippen",
   "ocrScanning": "AIC-Codes werden gesucht…",
+  "scanTakePhoto": "Foto aufnehmen",
+  "scanFromGallery": "Aus Galerie wählen",
+  "scanRetake": "Neues Foto",
+  "scanRecognizing": "Text wird erkannt…",
+  "scanChooseCode": "Tippe auf den gewünschten Code",
+  "scanAicCodes": "AIC-Codes",
+  "scanSupplementCodes": "Nahrungsergänzungsmittel (Ministeriumscode)",
+  "scanBarcodes": "Barcodes (EAN)",
+  "scanOtherNumbers": "Weitere Nummern",
+  "scanNoCodeFound": "Kein Code erkannt. Fotografiere näher oder tippe den Code ein.",
+  "scanCaptureHint": "Fotografiere die Packung so, dass der AIC-Code scharf ist",
 
   "settings": "Einstellungen",
 

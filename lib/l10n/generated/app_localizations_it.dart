@@ -505,6 +505,42 @@ class AppLocalizationsIt extends AppLocalizations {
   String get ocrScanning => 'Ricerca codici AIC in corso…';
 
   @override
+  String get scanTakePhoto => 'Scatta foto';
+
+  @override
+  String get scanFromGallery => 'Scegli dalla galleria';
+
+  @override
+  String get scanRetake => 'Rifai foto';
+
+  @override
+  String get scanRecognizing => 'Riconoscimento del testo…';
+
+  @override
+  String get scanChooseCode => 'Tocca il codice da usare';
+
+  @override
+  String get scanAicCodes => 'Codici AIC';
+
+  @override
+  String get scanSupplementCodes =>
+      'Codici integratori (Ministero della Salute)';
+
+  @override
+  String get scanBarcodes => 'Codici a barre (EAN)';
+
+  @override
+  String get scanOtherNumbers => 'Altri numeri';
+
+  @override
+  String get scanNoCodeFound =>
+      'Nessun codice trovato. Scatta più da vicino o inserisci il codice.';
+
+  @override
+  String get scanCaptureHint =>
+      'Fotografa la confezione con il codice AIC ben leggibile';
+
+  @override
   String get settings => 'Impostazioni';
 
   @override

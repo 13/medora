@@ -1000,6 +1000,72 @@ abstract class AppLocalizations {
   /// **'Scanning for AIC codes…'**
   String get ocrScanning;
 
+  /// No description provided for @scanTakePhoto.
+  ///
+  /// In en, this message translates to:
+  /// **'Take photo'**
+  String get scanTakePhoto;
+
+  /// No description provided for @scanFromGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from gallery'**
+  String get scanFromGallery;
+
+  /// No description provided for @scanRetake.
+  ///
+  /// In en, this message translates to:
+  /// **'Retake'**
+  String get scanRetake;
+
+  /// No description provided for @scanRecognizing.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading text…'**
+  String get scanRecognizing;
+
+  /// No description provided for @scanChooseCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap the code to use'**
+  String get scanChooseCode;
+
+  /// No description provided for @scanAicCodes.
+  ///
+  /// In en, this message translates to:
+  /// **'AIC codes'**
+  String get scanAicCodes;
+
+  /// No description provided for @scanSupplementCodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement codes (Ministry of Health)'**
+  String get scanSupplementCodes;
+
+  /// No description provided for @scanBarcodes.
+  ///
+  /// In en, this message translates to:
+  /// **'Barcodes (EAN)'**
+  String get scanBarcodes;
+
+  /// No description provided for @scanOtherNumbers.
+  ///
+  /// In en, this message translates to:
+  /// **'Other numbers'**
+  String get scanOtherNumbers;
+
+  /// No description provided for @scanNoCodeFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No code found. Retake the photo closer, or type the code.'**
+  String get scanNoCodeFound;
+
+  /// No description provided for @scanCaptureHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Photograph the pack so the AIC code is sharp'**
+  String get scanCaptureHint;
+
   /// No description provided for @settings.
   ///
   /// In en, this message translates to:

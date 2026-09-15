@@ -80,6 +80,20 @@ class ScanReviewView extends StatelessWidget {
 
 ---
 
+### Amendment (2026-09-15): supplement and EAN codes
+
+The user photographed a food-supplement label (`COD MINSAN: 107018`, EAN-13 printed as `8 057737 141836`). Supplements are not in the AIFA medicines database, and the old `extractCodes` reported `107018` as an AIC and cut the EAN to `805773714`. Task 1 therefore uses a wider candidate model (no lookup for the new kinds in this task):
+
+- `enum CodeKind { aic, supplement, ean, other }`.
+- `supplement`: a 6–9 digit number on a line (or the line right after a line) whose text carries a Ministry-code label, case-insensitive and tolerant of OCR spacing/punctuation: `MINSAN`, `MIN SAN`, `COD. MIN`, `COD MIN`, `CODICE MINISTERIALE`, `CODICE NOTIFICA`, `NOTIFICA N`. Such numbers are not also reported as `aic`; a letter-prefixed 9-digit code without such a label stays `aic`.
+- `ean`: EAN-13 or EAN-8 with a valid check digit. Digit groups on a line are joined when the joined length is 8 or 13 and the checksum validates; a 13-digit number is never split into a 9-digit `aic`. `CodeCandidate.eanFromBarcode(String value, Rect box)` lets Task 2 add ML Kit barcode results (`findCodeCandidates(..., barcodes:)`), deduplicated with OCR-found EANs; the barcode-decoded box wins.
+- `aic`: `BarcodeLookupDatasource.aicPattern` matches minus numbers claimed by `supplement` or inside an `ean`. `aicPattern` / `extractCodes` now require non-digit boundaries: `(?<![0-9])[A-Za-z]?\d{6,9}(?![0-9])`.
+- `other`: unchanged (≥ 6 alphanumerics with ≥ 4 digits, not overlapping any of the above).
+- Ranking: `aic` (9-digit before shorter), `supplement`, `ean`, `other`; within a kind top-to-bottom, left-to-right; dedupe by `kind + code`.
+- Review sections in order: `scanAicCodes`; `scanSupplementCodes` "Supplement codes (Ministry of Health)" / "Nahrungsergänzungsmittel (Ministeriumscode)" / "Codici integratori (Ministero della Salute)"; `scanBarcodes` "Barcodes (EAN)" / "Barcodes (EAN)" / "Codici a barre (EAN)"; `scanOtherNumbers`. Markers: AIC `primaryContainer`/`primary`, supplement `tertiaryContainer`/`tertiary`, EAN `secondaryContainer`/`secondary`, other `outline`.
+- Extra tests: the photo's lines yield exactly one `supplement` `107018`, one `ean` `8057737141836` and no `aic`; `COD. MIN. SAN.`, `Cod. Minsan 107018` and label-on-previous-line variants; invalid checksum `8057737141837` is not `ean`; EAN-8 `96385074` validates; `eanFromBarcode` dedupes with an OCR EAN; unit tests for `extractCodes`.
+- Commit message: `feat(scanner): rank AIC, supplement, EAN and other code candidates; review them on the photo`.
+
 ### Task 2: Photo capture flow in the scanner screen
 
 **Files:** `lib/presentation/screens/scanner/barcode_scanner_screen.dart`, ARB cleanup, `docs/architecture.md` (one paragraph), README feature bullet.
