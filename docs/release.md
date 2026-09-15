@@ -98,6 +98,11 @@ unless you know they need otherwise. **The App Bundle already does this** —
 Play generates a per-device split from the `.aab`, so `--split-per-abi` is
 irrelevant to the Play upload and `build appbundle` stays the way to ship.
 
+The ML Kit plugins bundle their models instead of downloading them on first
+use: `google_mlkit_barcode_scanning` adds roughly 2–3 MB per ABI on top of text
+recognition. Measured `arm64-v8a` release APK: **48.8 MB for 0.2.3** (text
+recognition plus barcode scanning), up from 42.9 MB for 0.2.2.
+
 To see where the bytes go:
 
 ```bash
