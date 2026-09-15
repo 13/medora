@@ -650,11 +650,16 @@ class SettingsScreen extends ConsumerWidget {
 
   /// Puts up the un-dismissable "Restoring…" dialog; the returned callback
   /// takes it down again, and is safe to call more than once.
+  ///
+  /// Both halves name the **root** navigator. `showDialog` uses it by
+  /// default, while `Navigator.of(context)` inside the shell resolves to the
+  /// shell's navigator - taking the dialog down with that one would pop
+  /// `/settings` and leave the un-dismissable dialog on screen for good.
   VoidCallback _showRestoreProgress(
     BuildContext context,
     AppLocalizations l10n,
   ) {
-    final navigator = Navigator.of(context);
+    final navigator = Navigator.of(context, rootNavigator: true);
     unawaited(
       showDialog<void>(
         context: context,

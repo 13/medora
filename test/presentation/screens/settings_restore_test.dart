@@ -213,13 +213,31 @@ void main() {
   ];
 
   /// Opens Settings on a tall screen and taps "Restore from backup".
-  Future<void> tapRestore(WidgetTester tester, List<Override> given) async {
+  ///
+  /// [nested] mounts the screen the way the router's `ShellRoute` does -
+  /// inside a second [Navigator] below the app's own - so that anything the
+  /// screen pops has to name the navigator it means.
+  Future<void> tapRestore(
+    WidgetTester tester,
+    List<Override> given, {
+    bool nested = false,
+  }) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await pumpMedoraApp(tester, const SettingsScreen(), overrides: given);
+    await pumpMedoraApp(
+      tester,
+      nested
+          ? Navigator(
+              onGenerateRoute: (_) => MaterialPageRoute<void>(
+                builder: (_) => const SettingsScreen(),
+              ),
+            )
+          : const SettingsScreen(),
+      overrides: given,
+    );
     await tester.pumpAndSettle();
 
     final tile = find.text('Restore from backup');
@@ -283,6 +301,34 @@ void main() {
 
     // Gone once the rows are in, and the result is reported as usual.
     expect(find.text('Restoring…'), findsNothing);
+    expect(find.text('Restored ${manifest.totalRows} rows'), findsOneWidget);
+  });
+
+  testWidgets('the progress dialog is taken down without popping the screen', (
+    tester,
+  ) async {
+    // Inside the shell `Navigator.of(context)` is the shell's navigator, not
+    // the one `showDialog` pushed onto: closing the dialog with it would pop
+    // Settings and leave the dialog up.
+    final service = _GatedRestoreService(manifest: manifest, rows: rows);
+    await tapRestore(tester, await overrides(service), nested: true);
+
+    await tester.tap(find.text('Restore'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Restoring…'), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    service.gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Restoring…'), findsNothing);
+    expect(
+      find.byType(SettingsScreen),
+      findsOneWidget,
+      reason: 'the dialog went, not the screen underneath it',
+    );
     expect(find.text('Restored ${manifest.totalRows} rows'), findsOneWidget);
   });
 
