@@ -410,6 +410,42 @@ void main() {
     });
   });
 
+  group('findCodeCandidates: two recognition passes', () {
+    String describe(List<CodeCandidate> list) =>
+        list.map((c) => '${c.kind.name}:${c.code}').join(' ');
+
+    test('a label line does not pair with the next pass', () {
+      // Review M3: the last first-pass line and region line 0 are not
+      // neighbours in reading order.
+      final result = findCodeCandidates(
+        const [OcrLine('COD MINSAN:', Rect.fromLTWH(800, 1400, 240, 40))],
+        regionLines: const [
+          OcrLine('123456', Rect.fromLTWH(800, 1450, 120, 40)),
+        ],
+      );
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('a label pairs with its code inside the region pass', () {
+      final result = findCodeCandidates(
+        const [OcrLine('Integratore', Rect.fromLTWH(0, 0, 400, 40))],
+        regionLines: const [
+          OcrLine('COD MINSAN:', Rect.fromLTWH(800, 1400, 240, 40)),
+          OcrLine('107018', Rect.fromLTWH(800, 1445, 120, 40)),
+        ],
+      );
+      expect(describe(result), 'supplement:107018');
+    });
+
+    test('a number-only line far from the label is not its code', () {
+      final result = findCodeCandidates(const [
+        OcrLine('COD MINSAN:', Rect.fromLTWH(0, 100, 240, 40)),
+        OcrLine('123456', Rect.fromLTWH(0, 900, 120, 40)),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+  });
+
   group('findCodeCandidates: ranking', () {
     test('ranking: aic, supplement, ean, other', () {
       final result = findCodeCandidates([

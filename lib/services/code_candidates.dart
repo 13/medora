@@ -82,18 +82,27 @@ class CodeCandidate {
 /// [barcodes] are candidates decoded by a barcode scanner (see
 /// [CodeCandidate.eanFromBarcode]); when OCR read the same kind and code, the
 /// barcode's box is used and the OCR line text kept.
+///
+/// [regionLines] are the lines of a second recognition pass on a crop of
+/// the same photo (boxes in photo pixels, see `scan_region.dart`). A label
+/// line pairs with its code only within its own pass.
 List<CodeCandidate> findCodeCandidates(
   List<OcrLine> lines, {
+  List<OcrLine> regionLines = const [],
   List<CodeCandidate> barcodes = const [],
   int limit = 20,
 }) {
   final found = <CodeCandidate>[];
   // Where each accepted EAN was read: its OCR line boxes and barcode boxes.
   final eanAreas = <String, List<Rect>>{};
-  final labelPartners = _labelPartners(lines);
+  final labelPartners = {
+    ..._labelPartners(lines),
+    for (final i in _labelPartners(regionLines)) lines.length + i,
+  };
+  final allLines = [...lines, ...regionLines];
 
-  for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    final line = lines[lineIndex];
+  for (var lineIndex = 0; lineIndex < allLines.length; lineIndex++) {
+    final line = allLines[lineIndex];
     final (:text, :repairs) = _repairCodeTokens(line.text);
     final elementSpans = _elementSpans(line);
     final claimed = <_Span>[];
@@ -456,15 +465,14 @@ bool _onSameRowRightOf(OcrLine label, OcrLine other) {
 }
 
 /// Whether [next] is the line right below the supplement [label] line: it
-/// holds only the number, or starts within 1.5 label heights below the label
-/// and overlaps it horizontally.
+/// starts within 1.5 label heights below the label and either holds only
+/// the number or overlaps the label horizontally.
 bool _followsLabel(OcrLine label, OcrLine next) {
-  if (_onlyDigitRun.hasMatch(next.text.trim())) return true;
   final gap = next.box.top - label.box.bottom;
   final below = next.box.top >= label.box.top && gap <= 1.5 * label.box.height;
-  final overlaps =
-      next.box.left < label.box.right && label.box.left < next.box.right;
-  return below && overlaps;
+  if (!below) return false;
+  if (_onlyDigitRun.hasMatch(next.text.trim())) return true;
+  return next.box.left < label.box.right && label.box.left < next.box.right;
 }
 
 /// The most alternatives a candidate carries ([CodeCandidate.alternatives]).

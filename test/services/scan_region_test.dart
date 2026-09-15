@@ -183,10 +183,11 @@ void main() {
       )!,
     ], regionOffset);
 
-    final merged = findCodeCandidates([
-      ...firstLines,
-      ...regionLines,
-    ], barcodes: regionBarcodes);
+    final merged = findCodeCandidates(
+      firstLines,
+      regionLines: regionLines,
+      barcodes: regionBarcodes,
+    );
     expect(merged.map((c) => '${c.kind.name}:${c.code}'), [
       'supplement:107018',
       'ean:8057737141836',

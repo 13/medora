@@ -357,22 +357,25 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         barcodes = await _scanBarcodesDownscaled(path, size);
         if (!mounted || _photoPath != path) return;
       }
-      var allLines = lines ?? const <OcrLine>[];
-      var candidates = findCodeCandidates(allLines, barcodes: barcodes);
+      final photoLines = lines ?? const <OcrLine>[];
+      var candidates = findCodeCandidates(photoLines, barcodes: barcodes);
       if (needsRegionPass(
-        lines: allLines,
+        lines: photoLines,
         barcodes: barcodes,
         candidates: candidates,
       )) {
         final region = await _recognizeRegion(path, size, [
-          for (final line in allLines) line.box,
+          for (final line in photoLines) line.box,
           for (final barcode in barcodes) barcode.box,
         ]);
         if (!mounted || _photoPath != path) return;
         if (region != null) {
-          allLines = [...allLines, ...region.lines];
           barcodes = [...barcodes, ...region.barcodes];
-          candidates = findCodeCandidates(allLines, barcodes: barcodes);
+          candidates = findCodeCandidates(
+            photoLines,
+            regionLines: region.lines,
+            barcodes: barcodes,
+          );
         }
       }
       scanLog([
