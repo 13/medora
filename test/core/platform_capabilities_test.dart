@@ -11,6 +11,12 @@ void main() {
     expect(PlatformCapabilities.desktop.hasFileShare, isTrue);
   });
 
+  test('only the mobile (Android) preset offers in-app updates', () {
+    expect(PlatformCapabilities.mobile.hasInAppUpdates, isTrue);
+    expect(PlatformCapabilities.web.hasInAppUpdates, isFalse);
+    expect(PlatformCapabilities.desktop.hasInAppUpdates, isFalse);
+  });
+
   test('detect() on the test host (Linux) yields the desktop preset', () {
     expect(PlatformCapabilities.detect(), PlatformCapabilities.desktop);
   });

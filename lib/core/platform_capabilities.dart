@@ -15,6 +15,7 @@ class PlatformCapabilities {
     required this.hasLocalNotifications,
     required this.hasFileShare,
     required this.hasBiometrics,
+    required this.hasInAppUpdates,
   });
 
   /// Camera + ML Kit OCR (mobile only).
@@ -29,28 +30,44 @@ class PlatformCapabilities {
   /// local_auth biometrics.
   final bool hasBiometrics;
 
+  /// Downloading and installing an APK from GitHub Releases (Android only).
+  final bool hasInAppUpdates;
+
   static const web = PlatformCapabilities(
     hasCamera: false,
     hasLocalNotifications: false,
     hasFileShare: false,
     hasBiometrics: false,
+    hasInAppUpdates: false,
   );
   static const mobile = PlatformCapabilities(
     hasCamera: true,
     hasLocalNotifications: true,
     hasFileShare: true,
     hasBiometrics: true,
+    hasInAppUpdates: true,
   );
   static const desktop = PlatformCapabilities(
     hasCamera: false,
     hasLocalNotifications: false,
     hasFileShare: true,
     hasBiometrics: false,
+    hasInAppUpdates: false,
+  );
+
+  /// Like [mobile], but iOS has no sideloading - the App Store updates the app.
+  static const _ios = PlatformCapabilities(
+    hasCamera: true,
+    hasLocalNotifications: true,
+    hasFileShare: true,
+    hasBiometrics: true,
+    hasInAppUpdates: false,
   );
 
   factory PlatformCapabilities.detect() {
     if (kIsWeb) return web;
-    if (Platform.isAndroid || Platform.isIOS) return mobile;
+    if (Platform.isAndroid) return mobile;
+    if (Platform.isIOS) return _ios;
     return desktop;
   }
 
@@ -60,7 +77,8 @@ class PlatformCapabilities {
       other.hasCamera == hasCamera &&
       other.hasLocalNotifications == hasLocalNotifications &&
       other.hasFileShare == hasFileShare &&
-      other.hasBiometrics == hasBiometrics;
+      other.hasBiometrics == hasBiometrics &&
+      other.hasInAppUpdates == hasInAppUpdates;
 
   @override
   int get hashCode => Object.hash(
@@ -68,6 +86,7 @@ class PlatformCapabilities {
     hasLocalNotifications,
     hasFileShare,
     hasBiometrics,
+    hasInAppUpdates,
   );
 }
 

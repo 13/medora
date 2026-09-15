@@ -10,7 +10,7 @@ void main() {
     'initialize without config leaves Supabase unconfigured and never throws',
     () async {
       await SupabaseConfig.initialize(
-        const AppConfig(supabaseUrl: '', supabaseAnonKey: ''),
+        const AppConfig(supabaseUrl: '', supabaseAnonKey: '', updateRepo: ''),
       );
       expect(SupabaseConfig.isConfigured, isFalse);
       expect(SupabaseConfig.clientOrNull, isNull);

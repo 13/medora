@@ -5,13 +5,18 @@ void main() {
   group('AppConfig', () {
     test('isCloudAvailable is false when either value is empty', () {
       expect(
-        const AppConfig(supabaseUrl: '', supabaseAnonKey: '').isCloudAvailable,
+        const AppConfig(
+          supabaseUrl: '',
+          supabaseAnonKey: '',
+          updateRepo: '',
+        ).isCloudAvailable,
         isFalse,
       );
       expect(
         const AppConfig(
           supabaseUrl: 'https://x.supabase.co',
           supabaseAnonKey: '',
+          updateRepo: '',
         ).isCloudAvailable,
         isFalse,
       );
@@ -19,6 +24,7 @@ void main() {
         const AppConfig(
           supabaseUrl: '',
           supabaseAnonKey: 'key',
+          updateRepo: '',
         ).isCloudAvailable,
         isFalse,
       );
@@ -28,6 +34,7 @@ void main() {
       const config = AppConfig(
         supabaseUrl: 'https://x.supabase.co',
         supabaseAnonKey: 'key',
+        updateRepo: '',
       );
       expect(config.isCloudAvailable, isTrue);
     });
@@ -41,5 +48,29 @@ void main() {
         expect(config.isCloudAvailable, isFalse);
       },
     );
+
+    test('updateRepo defaults to the project repository', () {
+      expect(AppConfig.fromEnvironment().updateRepo, '13/medora');
+      expect(AppConfig.fromEnvironment().hasInAppUpdates, isTrue);
+    });
+
+    test('hasInAppUpdates is false when UPDATE_REPO is blanked out', () {
+      expect(
+        const AppConfig(
+          supabaseUrl: '',
+          supabaseAnonKey: '',
+          updateRepo: '',
+        ).hasInAppUpdates,
+        isFalse,
+      );
+      expect(
+        const AppConfig(
+          supabaseUrl: '',
+          supabaseAnonKey: '',
+          updateRepo: '   ',
+        ).hasInAppUpdates,
+        isFalse,
+      );
+    });
   });
 }
