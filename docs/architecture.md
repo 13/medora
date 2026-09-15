@@ -189,7 +189,7 @@ is committed and CI fails if it drifts.
 |---|---|
 | `test/core`, `test/domain`, `test/data`, `test/services` | Unit tests, including an in-memory sqflite database (`test/helpers/test_database.dart`) and fake remotes. |
 | `test/presentation` | Widget tests for screens, providers and the router, plus the theme and l10n sweeps. |
-| `test/goldens` | Home, doses and add-medication screens in light and dark. Regenerate deliberately with `fvm flutter test --update-goldens test/goldens/`. |
+| `test/goldens` | Home, doses (including the two-due "Take all due" bar) and add-medication screens in light and dark. Regenerate deliberately with `fvm flutter test --update-goldens test/goldens/`. |
 | `test/integration` | `sync_convergence_test.dart` — two simulated devices against a real Supabase; skipped without `SUPABASE_URL`/`SUPABASE_ANON_KEY` defines. |
 
 CI (`.github/workflows/ci.yml`) runs the gen-l10n drift check, `dart format`,
