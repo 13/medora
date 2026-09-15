@@ -5,7 +5,7 @@ import 'package:medora/core/app_config.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
-import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/services/app_update_service.dart';
 import 'package:path/path.dart' as p;

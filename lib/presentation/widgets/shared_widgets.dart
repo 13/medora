@@ -10,7 +10,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
-import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 
 /// Badge showing medication expiry status.
 class ExpiryBadge extends StatelessWidget {

@@ -14,6 +14,7 @@ import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/medication/aifa_search_sheet.dart';

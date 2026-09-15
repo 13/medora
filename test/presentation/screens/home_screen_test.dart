@@ -7,6 +7,7 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/home/home_screen.dart';

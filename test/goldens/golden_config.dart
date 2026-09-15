@@ -12,6 +12,7 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
