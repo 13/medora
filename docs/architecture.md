@@ -20,11 +20,19 @@ rationale lives in `docs/superpowers/specs/`.
 ## App modes
 
 `AppMode { localOnly, cloud }` (`lib/presentation/providers/app_mode_provider.dart:10`)
-is persisted in `SharedPreferences`. Cloud mode also needs a build carrying
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` (`AppConfig.isCloudAvailable`,
-`lib/core/app_config.dart:22`); without them the remote datasources are never
-constructed and settings says cloud sync is unavailable. Repositories always
-write locally first, so local-only is not a degraded mode — it is the base case.
+is persisted in `SharedPreferences`. Cloud mode also needs usable Supabase
+credentials. `SupabaseConfig.resolve` (`lib/core/supabase_config.dart`) picks
+them in one order — **Settings > dart-defines > none**: a complete
+`CloudCredentials` pair entered in Settings (`cloud.supabase_url`,
+`cloud.supabase_anon_key`) wins over `SUPABASE_URL`/`SUPABASE_ANON_KEY` baked
+into the build, and `configuredFrom` records which of the two won. Without
+either the remote datasources are never constructed and settings offers to
+configure cloud sync instead. `Supabase.initialize` runs once per process, so
+credentials saved while it is already running set `SupabaseConfig.pendingRestart`
+and the cloud tile asks for a restart. The anon key lives only in
+`SharedPreferences`: it is never logged and never shown again once saved.
+Repositories always write locally first, so local-only is not a degraded
+mode — it is the base case.
 
 ## Local database and migrations
 
@@ -34,6 +42,51 @@ carries a version number and a function. `kSchemaVersion` is **13**
 edited. The ledger holds v11 tombstone columns, v12 photos stored as bare
 filenames, and v13 dose timestamps normalised to naive local ISO strings so string
 range comparisons line up with local day boundaries.
+
+## Backup and restore
+
+`BackupService` (`lib/services/backup_service.dart`) writes the whole local
+database and the photo folder into one versioned JSON envelope:
+`{format: "medora-backup", version: 1, schemaVersion: kSchemaVersion, createdAt,
+appVersion, tables: {...}, photos: {<filename>: <base64>}}`. Rows are exported
+exactly as stored - naive-local ISO timestamps, tombstones included - minus
+`sync_status`, which is local bookkeeping. Settings -> Data shares the file
+through the same share sheet as the CSV/PDF export, and picks one back with
+`file_picker`.
+
+`inspect` validates the envelope before anything is touched and throws
+`BackupException(BackupErrorKind)`: `notABackup`, `newerFormat` or
+`newerSchema` (a backup from a newer build is refused, never half-applied),
+`corrupt`, `io`. `restore` applies the file inside a single transaction, in
+foreign-key order (families, family_members, medications, treatments,
+prescriptions, dose_logs), so a file that cannot be applied in full leaves the
+device exactly as it was. `RestoreMode.replace` clears the tables first;
+`RestoreMode.merge` upserts by id and keeps whichever copy has the newer
+`updated_at` - the backup has to be **strictly** newer to win, so a tie or a
+missing timestamp keeps the local row, and `families`/`family_members` (which
+carry no `updated_at`) are never overwritten: an id that already exists on the
+device keeps whatever the device holds. Restored rows are stamped `synced`, or
+`pending_update` when the caller passes `markPending` (cloud mode) so the next
+cycle uploads them - except `family_members`, which stays `synced` whatever the
+caller asks: RLS only ever accepts the signed-in user's own member row, and the
+one row that does belong to them is picked up by the
+`LocalUploadMarker.markAllForUpload` that follows the restore.
+Photos are written after the transaction commits and are never deleted.
+
+Settings drives the rest: after a restore it resets and reconciles the
+reminders, invalidates the dose/medication/treatment caches and, in cloud mode,
+calls `LocalUploadMarker.markAllForUpload` to clear the pull cursors. The
+exported file is written into the cache and deleted again once the share sheet
+returns - it is plain, unencrypted JSON and must not linger there.
+
+**Size limits.** Both halves hold the whole envelope in memory: the export
+encodes it in one `jsonEncode`, and a restore decodes the file in one
+`jsonDecode`. The rows are small; the photos are not, and base64 grows them by
+about a third. So the export asks first (`BackupPhotosDialog`, fed by
+`BackupService.estimatePhotoBytes`/`countPhotos`) and unticks "include photos"
+by default above `BackupService.largePhotoBytes` (**150 MB**). A restore has no
+such lever - it takes the file it is given - so a backup made without photos is
+also the one that will read back on a small device.
 
 ## Reminders
 

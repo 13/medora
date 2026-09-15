@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/widgets/update_sheet.dart';
 

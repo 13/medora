@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:medora/core/app_config.dart';
+import 'package:medora/core/cloud_credentials_prefs.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/db_setup.dart'
@@ -26,10 +27,14 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
 
-  // Cloud is optional: this is a no-op when no dart-defines are present.
+  // Cloud is optional: this is a no-op without dart-defines and without
+  // credentials entered in Settings (those win — see SupabaseConfig.resolve).
   await _initSafe(
     'Supabase',
-    () => SupabaseConfig.initialize(AppConfig.fromEnvironment()),
+    () => SupabaseConfig.initialize(
+      AppConfig.fromEnvironment(),
+      override: readCloudCredentials(prefs),
+    ),
   );
 
   _initServicesInBackground();

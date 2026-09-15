@@ -54,6 +54,21 @@ class PhotoStorage {
     return file.existsSync() ? file : null;
   }
 
+  /// Every photo currently stored, sorted by name (used by the backup).
+  Future<List<File>> listAll() async {
+    final dir = await _photosDir();
+    final files = dir.listSync().whereType<File>().toList();
+    files.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+    return files;
+  }
+
+  /// Write [bytes] into the photos folder under [name] (basename only).
+  Future<File> writeBytes(String name, List<int> bytes) async {
+    final dir = await _photosDir();
+    final file = File(p.join(dir.path, toStoredName(name)));
+    return file.writeAsBytes(bytes, flush: true);
+  }
+
   Future<void> delete(String? stored) async {
     final file = await resolve(stored);
     if (file != null && file.existsSync()) await file.delete();

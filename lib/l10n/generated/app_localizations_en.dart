@@ -511,6 +511,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appVersion => 'Version';
 
   @override
+  String get buildNumber => 'Build';
+
+  @override
+  String get buildDate => 'Built';
+
+  @override
+  String get buildCommit => 'Commit';
+
+  @override
+  String get buildChannel => 'Channel';
+
+  @override
+  String get channelRelease => 'Release';
+
+  @override
+  String get channelCi => 'CI';
+
+  @override
+  String get channelDev => 'Development build';
+
+  @override
+  String get copiedToClipboard => 'Copied';
+
+  @override
   String get colorScheme => 'Color Scheme';
 
   @override
@@ -544,7 +568,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aifaDatabase => 'AIFA Database';
 
   @override
-  String get aifaDatabaseDesc => 'Italian medication database for code lookup';
+  String get aifaDatabaseHint => 'Italian medication database for code lookup';
 
   @override
   String aifaLastSync(String date) {
@@ -1287,8 +1311,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cloudSyncOff => 'Off — data is stored only on this device';
 
   @override
-  String get cloudSyncUnavailable =>
-      'Unavailable — this build has no cloud configuration';
+  String get cloudSyncUnavailable => 'Not configured — tap Configure';
 
   @override
   String get turnOnCloudSync => 'Turn on cloud sync';
@@ -1523,4 +1546,127 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updateNoAsset => 'No installer for this device';
+
+  @override
+  String get backupData => 'Back up data';
+
+  @override
+  String get backupDataHint =>
+      'Save everything as one unencrypted JSON file — keep it somewhere private';
+
+  @override
+  String get backupAction => 'Back up';
+
+  @override
+  String backupIncludePhotos(int count, String megabytes) {
+    return 'Include photos ($count files, ~$megabytes MB)';
+  }
+
+  @override
+  String get backupPhotosTooLarge =>
+      'That is a lot of photos — leaving them out keeps the backup small enough to share.';
+
+  @override
+  String get restoreBackup => 'Restore from backup';
+
+  @override
+  String get restoreBackupHint => 'Read a backup file back into the app';
+
+  @override
+  String get restoreAction => 'Restore';
+
+  @override
+  String get restoreReplace => 'Replace everything';
+
+  @override
+  String get restoreMerge => 'Merge with this device';
+
+  @override
+  String get restoreReplaceWarning =>
+      'Everything on this device is deleted first and replaced by the backup.';
+
+  @override
+  String restoreSummary(String created, int rows, int photos) {
+    return 'Created $created · $rows rows · $photos photos';
+  }
+
+  @override
+  String restoreDone(int rows) {
+    return 'Restored $rows rows';
+  }
+
+  @override
+  String get backupNotABackup => 'That file is not a Medora backup.';
+
+  @override
+  String get backupNewerVersion =>
+      'This backup comes from a newer version of Medora. Update the app and try again.';
+
+  @override
+  String get backupCorrupt =>
+      'This backup could not be read. Nothing was changed.';
+
+  @override
+  String get configureCloud => 'Configure cloud sync';
+
+  @override
+  String get cloudConfiguration => 'Cloud configuration';
+
+  @override
+  String get configure => 'Configure';
+
+  @override
+  String get cloudConfiguredOnDevice => 'Configured on this device';
+
+  @override
+  String get cloudConfiguredFromBuild => 'Configured by this build';
+
+  @override
+  String get cloudRestartRequired =>
+      'Restart Medora to apply the new cloud settings';
+
+  @override
+  String get cloudConfigIntro =>
+      'Enter your Supabase project URL and key. They are stored only on this device.';
+
+  @override
+  String get cloudProjectUrl => 'Project URL';
+
+  @override
+  String get cloudProjectUrlHint => 'https://yourproject.supabase.co';
+
+  @override
+  String get cloudAnonKey => 'Anon or publishable key';
+
+  @override
+  String get cloudKeyStored => 'Key saved on this device';
+
+  @override
+  String get cloudKeyReplace => 'Replace';
+
+  @override
+  String get paste => 'Paste';
+
+  @override
+  String get cloudTestConnection => 'Test connection';
+
+  @override
+  String get cloudTestOk => 'The project answered — these values work';
+
+  @override
+  String get cloudTestFailed => 'Could not reach the project with these values';
+
+  @override
+  String get cloudInvalidUrl =>
+      'Enter the full project URL, starting with https://';
+
+  @override
+  String get cloudKeyRequired => 'Enter the project\'s anon or publishable key';
+
+  @override
+  String get cloudConfigSaved => 'Cloud sync is ready — turn it on above';
+
+  @override
+  String get cloudConfigCleared =>
+      'Cloud configuration removed from this device';
 }

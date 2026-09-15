@@ -22,6 +22,7 @@ devices through Supabase.
 - **Reminders** — local notifications for upcoming doses.
 - **Dashboard** — today's doses, expiring medications, low stock, active treatments.
 - **Export** — CSV and PDF of medications, treatments and dose history.
+- **Backup** — the whole cabinet (and its photos) as one JSON file, restored by replacing or merging.
 - **Family sharing** — optional, on top of cloud sync: join a family by invite code and share the cabinet.
 - **English, German and Italian**, light and dark themes, biometric lock.
 
@@ -70,6 +71,19 @@ fvm flutter build apk --release --dart-define-from-file=dart_defines.json
 ```
 
 Then open **Settings → Cloud sync → Turn on** and sign in. Without defines the app runs local-only and the cloud section says so.
+
+### Configure cloud sync at runtime
+
+A build without those defines can still reach a project: open **Settings → Cloud
+sync → Configure cloud sync**, paste the project URL and the anon/publishable
+key, and use **Test connection** to check them before saving. The pair is stored
+in `SharedPreferences` on that device only (keys `cloud.supabase_url` and
+`cloud.supabase_anon_key`), never logged, and the key is masked once saved —
+replace it rather than read it back. Settings values take precedence over the
+`--dart-define` values. Configuring a build that started local-only turns cloud
+sync on immediately; changing or clearing the values in a build that already
+initialised Supabase needs a restart, and Settings says so. **Clear** forgets the
+credentials and, in cloud mode, first asks what to do with the local data.
 
 ### How sync works
 

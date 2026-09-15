@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:medora/core/app_config.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -100,7 +101,14 @@ Future<List<Override>> updateOverrides({
     sharedPreferencesProvider.overrideWithValue(prefs),
     platformCapabilitiesProvider.overrideWithValue(caps),
     appConfigProvider.overrideWithValue(
-      AppConfig(supabaseUrl: '', supabaseAnonKey: '', updateRepo: repo),
+      AppConfig(
+        supabaseUrl: '',
+        supabaseAnonKey: '',
+        updateRepo: repo,
+        buildDate: '',
+        gitSha: '',
+        buildChannel: 'dev',
+      ),
     ),
     appUpdateServiceProvider.overrideWithValue(service),
     currentReleaseVersionProvider.overrideWith((ref) async => current),

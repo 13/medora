@@ -1018,6 +1018,54 @@ abstract class AppLocalizations {
   /// **'Version'**
   String get appVersion;
 
+  /// No description provided for @buildNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Build'**
+  String get buildNumber;
+
+  /// No description provided for @buildDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Built'**
+  String get buildDate;
+
+  /// No description provided for @buildCommit.
+  ///
+  /// In en, this message translates to:
+  /// **'Commit'**
+  String get buildCommit;
+
+  /// No description provided for @buildChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel'**
+  String get buildChannel;
+
+  /// No description provided for @channelRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Release'**
+  String get channelRelease;
+
+  /// No description provided for @channelCi.
+  ///
+  /// In en, this message translates to:
+  /// **'CI'**
+  String get channelCi;
+
+  /// No description provided for @channelDev.
+  ///
+  /// In en, this message translates to:
+  /// **'Development build'**
+  String get channelDev;
+
+  /// No description provided for @copiedToClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get copiedToClipboard;
+
   /// No description provided for @colorScheme.
   ///
   /// In en, this message translates to:
@@ -1084,11 +1132,11 @@ abstract class AppLocalizations {
   /// **'AIFA Database'**
   String get aifaDatabase;
 
-  /// No description provided for @aifaDatabaseDesc.
+  /// No description provided for @aifaDatabaseHint.
   ///
   /// In en, this message translates to:
   /// **'Italian medication database for code lookup'**
-  String get aifaDatabaseDesc;
+  String get aifaDatabaseHint;
 
   /// No description provided for @aifaLastSync.
   ///
@@ -2473,7 +2521,7 @@ abstract class AppLocalizations {
   /// No description provided for @cloudSyncUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Unavailable — this build has no cloud configuration'**
+  /// **'Not configured — tap Configure'**
   String get cloudSyncUnavailable;
 
   /// No description provided for @turnOnCloudSync.
@@ -2895,6 +2943,222 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No installer for this device'**
   String get updateNoAsset;
+
+  /// No description provided for @backupData.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up data'**
+  String get backupData;
+
+  /// No description provided for @backupDataHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Save everything as one unencrypted JSON file — keep it somewhere private'**
+  String get backupDataHint;
+
+  /// No description provided for @backupAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up'**
+  String get backupAction;
+
+  /// No description provided for @backupIncludePhotos.
+  ///
+  /// In en, this message translates to:
+  /// **'Include photos ({count} files, ~{megabytes} MB)'**
+  String backupIncludePhotos(int count, String megabytes);
+
+  /// No description provided for @backupPhotosTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'That is a lot of photos — leaving them out keeps the backup small enough to share.'**
+  String get backupPhotosTooLarge;
+
+  /// No description provided for @restoreBackup.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore from backup'**
+  String get restoreBackup;
+
+  /// No description provided for @restoreBackupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Read a backup file back into the app'**
+  String get restoreBackupHint;
+
+  /// No description provided for @restoreAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore'**
+  String get restoreAction;
+
+  /// No description provided for @restoreReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace everything'**
+  String get restoreReplace;
+
+  /// No description provided for @restoreMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge with this device'**
+  String get restoreMerge;
+
+  /// No description provided for @restoreReplaceWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything on this device is deleted first and replaced by the backup.'**
+  String get restoreReplaceWarning;
+
+  /// No description provided for @restoreSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {created} · {rows} rows · {photos} photos'**
+  String restoreSummary(String created, int rows, int photos);
+
+  /// No description provided for @restoreDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Restored {rows} rows'**
+  String restoreDone(int rows);
+
+  /// No description provided for @backupNotABackup.
+  ///
+  /// In en, this message translates to:
+  /// **'That file is not a Medora backup.'**
+  String get backupNotABackup;
+
+  /// No description provided for @backupNewerVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup comes from a newer version of Medora. Update the app and try again.'**
+  String get backupNewerVersion;
+
+  /// No description provided for @backupCorrupt.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup could not be read. Nothing was changed.'**
+  String get backupCorrupt;
+
+  /// No description provided for @configureCloud.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure cloud sync'**
+  String get configureCloud;
+
+  /// No description provided for @cloudConfiguration.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud configuration'**
+  String get cloudConfiguration;
+
+  /// No description provided for @configure.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure'**
+  String get configure;
+
+  /// No description provided for @cloudConfiguredOnDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured on this device'**
+  String get cloudConfiguredOnDevice;
+
+  /// No description provided for @cloudConfiguredFromBuild.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured by this build'**
+  String get cloudConfiguredFromBuild;
+
+  /// No description provided for @cloudRestartRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart Medora to apply the new cloud settings'**
+  String get cloudRestartRequired;
+
+  /// No description provided for @cloudConfigIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Supabase project URL and key. They are stored only on this device.'**
+  String get cloudConfigIntro;
+
+  /// No description provided for @cloudProjectUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Project URL'**
+  String get cloudProjectUrl;
+
+  /// No description provided for @cloudProjectUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://yourproject.supabase.co'**
+  String get cloudProjectUrlHint;
+
+  /// No description provided for @cloudAnonKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Anon or publishable key'**
+  String get cloudAnonKey;
+
+  /// No description provided for @cloudKeyStored.
+  ///
+  /// In en, this message translates to:
+  /// **'Key saved on this device'**
+  String get cloudKeyStored;
+
+  /// No description provided for @cloudKeyReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get cloudKeyReplace;
+
+  /// No description provided for @paste.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste'**
+  String get paste;
+
+  /// No description provided for @cloudTestConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Test connection'**
+  String get cloudTestConnection;
+
+  /// No description provided for @cloudTestOk.
+  ///
+  /// In en, this message translates to:
+  /// **'The project answered — these values work'**
+  String get cloudTestOk;
+
+  /// No description provided for @cloudTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the project with these values'**
+  String get cloudTestFailed;
+
+  /// No description provided for @cloudInvalidUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the full project URL, starting with https://'**
+  String get cloudInvalidUrl;
+
+  /// No description provided for @cloudKeyRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the project\'s anon or publishable key'**
+  String get cloudKeyRequired;
+
+  /// No description provided for @cloudConfigSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud sync is ready — turn it on above'**
+  String get cloudConfigSaved;
+
+  /// No description provided for @cloudConfigCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud configuration removed from this device'**
+  String get cloudConfigCleared;
 }
 
 class _AppLocalizationsDelegate

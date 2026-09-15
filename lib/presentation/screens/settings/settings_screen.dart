@@ -1,7 +1,10 @@
 /// Medora - Settings Screen
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
@@ -20,12 +23,18 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/backup_photos_dialog.dart';
+import 'package:medora/presentation/widgets/cloud_config_sheet.dart';
+import 'package:medora/presentation/widgets/restore_dialog.dart';
 import 'package:medora/presentation/widgets/update_tile.dart';
 import 'package:medora/services/aifa_cache_service.dart';
+import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -40,10 +49,16 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
     final appMode = ref.watch(appModeProvider);
     final cloudAvailable = SupabaseConfig.isConfigured;
+    final storedCredentials = ref.watch(cloudCredentialsProvider);
+    final cloudSubtitle = _cloudSubtitle(
+      l10n,
+      configured: cloudAvailable,
+      storedOnDevice: storedCredentials != null,
+    );
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
     final graceMinutes = ref.watch(missedGraceMinutesProvider);
-    final appVersionAsync = ref.watch(appVersionProvider);
+    final buildInfoAsync = ref.watch(buildInfoProvider);
     final caps = ref.watch(platformCapabilitiesProvider);
 
     final isOnline =
@@ -223,6 +238,22 @@ class SettingsScreen extends ConsumerWidget {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push(AppRoutes.export),
                 ),
+              if (caps.hasFileShare) ...[
+                ListTile(
+                  leading: const Icon(Icons.backup_outlined),
+                  title: Text(l10n.backupData),
+                  subtitle: Text(l10n.backupDataHint),
+                  trailing: const Icon(Icons.ios_share),
+                  onTap: () => _backupData(context, ref, l10n),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.settings_backup_restore),
+                  title: Text(l10n.restoreBackup),
+                  subtitle: Text(l10n.restoreBackupHint),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _restoreBackup(context, ref, l10n),
+                ),
+              ],
               if (appMode == AppMode.cloud)
                 ListTile(
                   leading: const Icon(Icons.people),
@@ -253,8 +284,12 @@ class SettingsScreen extends ConsumerWidget {
                       ? l10n.cloudSyncOn(user?.email ?? '')
                       : l10n.cloudSyncOff,
                 ),
+                subtitle: cloudSubtitle == null ? null : Text(cloudSubtitle),
                 trailing: !cloudAvailable
-                    ? null
+                    ? FilledButton.tonal(
+                        onPressed: () => _configureCloud(context, ref, l10n),
+                        child: Text(l10n.configure),
+                      )
                     : appMode == AppMode.cloud
                     ? TextButton(
                         onPressed: () =>
@@ -266,6 +301,19 @@ class SettingsScreen extends ConsumerWidget {
                         child: Text(l10n.turnOn),
                       ),
               ),
+              // One entry point at a time: while the tile above still offers
+              // "Configure", this one would say the same thing twice. Once
+              // there is a configuration, it becomes the way to edit or clear
+              // it.
+              if (cloudAvailable || storedCredentials != null)
+                ListTile(
+                  leading: const Icon(Icons.tune),
+                  title: Text(l10n.cloudConfiguration),
+                  subtitle: Text(l10n.cloudConfigIntro),
+                  trailing: const Icon(Icons.chevron_right),
+                  isThreeLine: true,
+                  onTap: () => _configureCloud(context, ref, l10n),
+                ),
               if (appMode == AppMode.cloud) ...[
                 ListTile(
                   leading: Icon(
@@ -398,12 +446,15 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsGroup(
             title: l10n.about,
             children: [
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: Text(l10n.appVersion),
-                subtitle: Text(
-                  appVersionAsync.maybeWhen(data: (v) => v, orElse: () => '…'),
-                ),
+              ...buildInfoAsync.maybeWhen(
+                data: (info) => _aboutRows(context, l10n, info),
+                orElse: () => [
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: Text(l10n.appVersion),
+                    subtitle: const Text('…'),
+                  ),
+                ],
               ),
               // Renders nothing where in-app updates are unavailable.
               const UpdateTile(),
@@ -415,7 +466,54 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmTurnOffCloud(
+  /// What the cloud tile says under its title: where the configuration came
+  /// from, or that a change only takes effect after a restart.
+  String? _cloudSubtitle(
+    AppLocalizations l10n, {
+    required bool configured,
+    required bool storedOnDevice,
+  }) {
+    if (SupabaseConfig.pendingRestart) return l10n.cloudRestartRequired;
+    if (storedOnDevice) return l10n.cloudConfiguredOnDevice;
+    if (configured) return l10n.cloudConfiguredFromBuild;
+    return null;
+  }
+
+  /// Opens the configuration sheet and applies what the user decided there.
+  Future<void> _configureCloud(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final outcome = await showCloudConfigSheet(context);
+    switch (outcome) {
+      case null:
+        return;
+      case CloudConfigOutcome.savedAndActive:
+        messenger.showSnackBar(SnackBar(content: Text(l10n.cloudConfigSaved)));
+      case CloudConfigOutcome.savedNeedsRestart:
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.cloudRestartRequired)),
+        );
+      case CloudConfigOutcome.clearRequested:
+        // Dropping the credentials while signed in would strand the account:
+        // ask what happens to the local data first.
+        if (ref.read(appModeProvider) == AppMode.cloud) {
+          if (!context.mounted) return;
+          final turnedOff = await _confirmTurnOffCloud(context, ref, l10n);
+          if (!turnedOff) return;
+        }
+        await ref.read(cloudCredentialsProvider.notifier).clear();
+        if (SupabaseConfig.isConfigured) SupabaseConfig.pendingRestart = true;
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.cloudConfigCleared)),
+        );
+    }
+  }
+
+  /// Returns true when cloud sync was actually turned off.
+  Future<bool> _confirmTurnOffCloud(
     BuildContext context,
     WidgetRef ref,
     AppLocalizations l10n,
@@ -444,7 +542,7 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (choice == null) return;
+    if (choice == null) return false;
     await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
     await ref.read(authControllerProvider.notifier).signOut();
     if (choice == 'wipe') {
@@ -463,6 +561,109 @@ class SettingsScreen extends ConsumerWidget {
         }
       }
     }
+    return true;
+  }
+
+  /// Writes a full backup into the cache and hands it to the share sheet.
+  ///
+  /// The photos are the only part that can make the file unwieldy, so when
+  /// there are any the user is asked first (see [BackupPhotosDialog]). The
+  /// file lives in the cache just long enough for the share sheet to copy it:
+  /// it is unencrypted, so it is deleted again on the way out.
+  Future<void> _backupData(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(backupServiceProvider);
+    File? file;
+    try {
+      var includePhotos = true;
+      final photoCount = await service.countPhotos();
+      if (photoCount > 0) {
+        final photoBytes = await service.estimatePhotoBytes();
+        if (!context.mounted) return;
+        final choice = await showBackupPhotosDialog(
+          context,
+          photoCount: photoCount,
+          photoBytes: photoBytes,
+        );
+        if (choice == null) return;
+        includePhotos = choice;
+      }
+
+      final dir = await getTemporaryDirectory();
+      file = await service.exportToFile(dir, includePhotos: includePhotos);
+      await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(_backupError(l10n, e))));
+    } finally {
+      try {
+        await file?.delete();
+      } on FileSystemException {
+        // Already gone, or the platform holds it: nothing worth reporting.
+      }
+    }
+  }
+
+  /// Picks a backup file, confirms what it holds, then applies it.
+  Future<void> _restoreBackup(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(backupServiceProvider);
+    try {
+      final file = await ref.read(backupFilePickerProvider)();
+      if (file == null) return;
+      final manifest = await service.inspect(file);
+      if (!context.mounted) return;
+      final mode = await showRestoreDialog(context, manifest);
+      if (mode == null) return;
+
+      final isCloud = ref.read(appModeProvider) == AppMode.cloud;
+      final applied = await service.restore(
+        file,
+        mode: mode,
+        markPending: isCloud,
+      );
+      await _afterRestore(ref, isCloud: isCloud);
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.restoreDone(applied.totalRows))),
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(_backupError(l10n, e))));
+    }
+  }
+
+  /// Every cached view of the database is stale after a restore.
+  Future<void> _afterRestore(WidgetRef ref, {required bool isCloud}) async {
+    ref.read(reminderSchedulerProvider).reset();
+    await ref.read(reminderSchedulerProvider).reconcile();
+    await ref.read(medicationListProvider.notifier).refresh();
+    await ref.read(treatmentListProvider.notifier).refresh();
+    ref.invalidateDoseData();
+    ref.invalidate(activePrescriptionsProvider);
+    if (!isCloud) return;
+    // Restored rows are already pending_update; this also clears the pull
+    // cursors so the next cycle re-reads everything the account holds.
+    final userId = ref.read(currentUserProvider)?.id;
+    if (userId != null) {
+      await ref.read(localUploadMarkerProvider).markAllForUpload(userId);
+    }
+  }
+
+  String _backupError(AppLocalizations l10n, Object error) {
+    if (error is! BackupException) return l10n.errorWithDetails('$error');
+    return switch (error.kind) {
+      BackupErrorKind.notABackup => l10n.backupNotABackup,
+      BackupErrorKind.newerFormat ||
+      BackupErrorKind.newerSchema => l10n.backupNewerVersion,
+      BackupErrorKind.corrupt => l10n.backupCorrupt,
+      BackupErrorKind.io => l10n.errorWithDetails('${error.details}'),
+    };
   }
 
   Future<void> _turnOnCloud(
@@ -733,6 +934,84 @@ class SettingsScreen extends ConsumerWidget {
     if (r.skippedBackoff == 0) return summary;
     return '$summary · ${l10n.syncSkippedBackoff(r.skippedBackoff)}';
   }
+
+  /// The About group's rows: version, build number, build date, commit and
+  /// channel — each long-pressable to copy a one-line summary, plus a Dart
+  /// runtime row.
+  List<Widget> _aboutRows(
+    BuildContext context,
+    AppLocalizations l10n,
+    BuildInfo info,
+  ) {
+    final dateText = _formatBuildDate(info.buildDate);
+    final shaText = info.gitSha.isEmpty ? '—' : info.gitSha;
+    final channelText = _channelLabel(l10n, info.channel);
+
+    void copySummary() {
+      final summary =
+          'Medora ${info.version} (${info.buildNumber}) · '
+          '$dateText · $shaText · $channelText';
+      Clipboard.setData(ClipboardData(text: summary));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.copiedToClipboard)));
+    }
+
+    return [
+      ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: Text(l10n.appVersion),
+        subtitle: Text(info.version),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.tag_outlined),
+        title: Text(l10n.buildNumber),
+        subtitle: Text(info.buildNumber),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.event_outlined),
+        title: Text(l10n.buildDate),
+        subtitle: Text(dateText),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.commit_outlined),
+        title: Text(l10n.buildCommit),
+        subtitle: Text(shaText),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.flag_outlined),
+        title: Text(l10n.buildChannel),
+        subtitle: Text(channelText),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.code),
+        title: const Text('Dart'), // l10n-exempt: proper noun
+        subtitle: Text(info.dartVersion),
+        onLongPress: copySummary,
+      ),
+    ];
+  }
+
+  /// Parses the ISO-8601 UTC [iso] build date and renders it with the
+  /// locale-aware extension; `''` (a local/dev build) becomes '—'.
+  String _formatBuildDate(String iso) {
+    if (iso.isEmpty) return '—';
+    final date = DateTime.tryParse(iso);
+    if (date == null) return '—';
+    return '${date.toUtc().dateTimeFormatted} UTC';
+  }
+
+  String _channelLabel(AppLocalizations l10n, String channel) =>
+      switch (channel) {
+        'release' => l10n.channelRelease,
+        'ci' => l10n.channelCi,
+        _ => l10n.channelDev,
+      };
 
   /// True when the last cycle left rows behind — failed outright, or skipped
   /// because they are waiting out their retry backoff.
@@ -1047,33 +1326,43 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    final subtitle = _isSyncing
+    final status = _isSyncing
         ? _statusMessage ?? l10n.aifaSyncing
         : _lastSync != null
-        ? '${l10n.aifaLastSync(_formatDate(_lastSync!))} · $_count'
+        ? '${l10n.aifaLastSync(_lastSync!.formatted)} · $_count'
         : l10n.aifaNeverSynced;
 
-    return ListTile(
-      leading: const Icon(Icons.storage_outlined),
-      title: Text(l10n.aifaDatabaseDesc),
-      subtitle: Text(subtitle),
-      trailing: _isSyncing
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : TextButton(
-              onPressed: _syncDatabase,
-              child: Text(l10n.syncAifaDatabase),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.storage_outlined),
+          title: Text(l10n.aifaDatabase),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [Text(l10n.aifaDatabaseHint), Text(status)],
+          ),
+          isThreeLine: true,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _isSyncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : TextButton.icon(
+                    onPressed: _syncDatabase,
+                    icon: const Icon(Icons.download_outlined),
+                    label: Text(l10n.syncAifaDatabase),
+                  ),
+          ),
+        ),
+      ],
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}.'
-        '${date.month.toString().padLeft(2, '0')}.'
-        '${date.year}';
   }
 }
 
