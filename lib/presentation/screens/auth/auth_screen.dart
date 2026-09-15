@@ -134,6 +134,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     child: Image.asset(
                       'assets/icon/medora_icon_pill.png',
                       height: 160,
+                      filterQuality: FilterQuality.high,
                       errorBuilder: (_, _, _) => Icon(
                         Icons.medication,
                         size: 80,

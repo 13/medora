@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Medora pill mark — vector source for every app icon.
+  Canvas 1024×1024. The capsule is centred on (512,512) and tilted 45°.
+  Render targets (see tools/gen_icons.sh):
+    - medora_icon_pill.png  : full-bleed padded square (legacy Android, iOS, web)
+    - medora_icon_fg.png    : adaptive foreground (pill scaled into the 66% safe zone)
+    - medora_icon_mono.png  : Android 13 themed (monochrome) icon
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- white/blue-tinted half -->
+    <linearGradient id="whiteHalf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#eaf2fa"/>
+      <stop offset="1" stop-color="#b9cfe3"/>
+    </linearGradient>
+    <!-- red half -->
+    <linearGradient id="redHalf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff5147"/>
+      <stop offset="0.5" stop-color="#e8100c"/>
+      <stop offset="1" stop-color="#9e0000"/>
+    </linearGradient>
+    <!-- soft inner shadow along the lower edge -->
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="0.7" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.28"/>
+    </linearGradient>
+    <!-- capsule body, axis horizontal before rotation -->
+    <rect id="capsule" x="172" y="382" width="680" height="260" rx="130" ry="130"/>
+    <clipPath id="capsuleClip"><use href="#capsule"/></clipPath>
+    <clipPath id="leftHalf"><rect x="172" y="382" width="340" height="260"/></clipPath>
+  </defs>
+
+  <g id="pill" transform="rotate(-45 512 512)">
+    <!-- base: white half -->
+    <use href="#capsule" fill="url(#whiteHalf)"/>
+    <!-- red half, clipped to the left 50% and to the capsule outline -->
+    <g clip-path="url(#capsuleClip)">
+      <rect x="172" y="382" width="340" height="260" fill="url(#redHalf)"/>
+    </g>
+    <!-- lower-edge shading over both halves -->
+    <use href="#capsule" fill="url(#shade)"/>
+    <!-- seam between the halves -->
+    <line x1="512" y1="382" x2="512" y2="642" stroke="#1c1c1c" stroke-width="22"/>
+    <!-- highlights on the red half -->
+    <rect x="228" y="418" width="150" height="38" rx="19" fill="#ffffff" fill-opacity="0.95"/>
+    <circle cx="416" cy="437" r="19" fill="#ffffff" fill-opacity="0.95"/>
+    <!-- faint highlight on the white half -->
+    <rect x="560" y="412" width="230" height="30" rx="15" fill="#ffffff" fill-opacity="0.85"/>
+    <!-- outline -->
+    <use href="#capsule" fill="none" stroke="#1c1c1c" stroke-width="30" stroke-linejoin="round"/>
+  </g>
+</svg>

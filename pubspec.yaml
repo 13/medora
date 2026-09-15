@@ -53,9 +53,20 @@ dev_dependencies:
     sdk: flutter
 
 flutter_launcher_icons:
-  android: "launcher_icon"
+  android: true
   ios: true
   image_path: "assets/icon/medora_icon_pill.png"
+  min_sdk_android: 28
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/medora_icon_fg.png"
+  adaptive_icon_monochrome: "assets/icon/medora_icon_mono.png"
+  remove_alpha_ios: true
+  background_color_ios: "#FFFFFF"
+  web:
+    generate: true
+    image_path: "assets/icon/medora_icon_pill.png"
+    background_color: "#FFFFFF"
+    theme_color: "#2E7D6F"
 
 flutter:
   generate: true

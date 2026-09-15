@@ -118,6 +118,7 @@ class _BiometricGateState extends ConsumerState<BiometricGate>
               Image.asset(
                 'assets/icon/medora_icon.png',
                 height: 120,
+                filterQuality: FilterQuality.high,
                 errorBuilder: (_, _, _) => Icon(
                   Icons.lock_outline,
                   size: 80,

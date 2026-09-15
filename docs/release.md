@@ -16,6 +16,10 @@ than every bundle already uploaded**, so the `+build` number must increase on
 every Play upload, even for a re-upload of the same marketing version. Bump
 `version:` and commit it as part of the release.
 
+## App icon
+
+Edit `assets/icon/medora_pill.svg`, run `tools/gen_icons.sh`, then run `fvm dart run flutter_launcher_icons` to regenerate every platform's icons from it.
+
 ## Android
 
 ### 1. Create a keystore (once, and never lose it)
