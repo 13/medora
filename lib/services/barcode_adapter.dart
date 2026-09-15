@@ -11,6 +11,7 @@ import 'dart:ui' show Rect;
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/services/code_candidates.dart';
+import 'package:medora/services/scan_debug.dart';
 
 /// The formats the scanner decodes on a package photo.
 const scanBarcodeFormats = [
@@ -28,6 +29,14 @@ final _nonAlphanumeric = RegExp(r'[^A-Za-z0-9]');
 List<CodeCandidate> barcodeCandidatesFrom(List<Barcode> barcodes) => [
   for (final b in barcodes)
     ?barcodeCandidate(b.format, b.rawValue ?? b.displayValue, b.boundingBox),
+];
+
+/// One `[scan] barcode:` entry per decoded barcode (see `scan_debug.dart`),
+/// including values that map to no candidate.
+List<String> describeBarcodes(List<Barcode> barcodes) => [
+  for (final b in barcodes)
+    '[scan] barcode: ${b.format.name} ${b.rawValue ?? '<null raw>'} '
+        '(display ${b.displayValue}) @ ${describeRect(b.boundingBox)}',
 ];
 
 /// Maps one decoded barcode; null when it carries no usable value.

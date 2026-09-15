@@ -37,6 +37,7 @@ import 'package:medora/services/barcode_adapter.dart';
 import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/image_size.dart';
 import 'package:medora/services/ocr_adapter.dart';
+import 'package:medora/services/scan_debug.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -107,6 +108,12 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   bool _photoIsTemp = false;
   Size _imageSize = Size.zero;
   List<CodeCandidate> _candidates = const [];
+
+  /// The width the photo is decoded at for display (see [_photoImage]).
+  int? _photoDecodeWidth;
+
+  /// Longer side of the downscaled copy for the second barcode pass.
+  static const int _barcodeRetryMaxSide = 1600;
 
   @override
   void initState() {
@@ -265,7 +272,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       return;
     }
     try {
-      final file = await controller.takePicture();
+      final capture = controller.takePicture();
+      // isTakingPicture is now true: disable gallery and manual entry.
+      setState(() {});
+      final file = await capture;
       if (!mounted) {
         unawaited(_deleteFile(file.path));
         return;
@@ -273,12 +283,18 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       await _recognize(file.path, isTemp: true);
     } catch (e) {
       debugPrint('Take picture error: $e');
-      if (mounted) _showError();
+      if (mounted) {
+        setState(() {});
+        _showError();
+      }
     }
   }
 
+  bool get _isTakingPicture =>
+      _cameraController?.value.isTakingPicture ?? false;
+
   Future<void> _pickFromGallery() async {
-    if (_stage != _ScanStage.capture || _picking) return;
+    if (_stage != _ScanStage.capture || _picking || _isTakingPicture) return;
     setState(() => _picking = true);
     try {
       final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -310,6 +326,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   }
 
   Future<void> _recognize(String path, {required bool isTemp}) async {
+    // A photo still held (a capture and a gallery pick that overlapped) is
+    // deleted before this one replaces it.
+    if (_photoPath != path) _discardPhoto();
     setState(() {
       _stage = _ScanStage.recognizing;
       _photoPath = path;
@@ -320,16 +339,28 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     if (!mounted) return;
     try {
       final input = InputImage.fromFilePath(path);
-      final (recognized, barcodes, size) = await (
-        _textRecognizer.processImage(input),
-        _barcodeScanner.processImage(input),
+      final (lines, photoBarcodes, size) = await (
+        _recognizeText(input),
+        _scanBarcodes(input, pass: 'photo'),
         readImageSize(path),
       ).wait;
       if (!mounted || _photoPath != path) return;
+      if (lines == null && photoBarcodes == null) {
+        throw StateError('Text recognition and barcode scanning failed');
+      }
+      var barcodes = photoBarcodes ?? const <CodeCandidate>[];
+      if (barcodes.isEmpty) {
+        barcodes = await _scanBarcodesDownscaled(path, size);
+        if (!mounted || _photoPath != path) return;
+      }
       final candidates = findCodeCandidates(
-        ocrLinesFrom(recognized),
-        barcodes: barcodeCandidatesFrom(barcodes),
+        lines ?? const [],
+        barcodes: barcodes,
       );
+      scanLog([
+        '[scan] image: ${size.width.round()}x${size.height.round()}',
+        ...describeCandidates(candidates),
+      ]);
       setState(() {
         _imageSize = size;
         _candidates = candidates;
@@ -341,6 +372,97 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       _showError();
       await _retake();
     }
+  }
+
+  /// The OCR lines of [input]; null (logged) when text recognition fails,
+  /// so decoded barcodes can still be offered.
+  Future<List<OcrLine>?> _recognizeText(InputImage input) async {
+    try {
+      final lines = ocrLinesFrom(await _textRecognizer.processImage(input));
+      scanLog([
+        '[scan] text lines: ${lines.length}',
+        ...describeOcrLines(lines),
+      ]);
+      return lines;
+    } catch (e, stack) {
+      debugPrint('[scan] text recognition failed: $e\n$stack');
+      return null;
+    }
+  }
+
+  /// Barcode candidates of [input]; null (logged) when scanning fails, so
+  /// OCR results are still offered.
+  Future<List<CodeCandidate>?> _scanBarcodes(
+    InputImage input, {
+    required String pass,
+  }) async {
+    try {
+      final barcodes = await _barcodeScanner.processImage(input);
+      scanLog([
+        '[scan] barcodes ($pass): ${barcodes.length}',
+        ...describeBarcodes(barcodes),
+      ]);
+      return barcodeCandidatesFrom(barcodes);
+    } catch (e, stack) {
+      debugPrint('[scan] barcode scanning failed ($pass): $e\n$stack');
+      return null;
+    }
+  }
+
+  /// A second barcode pass on a copy of the photo downscaled to
+  /// [_barcodeRetryMaxSide]: ML Kit can miss a small or angled barcode in a
+  /// full-resolution photo. Boxes are scaled back to [size], the photo's
+  /// pixels. Empty when the photo is small already or the pass fails.
+  Future<List<CodeCandidate>> _scanBarcodesDownscaled(
+    String path,
+    Size size,
+  ) async {
+    try {
+      final small = await decodeDownscaledRgba(path, _barcodeRetryMaxSide);
+      if (small == null) return const [];
+      final found = await _scanBarcodes(
+        InputImage.fromBitmap(
+          bitmap: small.rgba,
+          width: small.width,
+          height: small.height,
+        ),
+        pass: 'downscaled ${small.width}x${small.height}',
+      );
+      if (found == null || found.isEmpty) return const [];
+      final sx = size.width / small.width;
+      final sy = size.height / small.height;
+      return [
+        for (final c in found)
+          CodeCandidate(
+            code: c.code,
+            kind: c.kind,
+            sourceText: c.sourceText,
+            box: Rect.fromLTRB(
+              c.box.left * sx,
+              c.box.top * sy,
+              c.box.right * sx,
+              c.box.bottom * sy,
+            ),
+          ),
+      ];
+    } catch (e, stack) {
+      debugPrint('[scan] downscaled barcode pass failed: $e\n$stack');
+      return const [];
+    }
+  }
+
+  /// The photo at [path] decoded at twice the screen width in physical
+  /// pixels instead of the full camera resolution. Markers are placed from
+  /// [_imageSize] (the file's pixel size), so the decode size does not move
+  /// them.
+  ImageProvider _photoImage(String path) {
+    final width =
+        (MediaQuery.sizeOf(context).width *
+                MediaQuery.devicePixelRatioOf(context) *
+                2)
+            .round();
+    _photoDecodeWidth = width;
+    return ResizeImage(FileImage(File(path)), width: width);
   }
 
   Future<void> _retake() async {
@@ -356,6 +478,13 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// Forgets the current photo, deleting it if the camera took it.
   void _discardPhoto() {
     final path = _photoPath;
+    if (path != null) {
+      // Drop the decoded photo from the image cache.
+      final file = FileImage(File(path));
+      unawaited(file.evict());
+      final width = _photoDecodeWidth;
+      if (width != null) unawaited(ResizeImage(file, width: width).evict());
+    }
     if (path != null && _photoIsTemp) unawaited(_deleteFile(path));
     _photoPath = null;
     _photoIsTemp = false;
@@ -519,7 +648,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         _ScanStage.review => SafeArea(
           top: false,
           child: ScanReviewView(
-            image: FileImage(File(_photoPath!)),
+            image: _photoImage(_photoPath!),
             imageSize: _imageSize,
             candidates: _candidates,
             onSelected: _onCandidateSelected,
@@ -535,7 +664,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Widget _buildCapture(AppLocalizations l10n) {
     final controller = _cameraController;
     final previewSize = controller?.value.previewSize;
-    final busy = _isSearching || _picking;
+    final busy = _isSearching || _picking || _isTakingPicture;
     final canShoot = _isCameraReady && controller != null && !busy;
     return ColoredBox(
       color: Colors.black, // scrim
@@ -679,7 +808,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         children: [
           if (path != null)
             Image(
-              image: FileImage(File(path)),
+              image: _photoImage(path),
               fit: BoxFit.contain,
               errorBuilder: (_, _, _) => const SizedBox.shrink(),
             ),
