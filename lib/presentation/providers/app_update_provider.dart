@@ -371,10 +371,24 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
     if (status is! UpdateReady) return;
     try {
       // Written first: the installer replaces this process, so anything
-      // recorded after the hand-over would never be written at all.
+      // recorded after the hand-over would never be written at all. A write
+      // that fails therefore stops the install - handing the APK over with
+      // no record of it would strand the pref on the previous release.
       await ref
           .read(sharedPreferencesProvider)
           .setString(kUpdateInstallingTag, status.release.tag);
+    } catch (e) {
+      _emit(
+        UpdateFailed(
+          UpdateException(
+            UpdateErrorKind.io,
+            'Could not record the pending install: $e',
+          ),
+        ),
+      );
+      return;
+    }
+    try {
       await ref.read(appUpdateServiceProvider).install(status.file);
     } on UpdateException catch (error) {
       _emit(UpdateFailed(error));

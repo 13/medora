@@ -348,6 +348,8 @@ class AppUpdateService {
     }
 
     Digest? digest;
+    // Closed on every path out of the streaming loop below, not only the one
+    // that reads the digest: a chunked converter left open holds its buffers.
     final hasher = sha256.startChunkedConversion(
       ChunkedConversionSink<Digest>.withCallback(
         (digests) => digest = digests.single,
@@ -385,10 +387,12 @@ class AppUpdateService {
       await sink.flush();
     } on UpdateException {
       await sink.close();
+      hasher.close();
       _deleteQuietly(file);
       rethrow;
     } on Exception catch (error) {
       await sink.close();
+      hasher.close();
       _deleteQuietly(file);
       throw UpdateException(
         error is FileSystemException

@@ -45,6 +45,30 @@ class _StalledUpdateService extends FakeUpdateService {
   }
 }
 
+/// Preferences that refuse to write [failingKey], the way a full disk or a
+/// broken platform channel would.
+class _FailingPrefs implements SharedPreferences {
+  _FailingPrefs(this._inner, this.failingKey);
+
+  final SharedPreferences _inner;
+  final String failingKey;
+
+  @override
+  String? getString(String key) => _inner.getString(key);
+
+  @override
+  Future<bool> setString(String key, String value) {
+    if (key == failingKey) throw StateError('no space left on device');
+    return _inner.setString(key, value);
+  }
+
+  @override
+  Future<bool> remove(String key) => _inner.remove(key);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// A download that never looks at [isCancelled] and always finishes, leaving
 /// the APK in `updates/` the way a cancel on the very last chunk would.
 class _UncancellableUpdateService extends FakeUpdateService {
@@ -480,6 +504,35 @@ void main() {
         service.installed.single.path,
         p.join(root.path, 'medora-0.2.0-12-arm64-v8a.apk'),
       );
+    });
+
+    test('an install that cannot be recorded is not started', () async {
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final c = ProviderContainer(
+        overrides: await updateOverrides(
+          service: service,
+          downloadDir: root,
+          now: () => clock,
+          prefs: _FailingPrefs(prefs, kUpdateInstallingTag),
+        ),
+      );
+      addTearDown(c.dispose);
+      await c.read(appUpdateProvider.future);
+      await c.read(appUpdateProvider.notifier).check();
+      await c.read(appUpdateProvider.notifier).download();
+      expect(statusOf(c), isA<UpdateReady>());
+
+      await c.read(appUpdateProvider.notifier).install();
+
+      // Handing the APK over without the pin would leave the next launch
+      // unable to tell a finished install from one that never happened.
+      final status = statusOf(c);
+      expect(status, isA<UpdateFailed>());
+      expect((status as UpdateFailed).error.kind, UpdateErrorKind.io);
+      expect(service.installed, isEmpty);
     });
 
     test('install without a downloaded file does nothing', () async {

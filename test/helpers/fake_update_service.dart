@@ -100,6 +100,7 @@ ReleaseInfo fakeRelease(ReleaseVersion version) => ReleaseInfo(
 /// [isOnline], when given, replaces the fixed [online] flag - pass a closure
 /// over a mutable local so a single test can flip connectivity mid-run
 /// without re-overriding the provider (which a `ProviderContainer` forbids).
+/// [prefs] replaces the real `SharedPreferences` for the same reason.
 Future<List<Override>> updateOverrides({
   required AppUpdateService service,
   required Directory downloadDir,
@@ -109,10 +110,11 @@ Future<List<Override>> updateOverrides({
   bool online = true,
   bool Function()? isOnline,
   ReleaseVersion current = fakeCurrentVersion,
+  SharedPreferences? prefs,
 }) async {
-  final prefs = await SharedPreferences.getInstance();
+  final resolved = prefs ?? await SharedPreferences.getInstance();
   return <Override>[
-    sharedPreferencesProvider.overrideWithValue(prefs),
+    sharedPreferencesProvider.overrideWithValue(resolved),
     platformCapabilitiesProvider.overrideWithValue(caps),
     appConfigProvider.overrideWithValue(
       AppConfig(
