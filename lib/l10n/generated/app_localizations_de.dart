@@ -1567,6 +1567,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get updateNoAsset => 'Kein Installationspaket für dieses Gerät';
 
   @override
+  String get updateCancel => 'Download abbrechen';
+
+  @override
   String get updateInstallExplainTitle => 'Update installieren';
 
   @override

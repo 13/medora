@@ -171,6 +171,13 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
 
   bool _disposed = false;
 
+  /// Set by [cancelDownload] and read by the service once per chunk.
+  bool _cancelRequested = false;
+
+  /// The state a cancelled download goes back to: [UpdateDownloading] does
+  /// not carry the asset, and offering Download again needs it.
+  UpdateAvailable? _cancelTarget;
+
   @override
   Future<UpdateStatus> build() async {
     _disposed = false;
@@ -275,6 +282,8 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   Future<void> download() async {
     final status = state.value;
     if (status is! UpdateAvailable) return;
+    _cancelRequested = false;
+    _cancelTarget = status;
     _emit(UpdateDownloading(status.release, 0));
     try {
       final dir = await ref.read(updateDownloadDirProvider.future);
@@ -286,11 +295,34 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
             dir,
             onProgress: (progress) =>
                 _emit(UpdateDownloading(status.release, progress)),
+            isCancelled: () => _cancelRequested,
           );
+      // A cancel that arrived while the last chunks were being verified has
+      // already put the state back; the file it beat is cleared by the next
+      // download, which empties `updates/` before it writes.
+      if (_cancelRequested) return;
       _emit(UpdateReady(status.release, file));
     } on UpdateException catch (error) {
+      // Cancelling is not a failure and [cancelDownload] already said so.
+      if (error.kind == UpdateErrorKind.cancelled) return;
       _emit(UpdateFailed(error));
+    } finally {
+      _cancelRequested = false;
+      _cancelTarget = null;
     }
+  }
+
+  /// Stops a download in flight and offers it again.
+  ///
+  /// The state goes back to [UpdateAvailable] at once - the user asked for
+  /// the progress bar to go away - while the service unwinds the stream and
+  /// removes the partial file on its own schedule.
+  void cancelDownload() {
+    final status = state.value;
+    if (status is! UpdateDownloading) return;
+    _cancelRequested = true;
+    final target = _cancelTarget;
+    if (target != null) _emit(target);
   }
 
   /// Hands the verified APK to Android's package installer.

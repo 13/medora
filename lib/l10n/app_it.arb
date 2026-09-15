@@ -530,6 +530,7 @@
   "updateFailed": "Impossibile cercare aggiornamenti",
   "updateChecksumFailed": "Impossibile verificare il download",
   "updateNoAsset": "Nessun pacchetto di installazione per questo dispositivo",
+  "updateCancel": "Annulla il download",
   "updateInstallExplainTitle": "Installa l'aggiornamento",
   "updateInstallExplainBody": "Android ti chiederà di consentire a Medora di installare app, poi aprirà il programma di installazione. I tuoi dati restano sul dispositivo.",
   "backupData": "Backup dei dati",

@@ -258,6 +258,55 @@ void main() {
       );
     });
 
+    test('cancelDownload puts the release back on offer', () async {
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await withAvailable(service);
+      final notifier = c.read(appUpdateProvider.notifier);
+
+      final done = notifier.download();
+      expect(statusOf(c), isA<UpdateDownloading>());
+
+      notifier.cancelDownload();
+      expect(statusOf(c), isA<UpdateAvailable>());
+
+      await done;
+      expect(statusOf(c), isA<UpdateAvailable>());
+      expect(
+        (statusOf(c) as UpdateAvailable).release.tag,
+        'v0.2.0+12',
+        reason: 'the same release is still the one to download',
+      );
+    });
+
+    test('cancelDownload outside a download does nothing', () async {
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await withAvailable(service);
+
+      c.read(appUpdateProvider.notifier).cancelDownload();
+
+      expect(statusOf(c), isA<UpdateAvailable>());
+    });
+
+    test('a cancelled download can be started again', () async {
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await withAvailable(service);
+      final notifier = c.read(appUpdateProvider.notifier);
+
+      final cancelled = notifier.download();
+      notifier.cancelDownload();
+      await cancelled;
+
+      await notifier.download();
+
+      expect(statusOf(c), isA<UpdateReady>());
+    });
+
     test('install hands the downloaded file to the service', () async {
       final service = FakeUpdateService(
         release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),

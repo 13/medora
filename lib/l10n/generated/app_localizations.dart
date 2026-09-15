@@ -2944,6 +2944,12 @@ abstract class AppLocalizations {
   /// **'No installer for this device'**
   String get updateNoAsset;
 
+  /// No description provided for @updateCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel download'**
+  String get updateCancel;
+
   /// No description provided for @updateInstallExplainTitle.
   ///
   /// In en, this message translates to:

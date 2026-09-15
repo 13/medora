@@ -1560,6 +1560,9 @@ class AppLocalizationsIt extends AppLocalizations {
       'Nessun pacchetto di installazione per questo dispositivo';
 
   @override
+  String get updateCancel => 'Annulla il download';
+
+  @override
   String get updateInstallExplainTitle => 'Installa l\'aggiornamento';
 
   @override

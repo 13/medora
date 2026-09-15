@@ -21,6 +21,10 @@ class FakeUpdateService extends AppUpdateService {
     this.hasAsset = true,
   }) : super(repo: 'acme/medora');
 
+  /// Chunks the fake download reports before it finishes; the cancellation
+  /// seam is asked before each one, like the real streaming loop.
+  static const progressSteps = <double>[0, 0.5];
+
   final ReleaseInfo? release;
   final UpdateException? error;
   final UpdateException? downloadError;
@@ -48,9 +52,19 @@ class FakeUpdateService extends AppUpdateService {
     ReleaseAsset asset,
     Directory dir, {
     void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
   }) async {
-    onProgress?.call(0);
-    onProgress?.call(0.5);
+    for (final step in progressSteps) {
+      if (isCancelled?.call() ?? false) {
+        throw const UpdateException(UpdateErrorKind.cancelled, 'cancelled');
+      }
+      onProgress?.call(step);
+      // Give a caller that cancels between chunks a turn of the loop.
+      await Future<void>.delayed(Duration.zero);
+    }
+    if (isCancelled?.call() ?? false) {
+      throw const UpdateException(UpdateErrorKind.cancelled, 'cancelled');
+    }
     final failure = downloadError;
     if (failure != null) throw failure;
     onProgress?.call(1);

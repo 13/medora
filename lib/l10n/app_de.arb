@@ -530,6 +530,7 @@
   "updateFailed": "Suche nach Updates fehlgeschlagen",
   "updateChecksumFailed": "Der Download konnte nicht überprüft werden",
   "updateNoAsset": "Kein Installationspaket für dieses Gerät",
+  "updateCancel": "Download abbrechen",
   "updateInstallExplainTitle": "Update installieren",
   "updateInstallExplainBody": "Android bittet dich zuerst um die Erlaubnis, dass Medora Apps installieren darf, und öffnet dann das Installationsprogramm. Deine Daten bleiben auf dem Gerät.",
   "backupData": "Daten sichern",

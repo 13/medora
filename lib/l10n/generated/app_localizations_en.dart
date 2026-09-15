@@ -1548,6 +1548,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateNoAsset => 'No installer for this device';
 
   @override
+  String get updateCancel => 'Cancel download';
+
+  @override
   String get updateInstallExplainTitle => 'Install update';
 
   @override

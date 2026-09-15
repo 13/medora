@@ -99,6 +99,26 @@ void main() {
     expect(find.text('Install'), findsOneWidget);
   });
 
+  testWidgets('a download in flight offers Cancel, which undoes it', (
+    tester,
+  ) async {
+    final (container, _) = await pumpSheet(tester);
+
+    await tester.tap(find.text('Download'));
+    await tester.pump();
+
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('Cancel download'), findsOneWidget);
+    expect(find.text('Later'), findsNothing);
+
+    await tester.tap(find.text('Cancel download'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(appUpdateProvider).value, isA<UpdateAvailable>());
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.text('Download'), findsOneWidget);
+  });
+
   testWidgets('Later dismisses the release', (tester) async {
     final (container, _) = await pumpSheet(tester);
 

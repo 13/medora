@@ -3,7 +3,8 @@
 /// Opened from the Settings tile and the Home banner. It is the only place
 /// that starts a download, so the buttons follow the state machine directly:
 /// Download -> progress -> Install, with "Later" dismissing the release.
-/// Install stops once more to explain what Android is about to ask for.
+/// A download in flight offers Cancel, and Install stops once more to explain
+/// what Android is about to ask for.
 library;
 
 import 'package:flutter/material.dart';
@@ -156,9 +157,19 @@ class _Actions extends ConsumerWidget {
       await notifier.install();
     }
 
-    // A download in flight offers no buttons at all: cancelling mid-stream
-    // is not supported, and "Later" would leave a half-written file behind.
-    if (status is UpdateDownloading) return const SizedBox.shrink();
+    // While bytes are arriving the only thing worth offering is a way out:
+    // "Later" would dismiss the release without stopping the transfer.
+    if (status is UpdateDownloading) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed: notifier.cancelDownload,
+            child: Text(l10n.updateCancel),
+          ),
+        ],
+      );
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,

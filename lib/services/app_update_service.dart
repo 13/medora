@@ -206,6 +206,9 @@ enum UpdateErrorKind {
 
   /// Writing to or reading from disk failed, or the file is the wrong size.
   io,
+
+  /// The user stopped the download; nothing is wrong and nothing is kept.
+  cancelled,
 }
 
 class UpdateException implements Exception {
@@ -318,11 +321,18 @@ class AppUpdateService {
   /// enough, and APKs are large). The finished file must match the size GitHub
   /// reported and, when the release carries `SHA256SUMS.txt`, its sha256 line;
   /// on any mismatch the file is deleted before the error is thrown.
+  ///
+  /// [isCancelled] is asked once per chunk: the first true leaves the stream
+  /// (cancelling the subscription, so the rest of the response is never
+  /// fetched), deletes the partial file and throws
+  /// [UpdateErrorKind.cancelled]. An APK is tens of megabytes on a phone
+  /// connection - starting one has to be undoable.
   Future<File> download(
     ReleaseInfo release,
     ReleaseAsset asset,
     Directory dir, {
     void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
   }) async {
     final target = Directory(p.join(dir.path, updatesFolder));
     final File file;
@@ -355,6 +365,14 @@ class AppUpdateService {
         );
       }
       await for (final chunk in response.stream) {
+        if (isCancelled?.call() ?? false) {
+          // Throwing out of `await for` cancels the subscription; the handler
+          // below closes the sink and removes the half-written file.
+          throw const UpdateException(
+            UpdateErrorKind.cancelled,
+            'The download was cancelled.',
+          );
+        }
         sink.add(chunk);
         hasher.add(chunk);
         received += chunk.length;

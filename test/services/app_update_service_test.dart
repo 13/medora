@@ -451,6 +451,57 @@ void main() {
       );
     });
 
+    test('cancelling mid-stream deletes the partial file', () async {
+      final service = AppUpdateService(
+        repo: _repo,
+        client: downloadClient(sums: sumsFor(digest)),
+      );
+      final release = releaseWith(withChecksums: true);
+      final progress = <double>[];
+
+      await expectLater(
+        service.download(
+          release,
+          release.assets.first,
+          root,
+          onProgress: progress.add,
+          isCancelled: () => true,
+        ),
+        throwsA(
+          isA<UpdateException>().having(
+            (e) => e.kind,
+            'kind',
+            UpdateErrorKind.cancelled,
+          ),
+        ),
+      );
+
+      expect(
+        File(
+          p.join(root.path, 'updates', 'medora-0.1.0-10-universal.apk'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(progress, isNot(contains(1.0)));
+    });
+
+    test('a download nobody cancels still finishes', () async {
+      final service = AppUpdateService(
+        repo: _repo,
+        client: downloadClient(sums: sumsFor(digest)),
+      );
+      final release = releaseWith(withChecksums: true);
+
+      final file = await service.download(
+        release,
+        release.assets.first,
+        root,
+        isCancelled: () => false,
+      );
+
+      expect(file.lengthSync(), payload.length);
+    });
+
     test('older downloads are removed before the new one lands', () async {
       final updates = Directory(p.join(root.path, 'updates'))
         ..createSync(recursive: true);
