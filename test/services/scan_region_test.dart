@@ -131,6 +131,40 @@ void main() {
       );
     });
 
+    test('offsetOcrLines scales crop pixels of a downscaled decode', () {
+      // Review I3: the crop PNG holds the region at [scale] of photo pixels.
+      final moved = offsetOcrLines(
+        const [
+          OcrLine('COD MINSAN: 10T018', Rect.fromLTWH(100, 50, 200, 30), [
+            OcrElement('10T018', Rect.fromLTWH(220, 50, 80, 30)),
+          ]),
+        ],
+        offset,
+        scale: 0.5,
+      );
+      expect(moved.single.box, const Rect.fromLTWH(800, 1260, 400, 60));
+      expect(
+        moved.single.elements.single.box,
+        const Rect.fromLTWH(1040, 1260, 160, 60),
+      );
+    });
+
+    test('offsetCandidates scales crop pixels of a downscaled decode', () {
+      final moved = offsetCandidates(
+        const [
+          CodeCandidate(
+            code: '8057737141836',
+            kind: CodeKind.ean,
+            sourceText: '8057737141836',
+            box: Rect.fromLTWH(10, 20, 300, 100),
+          ),
+        ],
+        offset,
+        scale: 0.25,
+      );
+      expect(moved.single.box, const Rect.fromLTWH(640, 1240, 1200, 400));
+    });
+
     test('offsetCandidates moves boxes and keeps the rest', () {
       final moved = offsetCandidates(const [
         CodeCandidate(

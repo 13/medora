@@ -41,8 +41,10 @@ void main() {
     final written = await tester.runAsync(
       () => writeImageCrop(path, const Rect.fromLTRB(4.5, 10.2, 30, 30), out),
     );
-    // Rounded out to whole pixels and clamped to the upright 20x40 image.
-    expect(written, const Rect.fromLTRB(4, 10, 20, 30));
+    // Rounded out to whole pixels and clamped to the upright 20x40 image;
+    // not larger than the decode cap, so at full resolution.
+    expect(written?.crop, const Rect.fromLTRB(4, 10, 20, 30));
+    expect(written?.scale, 1.0);
     final size = await tester.runAsync(() => readImageSize(out));
     expect(size, const Size(16, 20));
 
@@ -50,5 +52,37 @@ void main() {
       () => writeImageCrop(path, const Rect.fromLTRB(25, 0, 30, 10), out),
     );
     expect(empty, isNull);
+  });
+
+  testWidgets('a photo over the decode cap is cropped from a downscaled '
+      'decode', (tester) async {
+    // Review I3: a 108 MP gallery photo must not be decoded at full size.
+    const path = 'test/fixtures/exif_orientation_6.jpg';
+    final dir = Directory.systemTemp.createTempSync('scan_crop_test_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final out = '${dir.path}/crop.png';
+
+    final written = await tester.runAsync(
+      () => writeImageCrop(
+        path,
+        const Rect.fromLTRB(4, 10, 20, 30),
+        out,
+        maxDecodeSide: 20,
+      ),
+    );
+    // Upright 20x40 decoded at 10x20: the crop in photo pixels is kept,
+    // the PNG holds it at half size.
+    expect(written?.crop, const Rect.fromLTRB(4, 10, 20, 30));
+    expect(written?.scale, 0.5);
+    final size = await tester.runAsync(() => readImageSize(out));
+    expect(size, const Size(8, 10));
+  });
+
+  test('cropDecodeScale caps the longer side', () {
+    expect(cropDecodeScale(3000, 4000, 4096), 1.0);
+    expect(cropDecodeScale(4096, 3000, 4096), 1.0);
+    expect(cropDecodeScale(12000, 9000, 4096), 4096 / 12000);
+    expect(cropDecodeScale(9000, 12000, 4096), 4096 / 12000);
+    expect(regionMaxDecodeSide, 4096);
   });
 }

@@ -61,27 +61,43 @@ bool needsRegionPass({
   ).any((kind) => !candidates.any((c) => c.kind == kind));
 }
 
-/// [lines] with line and element boxes moved by [offset] (crop to photo
-/// pixels).
-List<OcrLine> offsetOcrLines(List<OcrLine> lines, Offset offset) => [
+/// [lines] with line and element boxes mapped from crop to photo pixels:
+/// divided by [scale] (crop pixels per photo pixel, below 1 when the photo
+/// was decoded downscaled) and moved by [offset].
+List<OcrLine> offsetOcrLines(
+  List<OcrLine> lines,
+  Offset offset, {
+  double scale = 1.0,
+}) => [
   for (final line in lines)
-    OcrLine(line.text, line.box.shift(offset), [
+    OcrLine(line.text, _toPhoto(line.box, offset, scale), [
       for (final element in line.elements)
-        OcrElement(element.text, element.box.shift(offset)),
+        OcrElement(element.text, _toPhoto(element.box, offset, scale)),
     ]),
 ];
 
-/// [candidates] with boxes moved by [offset] (crop to photo pixels).
+/// [candidates] with boxes mapped from crop to photo pixels (see
+/// [offsetOcrLines]).
 List<CodeCandidate> offsetCandidates(
   List<CodeCandidate> candidates,
-  Offset offset,
-) => [
+  Offset offset, {
+  double scale = 1.0,
+}) => [
   for (final c in candidates)
     CodeCandidate(
       code: c.code,
       kind: c.kind,
       sourceText: c.sourceText,
-      box: c.box.shift(offset),
+      box: _toPhoto(c.box, offset, scale),
       alternatives: c.alternatives,
     ),
 ];
+
+Rect _toPhoto(Rect box, Offset offset, double scale) => scale == 1.0
+    ? box.shift(offset)
+    : Rect.fromLTRB(
+        offset.dx + box.left / scale,
+        offset.dy + box.top / scale,
+        offset.dx + box.right / scale,
+        offset.dy + box.bottom / scale,
+      );

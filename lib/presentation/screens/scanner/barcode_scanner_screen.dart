@@ -119,6 +119,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// Longer side of the downscaled copy for the second barcode pass.
   static const int _barcodeRetryMaxSide = 1600;
 
+  /// How long decoding and rendering the region crop may take.
+  static const Duration _regionCropTimeout = Duration(seconds: 15);
+
   @override
   void initState() {
     super.initState();
@@ -395,18 +398,20 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
-  /// The OCR lines of [input], boxes moved by [offset] (a crop's position in
-  /// the photo); null (logged) when text recognition fails, so decoded
+  /// The OCR lines of [input], boxes mapped to the photo by [offset] (a
+  /// crop's position in the photo) and [scale] (see [offsetOcrLines]); null (logged) when text recognition fails, so decoded
   /// barcodes can still be offered.
   Future<List<OcrLine>?> _recognizeText(
     InputImage input, {
     Offset offset = Offset.zero,
+    double scale = 1.0,
     String? pass,
   }) async {
     try {
       final lines = offsetOcrLines(
         ocrLinesFrom(await _textRecognizer.processImage(input)),
         offset,
+        scale: scale,
       );
       scanLog([
         '[scan] text lines${pass == null ? '' : ' ($pass)'}: ${lines.length}',
@@ -442,7 +447,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// [path] (of pixel [size]) around [boxes] (see [textRegionCrop]), with
   /// boxes mapped back to the photo. The crop is a PNG in a fresh directory
   /// under the app's temporary directory, deleted when done. Null when there
-  /// is no useful crop or the pass fails (logged); the first pass stands.
+  /// is no useful crop, rendering it takes longer than [_regionCropTimeout]
+  /// (e.g. the raster thread stalls in the background) or the pass fails
+  /// (logged); the first pass stands.
   Future<({List<OcrLine> lines, List<CodeCandidate> barcodes})?>
   _recognizeRegion(String path, Size size, List<Rect> boxes) async {
     final crop = textRegionCrop(boxes, size);
@@ -451,20 +458,34 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     try {
       dir = await (await getTemporaryDirectory()).createTemp('scan_region_');
       final out = p.join(dir.path, 'region.png');
-      final written = await writeImageCrop(path, crop, out);
+      final written = await writeImageCrop(
+        path,
+        crop,
+        out,
+      ).timeout(_regionCropTimeout);
       if (written == null) return null;
+      final (crop: region, :scale) = written;
       scanLog([
-        '[scan] region pass ${written.width.round()}x${written.height.round()} '
-            '@ ${written.left.round()},${written.top.round()}',
+        '[scan] region pass ${region.width.round()}x${region.height.round()} '
+            '@ ${region.left.round()},${region.top.round()} scale $scale',
       ]);
       final input = InputImage.fromFilePath(out);
       final (lines, found) = await (
-        _recognizeText(input, offset: written.topLeft, pass: 'region'),
+        _recognizeText(
+          input,
+          offset: region.topLeft,
+          scale: scale,
+          pass: 'region',
+        ),
         _scanBarcodes(input, pass: 'region, crop pixels'),
       ).wait;
       return (
         lines: lines ?? const <OcrLine>[],
-        barcodes: offsetCandidates(found ?? const [], written.topLeft),
+        barcodes: offsetCandidates(
+          found ?? const [],
+          region.topLeft,
+          scale: scale,
+        ),
       );
     } catch (e, stack) {
       debugPrint('[scan] region pass failed: $e\n$stack');

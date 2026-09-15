@@ -59,15 +59,30 @@ Future<({Uint8List rgba, int width, int height})?> decodeDownscaledRgba(
   }
 }
 
+/// The longest side the region-pass crop decodes the photo at: a 50-200 MP
+/// gallery photo decoded at full size takes 200-800 MB.
+const int regionMaxDecodeSide = 4096;
+
+/// The factor a [width] x [height] image is decoded at so its longer side
+/// is at most [maxSide] pixels (1 when it already fits).
+double cropDecodeScale(int width, int height, int maxSide) {
+  final longest = math.max(width, height);
+  return longest <= maxSide ? 1.0 : maxSide / longest;
+}
+
 /// Writes the [crop] (image pixels, rounded out to whole pixels and clamped
 /// to the image) of the upright image at [path] to [outPath] as a PNG, and
-/// returns the crop actually written; null when it is empty or the image
-/// cannot be read back. The image is decoded at full resolution.
-Future<ui.Rect?> writeImageCrop(
+/// returns the crop actually written with the [scale] its PNG holds it at
+/// (PNG pixels per image pixel); null when it is empty or the image cannot
+/// be read back. The image is decoded with its longer side capped at
+/// [maxDecodeSide] (see [cropDecodeScale]), so a PNG box maps back to image
+/// pixels as `crop.topLeft + box / scale`.
+Future<({ui.Rect crop, double scale})?> writeImageCrop(
   String path,
   ui.Rect crop,
-  String outPath,
-) async {
+  String outPath, {
+  int maxDecodeSide = regionMaxDecodeSide,
+}) async {
   final buffer = await ui.ImmutableBuffer.fromFilePath(path);
   ui.ImageDescriptor? descriptor;
   ui.Codec? codec;
@@ -81,27 +96,45 @@ Future<ui.Rect?> writeImageCrop(
     final right = math.min(descriptor.width, crop.right.ceil());
     final bottom = math.min(descriptor.height, crop.bottom.ceil());
     if (right <= left || bottom <= top) return null;
-    final src = ui.Rect.fromLTRB(
+    final written = ui.Rect.fromLTRB(
       left.toDouble(),
       top.toDouble(),
       right.toDouble(),
       bottom.toDouble(),
     );
-    codec = await descriptor.instantiateCodec();
+    final scale = cropDecodeScale(
+      descriptor.width,
+      descriptor.height,
+      maxDecodeSide,
+    );
+    codec = scale == 1.0
+        ? await descriptor.instantiateCodec()
+        : await descriptor.instantiateCodec(
+            targetWidth: math.max(1, (descriptor.width * scale).round()),
+            targetHeight: math.max(1, (descriptor.height * scale).round()),
+          );
     image = (await codec.getNextFrame()).image;
+    final src = ui.Rect.fromLTRB(
+      written.left * scale,
+      written.top * scale,
+      written.right * scale,
+      written.bottom * scale,
+    );
+    final outWidth = math.max(1, (written.width * scale).round());
+    final outHeight = math.max(1, (written.height * scale).round());
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder).drawImageRect(
       image,
       src,
-      ui.Rect.fromLTWH(0, 0, src.width, src.height),
+      ui.Rect.fromLTWH(0, 0, outWidth.toDouble(), outHeight.toDouble()),
       ui.Paint(),
     );
     picture = recorder.endRecording();
-    cropped = await picture.toImage(right - left, bottom - top);
+    cropped = await picture.toImage(outWidth, outHeight);
     final png = await cropped.toByteData(format: ui.ImageByteFormat.png);
     if (png == null) return null;
     await File(outPath).writeAsBytes(png.buffer.asUint8List(), flush: true);
-    return src;
+    return (crop: written, scale: scale);
   } finally {
     cropped?.dispose();
     picture?.dispose();
