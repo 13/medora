@@ -39,9 +39,11 @@ class CodeCandidate {
     required this.box,
   });
 
-  /// A candidate decoded by a barcode scanner rather than read by OCR.
-  static CodeCandidate eanFromBarcode(String value, Rect box) {
+  /// An EAN decoded by a barcode scanner rather than read by OCR; null unless
+  /// [value] holds a valid EAN-13 / EAN-8.
+  static CodeCandidate? eanFromBarcode(String value, Rect box) {
     final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (!isValidEan(digits)) return null;
     return CodeCandidate(
       code: digits,
       kind: CodeKind.ean,
@@ -70,16 +72,16 @@ class CodeCandidate {
 /// Within a kind candidates run top-to-bottom, then left-to-right.
 /// Deduplicated by kind and code (first occurrence wins), at most [limit].
 ///
-/// [barcodes] are EANs decoded by a barcode scanner
-/// ([CodeCandidate.eanFromBarcode]); when OCR read the same EAN, the
-/// barcode's box is used.
+/// [barcodes] are candidates decoded by a barcode scanner (see
+/// [CodeCandidate.eanFromBarcode]); when OCR read the same kind and code, the
+/// barcode's box is used and the OCR line text kept.
 List<CodeCandidate> findCodeCandidates(
   List<OcrLine> lines, {
   List<CodeCandidate> barcodes = const [],
   int limit = 20,
 }) {
   final found = <CodeCandidate>[];
-  var labelPending = false;
+  OcrLine? pendingLabel;
 
   for (final line in lines) {
     final text = line.text;
@@ -110,25 +112,32 @@ List<CodeCandidate> findCodeCandidates(
       );
     }
 
-    // EAN-13 / EAN-8, possibly printed in digit groups.
+    // EAN-13 / EAN-8 printed as a whole digit run (a failed checksum yields
+    // one "other" candidate for the run).
     for (final ean in _findEans(text)) {
       claimed.add(ean.span);
-      add(ean.code, CodeKind.ean, ean.span);
+      add(ean.code, ean.kind, ean.span);
     }
 
-    // Supplement codes: a number on a labelled line, or on the line after.
-    final labelHere = _supplementLabel.hasMatch(text.toUpperCase());
+    // Supplement code: the first number after the label on a labelled line,
+    // or on the line right below a label line without one.
+    final label = _supplementLabel.firstMatch(text);
+    final previousLabel = pendingLabel;
+    final belowLabel =
+        previousLabel != null && _followsLabel(previousLabel, line);
     var supplementFound = false;
-    if (labelHere || labelPending) {
+    if (label != null || belowLabel) {
+      final from = label?.end ?? 0;
       for (final m in _digitRun.allMatches(text)) {
         final span = _Span(m.start, m.end);
-        if (isClaimed(span)) continue;
+        if (m.start < from || isClaimed(span)) continue;
         claimed.add(span);
         supplementFound = true;
         add(m[0]!, CodeKind.supplement, span);
+        break;
       }
     }
-    labelPending = labelHere && !supplementFound;
+    pendingLabel = label != null && !supplementFound ? line : null;
 
     // AIC codes: optional letter + 6-9 digits, not already claimed.
     for (final m in BarcodeLookupDatasource.aicPattern.allMatches(text)) {
@@ -151,18 +160,19 @@ List<CodeCandidate> findCodeCandidates(
     }
   }
 
-  // Merge barcode-decoded EANs: their box wins over the OCR one.
+  // Merge barcode-decoded candidates: their box wins over the OCR one.
   for (final barcode in barcodes) {
     final index = found.indexWhere(
-      (c) => c.kind == CodeKind.ean && c.code == barcode.code,
+      (c) => c.kind == barcode.kind && c.code == barcode.code,
     );
     if (index < 0) {
       found.add(barcode);
     } else {
+      final ocrText = found[index].sourceText;
       found[index] = CodeCandidate(
         code: barcode.code,
-        kind: CodeKind.ean,
-        sourceText: found[index].sourceText,
+        kind: barcode.kind,
+        sourceText: ocrText.isEmpty ? barcode.sourceText : ocrText,
         box: barcode.box,
       );
     }
@@ -222,19 +232,26 @@ bool isValidEan(String digits) {
 
 // ── Internals ────────────────────────────────────────────────
 
-/// Ministry of Health code labels on supplement packs, matched against the
-/// upper-cased line; tolerant of OCR spacing and punctuation.
+/// Ministry of Health code labels on supplement packs (case-insensitive);
+/// tolerant of OCR spacing and punctuation.
 final _supplementLabel = RegExp(
   r'(?<![A-Z])(MIN[\s.:,\-]*SAN'
   r'|COD(ICE)?[\s.:,\-]*MIN(?![A-Z])'
   r'|CODICE[\s.:,\-]*MINISTERIALE'
   r'|CODICE[\s.:,\-]*(DI[\s.:,\-]*)?NOTIFICA'
   r'|NOTIFICA[\s.:,\-]*N(?![A-Z]))',
+  caseSensitive: false,
 );
 
 final _digitRun = RegExp(r'(?<![0-9])[0-9]{6,9}(?![0-9])');
-final _digitGroups = RegExp(r'[0-9]+(?:[ ]+[0-9]+)*');
-final _digitGroup = RegExp(r'[0-9]+');
+final _onlyDigitRun = RegExp(r'^[0-9]{6,9}$');
+
+/// A run of digit groups separated by single spaces, with no letter or digit
+/// directly before it.
+final _digitGroups = RegExp(r'(?<![A-Za-z0-9])[0-9]+(?: [0-9]+)*');
+
+/// Group lengths an EAN-13 / EAN-8 is printed in.
+const _eanShapes = {'13', '1,6,6', '7,6', '8', '4,4'};
 final _token = RegExp(r'[A-Za-z0-9]+');
 final _digit = RegExp(r'[0-9]');
 
@@ -247,40 +264,36 @@ class _Span {
   bool overlaps(_Span other) => start < other.end && other.start < end;
 }
 
-/// Finds valid EANs, joining space-separated digit groups when the joined
-/// length is 13 or 8 and the checksum validates (13 preferred).
-List<({String code, _Span span})> _findEans(String text) {
-  final result = <({String code, _Span span})>[];
+/// Finds EAN-shaped digit runs (see [_eanShapes]): a valid checksum yields
+/// an EAN, a failed one an "other" candidate with the joined digits. A single
+/// 8-digit run with a failed checksum is left to the later rules (it may be
+/// a supplement or AIC code).
+List<({String code, CodeKind kind, _Span span})> _findEans(String text) {
+  final result = <({String code, CodeKind kind, _Span span})>[];
   for (final run in _digitGroups.allMatches(text)) {
-    final groups = _digitGroup
-        .allMatches(run[0]!)
-        .map((g) => (text: g[0]!, start: run.start + g.start))
-        .toList();
-    var i = 0;
-    while (i < groups.length) {
-      var matched = false;
-      for (final target in const [13, 8]) {
-        final buffer = StringBuffer();
-        for (var j = i; j < groups.length; j++) {
-          buffer.write(groups[j].text);
-          if (buffer.length > target) break;
-          if (buffer.length == target) {
-            final code = buffer.toString();
-            if (isValidEan(code)) {
-              final end = groups[j].start + groups[j].text.length;
-              result.add((code: code, span: _Span(groups[i].start, end)));
-              i = j + 1;
-              matched = true;
-            }
-            break;
-          }
-        }
-        if (matched) break;
-      }
-      if (!matched) i++;
+    final groups = run[0]!.split(' ');
+    if (!_eanShapes.contains(groups.map((g) => g.length).join(','))) continue;
+    final code = groups.join();
+    final span = _Span(run.start, run.end);
+    if (isValidEan(code)) {
+      result.add((code: code, kind: CodeKind.ean, span: span));
+    } else if (groups.length > 1 || code.length == 13) {
+      result.add((code: code, kind: CodeKind.other, span: span));
     }
   }
   return result;
+}
+
+/// Whether [next] is the line right below the supplement [label] line: it
+/// holds only the number, or starts within 1.5 label heights below the label
+/// and overlaps it horizontally.
+bool _followsLabel(OcrLine label, OcrLine next) {
+  if (_onlyDigitRun.hasMatch(next.text.trim())) return true;
+  final gap = next.box.top - label.box.bottom;
+  final below = next.box.top >= label.box.top && gap <= 1.5 * label.box.height;
+  final overlaps =
+      next.box.left < label.box.right && label.box.left < next.box.right;
+  return below && overlaps;
 }
 
 /// Character spans of each element inside the line text (null if an element

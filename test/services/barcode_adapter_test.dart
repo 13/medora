@@ -44,6 +44,25 @@ void main() {
     expect(matrix.kind, CodeKind.other);
   });
 
+  test('an EAN with a bad checksum is never an EAN candidate', () {
+    final bad = barcodeCandidate(BarcodeFormat.ean13, '8057737141837', box)!;
+    expect(bad.kind, CodeKind.other);
+    expect(bad.code, '8057737141837');
+
+    expect(barcodeCandidate(BarcodeFormat.ean8, '--', box), isNull);
+  });
+
+  test('merged with OCR lines, a barcode AIC replaces the OCR box', () {
+    final candidates = findCodeCandidates(
+      const [OcrLine('AIC A023834118', Rect.fromLTWH(0, 500, 100, 20))],
+      barcodes: [barcodeCandidate(BarcodeFormat.code39, 'A023834118', box)!],
+    );
+    expect(candidates, hasLength(1));
+    expect(candidates.single.kind, CodeKind.aic);
+    expect(candidates.single.box, box);
+    expect(candidates.single.sourceText, 'AIC A023834118');
+  });
+
   test('empty values are dropped', () {
     expect(barcodeCandidate(BarcodeFormat.ean13, null, box), isNull);
     expect(barcodeCandidate(BarcodeFormat.code128, '  ', box), isNull);

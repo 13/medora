@@ -1,7 +1,7 @@
 /// Medora - ML Kit barcode scanning → code candidates
 ///
 /// The only place that maps `google_mlkit_barcode_scanning` results to
-/// [CodeCandidate]s: EAN-13 / EAN-8 become EAN candidates, a Code 39 /
+/// [CodeCandidate]s: valid EAN-13 / EAN-8 become EAN candidates, a Code 39 /
 /// Code 128 value `A` + 9 digits (the medicine "bollino") an AIC candidate,
 /// anything else an "other" candidate.
 library;
@@ -34,10 +34,12 @@ List<CodeCandidate> barcodeCandidatesFrom(List<Barcode> barcodes) => [
 CodeCandidate? barcodeCandidate(BarcodeFormat format, String? value, Rect box) {
   final raw = value?.trim() ?? '';
   if (raw.isEmpty) return null;
+  if (format == BarcodeFormat.ean13 || format == BarcodeFormat.ean8) {
+    // An EAN with a bad checksum is never an EAN candidate.
+    final ean = CodeCandidate.eanFromBarcode(raw, box);
+    if (ean != null) return ean;
+  }
   switch (format) {
-    case BarcodeFormat.ean13 || BarcodeFormat.ean8:
-      final ean = CodeCandidate.eanFromBarcode(raw, box);
-      return ean.code.isEmpty ? null : ean;
     case BarcodeFormat.code39 || BarcodeFormat.code128
         when _aicBollino.hasMatch(raw.toUpperCase()):
       return CodeCandidate(

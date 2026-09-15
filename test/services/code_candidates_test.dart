@@ -181,7 +181,7 @@ void main() {
       const barcodeBox = Rect.fromLTWH(10, 500, 300, 120);
       final result = findCodeCandidates(
         [_line('8 057737 141836', 150)],
-        barcodes: [CodeCandidate.eanFromBarcode('8057737141836', barcodeBox)],
+        barcodes: [CodeCandidate.eanFromBarcode('8057737141836', barcodeBox)!],
       );
       expect(result, hasLength(1));
       expect(result.single.kind, CodeKind.ean);
@@ -194,7 +194,7 @@ void main() {
       const box = Rect.fromLTWH(0, 0, 10, 10);
       final result = findCodeCandidates(
         [_line('A023834118', 0)],
-        barcodes: [CodeCandidate.eanFromBarcode('96385074', box)],
+        barcodes: [CodeCandidate.eanFromBarcode('96385074', box)!],
       );
       expect(result.map((c) => '${c.kind.name}:${c.code}'), [
         'aic:023834118',
@@ -202,6 +202,101 @@ void main() {
       ]);
     });
 
+    test('eanFromBarcode rejects values that are not a valid EAN', () {
+      const box = Rect.fromLTWH(0, 0, 10, 10);
+      expect(CodeCandidate.eanFromBarcode('8057737141837', box), isNull);
+      expect(CodeCandidate.eanFromBarcode('12345', box), isNull);
+      expect(CodeCandidate.eanFromBarcode('', box), isNull);
+    });
+
+    test('a barcode AIC dedupes with the OCR AIC and its box wins', () {
+      const barcodeBox = Rect.fromLTWH(20, 600, 300, 90);
+      final result = findCodeCandidates(
+        [_line('AIC n. 023834118', 10)],
+        barcodes: [
+          const CodeCandidate(
+            code: '023834118',
+            kind: CodeKind.aic,
+            sourceText: 'A023834118',
+            box: barcodeBox,
+          ),
+        ],
+      );
+      expect(result, hasLength(1));
+      expect(result.single.kind, CodeKind.aic);
+      expect(result.single.box, barcodeBox);
+      expect(result.single.sourceText, 'AIC n. 023834118');
+    });
+  });
+
+  group('findCodeCandidates: review fixes', () {
+    String describe(List<CodeCandidate> list) =>
+        list.map((c) => '${c.kind.name}:${c.code}').join(' ');
+
+    test('digits after an AIC do not join into a fake EAN', () {
+      final result = findCodeCandidates([_line('A.I.C. 034567891 0009', 0)]);
+      expect(_ofKind(result, CodeKind.aic).map((c) => c.code), ['034567891']);
+      expect(_ofKind(result, CodeKind.ean), isEmpty);
+    });
+
+    test('digits after a supplement code do not join into a fake EAN', () {
+      final result = findCodeCandidates([_line('COD MINSAN 107018 05', 0)]);
+      expect(describe(result), 'supplement:107018');
+    });
+
+    test('a grouped EAN with a failed checksum is one "other"', () {
+      final result = findCodeCandidates([_line('8 057737 141837', 0)]);
+      expect(describe(result), 'other:8057737141837');
+    });
+
+    test('only groups printed like an EAN join', () {
+      expect(
+        describe(findCodeCandidates([_line('8 057737 141836 12', 0)])),
+        isNot(contains('ean:')),
+      );
+      expect(
+        describe(findCodeCandidates([_line('X8 057737 141836', 0)])),
+        isNot(contains('ean:')),
+      );
+      expect(
+        describe(findCodeCandidates([_line('8  057737  141836', 0)])),
+        isNot(contains('ean:')),
+      );
+    });
+
+    test('an unrelated line far below the label is not a supplement', () {
+      final result = findCodeCandidates([
+        _line('COD MINSAN', 0),
+        _line('Lotto 123456', 600),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('a nearby overlapping line below the label is a supplement', () {
+      final result = findCodeCandidates([
+        _line('COD MINSAN', 0),
+        _line('n. 107018', 45),
+      ]);
+      expect(describe(result), 'supplement:107018');
+    });
+
+    test('a nearby line that does not overlap the label is not', () {
+      final result = findCodeCandidates([
+        _line('COD MINSAN', 0),
+        _line('n. 107018', 45, left: 900),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('only the first number after the label is a supplement', () {
+      final result = findCodeCandidates([
+        _line('COD MINSAN 107018 AIC 034567891', 0),
+      ]);
+      expect(describe(result), 'aic:034567891 supplement:107018');
+    });
+  });
+
+  group('findCodeCandidates: ranking', () {
     test('ranking: aic, supplement, ean, other', () {
       final result = findCodeCandidates([
         _line('Lotto 4R5T21', 0),
