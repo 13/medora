@@ -666,6 +666,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get discardLocalChange => 'Lokale Änderung verwerfen';
 
   @override
+  String get discardLocalChangeHint =>
+      'Ersetzt Ihre nicht synchronisierte Änderung durch die Version vom Server';
+
+  @override
   String get ok => 'OK';
 
   @override

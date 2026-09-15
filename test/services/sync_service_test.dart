@@ -587,19 +587,31 @@ void main() {
     });
 
     test(
-      'discardFailedRow marks the row synced and clears the record',
+      'discardFailedRow takes the server copy and clears the record',
       () async {
         final h = Harness();
         await seedFailingMedication(h);
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'bad',
+            name: 'Server',
+            quantity: 7,
+          ).toJson(),
+          updatedAt: h.clock.now().add(const Duration(hours: 2)),
+        );
         await h.service.syncAll();
         expect(await h.failures.get('medications', 'bad'), isNotNull);
 
         await h.service.discardFailedRow('medications', 'bad');
 
+        final row = await localRow('medications', 'bad');
         expect(
-          (await localRow('medications', 'bad'))?['sync_status'],
-          SyncStatus.synced,
+          row?['name'],
+          'Server',
+          reason: 'discarding must replace the local row, not just stamp it',
         );
+        expect(row?['quantity'], 7);
+        expect(row?['sync_status'], SyncStatus.synced);
         expect(await h.failures.get('medications', 'bad'), isNull);
 
         // The next cycle no longer tries to push it at all.
@@ -611,6 +623,64 @@ void main() {
         expect(report.skippedBackoff, 0);
       },
     );
+
+    test('discardFailedRow deletes a row the server does not have', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+
+      await h.service.discardFailedRow('medications', 'bad');
+
+      expect(await localRow('medications', 'bad'), isNull);
+      expect(await h.failures.get('medications', 'bad'), isNull);
+    });
+
+    test('discarding a pending_delete keeps the server copy', () async {
+      final h = Harness();
+      final local = MedicationLocalDatasource();
+      h.meds.table.seed(
+        const MedicationModel(
+          id: 'doomed',
+          name: 'Server',
+          quantity: 1,
+        ).toJson(),
+      );
+      await local.upsert(
+        const MedicationModel(id: 'doomed', name: 'Server', quantity: 1),
+        syncStatus: SyncStatus.synced,
+      );
+      await local.markDeleted('doomed');
+      h.meds.table.failIds.add('doomed');
+      await h.service.syncAll();
+      expect(await h.failures.get('medications', 'doomed'), isNotNull);
+
+      await h.service.discardFailedRow('medications', 'doomed');
+
+      final row = await localRow('medications', 'doomed');
+      expect(row?['name'], 'Server');
+      expect(row?['sync_status'], SyncStatus.synced);
+      expect(row?['deleted_at'], isNull);
+      expect(h.meds.table.rows['doomed']?['deleted_at'], isNull);
+    });
+
+    test('discardFailedRow rethrows and leaves the row pending when the fetch '
+        'fails', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+      h.meds.table.failGetIds.add('bad');
+
+      await expectLater(
+        h.service.discardFailedRow('medications', 'bad'),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        (await localRow('medications', 'bad'))?['sync_status'],
+        SyncStatus.pendingCreate,
+      );
+      expect(await h.failures.get('medications', 'bad'), isNotNull);
+    });
   });
 
   group('delta pull', () {

@@ -218,6 +218,7 @@
   "syncFailedItems": "Elementi non riusciti",
   "syncSkippedBackoff": "{n} in attesa di riprovare",
   "discardLocalChange": "Scarta la modifica locale",
+  "discardLocalChangeHint": "Sostituisce la modifica non sincronizzata con la copia sul server",
   "ok": "OK",
   "advanced": "Avanzate",
   "familySharing": "Condivisione familiare",

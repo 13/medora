@@ -745,6 +745,13 @@ class SettingsScreen extends ConsumerWidget {
             child: ListView(
               shrinkWrap: true,
               children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    l10n.discardLocalChangeHint,
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ),
                 for (final f in r.failures)
                   if (!discarded.contains('${f.table}/${f.id}'))
                     ListTile(

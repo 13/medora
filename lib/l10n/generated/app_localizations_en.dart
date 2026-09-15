@@ -656,6 +656,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get discardLocalChange => 'Discard local change';
 
   @override
+  String get discardLocalChangeHint =>
+      'Replaces your unsynced change with the server copy';
+
+  @override
   String get ok => 'OK';
 
   @override

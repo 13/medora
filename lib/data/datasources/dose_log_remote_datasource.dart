@@ -49,6 +49,17 @@ class DoseLogRemoteDatasource {
     return raw == null ? null : DateTime.parse(raw).toUtc();
   }
 
+  /// The single row with [id], or null when the server does not have it.
+  Future<DoseLogModel?> getDoseLogById(String id) async {
+    final response = await _client
+        .from(AppConstants.doseLogsTable)
+        .select('*, prescriptions(id, medications(name))')
+        .eq('id', id)
+        .maybeSingle();
+
+    return response == null ? null : DoseLogModel.fromJson(response);
+  }
+
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);

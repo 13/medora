@@ -56,10 +56,14 @@ void main() {
     );
     addTearDown(service.dispose);
 
-    // A row the server will never accept.
+    // A row the server will never accept, and the copy the server already
+    // holds — discarding the local change must bring that copy back.
     await MedicationLocalDatasource().upsert(
       const MedicationModel(id: 'bad', name: 'bad', quantity: 1),
       syncStatus: SyncStatus.pendingCreate,
+    );
+    meds.table.seed(
+      const MedicationModel(id: 'bad', name: 'Server', quantity: 4).toJson(),
     );
     meds.table.failIds.add('bad');
     final report = (await service.syncAll())!;
@@ -113,6 +117,7 @@ void main() {
       whereArgs: ['bad'],
     );
     expect(rows.single['sync_status'], SyncStatus.synced);
+    expect(rows.single['name'], 'Server');
     expect(await failures.get('medications', 'bad'), isNull);
   });
 

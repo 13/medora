@@ -78,14 +78,15 @@ class PrescriptionRemoteDatasource {
         .toList();
   }
 
-  Future<PrescriptionModel> getPrescriptionById(String id) async {
+  /// The single row with [id], or null when the server does not have it.
+  Future<PrescriptionModel?> getPrescriptionById(String id) async {
     final response = await _client
         .from(AppConstants.prescriptionsTable)
         .select('*, medications(name), treatments(name)')
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-    return PrescriptionModel.fromJson(response);
+    return response == null ? null : PrescriptionModel.fromJson(response);
   }
 
   /// Add a new prescription.

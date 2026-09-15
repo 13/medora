@@ -1282,6 +1282,12 @@ abstract class AppLocalizations {
   /// **'Discard local change'**
   String get discardLocalChange;
 
+  /// No description provided for @discardLocalChangeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Replaces your unsynced change with the server copy'**
+  String get discardLocalChangeHint;
+
   /// No description provided for @ok.
   ///
   /// In en, this message translates to:

@@ -61,14 +61,15 @@ class TreatmentRemoteDatasource {
         .toList();
   }
 
-  Future<TreatmentModel> getTreatmentById(String id) async {
+  /// The single row with [id], or null when the server does not have it.
+  Future<TreatmentModel?> getTreatmentById(String id) async {
     final response = await _client
         .from(AppConstants.treatmentsTable)
         .select()
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-    return TreatmentModel.fromJson(response);
+    return response == null ? null : TreatmentModel.fromJson(response);
   }
 
   /// Add a new treatment.

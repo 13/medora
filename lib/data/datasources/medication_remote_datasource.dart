@@ -52,14 +52,15 @@ class MedicationRemoteDatasource {
   }
 
   /// Get a single medication by ID.
-  Future<MedicationModel> getMedicationById(String id) async {
+  /// The single row with [id], or null when the server does not have it.
+  Future<MedicationModel?> getMedicationById(String id) async {
     final response = await _client
         .from(AppConstants.medicationsTable)
         .select()
         .eq('id', id)
-        .single();
+        .maybeSingle();
 
-    return MedicationModel.fromJson(response);
+    return response == null ? null : MedicationModel.fromJson(response);
   }
 
   /// Search medications by name or active ingredient.
@@ -108,6 +109,7 @@ class MedicationRemoteDatasource {
   /// Update medication quantity by delta.
   Future<void> updateQuantity(String id, int delta) async {
     final current = await getMedicationById(id);
+    if (current == null) return;
     final newQuantity = (current.quantity + delta).clamp(0, 999999);
 
     await _client

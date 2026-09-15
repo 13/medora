@@ -510,19 +510,115 @@ class SyncService {
     }
   }
 
-  /// Give up on a row that keeps failing to push: stamp it `synced` locally
-  /// so the next pull replaces it with the server copy, and forget its
-  /// backoff. Exposed for the settings failures dialog.
+  /// Give up on a row that keeps failing to push: replace the local copy with
+  /// the server's and forget its backoff. Exposed for the settings failures
+  /// dialog.
+  ///
+  /// Stamping the row `synced` and waiting for a pull to fix it is not enough
+  /// — a delta pull only returns rows newer than the table cursor, so the
+  /// abandoned local values could survive indefinitely. The server row is
+  /// fetched directly instead, and a row the server does not have (or has
+  /// tombstoned) is deleted locally. That is also what discarding a local
+  /// `pending_delete` means: keep the server's copy.
+  ///
+  /// Throws when the fetch fails, leaving the row pending so the caller can
+  /// surface the error and the user can try again.
   Future<void> discardFailedRow(String table, String id) async {
-    final db = await AppDatabase.instance.database;
-    await db.update(
-      table,
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    switch (table) {
+      case 'medications':
+        final remote = await medicationRemote!.getMedicationById(id);
+        await _replaceLocal(
+          remote,
+          deletedAt: remote?.deletedAt,
+          delete: () => medicationLocal.hardDelete(id),
+          upsert: (m) =>
+              medicationLocal.upsert(m, syncStatus: SyncStatus.synced),
+        );
+      case 'treatments':
+        final remote = await treatmentRemote!.getTreatmentById(id);
+        await _replaceLocal(
+          remote,
+          deletedAt: remote?.deletedAt,
+          delete: () => treatmentLocal.hardDelete(id),
+          upsert: (t) =>
+              treatmentLocal.upsert(t, syncStatus: SyncStatus.synced),
+        );
+      case 'prescriptions':
+        final remote = await prescriptionRemote!.getPrescriptionById(id);
+        await _replaceLocal(
+          remote,
+          deletedAt: remote?.deletedAt,
+          delete: () => prescriptionLocal.hardDelete(id),
+          upsert: (p) =>
+              prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced),
+        );
+      case 'dose_logs':
+        final remote = await doseLogRemote!.getDoseLogById(id);
+        await _replaceLocal(
+          remote,
+          deletedAt: remote?.deletedAt,
+          delete: () => doseLogLocal.hardDelete(id),
+          upsert: (d) => doseLogLocal.upsert(d, syncStatus: SyncStatus.synced),
+        );
+      case 'families':
+        final remote = await familyRemote!.getFamilyById(id);
+        await _replaceLocal(
+          remote,
+          deletedAt: null,
+          delete: () => familyLocal.deleteFamily(id),
+          upsert: (f) =>
+              familyLocal.upsertFamily(f, syncStatus: SyncStatus.synced),
+        );
+      case 'family_members':
+        await _discardFailedMember(id);
+      default:
+        throw ArgumentError.value(table, 'table', 'not a synced table');
+    }
     await _failures.clear(table, id);
     debugPrint('Sync: discarded the local change to $table/$id');
+  }
+
+  /// Applies the server's copy of a row the user gave up on: a missing or
+  /// tombstoned row is deleted locally, anything else is stored as `synced`.
+  Future<void> _replaceLocal<T>(
+    T? remote, {
+    required DateTime? deletedAt,
+    required Future<void> Function() delete,
+    required Future<void> Function(T row) upsert,
+  }) async {
+    if (remote == null || deletedAt != null) {
+      await delete();
+      return;
+    }
+    await upsert(remote);
+  }
+
+  /// Family members have no get-by-id endpoint; the member list of the
+  /// family the local row belongs to is the equivalent lookup.
+  Future<void> _discardFailedMember(String id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'family_members',
+      columns: ['family_id'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    final familyId = rows.isEmpty ? null : rows.first['family_id'] as String?;
+    if (familyId == null) {
+      await familyLocal.hardDeleteMember(id);
+      return;
+    }
+    final members = await familyRemote!.getMembers(familyId);
+    FamilyMemberModel? remote;
+    for (final m in members) {
+      if (m.id == id) remote = m;
+    }
+    if (remote == null) {
+      await familyLocal.hardDeleteMember(id);
+      return;
+    }
+    await familyLocal.upsertMember(remote, syncStatus: SyncStatus.synced);
   }
 
   // ── Pull ───────────────────────────────────────────────────
