@@ -20,12 +20,24 @@ rationale lives in `docs/superpowers/specs/`.
 ## Provider layout
 
 `providers.dart` is the wiring file — datasources, repositories, services,
-startup tasks — and it imports the small focused files, never the other way
-round, so the graph stays acyclic: `now_provider.dart` (`nowProvider`, the one
-clock seam, alone because nearly every screen needs it and nothing else),
-`settings_providers.dart` (prefs, theme/locale/colour, reminders, biometrics,
-grace period, `BuildInfo`, cloud credentials, the connection probe), and
-`app_config_`, `app_mode_`, `sync_`, `auth_`, `app_update_provider.dart`.
+startup tasks. Around it are two kinds of file.
+
+**Leaves** never import `providers.dart`, so anything that needs one of them
+can be tested without standing up the wiring: `now_provider.dart`
+(`nowProvider`, the one clock seam, alone because nearly every screen needs it
+and nothing else), `settings_providers.dart` (prefs, theme/locale/colour,
+reminders, biometrics, grace period, `BuildInfo`, cloud credentials, the
+connection probe), `app_config_`, `app_mode_`, `sync_`, `auth_`,
+`onboarding_` and `app_update_provider.dart`.
+
+**Aggregate files** — `dose_`, `medication_`, `treatment_`, `family_` and
+`prescription_providers.dart` — do import `providers.dart`, for the
+repositories they build their lists and actions on, and `providers.dart`
+imports several of them back for the startup tasks. That mutual import is
+accepted: Dart resolves it, and the alternative is a third file that does
+nothing but hold the repository providers. What is not accepted is a leaf
+growing an import of `providers.dart` — that is the edge the layering
+depends on.
 
 ## App modes
 
