@@ -99,6 +99,52 @@ void main() {
       expect(_ofKind(result, CodeKind.other), isEmpty);
     });
 
+    test('labelled codes shorter than 6 digits are supplements', () {
+      for (final (text, code) in [
+        ('COD MINSAN: 54321', '54321'),
+        ('Cod. Min. 968', '968'),
+        ('Notifica n. 1054', '1054'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+          code,
+        ], reason: text);
+      }
+    });
+
+    test('a short code on the line below the label is a supplement', () {
+      final result = findCodeCandidates([
+        _line('COD. MIN. SAN.', 0),
+        _line('54321', 45),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+        '54321',
+      ]);
+    });
+
+    test('quantities and dates after a label are not supplements', () {
+      for (final text in [
+        'COD MINSAN: 15mg',
+        'COD MINSAN: 150mg',
+        'COD MINSAN: 500 mg',
+        'COD MINSAN: 100g',
+        'COD MINSAN: 250 ml',
+        'COD MINSAN: 120 kcal',
+        'COD MINSAN: 100%',
+        'COD MINSAN: 1.500',
+        'COD MINSAN: 12/2027',
+        'COD MINSAN: 2027/12',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement), isEmpty, reason: text);
+      }
+    });
+
+    test('unlabelled numbers shorter than 6 digits are not supplements', () {
+      final result = findCodeCandidates([_line('Lotto 54321', 0)]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
     test('label variants classify as supplement', () {
       for (final lines in [
         [_line('COD. MIN. SAN. 107018', 0)],
@@ -293,6 +339,72 @@ void main() {
         _line('COD MINSAN 107018 AIC 034567891', 0),
       ]);
       expect(describe(result), 'aic:034567891 supplement:107018');
+    });
+  });
+
+  group('findCodeCandidates: device OCR variants', () {
+    String describe(List<CodeCandidate> list) =>
+        list.map((c) => '${c.kind.name}:${c.code}').join(' ');
+
+    test('an EAN read as 1 + 12 digits is an EAN', () {
+      final result = findCodeCandidates([_line('8 057737141836', 0)]);
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('an EAN read as 12 + 1 digits is an EAN', () {
+      final result = findCodeCandidates([_line('805773714183 6', 0)]);
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('a 1 + 12 run with a failed checksum keeps all 13 digits', () {
+      final result = findCodeCandidates([_line('8 057737141837', 0)]);
+      expect(describe(result), 'other:8057737141837');
+    });
+
+    test('label OCR variants still find the supplement code', () {
+      for (final text in [
+        'COD MINSAN.107018',
+        'CODMINSAN 107018',
+        'CODMINSAN:107018',
+        'C0D MINSAN: 107018',
+        'COD MlNSAN: 107018',
+        'COD M1NSAN: 107018',
+        'MINSAN 107018',
+        'COD. MIN. SAN.: 107018',
+        'COD MINSAN :: 107018',
+        'cod minsan 107018',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(describe(result), 'supplement:107018', reason: text);
+      }
+    });
+
+    test('the code in another block on the same row is a supplement', () {
+      // ML Kit order: the number's block comes first, other text between.
+      final result = findCodeCandidates([
+        const OcrLine('107018', Rect.fromLTWH(260, 102, 120, 36)),
+        const OcrLine('Integratore alimentare', Rect.fromLTWH(0, 0, 400, 40)),
+        const OcrLine('COD MINSAN:', Rect.fromLTWH(0, 100, 240, 40)),
+        const OcrLine('8 057737141836', Rect.fromLTWH(0, 300, 400, 40)),
+      ]);
+      expect(describe(result), 'supplement:107018 ean:8057737141836');
+    });
+
+    test('a number on the same row left of the label is not a supplement', () {
+      final result = findCodeCandidates([
+        const OcrLine('123456', Rect.fromLTWH(0, 100, 120, 40)),
+        const OcrLine('COD MINSAN:', Rect.fromLTWH(200, 100, 240, 40)),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('a number on another row in a later block is not a supplement', () {
+      final result = findCodeCandidates([
+        const OcrLine('COD MINSAN:', Rect.fromLTWH(0, 100, 240, 40)),
+        const OcrLine('Lotto', Rect.fromLTWH(0, 400, 240, 40)),
+        const OcrLine('123456', Rect.fromLTWH(260, 180, 120, 40)),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
     });
   });
 

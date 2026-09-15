@@ -81,9 +81,10 @@ List<CodeCandidate> findCodeCandidates(
   int limit = 20,
 }) {
   final found = <CodeCandidate>[];
-  OcrLine? pendingLabel;
+  final labelPartners = _labelPartners(lines);
 
-  for (final line in lines) {
+  for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    final line = lines[lineIndex];
     final text = line.text;
     final elementSpans = _elementSpans(line);
     final claimed = <_Span>[];
@@ -120,24 +121,23 @@ List<CodeCandidate> findCodeCandidates(
     }
 
     // Supplement code: the first number after the label on a labelled line,
-    // or on the line right below a label line without one.
+    // else the first number on the line paired with a label line without
+    // one (same row to its right, or right below; see [_labelPartners]).
     final label = _supplementLabel.firstMatch(text);
-    final previousLabel = pendingLabel;
-    final belowLabel =
-        previousLabel != null && _followsLabel(previousLabel, line);
-    var supplementFound = false;
-    if (label != null || belowLabel) {
-      final from = label?.end ?? 0;
-      for (final m in _digitRun.allMatches(text)) {
-        final span = _Span(m.start, m.end);
-        if (m.start < from || isClaimed(span)) continue;
-        claimed.add(span);
-        supplementFound = true;
-        add(m[0]!, CodeKind.supplement, span);
-        break;
-      }
+    var supplement = label == null
+        ? null
+        : _labelledCode(text, label.end, claimed);
+    if (supplement == null && labelPartners.contains(lineIndex)) {
+      supplement = _labelledCode(text, 0, claimed);
     }
-    pendingLabel = label != null && !supplementFound ? line : null;
+    if (supplement != null) {
+      claimed.add(supplement);
+      add(
+        text.substring(supplement.start, supplement.end),
+        CodeKind.supplement,
+        supplement,
+      );
+    }
 
     // AIC codes: optional letter + 6-9 digits, not already claimed.
     for (final m in BarcodeLookupDatasource.aicPattern.allMatches(text)) {
@@ -232,26 +232,51 @@ bool isValidEan(String digits) {
 
 // ── Internals ────────────────────────────────────────────────
 
-/// Ministry of Health code labels on supplement packs (case-insensitive);
-/// tolerant of OCR spacing and punctuation.
-final _supplementLabel = RegExp(
-  r'(?<![A-Z])(MIN[\s.:,\-]*SAN'
-  r'|COD(ICE)?[\s.:,\-]*MIN(?![A-Z])'
-  r'|CODICE[\s.:,\-]*MINISTERIALE'
-  r'|CODICE[\s.:,\-]*(DI[\s.:,\-]*)?NOTIFICA'
-  r'|NOTIFICA[\s.:,\-]*N(?![A-Z]))',
+/// Ministry of Health code labels on supplement packs (case-insensitive):
+/// COD MINSAN, COD. MIN., CODICE MINISTERIALE, CODICE (DI) NOTIFICA,
+/// NOTIFICA N. Tolerant of OCR spacing and punctuation (missing, extra or
+/// none, e.g. `CODMINSAN`) and of the usual letter/digit confusions in the
+/// label itself: O read as 0 and I read as l or 1 (`C0D MlNSAN`).
+final _supplementLabel = () {
+  const o = '[O0]';
+  const i = '[Il1]';
+  const sep = r'[\s.:,;\-]*';
+  return RegExp(
+    '(?<![A-Z])(?:'
+    'C${o}D(?:${i}CE)?${sep}M${i}N$sep(?:SAN|${i}STER${i}ALE)'
+    '|C${o}D(?:${i}CE)?${sep}M${i}N(?![A-Z])'
+    '|C${o}D${i}CE$sep(?:D$i$sep)?N${o}T${i}F${i}CA'
+    '|M${i}N${sep}SAN'
+    '|N${o}T${i}F${i}CA${sep}N(?![A-Z]))',
+    caseSensitive: false,
+  );
+}();
+
+/// A supplement code right after a label: 3-9 digits. Register codes run
+/// from 2 to 7 digits (2: ~140 rows, 3: ~970, 4: ~1,050, 5: ~25,600, 6:
+/// ~86,100); 2-digit codes are not accepted because after a label they are
+/// far more often a quantity or a date part than one of those few products.
+final _labelledDigitRun = RegExp(
+  r'(?<![0-9])(?<![0-9][/.,])[0-9]{3,9}(?![0-9])',
+);
+
+/// What makes a number after a label a quantity or a date, not a code:
+/// `/`, a decimal part, `%` or a unit.
+final _quantitySuffix = RegExp(
+  r'(?:[/.,][0-9]|/|\s*(?:%|(?:mg|g|ml|kcal)(?![A-Za-z])))',
   caseSensitive: false,
 );
 
-final _digitRun = RegExp(r'(?<![0-9])[0-9]{6,9}(?![0-9])');
-final _onlyDigitRun = RegExp(r'^[0-9]{6,9}$');
+/// A line holding nothing but a possible labelled code.
+final _onlyDigitRun = RegExp(r'^[0-9]{3,9}$');
 
 /// A run of digit groups separated by single spaces, with no letter or digit
 /// directly before it.
 final _digitGroups = RegExp(r'(?<![A-Za-z0-9])[0-9]+(?: [0-9]+)*');
 
 /// Group lengths an EAN-13 / EAN-8 is printed in.
-const _eanShapes = {'13', '1,6,6', '7,6', '8', '4,4'};
+/// `1,12` and `12,1` are how on-device OCR merges a printed `8 057737 141836`.
+const _eanShapes = {'13', '1,6,6', '7,6', '1,12', '12,1', '8', '4,4'};
 final _token = RegExp(r'[A-Za-z0-9]+');
 final _digit = RegExp(r'[0-9]');
 
@@ -282,6 +307,63 @@ List<({String code, CodeKind kind, _Span span})> _findEans(String text) {
     }
   }
   return result;
+}
+
+/// The first acceptable supplement code in [text] at or after [from]: see
+/// [_labelledDigitRun], skipping [claimed] spans and quantities or dates
+/// ([_quantitySuffix]).
+_Span? _labelledCode(String text, int from, List<_Span> claimed) {
+  for (final m in _labelledDigitRun.allMatches(text, from)) {
+    final span = _Span(m.start, m.end);
+    if (claimed.any((c) => c.overlaps(span))) continue;
+    if (_quantitySuffix.matchAsPrefix(text, m.end) != null) continue;
+    return span;
+  }
+  return null;
+}
+
+/// Indexes of the lines that hold the code of a supplement label printed
+/// without one on its own line. ML Kit may put the number in another block
+/// (so anywhere in [lines]): a line on the same row to the right of the
+/// label (vertical centres within half a label height) is preferred, the
+/// nearest one holding a code; otherwise the line right after the label in
+/// reading order, when [_followsLabel] accepts it.
+Set<int> _labelPartners(List<OcrLine> lines) {
+  final partners = <int>{};
+  for (var i = 0; i < lines.length; i++) {
+    final label = lines[i];
+    final match = _supplementLabel.firstMatch(label.text);
+    if (match == null) continue;
+    final eanSpans = [for (final e in _findEans(label.text)) e.span];
+    if (_labelledCode(label.text, match.end, eanSpans) != null) continue;
+
+    int? sameRow;
+    for (var j = 0; j < lines.length; j++) {
+      if (j == i) continue;
+      final other = lines[j];
+      if (!_onSameRowRightOf(label, other)) continue;
+      final spans = [for (final e in _findEans(other.text)) e.span];
+      if (_labelledCode(other.text, 0, spans) == null) continue;
+      if (sameRow == null || other.box.left < lines[sameRow].box.left) {
+        sameRow = j;
+      }
+    }
+    if (sameRow != null) {
+      partners.add(sameRow);
+    } else if (i + 1 < lines.length && _followsLabel(label, lines[i + 1])) {
+      partners.add(i + 1);
+    }
+  }
+  return partners;
+}
+
+/// Whether [other] sits on the same text row as [label] and starts to its
+/// right (allowing half a line height of overlap for loose OCR boxes).
+bool _onSameRowRightOf(OcrLine label, OcrLine other) {
+  final height = label.box.height;
+  final sameRow =
+      (other.box.center.dy - label.box.center.dy).abs() <= height / 2;
+  return sameRow && other.box.left >= label.box.right - height / 2;
 }
 
 /// Whether [next] is the line right below the supplement [label] line: it
