@@ -62,8 +62,15 @@ foreign-key order (families, family_members, medications, treatments,
 prescriptions, dose_logs), so a file that cannot be applied in full leaves the
 device exactly as it was. `RestoreMode.replace` clears the tables first;
 `RestoreMode.merge` upserts by id and keeps whichever copy has the newer
-`updated_at`. Restored rows are stamped `synced`, or `pending_update` when the
-caller passes `markPending` (cloud mode) so the next cycle uploads them.
+`updated_at` - the backup has to be **strictly** newer to win, so a tie or a
+missing timestamp keeps the local row, and `families`/`family_members` (which
+carry no `updated_at`) are never overwritten: an id that already exists on the
+device keeps whatever the device holds. Restored rows are stamped `synced`, or
+`pending_update` when the caller passes `markPending` (cloud mode) so the next
+cycle uploads them - except `family_members`, which stays `synced` whatever the
+caller asks: RLS only ever accepts the signed-in user's own member row, and the
+one row that does belong to them is picked up by the
+`LocalUploadMarker.markAllForUpload` that follows the restore.
 Photos are written after the transaction commits and are never deleted.
 
 Settings drives the rest: after a restore it resets and reconciles the

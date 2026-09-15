@@ -118,6 +118,16 @@ class BackupService {
     'dose_logs',
   ];
 
+  /// Tables a restore never stamps `pending_update`.
+  ///
+  /// A restore can carry every member of a family, but the cloud only ever
+  /// accepts the row of the signed-in user: RLS rejects a push of anyone
+  /// else's `family_members` row, and a rejected row stays pending and is
+  /// retried until the sync backs off for good. The user's own member row is
+  /// marked for upload by `LocalUploadMarker.markAllForUpload` after the
+  /// restore instead.
+  static const _neverPending = {'family_members'};
+
   /// Tables whose rows carry an `updated_at` to compare during a merge.
   static const _versioned = {
     'medications',
@@ -126,7 +136,38 @@ class BackupService {
     'dose_logs',
   };
 
-  /// Writes `medora-backup-<yyyyMMdd-HHmm>.json` into [dir] and returns it.
+  /// Photo payload above which the UI defaults to leaving the photos out:
+  /// the export holds the whole envelope in memory before it is written.
+  static const largePhotoBytes = 150 * 1024 * 1024;
+
+  /// How many bytes the photos would add to a backup, before base64 (which
+  /// grows them by about a third). Cheap: it only stats the files.
+  Future<int> estimatePhotoBytes() async {
+    try {
+      var total = 0;
+      for (final file in await _photos.listAll()) {
+        total += await file.length();
+      }
+      return total;
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
+  /// How many photos a backup would carry.
+  Future<int> countPhotos() async {
+    try {
+      return (await _photos.listAll()).length;
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
+  /// Writes `medora-backup-<yyyyMMdd-HHmmss>.json` into [dir] and returns it.
+  ///
+  /// The envelope is encoded in one go, so a backup costs roughly the size of
+  /// the finished file in memory; [includePhotos] is what keeps that bounded
+  /// on a photo-heavy cabinet.
   Future<File> exportToFile(Directory dir, {bool includePhotos = true}) async {
     try {
       final db = await _database.database;
@@ -189,7 +230,8 @@ class BackupService {
   /// nothing references costs a few kilobytes, a missing one loses data.
   ///
   /// [markPending] re-stamps every restored row as `pending_update` so a
-  /// cloud-mode device uploads the restored data on the next sync cycle.
+  /// cloud-mode device uploads the restored data on the next sync cycle -
+  /// except `family_members` (see [_neverPending]), which stays `synced`.
   Future<BackupManifest> restore(
     File file, {
     required RestoreMode mode,
@@ -208,8 +250,11 @@ class BackupService {
         }
         for (final table in _insertOrder) {
           final rows = backup.rows[table] ?? const <Map<String, Object?>>[];
+          final tableStatus = _neverPending.contains(table)
+              ? SyncStatus.synced
+              : status;
           for (final row in rows) {
-            await _applyRow(txn, table, row, mode, status);
+            await _applyRow(txn, table, row, mode, tableStatus);
           }
         }
       });
@@ -230,6 +275,15 @@ class BackupService {
     return backup.manifest;
   }
 
+  /// Writes one backed-up row.
+  ///
+  /// In [RestoreMode.replace] the tables were emptied first, so every row is
+  /// a plain insert. In [RestoreMode.merge] a row whose id is not on the
+  /// device is inserted; for an id that already exists only the tables in
+  /// [_versioned] are compared, and the backup wins only when its
+  /// `updated_at` is strictly newer - a tie, a missing timestamp, or a row of
+  /// `families`/`family_members` (which carry no `updated_at`) keeps whatever
+  /// the device already holds.
   Future<void> _applyRow(
     Transaction txn,
     String table,
@@ -349,7 +403,7 @@ class BackupService {
   static String _stamp(DateTime at) {
     String two(int value) => value.toString().padLeft(2, '0');
     return '${at.year}${two(at.month)}${two(at.day)}'
-        '-${two(at.hour)}${two(at.minute)}';
+        '-${two(at.hour)}${two(at.minute)}${two(at.second)}';
   }
 }
 

@@ -89,7 +89,7 @@ void main() {
 
     final file = await makeService().exportToFile(outDir);
 
-    expect(p.basename(file.path), 'medora-backup-20260304-1705.json');
+    expect(p.basename(file.path), 'medora-backup-20260304-170500.json');
     final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
     expect(json['format'], 'medora-backup');
     expect(json['version'], 1);
@@ -192,6 +192,56 @@ void main() {
       columns: ['sync_status'],
     )).map((r) => r['sync_status']).toSet();
     expect(statuses, {SyncStatus.pendingUpdate});
+  });
+
+  test('restore never marks family_members pending', () async {
+    final db = await AppDatabase.instance.database;
+    await seedEverything(db);
+    // A second member: only the signed-in user may push their own row, so a
+    // pending stamp here would be rejected by RLS on every cycle.
+    await db.insert('family_members', {
+      'id': 'mem-2',
+      'family_id': 'fam-1',
+      'user_id': 'user-b',
+      'display_name': 'Ada',
+      'role': 'member',
+      'joined_at': '2026-03-02T08:00:00.000',
+      'sync_status': SyncStatus.synced,
+    });
+    final file = await makeService().exportToFile(outDir);
+    await AppDatabase.instance.clearAllData();
+
+    await makeService().restore(
+      file,
+      mode: RestoreMode.replace,
+      markPending: true,
+    );
+
+    final members = await db.query('family_members', columns: ['sync_status']);
+    expect(members, hasLength(2));
+    expect(
+      members.map((r) => r['sync_status']).toSet(),
+      {SyncStatus.synced},
+      reason: 'family_members rows are left for LocalUploadMarker to pick',
+    );
+    for (final table in ['medications', 'treatments', 'prescriptions']) {
+      final rows = await db.query(table, columns: ['sync_status']);
+      expect(rows.map((r) => r['sync_status']).toSet(), {
+        SyncStatus.pendingUpdate,
+      }, reason: table);
+    }
+  });
+
+  test('estimatePhotoBytes and countPhotos size the photo payload', () async {
+    final service = makeService();
+    expect(await service.estimatePhotoBytes(), 0);
+    expect(await service.countPhotos(), 0);
+
+    await photos.writeBytes('med_a.png', _png);
+    await photos.writeBytes('med_b.png', _png);
+
+    expect(await service.countPhotos(), 2);
+    expect(await service.estimatePhotoBytes(), _png.length * 2);
   });
 
   test(
