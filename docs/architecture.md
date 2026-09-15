@@ -93,7 +93,11 @@ minutes (`settings_providers.dart:159`).
 - **Families** are pulled separately. Joining goes through the `join_family`
   security-definer RPC (`lib/data/datasources/family_remote_datasource.dart:37`)
   so a non-owner can join without a SELECT policy on `families`.
-- Auto-sync fires once, **2 s** after connectivity returns (`sync_service.dart:121`).
+- Auto-sync fires once, **2 s** after connectivity returns (`sync_service.dart:126`).
+- A plain `syncAll()` asked for **while a cycle is running** is queued rather
+  than dropped: the running cycle re-runs once when it finishes, so a change
+  made mid-cycle does not wait for the next trigger. Repeated requests collapse
+  into a single re-run, and `forcePush`/`forcePull` are never queued.
 - Server-side schema, RLS policies and the tombstone cascade triggers live in
   `supabase/migrations/`.
 

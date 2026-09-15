@@ -1042,6 +1042,73 @@ void main() {
     );
   });
 
+  group('queued cycles', () {
+    /// Holds the first call into the medications fake open until [gate]
+    /// completes, so the test can call back into a running cycle.
+    void gateFirstCall(Harness h, Completer<void> gate) {
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        await gate.future;
+      };
+    }
+
+    test('a sync asked for during a cycle runs once more afterwards', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate);
+
+      final first = h.service.syncAll();
+      await pumpEventQueue();
+      expect(h.service.currentState, SyncState.syncing);
+
+      // Requested mid-cycle: dropped before, queued now.
+      expect(await h.service.syncAll(), isNull);
+
+      gate.complete();
+      await first;
+
+      expect(h.meds.table.sinceCalls.length, 2);
+    });
+
+    test(
+      'several requests during one cycle collapse into one re-run',
+      () async {
+        final h = Harness();
+        final gate = Completer<void>();
+        gateFirstCall(h, gate);
+
+        final first = h.service.syncAll();
+        await pumpEventQueue();
+        expect(await h.service.syncAll(), isNull);
+        expect(await h.service.syncAll(), isNull);
+        expect(await h.service.syncAll(), isNull);
+
+        gate.complete();
+        await first;
+
+        expect(h.meds.table.sinceCalls.length, 2);
+      },
+    );
+
+    test('force operations asked for during a cycle are not queued', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate);
+
+      final first = h.service.syncAll();
+      await pumpEventQueue();
+      expect(await h.service.forcePush(), isNull);
+      expect(await h.service.forcePull(), isNull);
+
+      gate.complete();
+      await first;
+
+      expect(h.meds.table.sinceCalls.length, 1);
+    });
+  });
+
   group('auto-sync', () {
     test(
       'syncs once after an offline→online transition, not on repeated online events',

@@ -156,7 +156,7 @@ class SyncService {
   Future<SyncReport?> syncAll() => _run('sync', (report) async {
     await _pushPendingChanges(report);
     await _pullAll(report, force: false);
-  });
+  }, queueable: true);
 
   /// Push ALL local rows regardless of sync_status.
   Future<SyncReport?> forcePush() => _run(
@@ -171,15 +171,34 @@ class SyncService {
     await _pullAll(report, force: true);
   });
 
+  /// Set when a plain [syncAll] was asked for while a cycle was running; the
+  /// running cycle then runs one more before it returns.
+  bool _rerunRequested = false;
+
+  /// Runs one cycle. [queueable] marks a request that must not simply be
+  /// dropped when a cycle is already running: it is remembered and re-run once
+  /// the current cycle finishes, so a change made mid-cycle is not left
+  /// unsynced until the next trigger. Force operations are explicit user
+  /// actions and are never queued.
+  ///
+  /// Returns the report of *this* call's own cycle; a queued re-run is what
+  /// [lastReport] ends up holding.
   Future<SyncReport?> _run(
     String label,
-    Future<void> Function(SyncReport) body,
-  ) async {
+    Future<void> Function(SyncReport) body, {
+    bool queueable = false,
+  }) async {
     if (!isAvailable) {
       debugPrint('Sync: $label skipped (local-only mode)');
       return null;
     }
-    if (_currentState == SyncState.syncing) return null;
+    if (_currentState == SyncState.syncing) {
+      if (queueable) {
+        debugPrint('Sync: $label queued behind the running cycle');
+        _rerunRequested = true;
+      }
+      return null;
+    }
     if (!_isOnline()) {
       debugPrint('Sync: $label skipped (offline)');
       return null;
@@ -189,8 +208,25 @@ class SyncService {
       return null;
     }
 
+    _rerunRequested = false;
     _setState(SyncState.syncing);
     final report = SyncReport(startedAt: _now());
+    try {
+      await _cycle(label, report, body);
+      return report;
+    } finally {
+      if (_rerunRequested) {
+        _rerunRequested = false;
+        await syncAll();
+      }
+    }
+  }
+
+  Future<void> _cycle(
+    String label,
+    SyncReport report,
+    Future<void> Function(SyncReport) body,
+  ) async {
     try {
       await body(report);
     } on _FetchFailedFatally catch (e) {
@@ -227,7 +263,6 @@ class SyncService {
           : SyncState.success,
     );
     _returnToIdleLater();
-    return report;
   }
 
   void _returnToIdleLater() {
