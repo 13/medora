@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -130,6 +131,62 @@ void main() {
     final s = service(client);
     expect(await s.sync(), 3);
     expect(await s.sourceUpdated(), isNull);
+  });
+
+  test('a failed database open is retried on the next call', () async {
+    var opens = 0;
+    final s = SupplementRegistryService(
+      client: serving(),
+      openDatabase: () async {
+        opens++;
+        if (opens == 1) throw StateError('disk busy');
+        return db;
+      },
+      now: () => syncedAt,
+    );
+
+    await expectLater(s.sync(), throwsStateError);
+    expect(await s.sync(), 3);
+    expect(opens, 2);
+    expect(await s.findByCode('107018'), hasLength(1));
+  });
+
+  test('concurrent sync calls share one download', () async {
+    var downloads = 0;
+    final release = Completer<void>();
+    final client = MockClient.streaming((request, _) async {
+      if (request.url.toString() == SupplementRegistryService.metaUrl) {
+        return http.StreamedResponse(Stream.value(meta.codeUnits), 200);
+      }
+      downloads++;
+      await release.future;
+      return http.StreamedResponse(Stream.value(gzipped), 200);
+    });
+    final s = service(client);
+    final firstProgress = <double>[];
+    final secondProgress = <double>[];
+
+    final first = s.sync(onProgress: firstProgress.add);
+    final second = s.sync(onProgress: secondProgress.add);
+    release.complete();
+
+    expect(await Future.wait([first, second]), [3, 3]);
+    expect(downloads, 1);
+    expect(firstProgress.last, 1.0);
+    expect(secondProgress.last, 1.0);
+
+    // Once finished, a new call downloads again.
+    expect(await s.sync(), 3);
+    expect(downloads, 2);
+  });
+
+  test('the code_key index exists after a sync', () async {
+    await service(serving()).sync();
+    final indexes = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'index' "
+      "AND tbl_name = 'supplements'",
+    );
+    expect(indexes.map((r) => r['name']), ['idx_supplements_code_key']);
   });
 
   test('parseRegisterGzip rejects an unexpected header', () {

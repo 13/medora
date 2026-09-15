@@ -69,6 +69,7 @@ class SupplementRegistryService {
   static const _prefLastSync = 'supplement_last_sync';
   static const _prefCount = 'supplement_count';
   static const _prefSourceUpdated = 'supplement_source_updated';
+  static const _codeKeyIndex = 'idx_supplements_code_key';
   static const _insertChunk = 5000;
   static const _timeout = Duration(seconds: 120);
 
@@ -77,10 +78,22 @@ class SupplementRegistryService {
   final Now _now;
   Future<Database>? _database;
 
+  /// The download in progress, shared by concurrent [sync] calls.
+  Future<int>? _syncing;
+  final _progressListeners = <void Function(double progress)>[];
+
   static Future<Database> _openDefaultDatabase() async =>
       openDatabase(p.join(await getDatabasesPath(), _dbName));
 
-  Future<Database> get _db => _database ??= _openAndPrepare();
+  /// The opened database; a failed open is not cached, so the next call
+  /// tries again.
+  Future<Database> get _db {
+    final opening = _database ??= _openAndPrepare();
+    return opening.catchError((Object error, StackTrace stack) {
+      if (identical(_database, opening)) _database = null;
+      Error.throwWithStackTrace(error, stack);
+    });
+  }
 
   Future<Database> _openAndPrepare() async {
     final db = await _openDatabase();
@@ -88,10 +101,6 @@ class SupplementRegistryService {
       'CREATE TABLE IF NOT EXISTS $_table ('
       'code TEXT NOT NULL, code_key TEXT NOT NULL, '
       'product TEXT NOT NULL, company TEXT NOT NULL)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_supplements_code_key '
-      'ON $_table(code_key)',
     );
     return db;
   }
@@ -122,19 +131,38 @@ class SupplementRegistryService {
   /// transaction. Download or format errors throw and leave the previous
   /// table untouched. [onProgress] receives 0..1 (the download part only
   /// when its size is known). Returns the stored row count.
-  Future<int> sync({void Function(double progress)? onProgress}) async {
+  ///
+  /// A call while a download is running joins it (one download; every
+  /// caller's [onProgress] is notified and gets the same result).
+  Future<int> sync({void Function(double progress)? onProgress}) {
+    if (onProgress != null) _progressListeners.add(onProgress);
+    return _syncing ??= _runSync().whenComplete(() {
+      _syncing = null;
+      _progressListeners.clear();
+    });
+  }
+
+  void _reportProgress(double progress) {
+    for (final listener in List.of(_progressListeners)) {
+      listener(progress);
+    }
+  }
+
+  Future<int> _runSync() async {
     final client = _client ?? http.Client();
     try {
-      final bytes = await _download(client, onProgress);
+      final bytes = await _download(client, _reportProgress);
       final entries = await compute(parseRegisterGzip, bytes);
       if (entries.isEmpty) {
         throw const FormatException('The supplement register is empty');
       }
       final updated = await _fetchSourceUpdated(client);
-      onProgress?.call(0.8);
+      _reportProgress(0.8);
 
       final db = await _db;
       await db.transaction((txn) async {
+        // Bulk insert without the index, then build it once.
+        await txn.execute('DROP INDEX IF EXISTS $_codeKeyIndex');
         await txn.delete(_table);
         for (var i = 0; i < entries.length; i += _insertChunk) {
           final batch = txn.batch();
@@ -147,13 +175,16 @@ class SupplementRegistryService {
             });
           }
           await batch.commit(noResult: true);
-          onProgress?.call(
+          _reportProgress(
             0.8 +
                 0.2 *
                     (i + _insertChunk).clamp(0, entries.length) /
                     entries.length,
           );
         }
+        await txn.execute(
+          'CREATE INDEX IF NOT EXISTS $_codeKeyIndex ON $_table(code_key)',
+        );
       });
 
       final prefs = await SharedPreferences.getInstance();
