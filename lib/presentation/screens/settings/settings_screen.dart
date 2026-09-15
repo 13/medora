@@ -21,6 +21,7 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/cloud_config_sheet.dart';
 import 'package:medora/presentation/widgets/restore_dialog.dart';
 import 'package:medora/presentation/widgets/update_tile.dart';
 import 'package:medora/services/aifa_cache_service.dart';
@@ -45,6 +46,12 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
     final appMode = ref.watch(appModeProvider);
     final cloudAvailable = SupabaseConfig.isConfigured;
+    final storedCredentials = ref.watch(cloudCredentialsProvider);
+    final cloudSubtitle = _cloudSubtitle(
+      l10n,
+      configured: cloudAvailable,
+      storedOnDevice: storedCredentials != null,
+    );
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
     final graceMinutes = ref.watch(missedGraceMinutesProvider);
@@ -274,8 +281,12 @@ class SettingsScreen extends ConsumerWidget {
                       ? l10n.cloudSyncOn(user?.email ?? '')
                       : l10n.cloudSyncOff,
                 ),
+                subtitle: cloudSubtitle == null ? null : Text(cloudSubtitle),
                 trailing: !cloudAvailable
-                    ? null
+                    ? FilledButton.tonal(
+                        onPressed: () => _configureCloud(context, ref, l10n),
+                        child: Text(l10n.configure),
+                      )
                     : appMode == AppMode.cloud
                     ? TextButton(
                         onPressed: () =>
@@ -286,6 +297,14 @@ class SettingsScreen extends ConsumerWidget {
                         onPressed: () => _turnOnCloud(context, ref, l10n),
                         child: Text(l10n.turnOn),
                       ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: Text(l10n.configureCloud),
+                subtitle: Text(l10n.cloudConfigIntro),
+                trailing: const Icon(Icons.chevron_right),
+                isThreeLine: true,
+                onTap: () => _configureCloud(context, ref, l10n),
               ),
               if (appMode == AppMode.cloud) ...[
                 ListTile(
@@ -439,7 +458,54 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmTurnOffCloud(
+  /// What the cloud tile says under its title: where the configuration came
+  /// from, or that a change only takes effect after a restart.
+  String? _cloudSubtitle(
+    AppLocalizations l10n, {
+    required bool configured,
+    required bool storedOnDevice,
+  }) {
+    if (SupabaseConfig.pendingRestart) return l10n.cloudRestartRequired;
+    if (storedOnDevice) return l10n.cloudConfiguredOnDevice;
+    if (configured) return l10n.cloudConfiguredFromBuild;
+    return null;
+  }
+
+  /// Opens the configuration sheet and applies what the user decided there.
+  Future<void> _configureCloud(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final outcome = await showCloudConfigSheet(context);
+    switch (outcome) {
+      case null:
+        return;
+      case CloudConfigOutcome.savedAndActive:
+        messenger.showSnackBar(SnackBar(content: Text(l10n.cloudConfigSaved)));
+      case CloudConfigOutcome.savedNeedsRestart:
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.cloudRestartRequired)),
+        );
+      case CloudConfigOutcome.clearRequested:
+        // Dropping the credentials while signed in would strand the account:
+        // ask what happens to the local data first.
+        if (ref.read(appModeProvider) == AppMode.cloud) {
+          if (!context.mounted) return;
+          final turnedOff = await _confirmTurnOffCloud(context, ref, l10n);
+          if (!turnedOff) return;
+        }
+        await ref.read(cloudCredentialsProvider.notifier).clear();
+        if (SupabaseConfig.isConfigured) SupabaseConfig.pendingRestart = true;
+        messenger.showSnackBar(
+          SnackBar(content: Text(l10n.cloudConfigCleared)),
+        );
+    }
+  }
+
+  /// Returns true when cloud sync was actually turned off.
+  Future<bool> _confirmTurnOffCloud(
     BuildContext context,
     WidgetRef ref,
     AppLocalizations l10n,
@@ -468,7 +534,7 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (choice == null) return;
+    if (choice == null) return false;
     await ref.read(appModeProvider.notifier).set(AppMode.localOnly);
     await ref.read(authControllerProvider.notifier).signOut();
     if (choice == 'wipe') {
@@ -487,6 +553,7 @@ class SettingsScreen extends ConsumerWidget {
         }
       }
     }
+    return true;
   }
 
   /// Writes a full backup into the cache and hands it to the share sheet.

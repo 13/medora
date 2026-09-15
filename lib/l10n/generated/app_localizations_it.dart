@@ -1321,8 +1321,7 @@ class AppLocalizationsIt extends AppLocalizations {
       'Disattiva — i dati sono salvati solo su questo dispositivo';
 
   @override
-  String get cloudSyncUnavailable =>
-      'Non disponibile — questa build non ha una configurazione cloud';
+  String get cloudSyncUnavailable => 'Non configurato — tocca Configura';
 
   @override
   String get turnOnCloudSync => 'Attiva sincronizzazione cloud';
@@ -1605,4 +1604,68 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get backupCorrupt =>
       'Impossibile leggere questo backup. Non è stato modificato nulla.';
+
+  @override
+  String get configureCloud => 'Configura la sincronizzazione cloud';
+
+  @override
+  String get configure => 'Configura';
+
+  @override
+  String get cloudConfiguredOnDevice => 'Configurato su questo dispositivo';
+
+  @override
+  String get cloudConfiguredFromBuild => 'Configurato da questa build';
+
+  @override
+  String get cloudRestartRequired =>
+      'Riavvia Medora per applicare le nuove impostazioni cloud';
+
+  @override
+  String get cloudConfigIntro =>
+      'Inserisci l\'URL e la chiave del tuo progetto Supabase. Restano salvati solo su questo dispositivo.';
+
+  @override
+  String get cloudProjectUrl => 'URL del progetto';
+
+  @override
+  String get cloudProjectUrlHint => 'https://tuoprogetto.supabase.co';
+
+  @override
+  String get cloudAnonKey => 'Chiave anon o publishable';
+
+  @override
+  String get cloudKeyStored => 'Chiave salvata su questo dispositivo';
+
+  @override
+  String get cloudKeyReplace => 'Sostituisci';
+
+  @override
+  String get paste => 'Incolla';
+
+  @override
+  String get cloudTestConnection => 'Prova la connessione';
+
+  @override
+  String get cloudTestOk => 'Il progetto risponde — i valori sono corretti';
+
+  @override
+  String get cloudTestFailed =>
+      'Impossibile raggiungere il progetto con questi valori';
+
+  @override
+  String get cloudInvalidUrl =>
+      'Inserisci l\'URL completo del progetto, che inizia con https://';
+
+  @override
+  String get cloudKeyRequired =>
+      'Inserisci la chiave anon o publishable del progetto';
+
+  @override
+  String get cloudConfigSaved =>
+      'La sincronizzazione cloud è pronta — attivala qui sopra';
+
+  @override
+  String get cloudConfigCleared =>
+      'Configurazione cloud rimossa da questo dispositivo';
 }

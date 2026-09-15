@@ -20,11 +20,19 @@ rationale lives in `docs/superpowers/specs/`.
 ## App modes
 
 `AppMode { localOnly, cloud }` (`lib/presentation/providers/app_mode_provider.dart:10`)
-is persisted in `SharedPreferences`. Cloud mode also needs a build carrying
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` (`AppConfig.isCloudAvailable`,
-`lib/core/app_config.dart:22`); without them the remote datasources are never
-constructed and settings says cloud sync is unavailable. Repositories always
-write locally first, so local-only is not a degraded mode — it is the base case.
+is persisted in `SharedPreferences`. Cloud mode also needs usable Supabase
+credentials. `SupabaseConfig.resolve` (`lib/core/supabase_config.dart`) picks
+them in one order — **Settings > dart-defines > none**: a complete
+`CloudCredentials` pair entered in Settings (`cloud.supabase_url`,
+`cloud.supabase_anon_key`) wins over `SUPABASE_URL`/`SUPABASE_ANON_KEY` baked
+into the build, and `configuredFrom` records which of the two won. Without
+either the remote datasources are never constructed and settings offers to
+configure cloud sync instead. `Supabase.initialize` runs once per process, so
+credentials saved while it is already running set `SupabaseConfig.pendingRestart`
+and the cloud tile asks for a restart. The anon key lives only in
+`SharedPreferences`: it is never logged and never shown again once saved.
+Repositories always write locally first, so local-only is not a degraded
+mode — it is the base case.
 
 ## Local database and migrations
 

@@ -1327,7 +1327,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get cloudSyncUnavailable =>
-      'Nicht verfügbar — dieser Build hat keine Cloud-Konfiguration';
+      'Nicht eingerichtet — tippe auf Einrichten';
 
   @override
   String get turnOnCloudSync => 'Cloud-Sync einschalten';
@@ -1612,4 +1612,67 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get backupCorrupt =>
       'Diese Sicherung konnte nicht gelesen werden. Es wurde nichts geändert.';
+
+  @override
+  String get configureCloud => 'Cloud-Sync einrichten';
+
+  @override
+  String get configure => 'Einrichten';
+
+  @override
+  String get cloudConfiguredOnDevice => 'Auf diesem Gerät eingerichtet';
+
+  @override
+  String get cloudConfiguredFromBuild => 'Durch diesen Build eingerichtet';
+
+  @override
+  String get cloudRestartRequired =>
+      'Starte Medora neu, damit die neuen Cloud-Einstellungen gelten';
+
+  @override
+  String get cloudConfigIntro =>
+      'Gib die URL und den Schlüssel deines Supabase-Projekts ein. Beides wird nur auf diesem Gerät gespeichert.';
+
+  @override
+  String get cloudProjectUrl => 'Projekt-URL';
+
+  @override
+  String get cloudProjectUrlHint => 'https://deinprojekt.supabase.co';
+
+  @override
+  String get cloudAnonKey => 'Anon- oder Publishable-Schlüssel';
+
+  @override
+  String get cloudKeyStored => 'Schlüssel auf diesem Gerät gespeichert';
+
+  @override
+  String get cloudKeyReplace => 'Ersetzen';
+
+  @override
+  String get paste => 'Einfügen';
+
+  @override
+  String get cloudTestConnection => 'Verbindung testen';
+
+  @override
+  String get cloudTestOk => 'Das Projekt antwortet — die Werte stimmen';
+
+  @override
+  String get cloudTestFailed =>
+      'Das Projekt war mit diesen Werten nicht erreichbar';
+
+  @override
+  String get cloudInvalidUrl =>
+      'Gib die vollständige Projekt-URL ein, beginnend mit https://';
+
+  @override
+  String get cloudKeyRequired =>
+      'Gib den Anon- oder Publishable-Schlüssel des Projekts ein';
+
+  @override
+  String get cloudConfigSaved => 'Cloud-Sync ist bereit — oben einschalten';
+
+  @override
+  String get cloudConfigCleared =>
+      'Cloud-Konfiguration von diesem Gerät entfernt';
 }

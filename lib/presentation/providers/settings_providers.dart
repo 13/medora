@@ -8,6 +8,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:medora/core/app_config.dart';
+import 'package:medora/core/supabase_config.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -223,3 +226,72 @@ final buildInfoProvider = FutureProvider<BuildInfo>((ref) async {
     dartVersion: kIsWeb ? 'web' : Platform.version.split(' ').first,
   );
 });
+
+// ── Runtime cloud configuration ───────────────────────────────
+
+/// The Supabase credentials entered in Settings, or null when this device has
+/// none (the build's `--dart-define` values, if any, are then used instead).
+final cloudCredentialsProvider =
+    NotifierProvider<CloudCredentialsNotifier, CloudCredentials?>(
+      CloudCredentialsNotifier.new,
+    );
+
+class CloudCredentialsNotifier extends Notifier<CloudCredentials?> {
+  @override
+  CloudCredentials? build() =>
+      CloudCredentials.fromPrefs(ref.watch(sharedPreferencesProvider));
+
+  /// Stores [credentials] on this device. The key is never logged.
+  Future<void> save(CloudCredentials credentials) async {
+    final normalized = credentials.normalized;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setString(CloudCredentials.prefsUrlKey, normalized.url);
+    await prefs.setString(CloudCredentials.prefsKeyKey, normalized.anonKey);
+    state = normalized;
+  }
+
+  /// Forgets the credentials stored on this device.
+  Future<void> clear() async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.remove(CloudCredentials.prefsUrlKey);
+    await prefs.remove(CloudCredentials.prefsKeyKey);
+    state = null;
+  }
+}
+
+/// The client the "Test connection" button uses; overridden in tests.
+final cloudHttpClientProvider = Provider<http.Client>((ref) {
+  final client = http.Client();
+  ref.onDispose(client.close);
+  return client;
+});
+
+/// Applies freshly saved credentials to the running app.
+///
+/// Returns true when cloud sync is usable right away, false when Supabase was
+/// already initialized and the change needs a restart. Overridden in tests so
+/// they never touch `Supabase.initialize`.
+final cloudActivatorProvider =
+    Provider<Future<bool> Function(CloudCredentials)>((ref) {
+      final config = ref.watch(appConfigProvider);
+      return (credentials) async {
+        if (SupabaseConfig.isConfigured) {
+          SupabaseConfig.pendingRestart = true;
+          return false;
+        }
+        await SupabaseConfig.initialize(config, override: credentials);
+        return SupabaseConfig.isConfigured;
+      };
+    });
+
+/// Asks a Supabase project whether it answers for these credentials.
+Future<bool> probeCloudCredentials(
+  http.Client client,
+  CloudCredentials credentials,
+) async {
+  final response = await client.get(
+    Uri.parse('${credentials.normalizedUrl}/auth/v1/settings'),
+    headers: {'apikey': credentials.normalizedKey},
+  );
+  return response.statusCode == 200;
+}

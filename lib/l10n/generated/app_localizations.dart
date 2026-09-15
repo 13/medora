@@ -2521,7 +2521,7 @@ abstract class AppLocalizations {
   /// No description provided for @cloudSyncUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Unavailable — this build has no cloud configuration'**
+  /// **'Not configured — tap Configure'**
   String get cloudSyncUnavailable;
 
   /// No description provided for @turnOnCloudSync.
@@ -3021,6 +3021,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This backup could not be read. Nothing was changed.'**
   String get backupCorrupt;
+
+  /// No description provided for @configureCloud.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure cloud sync'**
+  String get configureCloud;
+
+  /// No description provided for @configure.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure'**
+  String get configure;
+
+  /// No description provided for @cloudConfiguredOnDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured on this device'**
+  String get cloudConfiguredOnDevice;
+
+  /// No description provided for @cloudConfiguredFromBuild.
+  ///
+  /// In en, this message translates to:
+  /// **'Configured by this build'**
+  String get cloudConfiguredFromBuild;
+
+  /// No description provided for @cloudRestartRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Restart Medora to apply the new cloud settings'**
+  String get cloudRestartRequired;
+
+  /// No description provided for @cloudConfigIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Supabase project URL and key. They are stored only on this device.'**
+  String get cloudConfigIntro;
+
+  /// No description provided for @cloudProjectUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Project URL'**
+  String get cloudProjectUrl;
+
+  /// No description provided for @cloudProjectUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://yourproject.supabase.co'**
+  String get cloudProjectUrlHint;
+
+  /// No description provided for @cloudAnonKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Anon or publishable key'**
+  String get cloudAnonKey;
+
+  /// No description provided for @cloudKeyStored.
+  ///
+  /// In en, this message translates to:
+  /// **'Key saved on this device'**
+  String get cloudKeyStored;
+
+  /// No description provided for @cloudKeyReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get cloudKeyReplace;
+
+  /// No description provided for @paste.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste'**
+  String get paste;
+
+  /// No description provided for @cloudTestConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Test connection'**
+  String get cloudTestConnection;
+
+  /// No description provided for @cloudTestOk.
+  ///
+  /// In en, this message translates to:
+  /// **'The project answered — these values work'**
+  String get cloudTestOk;
+
+  /// No description provided for @cloudTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the project with these values'**
+  String get cloudTestFailed;
+
+  /// No description provided for @cloudInvalidUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the full project URL, starting with https://'**
+  String get cloudInvalidUrl;
+
+  /// No description provided for @cloudKeyRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the project\'s anon or publishable key'**
+  String get cloudKeyRequired;
+
+  /// No description provided for @cloudConfigSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud sync is ready — turn it on above'**
+  String get cloudConfigSaved;
+
+  /// No description provided for @cloudConfigCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud configuration removed from this device'**
+  String get cloudConfigCleared;
 }
 
 class _AppLocalizationsDelegate

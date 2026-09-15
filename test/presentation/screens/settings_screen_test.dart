@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/app_config.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
@@ -184,5 +185,63 @@ void main() {
       );
       expect(find.text(title), findsOneWidget, reason: title);
     }
+  });
+
+  testWidgets('an unconfigured build offers to configure cloud from Settings', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await baseOverrides(),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Not configured — tap Configure'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Not configured — tap Configure'), findsOneWidget);
+
+    await tester.tap(find.text('Configure').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Project URL'), findsOneWidget);
+    expect(find.text('Test connection'), findsOneWidget);
+  });
+
+  testWidgets('credentials saved on this device are named in the cloud group', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({
+      CloudCredentials.prefsUrlKey: 'https://abcdefgh.supabase.co',
+      CloudCredentials.prefsKeyKey: 'anon-key',
+    });
+
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await baseOverrides(),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Configured on this device'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Configured on this device'), findsOneWidget);
+    expect(find.text('anon-key'), findsNothing);
   });
 }

@@ -26,10 +26,14 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
 
-  // Cloud is optional: this is a no-op when no dart-defines are present.
+  // Cloud is optional: this is a no-op without dart-defines and without
+  // credentials entered in Settings (those win — see SupabaseConfig.resolve).
   await _initSafe(
     'Supabase',
-    () => SupabaseConfig.initialize(AppConfig.fromEnvironment()),
+    () => SupabaseConfig.initialize(
+      AppConfig.fromEnvironment(),
+      override: CloudCredentials.fromPrefs(prefs),
+    ),
   );
 
   _initServicesInBackground();

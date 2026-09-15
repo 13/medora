@@ -1311,8 +1311,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cloudSyncOff => 'Off — data is stored only on this device';
 
   @override
-  String get cloudSyncUnavailable =>
-      'Unavailable — this build has no cloud configuration';
+  String get cloudSyncUnavailable => 'Not configured — tap Configure';
 
   @override
   String get turnOnCloudSync => 'Turn on cloud sync';
@@ -1593,4 +1592,65 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get backupCorrupt =>
       'This backup could not be read. Nothing was changed.';
+
+  @override
+  String get configureCloud => 'Configure cloud sync';
+
+  @override
+  String get configure => 'Configure';
+
+  @override
+  String get cloudConfiguredOnDevice => 'Configured on this device';
+
+  @override
+  String get cloudConfiguredFromBuild => 'Configured by this build';
+
+  @override
+  String get cloudRestartRequired =>
+      'Restart Medora to apply the new cloud settings';
+
+  @override
+  String get cloudConfigIntro =>
+      'Enter your Supabase project URL and key. They are stored only on this device.';
+
+  @override
+  String get cloudProjectUrl => 'Project URL';
+
+  @override
+  String get cloudProjectUrlHint => 'https://yourproject.supabase.co';
+
+  @override
+  String get cloudAnonKey => 'Anon or publishable key';
+
+  @override
+  String get cloudKeyStored => 'Key saved on this device';
+
+  @override
+  String get cloudKeyReplace => 'Replace';
+
+  @override
+  String get paste => 'Paste';
+
+  @override
+  String get cloudTestConnection => 'Test connection';
+
+  @override
+  String get cloudTestOk => 'The project answered — these values work';
+
+  @override
+  String get cloudTestFailed => 'Could not reach the project with these values';
+
+  @override
+  String get cloudInvalidUrl =>
+      'Enter the full project URL, starting with https://';
+
+  @override
+  String get cloudKeyRequired => 'Enter the project\'s anon or publishable key';
+
+  @override
+  String get cloudConfigSaved => 'Cloud sync is ready — turn it on above';
+
+  @override
+  String get cloudConfigCleared =>
+      'Cloud configuration removed from this device';
 }
