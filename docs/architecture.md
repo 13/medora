@@ -75,7 +75,18 @@ Photos are written after the transaction commits and are never deleted.
 
 Settings drives the rest: after a restore it resets and reconciles the
 reminders, invalidates the dose/medication/treatment caches and, in cloud mode,
-calls `LocalUploadMarker.markAllForUpload` to clear the pull cursors.
+calls `LocalUploadMarker.markAllForUpload` to clear the pull cursors. The
+exported file is written into the cache and deleted again once the share sheet
+returns - it is plain, unencrypted JSON and must not linger there.
+
+**Size limits.** Both halves hold the whole envelope in memory: the export
+encodes it in one `jsonEncode`, and a restore decodes the file in one
+`jsonDecode`. The rows are small; the photos are not, and base64 grows them by
+about a third. So the export asks first (`BackupPhotosDialog`, fed by
+`BackupService.estimatePhotoBytes`/`countPhotos`) and unticks "include photos"
+by default above `BackupService.largePhotoBytes` (**150 MB**). A restore has no
+such lever - it takes the file it is given - so a backup made without photos is
+also the one that will read back on a small device.
 
 ## Reminders
 

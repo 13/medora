@@ -2953,8 +2953,26 @@ abstract class AppLocalizations {
   /// No description provided for @backupDataHint.
   ///
   /// In en, this message translates to:
-  /// **'Save everything as a JSON file'**
+  /// **'Save everything as one unencrypted JSON file — keep it somewhere private'**
   String get backupDataHint;
+
+  /// No description provided for @backupAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up'**
+  String get backupAction;
+
+  /// No description provided for @backupIncludePhotos.
+  ///
+  /// In en, this message translates to:
+  /// **'Include photos ({count} files, ~{megabytes} MB)'**
+  String backupIncludePhotos(int count, String megabytes);
+
+  /// No description provided for @backupPhotosTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'That is a lot of photos — leaving them out keeps the backup small enough to share.'**
+  String get backupPhotosTooLarge;
 
   /// No description provided for @restoreBackup.
   ///

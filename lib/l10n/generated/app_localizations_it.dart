@@ -1563,7 +1563,20 @@ class AppLocalizationsIt extends AppLocalizations {
   String get backupData => 'Backup dei dati';
 
   @override
-  String get backupDataHint => 'Salva tutto in un file JSON';
+  String get backupDataHint =>
+      'Salva tutto in un file JSON non cifrato — conservalo in un luogo sicuro';
+
+  @override
+  String get backupAction => 'Esegui backup';
+
+  @override
+  String backupIncludePhotos(int count, String megabytes) {
+    return 'Includi le foto ($count file, ~$megabytes MB)';
+  }
+
+  @override
+  String get backupPhotosTooLarge =>
+      'Sono molte foto — escluderle mantiene il backup abbastanza piccolo da condividere.';
 
   @override
   String get restoreBackup => 'Ripristina da backup';

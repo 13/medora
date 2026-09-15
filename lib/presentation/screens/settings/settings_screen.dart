@@ -1,6 +1,8 @@
 /// Medora - Settings Screen
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +23,7 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/widgets/backup_photos_dialog.dart';
 import 'package:medora/presentation/widgets/cloud_config_sheet.dart';
 import 'package:medora/presentation/widgets/restore_dialog.dart';
 import 'package:medora/presentation/widgets/update_tile.dart';
@@ -557,18 +560,45 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   /// Writes a full backup into the cache and hands it to the share sheet.
+  ///
+  /// The photos are the only part that can make the file unwieldy, so when
+  /// there are any the user is asked first (see [BackupPhotosDialog]). The
+  /// file lives in the cache just long enough for the share sheet to copy it:
+  /// it is unencrypted, so it is deleted again on the way out.
   Future<void> _backupData(
     BuildContext context,
     WidgetRef ref,
     AppLocalizations l10n,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(backupServiceProvider);
+    File? file;
     try {
+      var includePhotos = true;
+      final photoCount = await service.countPhotos();
+      if (photoCount > 0) {
+        final photoBytes = await service.estimatePhotoBytes();
+        if (!context.mounted) return;
+        final choice = await showBackupPhotosDialog(
+          context,
+          photoCount: photoCount,
+          photoBytes: photoBytes,
+        );
+        if (choice == null) return;
+        includePhotos = choice;
+      }
+
       final dir = await getTemporaryDirectory();
-      final file = await ref.read(backupServiceProvider).exportToFile(dir);
+      file = await service.exportToFile(dir, includePhotos: includePhotos);
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(_backupError(l10n, e))));
+    } finally {
+      try {
+        await file?.delete();
+      } on FileSystemException {
+        // Already gone, or the platform holds it: nothing worth reporting.
+      }
     }
   }
 
