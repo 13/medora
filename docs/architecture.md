@@ -85,13 +85,20 @@ hashing, verify size and `SHA256SUMS.txt`, hand it over — any failure deletes
 the partial file. `AppUpdateNotifier` owns the states (`Unknown →
 Checking → Available → Downloading → Ready`) and the gates: Android, a configured
 repo, a connection, a 24 h throttle. **Cancelling:** `download` takes
-an `isCancelled` seam asked once per chunk; `cancelDownload()` sets it and puts
-the state back to `UpdateAvailable` while the service unwinds the stream and
-deletes the file. **Installing:** Android never reports back, so `install()`
-writes the tag first (`update.installing_tag`) and the next `build()`/`check()`
-settles it — running this release means it worked (`clearDownloads`, pref
-cleared), otherwise the APK still on disk becomes `UpdateReady` and Install,
-explained beforehand because Android asks to allow installs, is offered again.
+an `isCancelled` seam asked once per chunk. Each download holds a generation
+number; `cancelDownload()` burns it and puts the state back to
+`UpdateAvailable`, and a download whose generation is spent — cancelled, or
+replaced by a newer one — reports nothing and keeps no APK, so a re-download
+started while the first is still unwinding is the only one that can reach the
+state. **Installing:** Android never reports back, so `install()` writes the
+tag first (`update.installing_tag`) and the next `build()`/`check()` settles
+it — running this release means it worked (`clearDownloads`, pref cleared),
+otherwise the APK still on disk becomes `UpdateReady` and Install, explained
+beforehand because Android asks to allow installs, is offered again. That tag
+records one opened installer, not a verdict: a `check` still asks GitHub, and
+a release newer than the pending APK clears both the pref and the file and is
+offered as usual — as does "Later" on it. Only a check that finds nothing
+newer, is throttled, or cannot run at all leaves the pending install standing.
 
 ## Sync
 

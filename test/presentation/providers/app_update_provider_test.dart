@@ -642,9 +642,29 @@ void main() {
     );
 
     test(
-      'a check reports the cancelled install without asking GitHub',
+      'a throttled check reports the cancelled install and asks nothing',
       () async {
         seedDownloadedApk();
+        SharedPreferences.setMockInitialValues({
+          kUpdateInstallingTag: 'v0.2.0+12',
+          kUpdateLastCheckAt: clock.toIso8601String(),
+        });
+        final service = FakeUpdateService(
+          release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+        );
+        final c = await containerWith(service);
+
+        await c.read(appUpdateProvider.notifier).check();
+
+        expect(service.checks, 0);
+        expect(statusOf(c), isA<UpdateReady>());
+      },
+    );
+
+    test(
+      'a forced check keeps a pending install GitHub has not passed',
+      () async {
+        final apk = seedDownloadedApk();
         SharedPreferences.setMockInitialValues({
           kUpdateInstallingTag: 'v0.2.0+12',
         });
@@ -655,10 +675,100 @@ void main() {
 
         await c.read(appUpdateProvider.notifier).check(force: true);
 
-        expect(service.checks, 0);
+        expect(service.checks, 1, reason: 'the pin must not pin the updater');
         expect(statusOf(c), isA<UpdateReady>());
+        expect((statusOf(c) as UpdateReady).release.tag, 'v0.2.0+12');
+        expect(apk.existsSync(), isTrue);
+        expect(
+          c.read(sharedPreferencesProvider).getString(kUpdateInstallingTag),
+          'v0.2.0+12',
+        );
       },
     );
+
+    test('a release newer than the pending APK takes it over', () async {
+      final apk = seedDownloadedApk();
+      SharedPreferences.setMockInitialValues({
+        kUpdateInstallingTag: 'v0.2.0+12',
+      });
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 3, 0, 13)),
+      );
+      final c = await containerWith(service);
+      expect(statusOf(c), isA<UpdateReady>());
+
+      await c.read(appUpdateProvider.notifier).check(force: true);
+
+      final status = statusOf(c);
+      expect(status, isA<UpdateAvailable>());
+      expect((status as UpdateAvailable).release.tag, 'v0.3.0+13');
+      expect(apk.existsSync(), isFalse, reason: 'the overtaken APK is gone');
+      expect(
+        c.read(sharedPreferencesProvider).getString(kUpdateInstallingTag),
+        isNull,
+      );
+    });
+
+    test(
+      'a check that cannot reach GitHub leaves the pending install up',
+      () async {
+        final apk = seedDownloadedApk();
+        SharedPreferences.setMockInitialValues({
+          kUpdateInstallingTag: 'v0.2.0+12',
+        });
+        final service = FakeUpdateService(
+          error: const UpdateException(UpdateErrorKind.network, 'no route'),
+        );
+        final c = await containerWith(service);
+
+        await c.read(appUpdateProvider.notifier).check(force: true);
+
+        expect(service.checks, 1);
+        expect(statusOf(c), isA<UpdateReady>());
+        expect(apk.existsSync(), isTrue);
+        expect(
+          c.read(sharedPreferencesProvider).getString(kUpdateInstallingTag),
+          'v0.2.0+12',
+        );
+      },
+    );
+
+    test('"Later" on a pending install throws the APK away', () async {
+      final apk = seedDownloadedApk();
+      SharedPreferences.setMockInitialValues({
+        kUpdateInstallingTag: 'v0.2.0+12',
+      });
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await containerWith(service);
+      expect(statusOf(c), isA<UpdateReady>());
+
+      await c.read(appUpdateProvider.notifier).dismiss();
+
+      expect(apk.existsSync(), isFalse);
+      expect(
+        c.read(sharedPreferencesProvider).getString(kUpdateInstallingTag),
+        isNull,
+      );
+      expect(c.read(updateDismissedTagProvider), 'v0.2.0+12');
+      expect(statusOf(c), isA<UpdateUnknown>());
+    });
+
+    test('"Later" on a freshly downloaded APK keeps it', () async {
+      final service = FakeUpdateService(
+        release: releaseOf(const ReleaseVersion(0, 2, 0, 12)),
+      );
+      final c = await withAvailable(service);
+      await c.read(appUpdateProvider.notifier).download();
+      final ready = statusOf(c) as UpdateReady;
+
+      await c.read(appUpdateProvider.notifier).dismiss();
+
+      expect(ready.file.existsSync(), isTrue);
+      expect(statusOf(c), isA<UpdateReady>());
+      expect(c.read(appUpdateProvider.notifier).isDismissed, isTrue);
+    });
   });
 
   group('dismiss', () {
