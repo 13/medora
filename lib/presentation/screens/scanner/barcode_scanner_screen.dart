@@ -6,7 +6,9 @@
 /// numbered; the user taps the one to use). When the whole photo leaves
 /// something to find (see `scan_region.dart`), text recognition and barcode
 /// scanning run again on a temporary PNG crop around the text found, deleted
-/// right after. Photos taken here are temporary
+/// right after. When no barcode decoded at all, the bars above the digits
+/// OCR read are cropped and scanned in four rotations (see
+/// [barcodeStripeCrop]). Photos taken here are temporary
 /// files, deleted on retake, when leaving the screen and in `dispose`.
 /// Gallery picks are deleted the same way only when the picker handed us a
 /// copy inside the app's temporary directory (Android copies picks into the
@@ -122,6 +124,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   /// How long decoding and rendering the region crop may take.
   static const Duration _regionCropTimeout = Duration(seconds: 15);
+
+  /// How long one rotation of a stripe crop may take to render.
+  static const Duration _stripeTimeout = Duration(seconds: 15);
 
   @override
   void initState() {
@@ -362,6 +367,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         if (!mounted || _photoPath != path) return;
       }
       final photoLines = lines ?? const <OcrLine>[];
+      var regionLines = const <OcrLine>[];
       var candidates = findCodeCandidates(photoLines, barcodes: barcodes);
       if (needsRegionPass(
         lines: photoLines,
@@ -374,10 +380,23 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         ]);
         if (!mounted || _photoPath != path) return;
         if (region != null) {
+          regionLines = region.lines;
           barcodes = [...barcodes, ...region.barcodes];
           candidates = findCodeCandidates(
             photoLines,
-            regionLines: region.lines,
+            regionLines: regionLines,
+            barcodes: barcodes,
+          );
+        }
+      }
+      if (barcodes.isEmpty) {
+        final stripes = await _scanBarcodeStripes(path, size, candidates);
+        if (!mounted || _photoPath != path) return;
+        if (stripes.isNotEmpty) {
+          barcodes = [...barcodes, ...stripes];
+          candidates = findCodeCandidates(
+            photoLines,
+            regionLines: regionLines,
             barcodes: barcodes,
           );
         }
@@ -496,6 +515,58 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     } finally {
       if (dir != null) await _deleteDirectory(dir);
     }
+  }
+
+  /// A barcode pass on the bars above the digits OCR read: for each target
+  /// (see [barcodeStripeTargets]) the crop is written as a PNG under the
+  /// [regionMaxDecodeSide] cap and scanned at 0°, 90°, 180° and 270°,
+  /// stopping at the first rotation that decodes. Boxes come back in photo
+  /// pixels. Empty when nothing decodes, the crop times out or the pass
+  /// fails (logged); the photo's own passes stand.
+  Future<List<CodeCandidate>> _scanBarcodeStripes(
+    String path,
+    Size size,
+    List<CodeCandidate> candidates,
+  ) async {
+    final found = <CodeCandidate>[];
+    for (final target in barcodeStripeTargets(candidates)) {
+      final crop = barcodeStripeCrop(target, size);
+      if (crop == null) continue;
+      Directory? dir;
+      try {
+        dir = await (await getTemporaryDirectory()).createTemp('scan_stripe_');
+        for (var turns = 0; turns < 4; turns++) {
+          final out = p.join(dir.path, 'stripe_$turns.png');
+          final written = await writeImageCrop(
+            path,
+            crop,
+            out,
+            quarterTurns: turns,
+          ).timeout(_stripeTimeout);
+          if (written == null) break;
+          final decoded = await _scanBarcodes(
+            InputImage.fromFilePath(out),
+            pass: 'stripe ${turns * 90}°',
+          );
+          if (decoded == null || decoded.isEmpty) continue;
+          found.addAll(
+            unrotateCandidates(
+              decoded,
+              quarterTurns: turns,
+              crop: written.crop,
+              scale: written.scale,
+            ),
+          );
+          break;
+        }
+      } catch (e, stack) {
+        debugPrint('[scan] stripe pass failed: $e\n$stack');
+      } finally {
+        if (dir != null) await _deleteDirectory(dir);
+      }
+      if (found.isNotEmpty) break;
+    }
+    return found;
   }
 
   Future<void> _deleteDirectory(Directory dir) async {

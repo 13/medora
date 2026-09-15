@@ -85,4 +85,48 @@ void main() {
     expect(cropDecodeScale(9000, 12000, 4096), 4096 / 12000);
     expect(regionMaxDecodeSide, 4096);
   });
+
+  testWidgets('a quarter turn swaps the written PNG dimensions', (
+    tester,
+  ) async {
+    const path = 'test/fixtures/exif_orientation_6.jpg'; // upright 20x40
+    final dir = Directory.systemTemp.createTempSync('scan_rot_test_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final out = '${dir.path}/rot.png';
+
+    final written = await tester.runAsync(
+      () => writeImageCrop(
+        path,
+        const Rect.fromLTRB(0, 0, 20, 40),
+        out,
+        quarterTurns: 1,
+      ),
+    );
+    // The crop stays in photo pixels; only the PNG is turned.
+    expect(written?.crop, const Rect.fromLTRB(0, 0, 20, 40));
+    expect(written?.scale, 1.0);
+    final size = await tester.runAsync(() => readImageSize(out));
+    expect(size, const Size(40, 20));
+  });
+
+  testWidgets('a rotated crop obeys the decode cap', (tester) async {
+    const path = 'test/fixtures/exif_orientation_6.jpg';
+    final dir = Directory.systemTemp.createTempSync('scan_rot_test_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final out = '${dir.path}/rot.png';
+
+    final written = await tester.runAsync(
+      () => writeImageCrop(
+        path,
+        const Rect.fromLTRB(0, 0, 20, 40),
+        out,
+        maxDecodeSide: 20,
+        quarterTurns: 3,
+      ),
+    );
+    expect(written?.crop, const Rect.fromLTRB(0, 0, 20, 40));
+    expect(written?.scale, 0.5);
+    final size = await tester.runAsync(() => readImageSize(out));
+    expect(size, const Size(20, 10));
+  });
 }
