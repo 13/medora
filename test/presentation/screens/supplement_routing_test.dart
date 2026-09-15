@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 
+import '../../helpers/fake_supplement_registry.dart';
+
 void main() {
   const zinco = SupplementEntry(
     code: '107018',
@@ -28,6 +30,46 @@ void main() {
     final route = supplementRouteFor(const [zinco, other]);
     expect(route, isA<SupplementPick>());
     expect((route as SupplementPick).entries, [zinco, other]);
+  });
+
+  group('findSupplementByCodes', () {
+    test('the primary code is used when it matches', () async {
+      final registry = FakeSupplementRegistry(entries: const [zinco]);
+      final found = await findSupplementByCodes(registry, '107018', const [
+        '707018',
+      ]);
+      expect(found.code, '107018');
+      expect(found.matches, [zinco]);
+    });
+
+    test(
+      'a missing primary falls back to the first matching alternative',
+      () async {
+        final registry = FakeSupplementRegistry(entries: const [zinco]);
+        final found = await findSupplementByCodes(registry, '707018', const [
+          '701018',
+          '107018',
+        ]);
+        expect(found.code, '107018');
+        expect(found.matches, [zinco]);
+      },
+    );
+
+    test('no match keeps the primary code with no matches', () async {
+      final registry = FakeSupplementRegistry(entries: const [zinco]);
+      final found = await findSupplementByCodes(registry, '707018', const [
+        '101018',
+      ]);
+      expect(found.code, '707018');
+      expect(found.matches, isEmpty);
+    });
+
+    test('without alternatives only the primary code is looked up', () async {
+      final registry = FakeSupplementRegistry(entries: const [zinco]);
+      final found = await findSupplementByCodes(registry, '54321');
+      expect(found.code, '54321');
+      expect(found.matches, isEmpty);
+    });
   });
 
   test('the Add Medication location carries the encoded code', () {

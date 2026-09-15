@@ -225,6 +225,69 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a supplement code missing from the register uses a matching alternative',
+    (tester) async {
+      final registry = _FakeRegistry(const [_zinco]);
+      await pumpWithFakeScanner(
+        tester,
+        const ScanResult(
+          '707018',
+          CodeKind.supplement,
+          alternatives: ['107018'],
+        ),
+        overrides: [
+          supplementRegistryServiceProvider.overrideWithValue(registry),
+        ],
+      );
+
+      await scanWithChip(tester);
+
+      expect(registry.lookups, ['707018', '107018']);
+      expect(field('ZINCO-C'), findsOneWidget);
+      expect(field('107018'), findsOneWidget);
+      expect(field('707018'), findsNothing);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.supplementNotFound), findsNothing);
+    },
+  );
+
+  testWidgets('no matching alternative keeps the primary code and says so', (
+    tester,
+  ) async {
+    final registry = _FakeRegistry(const [_zinco]);
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('707018', CodeKind.supplement, alternatives: ['101018']),
+      overrides: [
+        supplementRegistryServiceProvider.overrideWithValue(registry),
+      ],
+    );
+
+    await scanWithChip(tester);
+
+    expect(registry.lookups, ['707018', '101018']);
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(field('707018'), findsOneWidget);
+    expect(find.text(l10n.supplementNotFound), findsOneWidget);
+  });
+
+  test('ScanResult equality includes alternatives', () {
+    const plain = ScanResult('707018', CodeKind.supplement);
+    expect(plain.alternatives, isEmpty);
+    expect(
+      const ScanResult('707018', CodeKind.supplement, alternatives: ['107018']),
+      isNot(plain),
+    );
+    // Separate list instances: equality compares contents.
+    final first = ['107018'];
+    final second = ['107018'];
+    expect(
+      ScanResult('707018', CodeKind.supplement, alternatives: first),
+      ScanResult('707018', CodeKind.supplement, alternatives: second),
+    );
+  });
+
   testWidgets('an empty register cache offers the download first', (
     tester,
   ) async {

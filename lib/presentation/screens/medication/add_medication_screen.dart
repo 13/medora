@@ -241,16 +241,20 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       case CodeKind.aic:
         await _searchBarcode(result.code);
       case CodeKind.supplement:
-        await _searchSupplement(result.code);
+        await _searchSupplement(result.code, result.alternatives);
       case CodeKind.ean || CodeKind.other:
         break;
     }
   }
 
   /// Look a supplement [code] up in the register (offering the first
-  /// download) and apply the chosen entry; the code stays in the field when
-  /// nothing matches.
-  Future<void> _searchSupplement(String code) async {
+  /// download), then its [alternatives] (other OCR readings) in order, and
+  /// apply the chosen entry with the code that matched; the scanned code
+  /// stays in the field when nothing matches.
+  Future<void> _searchSupplement(
+    String code, [
+    List<String> alternatives = const [],
+  ]) async {
     if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) return;
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -268,10 +272,13 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           return;
         }
       }
-      final matches = await service.findByCode(code);
+      final found = await findSupplementByCodes(service, code, alternatives);
       if (!mounted) return;
+      if (found.matches.isNotEmpty && found.code != code) {
+        setState(() => _barcodeController.text = found.code);
+      }
       final SupplementEntry? entry;
-      switch (supplementRouteFor(matches)) {
+      switch (supplementRouteFor(found.matches)) {
         case SupplementPrefill(entry: final only):
           entry = only;
         case SupplementPick(:final entries):

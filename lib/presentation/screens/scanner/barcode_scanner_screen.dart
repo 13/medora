@@ -580,7 +580,11 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   void _onCandidateSelected(CodeCandidate candidate) {
     if (_isSearching) return;
     if (widget.returnBarcodeOnly) {
-      _handleCode(candidate.code, kind: candidate.kind);
+      _handleCode(
+        candidate.code,
+        kind: candidate.kind,
+        alternatives: candidate.alternatives,
+      );
       return;
     }
     switch (candidate.kind) {
@@ -596,8 +600,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   }
 
   /// Looks the code up in the food-supplement register (offering the
-  /// first download), then opens Add Medication prefilled, a picker for
-  /// several products, or Add Medication with just the code.
+  /// first download), then its alternative readings when it is not there,
+  /// and opens Add Medication prefilled with the code that matched, a picker
+  /// for several products, or Add Medication with just the scanned code.
   Future<void> _openSupplement(CodeCandidate candidate) async {
     final code = candidate.code;
     if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
@@ -622,15 +627,19 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         }
         setState(() => _isSearching = true);
       }
-      final matches = await service.findByCode(code);
+      final found = await findSupplementByCodes(
+        service,
+        code,
+        candidate.alternatives,
+      );
       if (!mounted) return;
       setState(() => _isSearching = false);
-      switch (supplementRouteFor(matches)) {
+      switch (supplementRouteFor(found.matches)) {
         case SupplementPrefill(:final entry):
-          _selectSupplement(entry, code);
+          _selectSupplement(entry, found.code);
         case SupplementPick(:final entries):
           final picked = await showSupplementPicker(context, entries);
-          if (picked != null && mounted) _selectSupplement(picked, code);
+          if (picked != null && mounted) _selectSupplement(picked, found.code);
         case SupplementNotFound():
           _leaveAndPush(
             addMedicationWithBarcode(code),
@@ -904,16 +913,19 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   // ── Code lookup ────────────────────────────────────────────
 
   /// Looks [rawCode] up in AIFA, or in return-only mode pops it with its
-  /// [kind] as a [ScanResult].
+  /// [kind] and [alternatives] as a [ScanResult].
   Future<void> _handleCode(
     String rawCode, {
     CodeKind kind = CodeKind.aic,
+    List<String> alternatives = const [],
   }) async {
     if (_isSearching) return;
     setState(() => _isSearching = true);
 
     if (widget.returnBarcodeOnly) {
-      if (mounted) context.pop(ScanResult(rawCode, kind));
+      if (mounted) {
+        context.pop(ScanResult(rawCode, kind, alternatives: alternatives));
+      }
       return;
     }
 
