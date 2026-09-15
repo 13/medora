@@ -1018,6 +1018,54 @@ abstract class AppLocalizations {
   /// **'Version'**
   String get appVersion;
 
+  /// No description provided for @buildNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Build'**
+  String get buildNumber;
+
+  /// No description provided for @buildDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Built'**
+  String get buildDate;
+
+  /// No description provided for @buildCommit.
+  ///
+  /// In en, this message translates to:
+  /// **'Commit'**
+  String get buildCommit;
+
+  /// No description provided for @buildChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel'**
+  String get buildChannel;
+
+  /// No description provided for @channelRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Release'**
+  String get channelRelease;
+
+  /// No description provided for @channelCi.
+  ///
+  /// In en, this message translates to:
+  /// **'CI'**
+  String get channelCi;
+
+  /// No description provided for @channelDev.
+  ///
+  /// In en, this message translates to:
+  /// **'Development build'**
+  String get channelDev;
+
+  /// No description provided for @copiedToClipboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied'**
+  String get copiedToClipboard;
+
   /// No description provided for @colorScheme.
   ///
   /// In en, this message translates to:
@@ -1084,11 +1132,11 @@ abstract class AppLocalizations {
   /// **'AIFA Database'**
   String get aifaDatabase;
 
-  /// No description provided for @aifaDatabaseDesc.
+  /// No description provided for @aifaDatabaseHint.
   ///
   /// In en, this message translates to:
   /// **'Italian medication database for code lookup'**
-  String get aifaDatabaseDesc;
+  String get aifaDatabaseHint;
 
   /// No description provided for @aifaLastSync.
   ///

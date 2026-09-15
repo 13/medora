@@ -41,7 +41,7 @@ jobs:
       - run: flutter pub get
       - name: Build APKs and bundle
         run: |
-          DEFINES="--dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+          DEFINES="--dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY --dart-define=BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) --dart-define=GIT_SHA=${GITHUB_SHA::7} --dart-define=BUILD_CHANNEL=release"
           flutter build apk --release --split-per-abi $DEFINES
           flutter build apk --release $DEFINES
           flutter build appbundle --release $DEFINES

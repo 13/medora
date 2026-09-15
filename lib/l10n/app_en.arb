@@ -255,6 +255,14 @@
   "settings": "Settings",
   "about": "About",
   "appVersion": "Version",
+  "buildNumber": "Build",
+  "buildDate": "Built",
+  "buildCommit": "Commit",
+  "buildChannel": "Channel",
+  "channelRelease": "Release",
+  "channelCi": "CI",
+  "channelDev": "Development build",
+  "copiedToClipboard": "Copied",
 
   "colorScheme": "Color Scheme",
   "colorSchemeDesc": "Choose an accent color for the app",
@@ -268,7 +276,7 @@
   "colorGreen": "Green",
 
   "aifaDatabase": "AIFA Database",
-  "aifaDatabaseDesc": "Italian medication database for code lookup",
+  "aifaDatabaseHint": "Italian medication database for code lookup",
   "aifaLastSync": "Last sync: {date}",
   "@aifaLastSync": {
     "placeholders": { "date": { "type": "String" } }

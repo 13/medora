@@ -100,7 +100,14 @@ Future<List<Override>> updateOverrides({
     sharedPreferencesProvider.overrideWithValue(prefs),
     platformCapabilitiesProvider.overrideWithValue(caps),
     appConfigProvider.overrideWithValue(
-      AppConfig(supabaseUrl: '', supabaseAnonKey: '', updateRepo: repo),
+      AppConfig(
+        supabaseUrl: '',
+        supabaseAnonKey: '',
+        updateRepo: repo,
+        buildDate: '',
+        gitSha: '',
+        buildChannel: 'dev',
+      ),
     ),
     appUpdateServiceProvider.overrideWithValue(service),
     currentReleaseVersionProvider.overrideWith((ref) async => current),

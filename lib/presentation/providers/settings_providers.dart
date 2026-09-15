@@ -3,8 +3,12 @@
 /// Persisted providers for theme mode, locale, and security preferences.
 library;
 
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -182,4 +186,40 @@ class MissedGraceMinutesNotifier extends Notifier<int> {
 final appVersionProvider = FutureProvider<String>((ref) async {
   final packageInfo = await PackageInfo.fromPlatform();
   return packageInfo.version;
+});
+
+// ── Build info (About section) ────────────────────────────────
+
+/// Everything the About screen shows: the package version alongside the
+/// build metadata baked in via `--dart-define` (empty/`'dev'` for a local
+/// build — see [AppConfig]).
+class BuildInfo {
+  const BuildInfo({
+    required this.version,
+    required this.buildNumber,
+    required this.buildDate,
+    required this.gitSha,
+    required this.channel,
+    required this.dartVersion,
+  });
+
+  final String version;
+  final String buildNumber;
+  final String buildDate;
+  final String gitSha;
+  final String channel;
+  final String dartVersion;
+}
+
+final buildInfoProvider = FutureProvider<BuildInfo>((ref) async {
+  final packageInfo = await PackageInfo.fromPlatform();
+  final config = ref.watch(appConfigProvider);
+  return BuildInfo(
+    version: packageInfo.version,
+    buildNumber: packageInfo.buildNumber,
+    buildDate: config.buildDate,
+    gitSha: config.gitSha,
+    channel: config.buildChannel,
+    dartVersion: kIsWeb ? 'web' : Platform.version.split(' ').first,
+  );
 });

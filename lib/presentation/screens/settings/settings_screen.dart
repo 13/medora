@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
@@ -43,7 +44,7 @@ class SettingsScreen extends ConsumerWidget {
     final biometricsEnabled = ref.watch(biometricsEnabledProvider);
     final remindersEnabled = ref.watch(remindersEnabledProvider);
     final graceMinutes = ref.watch(missedGraceMinutesProvider);
-    final appVersionAsync = ref.watch(appVersionProvider);
+    final buildInfoAsync = ref.watch(buildInfoProvider);
     final caps = ref.watch(platformCapabilitiesProvider);
 
     final isOnline =
@@ -398,12 +399,15 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsGroup(
             title: l10n.about,
             children: [
-              ListTile(
-                leading: const Icon(Icons.info_outline),
-                title: Text(l10n.appVersion),
-                subtitle: Text(
-                  appVersionAsync.maybeWhen(data: (v) => v, orElse: () => '…'),
-                ),
+              ...buildInfoAsync.maybeWhen(
+                data: (info) => _aboutRows(context, l10n, info),
+                orElse: () => [
+                  ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: Text(l10n.appVersion),
+                    subtitle: const Text('…'),
+                  ),
+                ],
               ),
               // Renders nothing where in-app updates are unavailable.
               const UpdateTile(),
@@ -734,6 +738,84 @@ class SettingsScreen extends ConsumerWidget {
     return '$summary · ${l10n.syncSkippedBackoff(r.skippedBackoff)}';
   }
 
+  /// The About group's rows: version, build number, build date, commit and
+  /// channel — each long-pressable to copy a one-line summary, plus a Dart
+  /// runtime row.
+  List<Widget> _aboutRows(
+    BuildContext context,
+    AppLocalizations l10n,
+    BuildInfo info,
+  ) {
+    final dateText = _formatBuildDate(info.buildDate);
+    final shaText = info.gitSha.isEmpty ? '—' : info.gitSha;
+    final channelText = _channelLabel(l10n, info.channel);
+
+    void copySummary() {
+      final summary =
+          'Medora ${info.version} (${info.buildNumber}) · '
+          '$dateText · $shaText · $channelText';
+      Clipboard.setData(ClipboardData(text: summary));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.copiedToClipboard)));
+    }
+
+    return [
+      ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: Text(l10n.appVersion),
+        subtitle: Text(info.version),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.tag_outlined),
+        title: Text(l10n.buildNumber),
+        subtitle: Text(info.buildNumber),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.event_outlined),
+        title: Text(l10n.buildDate),
+        subtitle: Text(dateText),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.commit_outlined),
+        title: Text(l10n.buildCommit),
+        subtitle: Text(shaText),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.flag_outlined),
+        title: Text(l10n.buildChannel),
+        subtitle: Text(channelText),
+        onLongPress: copySummary,
+      ),
+      ListTile(
+        leading: const Icon(Icons.code),
+        title: const Text('Dart'), // l10n-exempt: proper noun
+        subtitle: Text(info.dartVersion),
+        onLongPress: copySummary,
+      ),
+    ];
+  }
+
+  /// Parses the ISO-8601 UTC [iso] build date and renders it with the
+  /// locale-aware extension; `''` (a local/dev build) becomes '—'.
+  String _formatBuildDate(String iso) {
+    if (iso.isEmpty) return '—';
+    final date = DateTime.tryParse(iso);
+    if (date == null) return '—';
+    return '${date.toUtc().dateTimeFormatted} UTC';
+  }
+
+  String _channelLabel(AppLocalizations l10n, String channel) =>
+      switch (channel) {
+        'release' => l10n.channelRelease,
+        'ci' => l10n.channelCi,
+        _ => l10n.channelDev,
+      };
+
   /// True when the last cycle left rows behind — failed outright, or skipped
   /// because they are waiting out their retry backoff.
   static bool _hasStuckRows(SyncReport? r) =>
@@ -1047,33 +1129,43 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    final subtitle = _isSyncing
+    final status = _isSyncing
         ? _statusMessage ?? l10n.aifaSyncing
         : _lastSync != null
-        ? '${l10n.aifaLastSync(_formatDate(_lastSync!))} · $_count'
+        ? '${l10n.aifaLastSync(_lastSync!.formatted)} · $_count'
         : l10n.aifaNeverSynced;
 
-    return ListTile(
-      leading: const Icon(Icons.storage_outlined),
-      title: Text(l10n.aifaDatabaseDesc),
-      subtitle: Text(subtitle),
-      trailing: _isSyncing
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : TextButton(
-              onPressed: _syncDatabase,
-              child: Text(l10n.syncAifaDatabase),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: const Icon(Icons.storage_outlined),
+          title: Text(l10n.aifaDatabase),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [Text(l10n.aifaDatabaseHint), Text(status)],
+          ),
+          isThreeLine: true,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _isSyncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : TextButton.icon(
+                    onPressed: _syncDatabase,
+                    icon: const Icon(Icons.download_outlined),
+                    label: Text(l10n.syncAifaDatabase),
+                  ),
+          ),
+        ),
+      ],
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}.'
-        '${date.month.toString().padLeft(2, '0')}.'
-        '${date.year}';
   }
 }
 

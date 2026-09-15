@@ -517,6 +517,30 @@ class AppLocalizationsDe extends AppLocalizations {
   String get appVersion => 'Version';
 
   @override
+  String get buildNumber => 'Build';
+
+  @override
+  String get buildDate => 'Erstellt';
+
+  @override
+  String get buildCommit => 'Commit';
+
+  @override
+  String get buildChannel => 'Kanal';
+
+  @override
+  String get channelRelease => 'Release';
+
+  @override
+  String get channelCi => 'CI';
+
+  @override
+  String get channelDev => 'Entwicklungsversion';
+
+  @override
+  String get copiedToClipboard => 'Kopiert';
+
+  @override
   String get colorScheme => 'Farbschema';
 
   @override
@@ -550,8 +574,8 @@ class AppLocalizationsDe extends AppLocalizations {
   String get aifaDatabase => 'AIFA-Datenbank';
 
   @override
-  String get aifaDatabaseDesc =>
-      'Italienische Medikamentendatenbank für Code-Suche';
+  String get aifaDatabaseHint =>
+      'Italienische Medikamentendatenbank für die Code-Suche';
 
   @override
   String aifaLastSync(String date) {
