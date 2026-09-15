@@ -160,15 +160,12 @@
   "dosesTakenCount": "{count} Dosen eingenommen",
 
   "scanBarcodeTitle": "AIC-Code scannen",
-  "pointCameraAtBarcode": "Kamera auf den AIC-Code der Packung richten",
   "enterBarcodeManually": "Code manuell eingeben",
   "enterBarcode": "AIC-Code eingeben",
   "barcodeNumber": "AIC-Code",
   "barcodeHint": "z.B. A023834118",
   "useBarcode": "Suchen",
   "scanBarcodeTooltip": "AIC-Code scannen",
-  "ocrDetectedCodes": "Erkannte Codes — zum Suchen tippen",
-  "ocrScanning": "AIC-Codes werden gesucht…",
   "scanTakePhoto": "Foto aufnehmen",
   "scanFromGallery": "Aus Galerie wählen",
   "scanRetake": "Neues Foto",
@@ -180,6 +177,8 @@
   "scanOtherNumbers": "Weitere Nummern",
   "scanNoCodeFound": "Kein Code erkannt. Fotografiere näher oder tippe den Code ein.",
   "scanCaptureHint": "Fotografiere die Packung so, dass der AIC-Code scharf ist",
+  "scanSupplementSelected": "Nahrungsergänzungsmittel-Code — Angaben bitte manuell ergänzen",
+  "scanMedicationInCabinet": "Bereits in deiner Hausapotheke",
 
   "settings": "Einstellungen",
 

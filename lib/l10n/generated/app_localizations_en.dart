@@ -475,9 +475,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanBarcodeTitle => 'Scan AIC Code';
 
   @override
-  String get pointCameraAtBarcode => 'Point camera at AIC code on package';
-
-  @override
   String get enterBarcodeManually => 'Enter code manually';
 
   @override
@@ -494,12 +491,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get scanBarcodeTooltip => 'Scan AIC Code';
-
-  @override
-  String get ocrDetectedCodes => 'Detected codes — tap to search';
-
-  @override
-  String get ocrScanning => 'Scanning for AIC codes…';
 
   @override
   String get scanTakePhoto => 'Take photo';
@@ -534,6 +525,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
+
+  @override
+  String get scanSupplementSelected =>
+      'Supplement code — details can be added manually';
+
+  @override
+  String get scanMedicationInCabinet => 'Already in your cabinet';
 
   @override
   String get settings => 'Settings';

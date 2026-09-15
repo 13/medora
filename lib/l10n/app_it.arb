@@ -160,15 +160,12 @@
   "dosesTakenCount": "{count} dosi prese",
 
   "scanBarcodeTitle": "Scansiona codice AIC",
-  "pointCameraAtBarcode": "Inquadra il codice AIC sulla confezione",
   "enterBarcodeManually": "Inserisci codice manualmente",
   "enterBarcode": "Inserisci codice AIC",
   "barcodeNumber": "Codice AIC",
   "barcodeHint": "es. A023834118",
   "useBarcode": "Cerca",
   "scanBarcodeTooltip": "Scansiona codice AIC",
-  "ocrDetectedCodes": "Codici rilevati — tocca per cercare",
-  "ocrScanning": "Ricerca codici AIC in corso…",
   "scanTakePhoto": "Scatta foto",
   "scanFromGallery": "Scegli dalla galleria",
   "scanRetake": "Rifai foto",
@@ -180,6 +177,8 @@
   "scanOtherNumbers": "Altri numeri",
   "scanNoCodeFound": "Nessun codice trovato. Scatta più da vicino o inserisci il codice.",
   "scanCaptureHint": "Fotografa la confezione con il codice AIC ben leggibile",
+  "scanSupplementSelected": "Codice integratore — completa i dati manualmente",
+  "scanMedicationInCabinet": "Già nel tuo armadietto",
 
   "settings": "Impostazioni",
 

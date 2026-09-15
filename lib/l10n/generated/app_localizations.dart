@@ -946,12 +946,6 @@ abstract class AppLocalizations {
   /// **'Scan AIC Code'**
   String get scanBarcodeTitle;
 
-  /// No description provided for @pointCameraAtBarcode.
-  ///
-  /// In en, this message translates to:
-  /// **'Point camera at AIC code on package'**
-  String get pointCameraAtBarcode;
-
   /// No description provided for @enterBarcodeManually.
   ///
   /// In en, this message translates to:
@@ -987,18 +981,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Scan AIC Code'**
   String get scanBarcodeTooltip;
-
-  /// No description provided for @ocrDetectedCodes.
-  ///
-  /// In en, this message translates to:
-  /// **'Detected codes — tap to search'**
-  String get ocrDetectedCodes;
-
-  /// No description provided for @ocrScanning.
-  ///
-  /// In en, this message translates to:
-  /// **'Scanning for AIC codes…'**
-  String get ocrScanning;
 
   /// No description provided for @scanTakePhoto.
   ///
@@ -1065,6 +1047,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Photograph the pack so the AIC code is sharp'**
   String get scanCaptureHint;
+
+  /// No description provided for @scanSupplementSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Supplement code — details can be added manually'**
+  String get scanSupplementSelected;
+
+  /// No description provided for @scanMedicationInCabinet.
+  ///
+  /// In en, this message translates to:
+  /// **'Already in your cabinet'**
+  String get scanMedicationInCabinet;
 
   /// No description provided for @settings.
   ///

@@ -478,9 +478,6 @@ class AppLocalizationsIt extends AppLocalizations {
   String get scanBarcodeTitle => 'Scansiona codice AIC';
 
   @override
-  String get pointCameraAtBarcode => 'Inquadra il codice AIC sulla confezione';
-
-  @override
   String get enterBarcodeManually => 'Inserisci codice manualmente';
 
   @override
@@ -497,12 +494,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get scanBarcodeTooltip => 'Scansiona codice AIC';
-
-  @override
-  String get ocrDetectedCodes => 'Codici rilevati — tocca per cercare';
-
-  @override
-  String get ocrScanning => 'Ricerca codici AIC in corso…';
 
   @override
   String get scanTakePhoto => 'Scatta foto';
@@ -539,6 +530,13 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get scanCaptureHint =>
       'Fotografa la confezione con il codice AIC ben leggibile';
+
+  @override
+  String get scanSupplementSelected =>
+      'Codice integratore — completa i dati manualmente';
+
+  @override
+  String get scanMedicationInCabinet => 'Già nel tuo armadietto';
 
   @override
   String get settings => 'Impostazioni';

@@ -1,0 +1,59 @@
+/// Medora - ML Kit barcode scanning → code candidates
+///
+/// The only place that maps `google_mlkit_barcode_scanning` results to
+/// [CodeCandidate]s: EAN-13 / EAN-8 become EAN candidates, a Code 39 /
+/// Code 128 value `A` + 9 digits (the medicine "bollino") an AIC candidate,
+/// anything else an "other" candidate.
+library;
+
+import 'dart:ui' show Rect;
+
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
+import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
+import 'package:medora/services/code_candidates.dart';
+
+/// The formats the scanner decodes on a package photo.
+const scanBarcodeFormats = [
+  BarcodeFormat.ean13,
+  BarcodeFormat.ean8,
+  BarcodeFormat.code39,
+  BarcodeFormat.code128,
+  BarcodeFormat.dataMatrix,
+];
+
+final _aicBollino = RegExp(r'^A[0-9]{9}$');
+final _nonAlphanumeric = RegExp(r'[^A-Za-z0-9]');
+
+/// Candidates for every decoded barcode with a usable value.
+List<CodeCandidate> barcodeCandidatesFrom(List<Barcode> barcodes) => [
+  for (final b in barcodes)
+    ?barcodeCandidate(b.format, b.rawValue ?? b.displayValue, b.boundingBox),
+];
+
+/// Maps one decoded barcode; null when it carries no usable value.
+CodeCandidate? barcodeCandidate(BarcodeFormat format, String? value, Rect box) {
+  final raw = value?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  switch (format) {
+    case BarcodeFormat.ean13 || BarcodeFormat.ean8:
+      final ean = CodeCandidate.eanFromBarcode(raw, box);
+      return ean.code.isEmpty ? null : ean;
+    case BarcodeFormat.code39 || BarcodeFormat.code128
+        when _aicBollino.hasMatch(raw.toUpperCase()):
+      return CodeCandidate(
+        code: BarcodeLookupDatasource.cleanCode(raw),
+        kind: CodeKind.aic,
+        sourceText: raw,
+        box: box,
+      );
+    default:
+      final code = raw.replaceAll(_nonAlphanumeric, '');
+      if (code.isEmpty) return null;
+      return CodeCandidate(
+        code: code,
+        kind: CodeKind.other,
+        sourceText: raw,
+        box: box,
+      );
+  }
+}

@@ -1,23 +1,34 @@
-/// Medora - OCR Scanner Screen
+/// Medora - AIC scanner: take a photo, then choose the code
 ///
-/// Uses the camera + Google ML Kit Text Recognition to read text
-/// from medication packages. User can tap any detected text block
-/// to use it as an AIC code for AIFA database lookup.
+/// Three stages: capture (camera preview, shutter, gallery, manual entry),
+/// recognizing (ML Kit text recognition and barcode scanning run in parallel
+/// on the still photo) and review (the photo with every detected code
+/// numbered; the user taps the one to use). Photos taken here are temporary
+/// files, deleted on retake, when leaving the screen and in `dispose`;
+/// gallery picks are never deleted.
 library;
 
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
 import 'package:medora/services/aifa_cache_service.dart';
+import 'package:medora/services/barcode_adapter.dart';
+import 'package:medora/services/code_candidates.dart';
+import 'package:medora/services/ocr_adapter.dart';
 
 class BarcodeScannerScreen extends ConsumerStatefulWidget {
   const BarcodeScannerScreen({super.key, this.returnBarcodeOnly = false});
@@ -29,23 +40,31 @@ class BarcodeScannerScreen extends ConsumerStatefulWidget {
       _BarcodeScannerScreenState();
 }
 
+enum _ScanStage { capture, recognizing, review }
+
 class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     with WidgetsBindingObserver {
+  static const Color _onScrim = Color(0xFFFFFFFF); // on scrim
+
   CameraController? _cameraController;
   final TextRecognizer _textRecognizer = TextRecognizer();
+  final BarcodeScanner _barcodeScanner = BarcodeScanner(
+    formats: scanBarcodeFormats,
+  );
 
+  _ScanStage _stage = _ScanStage.capture;
   bool _isSearching = false;
-  bool _isProcessingFrame = false;
   bool _isCameraReady = false;
+  bool _cameraFailed = false;
   bool _torchOn = false;
-  bool _isPaused = false; // pause OCR when user is reviewing text
 
-  /// All distinct text blocks detected by OCR, newest first.
-  /// Each entry is a cleaned text line from OCR.
-  final List<String> _detectedTexts = [];
+  /// The photo being recognised or reviewed.
+  String? _photoPath;
 
-  /// AIC-pattern codes found (subset of _detectedTexts that match pattern).
-  final Set<String> _aicCodes = {};
+  /// Whether [_photoPath] is a camera capture we own (deleted when done).
+  bool _photoIsTemp = false;
+  Size _imageSize = Size.zero;
+  List<CodeCandidate> _candidates = const [];
 
   @override
   void initState() {
@@ -56,149 +75,19 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final controller = _cameraController;
     if (state == AppLifecycleState.inactive) {
-      _cameraController?.dispose();
+      if (controller == null) return;
       _cameraController = null;
+      _torchOn = false;
+      if (mounted) setState(() => _isCameraReady = false);
+      controller.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
-    }
-  }
-
-  Future<void> _initializeCamera() async {
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty || !mounted) return;
-
-      final backCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-
-      _cameraController = CameraController(
-        backCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.nv21,
-      );
-
-      await _cameraController!.initialize();
-      if (!mounted) return;
-
-      setState(() => _isCameraReady = true);
-      await _cameraController!.startImageStream(_processImageStream);
-    } catch (e) {
-      debugPrint('Camera init error: $e');
-    }
-  }
-
-  // ── OCR Processing ─────────────────────────────────────────
-
-  void _processImageStream(CameraImage image) {
-    if (_isProcessingFrame || _isSearching || _isPaused) return;
-    _isProcessingFrame = true;
-
-    // Process in a microtask to not block the camera stream
-    Future.delayed(const Duration(milliseconds: 600), () async {
-      try {
-        if (!mounted || _isPaused) return;
-        await _processOcrFrame(image);
-      } catch (_) {
-        // Ignore OCR errors silently
-      } finally {
-        _isProcessingFrame = false;
-      }
-    });
-  }
-
-  Future<void> _processOcrFrame(CameraImage image) async {
-    if (!mounted) return;
-
-    final camera = _cameraController?.description;
-    if (camera == null) return;
-
-    final inputImage = _convertCameraImage(image, camera.sensorOrientation);
-    if (inputImage == null) return;
-
-    final recognizedText = await _textRecognizer.processImage(inputImage);
-
-    if (!mounted) return;
-
-    // Collect all text blocks
-    final newTexts = <String>{};
-    final newAicCodes = <String>{};
-
-    for (final block in recognizedText.blocks) {
-      for (final line in block.lines) {
-        final text = line.text.trim();
-        if (text.length < 3) continue; // skip tiny fragments
-
-        newTexts.add(text);
-
-        // Check if this line contains AIC-like codes
-        final codes = BarcodeLookupDatasource.extractCodes(text);
-        newAicCodes.addAll(codes);
+      // Review keeps the photo; the camera comes back on retake.
+      if (_stage == _ScanStage.capture && controller == null) {
+        _initializeCamera();
       }
     }
-
-    if (newTexts.isNotEmpty && mounted) {
-      setState(() {
-        // Add new texts we haven't seen before
-        for (final t in newTexts) {
-          if (!_detectedTexts.contains(t)) {
-            _detectedTexts.insert(0, t); // newest first
-          }
-        }
-        _aicCodes.addAll(newAicCodes);
-
-        // Keep list manageable (max 30 entries)
-        if (_detectedTexts.length > 30) {
-          _detectedTexts.removeRange(30, _detectedTexts.length);
-        }
-      });
-    }
-  }
-
-  InputImage? _convertCameraImage(CameraImage image, int sensorOrientation) {
-    final bytes = _concatenatePlanes(image.planes);
-    if (bytes.isEmpty) return null;
-
-    final rotation = _rotationFromSensorOrientation(sensorOrientation);
-    final format = InputImageFormatValue.fromRawValue(image.format.raw as int);
-    if (format == null) return null;
-
-    return InputImage.fromBytes(
-      bytes: bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
-      ),
-    );
-  }
-
-  Uint8List _concatenatePlanes(List<Plane> planes) {
-    int totalBytes = 0;
-    for (final plane in planes) {
-      totalBytes += plane.bytes.length;
-    }
-    final result = Uint8List(totalBytes);
-    int offset = 0;
-    for (final plane in planes) {
-      result.setRange(offset, offset + plane.bytes.length, plane.bytes);
-      offset += plane.bytes.length;
-    }
-    return result;
-  }
-
-  InputImageRotation _rotationFromSensorOrientation(int orientation) {
-    return switch (orientation) {
-      0 => InputImageRotation.rotation0deg,
-      90 => InputImageRotation.rotation90deg,
-      180 => InputImageRotation.rotation180deg,
-      270 => InputImageRotation.rotation270deg,
-      _ => InputImageRotation.rotation0deg,
-    };
   }
 
   @override
@@ -206,7 +95,307 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     WidgetsBinding.instance.removeObserver(this);
     _cameraController?.dispose();
     _textRecognizer.close();
+    _barcodeScanner.close();
+    _discardPhoto();
     super.dispose();
+  }
+
+  // ── Camera ─────────────────────────────────────────────────
+
+  Future<void> _initializeCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (!mounted) return;
+      if (cameras.isEmpty) {
+        setState(() => _cameraFailed = true);
+        return;
+      }
+
+      final backCamera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      final controller = CameraController(
+        backCamera,
+        ResolutionPreset.veryHigh,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      _cameraController = controller;
+      await controller.initialize();
+      if (!mounted || _cameraController != controller) return;
+      try {
+        await controller.setFocusMode(FocusMode.auto);
+      } on CameraException catch (e) {
+        debugPrint('Camera focus mode unsupported: $e');
+      }
+      if (!mounted || _cameraController != controller) return;
+      setState(() {
+        _isCameraReady = true;
+        _cameraFailed = false;
+      });
+      // Re-initialised while a photo was being recognised or reviewed (e.g.
+      // the gallery picker paused the app): keep the preview paused.
+      if (_stage != _ScanStage.capture) await _pausePreview();
+    } catch (e) {
+      debugPrint('Camera init error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isCameraReady = false;
+        _cameraFailed = true;
+      });
+      _showError();
+    }
+  }
+
+  /// Focuses at [local], a point in the cover-fitted preview of [viewport].
+  Future<void> _focusAt(Offset local, Size viewport) async {
+    final controller = _cameraController;
+    final previewSize = controller?.value.previewSize;
+    if (controller == null || !_isCameraReady || previewSize == null) return;
+    // The preview is portrait: the sensor's width is the laid-out height.
+    final child = Size(previewSize.height, previewSize.width);
+    final scale = math.max(
+      viewport.width / child.width,
+      viewport.height / child.height,
+    );
+    final dx = (viewport.width - child.width * scale) / 2;
+    final dy = (viewport.height - child.height * scale) / 2;
+    final point = Offset(
+      ((local.dx - dx) / (child.width * scale)).clamp(0.0, 1.0),
+      ((local.dy - dy) / (child.height * scale)).clamp(0.0, 1.0),
+    );
+    try {
+      await controller.setFocusPoint(point);
+    } on CameraException catch (e) {
+      debugPrint('Camera focus point unsupported: $e');
+    }
+  }
+
+  Future<void> _toggleTorch() async {
+    final controller = _cameraController;
+    if (controller == null) return;
+    try {
+      await controller.setFlashMode(_torchOn ? FlashMode.off : FlashMode.torch);
+      if (mounted) setState(() => _torchOn = !_torchOn);
+    } on CameraException catch (e) {
+      debugPrint('Torch error: $e');
+    }
+  }
+
+  Future<void> _pausePreview() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      if (_torchOn) {
+        await controller.setFlashMode(FlashMode.off);
+        _torchOn = false;
+      }
+      await controller.pausePreview();
+    } on CameraException catch (e) {
+      debugPrint('Camera pause error: $e');
+    }
+  }
+
+  Future<void> _resumePreview() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) {
+      _cameraController = null;
+      await _initializeCamera();
+      return;
+    }
+    try {
+      await controller.resumePreview();
+    } on CameraException catch (e) {
+      debugPrint('Camera resume error: $e');
+    }
+  }
+
+  // ── Capture → recognize ────────────────────────────────────
+
+  Future<void> _takePhoto() async {
+    final controller = _cameraController;
+    if (controller == null ||
+        !_isCameraReady ||
+        _stage != _ScanStage.capture ||
+        controller.value.isTakingPicture) {
+      return;
+    }
+    try {
+      final file = await controller.takePicture();
+      if (!mounted) {
+        unawaited(_deleteFile(file.path));
+        return;
+      }
+      await _recognize(file.path, isTemp: true);
+    } catch (e) {
+      debugPrint('Take picture error: $e');
+      if (mounted) _showError();
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    if (_stage != _ScanStage.capture) return;
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null || !mounted) return;
+      await _recognize(picked.path, isTemp: false);
+    } catch (e) {
+      debugPrint('Gallery pick error: $e');
+      if (mounted) _showError();
+    }
+  }
+
+  Future<void> _recognize(String path, {required bool isTemp}) async {
+    setState(() {
+      _stage = _ScanStage.recognizing;
+      _photoPath = path;
+      _photoIsTemp = isTemp;
+      _candidates = const [];
+    });
+    await _pausePreview();
+    if (!mounted) return;
+    try {
+      final input = InputImage.fromFilePath(path);
+      final (recognized, barcodes, size) = await (
+        _textRecognizer.processImage(input),
+        _barcodeScanner.processImage(input),
+        _decodeSize(path),
+      ).wait;
+      if (!mounted || _photoPath != path) return;
+      final candidates = findCodeCandidates(
+        ocrLinesFrom(recognized),
+        barcodes: barcodeCandidatesFrom(barcodes),
+      );
+      setState(() {
+        _imageSize = size;
+        _candidates = candidates;
+        _stage = _ScanStage.review;
+      });
+    } catch (e) {
+      debugPrint('Recognition error: $e');
+      if (!mounted) return;
+      _showError();
+      await _retake();
+    }
+  }
+
+  Future<Size> _decodeSize(String path) async {
+    final image = await decodeImageFromList(await File(path).readAsBytes());
+    final size = Size(image.width.toDouble(), image.height.toDouble());
+    image.dispose();
+    return size;
+  }
+
+  Future<void> _retake() async {
+    _discardPhoto();
+    setState(() {
+      _candidates = const [];
+      _imageSize = Size.zero;
+      _stage = _ScanStage.capture;
+    });
+    await _resumePreview();
+  }
+
+  /// Forgets the current photo, deleting it if the camera took it.
+  void _discardPhoto() {
+    final path = _photoPath;
+    if (path != null && _photoIsTemp) unawaited(_deleteFile(path));
+    _photoPath = null;
+    _photoIsTemp = false;
+  }
+
+  Future<void> _deleteFile(String path) async {
+    try {
+      await File(path).delete();
+    } on FileSystemException {
+      // Already gone.
+    }
+  }
+
+  void _showError() {
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.genericError)));
+  }
+
+  // ── Selection ──────────────────────────────────────────────
+
+  void _onCandidateSelected(CodeCandidate candidate) {
+    if (_isSearching) return;
+    if (widget.returnBarcodeOnly) {
+      _handleCode(candidate.code);
+      return;
+    }
+    switch (candidate.kind) {
+      case CodeKind.aic:
+        _handleCode(candidate.code);
+      case CodeKind.supplement:
+        _openSupplement(candidate);
+      case CodeKind.ean:
+        _openEan(candidate);
+      case CodeKind.other:
+        _leaveAndPush(_addMedicationLocation(candidate.code));
+    }
+  }
+
+  /// Placeholder until the supplement register lookup exists: Add Medication
+  /// with the code prefilled.
+  void _openSupplement(CodeCandidate candidate) {
+    final l10n = AppLocalizations.of(context);
+    _leaveAndPush(
+      _addMedicationLocation(candidate.code),
+      message: l10n.scanSupplementSelected,
+    );
+  }
+
+  /// The cabinet medication with this barcode, else Add Medication.
+  Future<void> _openEan(CodeCandidate candidate) async {
+    setState(() => _isSearching = true);
+    final l10n = AppLocalizations.of(context);
+    try {
+      final result = await ref
+          .read(medicationRepositoryProvider)
+          .getMedicationByBarcode(candidate.code);
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+      if (result.isFailure) {
+        _showError();
+        return;
+      }
+      final medication = result.dataOrNull;
+      if (medication != null) {
+        _leaveAndPush(
+          AppRoutes.medicationDetail.replaceFirst(':id', medication.id),
+          message: l10n.scanMedicationInCabinet,
+        );
+      } else {
+        _leaveAndPush(_addMedicationLocation(candidate.code));
+      }
+    } catch (e) {
+      debugPrint('Cabinet barcode lookup error: $e');
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+      _showError();
+    }
+  }
+
+  String _addMedicationLocation(String code) =>
+      '${AppRoutes.addMedication}?barcode=${Uri.encodeQueryComponent(code)}';
+
+  /// Closes the scanner (its photo is deleted in `dispose`) and opens
+  /// [location], optionally with a snackbar [message].
+  void _leaveAndPush(String location, {String? message}) {
+    if (message != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+    context.pop();
+    // Fire and forget: `push` completes only when the pushed route pops.
+    unawaited(context.push(location));
   }
 
   // ── UI ─────────────────────────────────────────────────────
@@ -218,63 +407,73 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       appBar: AppBar(
         title: Text(l10n.scanBarcodeTitle),
         actions: [
-          if (_detectedTexts.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep),
-              tooltip: l10n.clear,
-              onPressed: () => setState(() {
-                _detectedTexts.clear();
-                _aicCodes.clear();
-              }),
-            ),
-          if (_isCameraReady)
+          if (_stage == _ScanStage.capture && _isCameraReady)
             IconButton(
               icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off),
-              onPressed: () async {
-                await _cameraController?.setFlashMode(
-                  _torchOn ? FlashMode.off : FlashMode.torch,
-                );
-                setState(() => _torchOn = !_torchOn);
-              },
+              onPressed: _toggleTorch,
             ),
         ],
       ),
-      body: Column(
+      body: switch (_stage) {
+        _ScanStage.capture => _buildCapture(l10n),
+        _ScanStage.recognizing => _buildRecognizing(l10n),
+        _ScanStage.review => SafeArea(
+          top: false,
+          child: ScanReviewView(
+            image: FileImage(File(_photoPath!)),
+            imageSize: _imageSize,
+            candidates: _candidates,
+            onSelected: _onCandidateSelected,
+            onRetake: _retake,
+            onManualEntry: () => _showManualEntryDialog(context),
+            busy: _isSearching,
+          ),
+        ),
+      },
+    );
+  }
+
+  Widget _buildCapture(AppLocalizations l10n) {
+    final controller = _cameraController;
+    final previewSize = controller?.value.previewSize;
+    final canShoot = _isCameraReady && controller != null && !_isSearching;
+    return ColoredBox(
+      color: Colors.black, // scrim
+      child: Column(
         children: [
-          // Camera preview — top half
           Expanded(
-            flex: 3,
             child: Stack(
               children: [
-                if (_isCameraReady && _cameraController != null)
-                  SizedBox.expand(
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: _cameraController!.value.previewSize!.height,
-                        height: _cameraController!.value.previewSize!.width,
-                        child: CameraPreview(_cameraController!),
+                if (_isCameraReady && controller != null && previewSize != null)
+                  LayoutBuilder(
+                    builder: (context, constraints) => GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (details) =>
+                          _focusAt(details.localPosition, constraints.biggest),
+                      child: SizedBox.expand(
+                        child: ClipRect(
+                          child: FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: previewSize.height,
+                              height: previewSize.width,
+                              child: CameraPreview(controller),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   )
-                else
-                  const Center(child: CircularProgressIndicator()),
-
-                // Status overlay
+                else if (!_cameraFailed)
+                  const Center(
+                    child: CircularProgressIndicator(color: _onScrim),
+                  ),
                 Positioned(
-                  bottom: 8,
-                  left: 0,
-                  right: 0,
+                  bottom: 12,
+                  left: 16,
+                  right: 16,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.54), // scrim
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+                    child: _ScrimLabel(
                       child: _isSearching
                           ? Row(
                               mainAxisSize: MainAxisSize.min,
@@ -284,25 +483,26 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                                   height: 14,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Color(0xFFFFFFFF), // on scrim
+                                    color: _onScrim,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
                                   l10n.lookingUpBarcode,
                                   style: const TextStyle(
-                                    color: Color(0xFFFFFFFF), // on scrim
+                                    color: _onScrim,
                                     fontSize: 13,
                                   ),
                                 ),
                               ],
                             )
                           : Text(
-                              l10n.pointCameraAtBarcode,
+                              l10n.scanCaptureHint,
+                              textAlign: TextAlign.center,
                               style: const TextStyle(
-                                color: Color(0xFFFFFFFF),
+                                color: _onScrim,
                                 fontSize: 13,
-                              ), // on scrim
+                              ),
                             ),
                     ),
                   ),
@@ -310,141 +510,46 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
               ],
             ),
           ),
-
-          // Detected text blocks — bottom half, scrollable
-          Expanded(
-            flex: 2,
-            child: Container(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.text_fields,
-                          size: 18,
-                          color: context.colors.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          l10n.ocrDetectedCodes,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: context.colors.onSurfaceVariant,
-                          ),
-                        ),
-                        const Spacer(),
-                        // Manual entry — icon only
-                        IconButton(
-                          icon: const Icon(Icons.keyboard, size: 20),
-                          tooltip: l10n.enterBarcodeManually,
-                          onPressed: _isSearching
-                              ? null
-                              : () => _showManualEntryDialog(context),
-                        ),
-                      ],
+                  IconButton(
+                    iconSize: 28,
+                    color: _onScrim,
+                    tooltip: l10n.scanFromGallery,
+                    onPressed: _isSearching ? null : _pickFromGallery,
+                    icon: const Icon(Icons.photo_library_outlined),
+                  ),
+                  Tooltip(
+                    message: l10n.scanTakePhoto,
+                    child: FilledButton(
+                      onPressed: canShoot ? _takePhoto : null,
+                      style: FilledButton.styleFrom(
+                        shape: const CircleBorder(),
+                        fixedSize: const Size(72, 72),
+                        padding: EdgeInsets.zero,
+                        disabledBackgroundColor: context.colors.onSurface
+                            .withValues(alpha: 0.38),
+                      ),
+                      child: Icon(
+                        Icons.camera_alt,
+                        size: 32,
+                        semanticLabel: l10n.scanTakePhoto,
+                      ),
                     ),
                   ),
-                  const Divider(height: 1),
-
-                  // Text list
-                  Expanded(
-                    child: _detectedTexts.isEmpty
-                        ? Center(
-                            child: Text(
-                              l10n.ocrScanning,
-                              style: TextStyle(
-                                color: context.colors.outline,
-                                fontSize: 14,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            itemCount: _detectedTexts.length,
-                            itemBuilder: (context, index) {
-                              final text = _detectedTexts[index];
-                              final isAic = _aicCodes.any(
-                                (code) =>
-                                    text.contains(code) ||
-                                    text.replaceAll(RegExp(r'[^0-9]'), '') ==
-                                        code,
-                              );
-
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 2,
-                                ),
-                                child: Material(
-                                  color: isAic
-                                      ? context.colors.primaryContainer
-                                      : null,
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(8),
-                                    onTap: _isSearching
-                                        ? null
-                                        : () => _onTextSelected(text),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 8,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          if (isAic)
-                                            Padding(
-                                              padding: const EdgeInsets.only(
-                                                right: 8,
-                                              ),
-                                              child: Icon(
-                                                Icons.medication,
-                                                size: 16,
-                                                color: context
-                                                    .colors
-                                                    .onPrimaryContainer,
-                                              ),
-                                            ),
-                                          Expanded(
-                                            child: Text(
-                                              text,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: isAic
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                                color: isAic
-                                                    ? context
-                                                          .colors
-                                                          .onPrimaryContainer
-                                                    : null,
-                                              ),
-                                            ),
-                                          ),
-                                          Icon(
-                                            Icons.chevron_right,
-                                            size: 18,
-                                            color: context.colors.outline,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                  IconButton(
+                    iconSize: 28,
+                    color: _onScrim,
+                    tooltip: l10n.enterBarcodeManually,
+                    onPressed: _isSearching
+                        ? null
+                        : () => _showManualEntryDialog(context),
+                    icon: const Icon(Icons.keyboard),
                   ),
                 ],
               ),
@@ -455,26 +560,43 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     );
   }
 
-  // ── Actions ────────────────────────────────────────────────
-
-  /// User tapped a detected text block.
-  void _onTextSelected(String text) {
-    // Try to extract an AIC code from the text
-    final codes = BarcodeLookupDatasource.extractCodes(text);
-    final code = codes.isNotEmpty
-        ? codes.first
-        : text.replaceAll(RegExp(r'[^0-9A-Za-z]'), '');
-    _handleCode(code);
+  Widget _buildRecognizing(AppLocalizations l10n) {
+    final path = _photoPath;
+    return ColoredBox(
+      color: Colors.black, // scrim
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (path != null)
+            Image(
+              image: FileImage(File(path)),
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          ColoredBox(color: Colors.black.withValues(alpha: 0.54)), // scrim
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: _onScrim),
+                const SizedBox(height: 16),
+                Text(
+                  l10n.scanRecognizing,
+                  style: const TextStyle(color: _onScrim, fontSize: 15),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
+
+  // ── Code lookup ────────────────────────────────────────────
 
   Future<void> _handleCode(String rawCode) async {
     if (_isSearching) return;
-
-    // Pause OCR while searching
-    setState(() {
-      _isPaused = true;
-      _isSearching = true;
-    });
+    setState(() => _isSearching = true);
 
     if (widget.returnBarcodeOnly) {
       if (mounted) context.pop(rawCode);
@@ -482,19 +604,16 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
 
     final l10n = AppLocalizations.of(context);
-
     try {
       final results = await AifaCacheService.instance.search(rawCode);
-
       if (!mounted) return;
       setState(() => _isSearching = false);
 
       if (results.isEmpty) {
+        // Stay on the photo so another code can be picked.
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
-        // Resume scanning
-        setState(() => _isPaused = false);
         return;
       }
 
@@ -505,10 +624,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _isSearching = false;
-          _isPaused = false;
-        });
+        setState(() => _isSearching = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
@@ -628,9 +744,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
     if (selected != null && mounted) {
       await _selectResult(selected, code);
-    } else if (mounted) {
-      // User dismissed — resume scanning
-      setState(() => _isPaused = false);
     }
   }
 
@@ -682,6 +795,24 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ScrimLabel extends StatelessWidget {
+  const _ScrimLabel({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.54), // scrim
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: child,
     );
   }
 }

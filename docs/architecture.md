@@ -88,6 +88,22 @@ today, `expiredAt(now)` is true only once `daysUntilExpiry` goes negative — th
 rule `ExpiryBadge` and the Home countdown already used — and `isExpiringSoon` is
 the 30-day window before it.
 
+## Scanner
+
+`BarcodeScannerScreen` (`/scanner`, `?returnOnly=true` pops with the chosen
+code) runs `capture → recognizing → review`. Capture shows the camera preview
+(no image stream) with a shutter, gallery import and manual entry. The still
+photo goes to ML Kit once: the text recogniser and the barcode scanner run in
+parallel on the same `InputImage.fromFilePath`. `ocr_adapter.dart` and
+`barcode_adapter.dart` are the only ML Kit mappings; the pure
+`findCodeCandidates` ranks AIC, supplement, EAN and other codes and merges the
+decoded barcodes. `ScanReviewView` shows the photo with numbered markers and
+the same list. Selecting routes by kind: AIC → AIFA cache search (result
+picker → Add Medication), supplement → Add Medication prefilled, EAN → the
+cabinet medication with that barcode (else Add Medication), other → Add
+Medication prefilled. Camera photos are temporary files deleted on retake, on
+leaving the screen and in `dispose`; gallery picks are never deleted.
+
 ## In-app updates (Android)
 
 `AppUpdateService` is pure Dart over `package:http`: read `/releases/latest` for
