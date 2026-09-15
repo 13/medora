@@ -466,4 +466,86 @@ void main() {
       }
     });
   });
+
+  group('findCodeCandidates: digit lookalikes after a label', () {
+    String describe(List<CodeCandidate> list) =>
+        list.map((c) => '${c.kind.name}:${c.code}').join(' ');
+
+    test('COD MINSAN: 10T018 is supplement 107018', () {
+      final result = findCodeCandidates([_line('COD MINSAN: 10T018', 0)]);
+      expect(describe(result), 'supplement:107018');
+    });
+
+    test('COD MINSAN: 1O7O18 is supplement 107018', () {
+      final result = findCodeCandidates([_line('COD MINSAN: 1O7O18', 0)]);
+      expect(describe(result), 'supplement:107018');
+    });
+
+    test('the repaired code keeps its element box and source text', () {
+      const box = Rect.fromLTWH(221, 254, 200, 64);
+      final result = findCodeCandidates([
+        const OcrLine('COD MINSAN: 10T018', Rect.fromLTWH(0, 254, 565, 64), [
+          OcrElement('COD', Rect.fromLTWH(0, 254, 80, 64)),
+          OcrElement('MINSAN:', Rect.fromLTWH(90, 254, 120, 64)),
+          OcrElement('10T018', box),
+        ]),
+      ]);
+      expect(describe(result), 'supplement:107018');
+      expect(result.single.box, box);
+      expect(result.single.sourceText, 'COD MINSAN: 10T018');
+    });
+
+    test('each lookalike maps to its digit', () {
+      for (final (text, code) in [
+        ('COD MINSAN: 1Q7D18', '107018'),
+        ('COD MINSAN: 12I4l6', '121416'),
+        ('COD MINSAN: 1|3!5i', '113151'),
+        ('COD MINSAN: 1Z3z56', '123256'),
+        ('COD MINSAN: 1S3s56', '153556'),
+        ('COD MINSAN: 1G3b56', '163656'),
+        ('COD MINSAN: 1t3?56', '173756'),
+        ('COD MINSAN: 1B3g5q', '183959'),
+        ('COD MINSAN: 10T018.', '107018'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(describe(result), 'supplement:$code', reason: text);
+      }
+    });
+
+    test('an AIC label repairs its code too', () {
+      final result = findCodeCandidates([_line('AIC n. O3456789l', 0)]);
+      expect(describe(result), 'aic:034567891');
+    });
+
+    test('words and mostly-letter tokens are not repaired', () {
+      for (final text in [
+        'COD MINSAN: TOTALE',
+        'COD MINSAN: BIOS',
+        'COD MINSAN: 1OTS',
+        'COD MINSAN: 10TOSB',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement), isEmpty, reason: text);
+      }
+    });
+
+    test('quantities after a label stay quantities', () {
+      for (final text in [
+        'COD MINSAN: 15mg',
+        'COD MINSAN: 150mg',
+        'COD MINSAN: 100g',
+        'COD MINSAN: 250ml',
+        'COD MINSAN: 1.500',
+        'COD MINSAN: 12/2027',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement), isEmpty, reason: text);
+      }
+    });
+
+    test('lookalikes without a label are not repaired', () {
+      final result = findCodeCandidates([_line('Lotto 10T018', 0)]);
+      expect(describe(result), 'other:10T018');
+    });
+  });
 }

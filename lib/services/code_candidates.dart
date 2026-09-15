@@ -85,7 +85,7 @@ List<CodeCandidate> findCodeCandidates(
 
   for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     final line = lines[lineIndex];
-    final text = line.text;
+    final text = _repairCodeTokens(line.text);
     final elementSpans = _elementSpans(line);
     final claimed = <_Span>[];
 
@@ -107,7 +107,7 @@ List<CodeCandidate> findCodeCandidates(
         CodeCandidate(
           code: code,
           kind: kind,
-          sourceText: text.trim(),
+          sourceText: line.text.trim(),
           box: boxFor(span),
         ),
       );
@@ -343,10 +343,11 @@ Set<int> _labelPartners(List<OcrLine> lines) {
   final partners = <int>{};
   for (var i = 0; i < lines.length; i++) {
     final label = lines[i];
-    final match = _supplementLabel.firstMatch(label.text);
+    final labelText = _repairCodeTokens(label.text);
+    final match = _supplementLabel.firstMatch(labelText);
     if (match == null) continue;
-    final eanSpans = [for (final e in _findEans(label.text)) e.span];
-    if (_labelledCode(label.text, match.end, eanSpans) != null) continue;
+    final eanSpans = [for (final e in _findEans(labelText)) e.span];
+    if (_labelledCode(labelText, match.end, eanSpans) != null) continue;
 
     int? sameRow;
     for (var j = 0; j < lines.length; j++) {
@@ -387,6 +388,57 @@ bool _followsLabel(OcrLine label, OcrLine next) {
   final overlaps =
       next.box.left < label.box.right && label.box.left < next.box.right;
   return below && overlaps;
+}
+
+/// OCR letters read in place of digits, mapped by [_repairCodeTokens].
+const _digitLookalikes = {
+  'O': '0', 'o': '0', 'Q': '0', 'D': '0', //
+  'I': '1', 'l': '1', '|': '1', 'i': '1', '!': '1', //
+  'Z': '2', 'z': '2', 'S': '5', 's': '5', 'G': '6', 'b': '6', //
+  'T': '7', 't': '7', '?': '7', 'B': '8', 'g': '9', 'q': '9',
+};
+
+final _nonSpaceRun = RegExp(r'\S+');
+final _edgePunctuation = RegExp(r'^[.:,;]+|[.:,;]+$');
+
+/// [text] with digit lookalikes ([_digitLookalikes]) replaced in the first
+/// two tokens after a supplement or AIC label, character for character (so
+/// spans and element boxes still line up). A token is repaired only when it
+/// holds at least 3 digits, at least half of it is digits, every other
+/// character is a lookalike and it does not end in a quantity unit
+/// (`100g`); e.g. `COD MINSAN: 10T018` becomes `COD MINSAN: 107018`.
+String _repairCodeTokens(String text) {
+  final labelEnds = [
+    for (final label in [_supplementLabel, _aicLabel])
+      ?label.firstMatch(text)?.end,
+  ];
+  if (labelEnds.isEmpty) return text;
+  final chars = text.split('');
+  for (final from in labelEnds) {
+    for (final m in _nonSpaceRun.allMatches(text, from).take(2)) {
+      final raw = m[0]!;
+      final leading = _edgePunctuation.matchAsPrefix(raw)?.end ?? 0;
+      final token = raw.replaceAll(_edgePunctuation, '');
+      final start = m.start + leading;
+      final digits = _digit.allMatches(token).length;
+      if (digits < 3 || digits * 2 < token.length) continue;
+      if (token.length > 9) continue;
+      var repairable = true;
+      for (var k = 0; k < token.length && repairable; k++) {
+        final c = token[k];
+        if (_digit.hasMatch(c)) continue;
+        final unit = _quantitySuffix.matchAsPrefix(text, start + k);
+        repairable =
+            _digitLookalikes.containsKey(c) &&
+            (unit == null || unit.end < start + token.length);
+      }
+      if (!repairable || digits == token.length) continue;
+      for (var k = 0; k < token.length; k++) {
+        chars[start + k] = _digitLookalikes[token[k]] ?? token[k];
+      }
+    }
+  }
+  return chars.join();
 }
 
 /// Character spans of each element inside the line text (null if an element
