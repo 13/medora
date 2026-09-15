@@ -40,7 +40,8 @@ class AppRoutes {
   static const doseHistory = '/doses/history';
   static const scanner = '/scanner';
 
-  /// The scanner in return-only mode: pops with the chosen code (String).
+  /// The scanner in return-only mode: pops with the chosen code and its kind
+  /// (`ScanResult`).
   static const scannerReturnOnly = '$scanner?returnOnly=true';
   static const settings = '/settings';
   static const family = '/family';

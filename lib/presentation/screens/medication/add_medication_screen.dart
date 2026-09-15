@@ -18,11 +18,15 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/medication/aifa_search_sheet.dart';
+import 'package:medora/presentation/screens/scanner/scan_result.dart';
+import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
+import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
 import 'package:medora/presentation/widgets/forms/date_picker_field.dart';
 import 'package:medora/presentation/widgets/forms/form_section.dart';
 import 'package:medora/presentation/widgets/forms/tag_input_field.dart';
 import 'package:medora/presentation/widgets/forms/unit_dropdown.dart';
 import 'package:medora/services/aifa_cache_service.dart';
+import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:uuid/uuid.dart';
 
@@ -223,13 +227,71 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
   }
 
-  /// Push the barcode scanner and fill [_barcodeController] with the result.
+  /// Push the barcode scanner, fill [_barcodeController] with the chosen
+  /// code and look it up where its kind belongs: AIC codes in AIFA,
+  /// supplement codes in the food-supplement register; EAN and other numbers
+  /// are only filled in.
   Future<void> _openScanner() async {
-    final barcode = await context.push<String>(AppRoutes.scannerReturnOnly);
-    if (barcode != null && mounted) {
-      setState(() => _barcodeController.text = barcode);
-      // The barcode field lives in Stock & storage: show what was filled.
-      _stockExpanded.value = true;
+    final result = await context.push<ScanResult>(AppRoutes.scannerReturnOnly);
+    if (result == null || !mounted) return;
+    setState(() => _barcodeController.text = result.code);
+    // The barcode field lives in Stock & storage: show what was filled.
+    _stockExpanded.value = true;
+    switch (result.kind) {
+      case CodeKind.aic:
+        await _searchBarcode(result.code);
+      case CodeKind.supplement:
+        await _searchSupplement(result.code);
+      case CodeKind.ean || CodeKind.other:
+        break;
+    }
+  }
+
+  /// Look a supplement [code] up in the register (offering the first
+  /// download) and apply the chosen entry; the code stays in the field when
+  /// nothing matches.
+  Future<void> _searchSupplement(String code) async {
+    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(supplementRegistryServiceProvider);
+    try {
+      if (!await service.hasData()) {
+        if (!mounted) return;
+        final downloaded = await confirmAndDownloadSupplementRegister(
+          context,
+          service,
+        );
+        if (!mounted || downloaded == null) return; // cancelled
+        if (!downloaded) {
+          messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+          return;
+        }
+      }
+      final matches = await service.findByCode(code);
+      if (!mounted) return;
+      final SupplementEntry? entry;
+      switch (supplementRouteFor(matches)) {
+        case SupplementPrefill(entry: final only):
+          entry = only;
+        case SupplementPick(:final entries):
+          entry = await showSupplementPicker(context, entries);
+        case SupplementNotFound():
+          messenger.showSnackBar(
+            SnackBar(content: Text(l10n.supplementNotFound)),
+          );
+          return;
+      }
+      if (entry == null || !mounted) return;
+      setState(() => _applySupplementEntry(entry!));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.autoFilledFromBarcode)),
+      );
+    } catch (e) {
+      debugPrint('Supplement register lookup error: $e');
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
     }
   }
 
@@ -554,17 +616,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                           if (caps.hasCamera)
                             IconButton(
                               icon: const Icon(Icons.qr_code_scanner),
-                              onPressed: () async {
-                                final barcode = await context.push<String>(
-                                  AppRoutes.scannerReturnOnly,
-                                );
-                                if (barcode != null && mounted) {
-                                  setState(
-                                    () => _barcodeController.text = barcode,
-                                  );
-                                  await _searchBarcode(barcode);
-                                }
-                              },
+                              tooltip: l10n.scanBarcodeTooltip,
+                              onPressed: _openScanner,
                             ),
                         ],
                       ),

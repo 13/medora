@@ -28,6 +28,7 @@ import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
 import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
 import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
@@ -380,7 +381,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   void _onCandidateSelected(CodeCandidate candidate) {
     if (_isSearching) return;
     if (widget.returnBarcodeOnly) {
-      _handleCode(candidate.code);
+      _handleCode(candidate.code, kind: candidate.kind);
       return;
     }
     switch (candidate.kind) {
@@ -703,12 +704,17 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   // ── Code lookup ────────────────────────────────────────────
 
-  Future<void> _handleCode(String rawCode) async {
+  /// Looks [rawCode] up in AIFA, or in return-only mode pops it with its
+  /// [kind] as a [ScanResult].
+  Future<void> _handleCode(
+    String rawCode, {
+    CodeKind kind = CodeKind.aic,
+  }) async {
     if (_isSearching) return;
     setState(() => _isSearching = true);
 
     if (widget.returnBarcodeOnly) {
-      if (mounted) context.pop(rawCode);
+      if (mounted) context.pop(ScanResult(rawCode, kind));
       return;
     }
 
@@ -893,7 +899,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
               if (value.isNotEmpty) {
                 Navigator.pop(ctx);
                 final codes = BarcodeLookupDatasource.extractCodes(value);
-                _handleCode(codes.isNotEmpty ? codes.first : value);
+                final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+                if (codes.isNotEmpty) {
+                  _handleCode(codes.first);
+                } else if (isValidEan(digits)) {
+                  _handleCode(digits, kind: CodeKind.ean);
+                } else {
+                  _handleCode(value, kind: CodeKind.other);
+                }
               }
             },
             child: Text(l10n.useBarcode),
