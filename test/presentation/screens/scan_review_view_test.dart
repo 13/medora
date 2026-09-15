@@ -147,15 +147,17 @@ void main() {
     expect(selected, [_aic1, _aic2]);
   });
 
-  testWidgets('busy disables taps', (tester) async {
+  testWidgets('busy disables taps, retake and manual entry', (tester) async {
     _setSurface(tester, const Size(800, 1600));
     final selected = <CodeCandidate>[];
     var retakes = 0;
+    var manual = 0;
     await _pump(
       tester,
       candidates: [_aic1, _aic2, _other],
       onSelected: selected.add,
       onRetake: () => retakes++,
+      onManualEntry: () => manual++,
       busy: true,
     );
 
@@ -168,9 +170,97 @@ void main() {
       warnIfMissed: false,
     );
     await tester.tap(find.text('Neues Foto'), warnIfMissed: false);
+    await tester.tap(find.text('Code manuell eingeben'), warnIfMissed: false);
     await tester.pump();
     expect(selected, isEmpty);
     expect(retakes, 0);
+    expect(manual, 0);
+    final manualButton = tester.widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text('Code manuell eingeben'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+      ),
+    );
+    expect(manualButton.enabled, isFalse);
+  });
+
+  testWidgets('markers expose a numbered button label', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    final handle = tester.ensureSemantics();
+    await _pump(tester, candidates: [_aic1, _aic2]);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('scanMarker1'))),
+      isSemantics(
+        label: '1: 023834118',
+        isButton: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        hasTapAction: true,
+      ),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('busy markers are not enabled for semantics', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    final handle = tester.ensureSemantics();
+    await _pump(tester, candidates: [_aic1], busy: true);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('scanMarker1'))),
+      isSemantics(
+        label: '1: 023834118',
+        isButton: true,
+        hasEnabledState: true,
+        isEnabled: false,
+        hasTapAction: false,
+      ),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('a marker sits at the candidate box scaled to the photo', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pump(tester, candidates: [_aic1]);
+    final photo = tester.getRect(find.byType(InteractiveViewer));
+    // 1000x1000 image in a 45% of 1600 = 720 dp square.
+    expect(photo.size, const Size(720, 720));
+    const scale = 720 / 1000;
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('scanMarker1'))),
+      photo.topLeft +
+          Offset(_aic1.box.left * scale, _aic1.box.top * scale - 20),
+    );
+  });
+
+  testWidgets('rows paint their tint on their own clipped Material', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pump(tester, candidates: [_aic1, _other]);
+    final scheme = Theme.of(
+      tester.element(find.byKey(const ValueKey('scanRow1'))),
+    ).colorScheme;
+
+    Material rowMaterial(int n) => tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey('scanRow$n')),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    final aic = rowMaterial(1);
+    expect(aic.color, scheme.primaryContainer);
+    expect(aic.clipBehavior, Clip.antiAlias);
+    final other = rowMaterial(2);
+    expect(other.type, MaterialType.transparency);
+    expect(other.clipBehavior, Clip.antiAlias);
+    expect(
+      tester.widget<ListTile>(find.byKey(const ValueKey('scanRow1'))).tileColor,
+      isNull,
+    );
   });
 
   testWidgets('no candidates shows the hint and wired buttons', (tester) async {

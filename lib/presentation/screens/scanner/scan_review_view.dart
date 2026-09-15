@@ -218,6 +218,10 @@ class _Photo extends StatelessWidget {
         height: _tapTarget,
         child: Semantics(
           button: true,
+          enabled: select != null,
+          label: '${index + 1}: ${candidate.code}',
+          excludeSemantics: true,
+          onTap: select == null ? null : () => select(candidate),
           child: GestureDetector(
             key: ValueKey('scanMarker${index + 1}'),
             behavior: HitTestBehavior.opaque,
@@ -331,30 +335,38 @@ class _CandidateList extends StatelessWidget {
     final candidate = candidates[index];
     final colors = _kindColors(scheme, candidate.kind);
     final tinted = candidate.kind != CodeKind.other;
-    return ListTile(
-      key: ValueKey('scanRow${index + 1}'),
-      enabled: select != null,
-      tileColor: tinted ? colors.fill : null,
-      textColor: tinted ? colors.onFill : null,
-      iconColor: tinted ? colors.onFill : null,
+    const radius = BorderRadius.all(Radius.circular(12));
+    // The row's own Material paints and clips the tint (and the ink splash),
+    // so it scrolls with the list instead of painting on the Scaffold.
+    return Material(
+      type: tinted ? MaterialType.canvas : MaterialType.transparency,
+      color: tinted ? colors.fill : null,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: radius,
         side: tinted ? BorderSide.none : BorderSide(color: colors.border),
       ),
-      leading: _NumberBadge(
-        number: index + 1,
-        fill: colors.fill,
-        border: colors.border,
-        onFill: colors.onFill,
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        key: ValueKey('scanRow${index + 1}'),
+        enabled: select != null,
+        textColor: tinted ? colors.onFill : null,
+        iconColor: tinted ? colors.onFill : null,
+        shape: const RoundedRectangleBorder(borderRadius: radius),
+        leading: _NumberBadge(
+          number: index + 1,
+          fill: colors.fill,
+          border: colors.border,
+          onFill: colors.onFill,
+        ),
+        title: Text(candidate.code),
+        subtitle: Text(
+          candidate.sourceText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: select == null ? null : () => select(candidate),
       ),
-      title: Text(candidate.code),
-      subtitle: Text(
-        candidate.sourceText,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: select == null ? null : () => select(candidate),
     );
   }
 }
