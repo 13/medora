@@ -468,6 +468,66 @@ void main() {
     });
   });
 
+  group('downloads folder', () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('medora_update_folder_');
+    });
+    tearDown(() => root.delete(recursive: true));
+
+    Directory updatesDir() =>
+        Directory(p.join(root.path, 'updates'))..createSync(recursive: true);
+
+    test('clearDownloads empties updates/ and leaves the folder', () {
+      final updates = updatesDir();
+      File(p.join(updates.path, 'medora-0.2.0-12-universal.apk'))
+        ..createSync()
+        ..writeAsBytesSync(const [1, 2, 3]);
+      File(p.join(updates.path, 'SHA256SUMS.txt')).writeAsStringSync('x');
+
+      AppUpdateService.clearDownloads(root);
+
+      expect(updates.existsSync(), isTrue);
+      expect(updates.listSync(), isEmpty);
+    });
+
+    test('clearDownloads without an updates/ folder is not an error', () {
+      AppUpdateService.clearDownloads(root);
+      expect(Directory(p.join(root.path, 'updates')).existsSync(), isFalse);
+    });
+
+    test('downloadedApk finds the APK, ignoring anything else', () {
+      final updates = updatesDir();
+      File(p.join(updates.path, 'notes.txt')).writeAsStringSync('x');
+      final apk = File(p.join(updates.path, 'medora-0.2.0-12-universal.apk'))
+        ..writeAsBytesSync(const [1, 2, 3]);
+
+      expect(AppUpdateService.downloadedApk(root)?.path, apk.path);
+    });
+
+    test('downloadedApk is null with no folder and with no APK', () {
+      expect(AppUpdateService.downloadedApk(root), isNull);
+      updatesDir();
+      expect(AppUpdateService.downloadedApk(root), isNull);
+    });
+  });
+
+  group('ReleaseInfo.forTag', () {
+    test('describes a release the app only knows by tag', () {
+      final release = ReleaseInfo.forTag('v0.2.0+12')!;
+
+      expect(release.tag, 'v0.2.0+12');
+      expect(release.version, const ReleaseVersion(0, 2, 0, 12));
+      expect(release.title, 'Medora 0.2.0 (12)');
+      expect(release.assets, isEmpty);
+    });
+
+    test('an unusable tag has no release', () {
+      expect(ReleaseInfo.forTag('nightly'), isNull);
+    });
+  });
+
   group('install', () {
     test('hands the path to the injected installer', () async {
       final root = await Directory.systemTemp.createTemp('medora_install_');

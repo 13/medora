@@ -153,6 +153,24 @@ class ReleaseInfo {
     );
   }
 
+  /// A release known only by its tag.
+  ///
+  /// The app persists the tag it handed to the installer, not the whole
+  /// payload; after a restart that tag is all there is to describe the APK
+  /// still sitting in `updates/`. Null when the tag is unusable.
+  static ReleaseInfo? forTag(String tag) {
+    final version = ReleaseVersion.parse(tag);
+    if (version == null) return null;
+    return ReleaseInfo(
+      tag: tag,
+      version: version,
+      title: 'Medora ${version.label}',
+      notes: '',
+      publishedAt: null,
+      assets: const <ReleaseAsset>[],
+    );
+  }
+
   final String tag;
   final ReleaseVersion version;
   final String title;
@@ -386,6 +404,32 @@ class AppUpdateService {
 
     onProgress?.call(1);
     return file;
+  }
+
+  /// Empties `<dir>/updates/`, so an APK that has done its job (or one no
+  /// version of the app will ever install) stops taking up space.
+  ///
+  /// A missing folder is not an error, and a file that refuses to go does not
+  /// stop the rest.
+  static void clearDownloads(Directory dir) {
+    final target = Directory(p.join(dir.path, updatesFolder));
+    if (!target.existsSync()) return;
+    _clearFolder(target);
+  }
+
+  /// The APK waiting in `<dir>/updates/`, or null when there is none.
+  ///
+  /// At most one download is kept ([download] clears the folder first), so
+  /// the first APK found is the one.
+  static File? downloadedApk(Directory dir) {
+    final target = Directory(p.join(dir.path, updatesFolder));
+    if (!target.existsSync()) return null;
+    for (final entity in target.listSync()) {
+      if (entity is File && entity.path.toLowerCase().endsWith('.apk')) {
+        return entity;
+      }
+    }
+    return null;
   }
 
   /// Hands the APK to Android's package installer.

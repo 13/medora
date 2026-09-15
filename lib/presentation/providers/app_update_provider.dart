@@ -30,6 +30,13 @@ const kUpdateLastCheckAt = 'update.last_check_at';
 /// The release tag the user dismissed on the Home banner.
 const kUpdateDismissedTag = 'update.dismissed_tag';
 
+/// The release tag last handed to Android's package installer.
+///
+/// Written before the installer opens and cleared once the running build is
+/// that release (or newer): an installer the user backed out of leaves it in
+/// place, which is how the app knows the APK on disk is still worth offering.
+const kUpdateInstallingTag = 'update.installing_tag';
+
 // ── State ────────────────────────────────────────────────────
 
 /// What the app knows about a newer release right now.
@@ -168,7 +175,30 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   Future<UpdateStatus> build() async {
     _disposed = false;
     ref.onDispose(() => _disposed = true);
-    return const UpdateUnknown();
+    return await _reconcileInstall() ?? const UpdateUnknown();
+  }
+
+  /// Settles what happened to the last install that was started.
+  ///
+  /// Returns null when there is nothing to settle - no install was started,
+  /// or the running build already is that release, in which case the APK is
+  /// deleted and the pref cleared. Returns [UpdateReady] when the release is
+  /// still not installed and the verified APK is still on disk: the user
+  /// backed out of Android's installer, so the sheet offers Install again.
+  Future<UpdateStatus?> _reconcileInstall() async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final tag = prefs.getString(kUpdateInstallingTag);
+    if (tag == null) return null;
+    final dir = await ref.read(updateDownloadDirProvider.future);
+    final pending = ReleaseInfo.forTag(tag);
+    final current = await ref.read(currentReleaseVersionProvider.future);
+    final apk = AppUpdateService.downloadedApk(dir);
+    if (pending == null || apk == null || !pending.version.isNewerThan(current)) {
+      AppUpdateService.clearDownloads(dir);
+      await prefs.remove(kUpdateInstallingTag);
+      return null;
+    }
+    return UpdateReady(pending, apk);
   }
 
   /// True when this build may look for updates at all.
@@ -190,6 +220,13 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   /// APK waiting to install) is never clobbered by a fresh check, forced or
   /// not.
   Future<void> check({bool force = false}) async {
+    // An install started before this check decides what the state even is:
+    // it either succeeded (the download goes) or was backed out of (the APK
+    // stays installable and nothing else is worth reporting).
+    if (await _reconcileInstall() case final restored?) {
+      _emit(restored);
+      return;
+    }
     final current = state.value;
     if (current is UpdateDownloading || current is UpdateReady) return;
     if (!_enabled) {
@@ -259,6 +296,11 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
     final status = state.value;
     if (status is! UpdateReady) return;
     try {
+      // Written first: the installer replaces this process, so anything
+      // recorded after the hand-over would never be written at all.
+      await ref
+          .read(sharedPreferencesProvider)
+          .setString(kUpdateInstallingTag, status.release.tag);
       await ref.read(appUpdateServiceProvider).install(status.file);
     } on UpdateException catch (error) {
       _emit(UpdateFailed(error));
