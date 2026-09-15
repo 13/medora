@@ -567,6 +567,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get supplementSelectProduct => 'Select product';
 
   @override
+  String scanAlternativeCodeConfirm(
+    String read,
+    String code,
+    String product,
+    String company,
+  ) {
+    return 'Code $read was not found. Did you mean $code: $product ($company)?';
+  }
+
+  @override
+  String scanAlternativeCodeConfirmNoCompany(
+    String read,
+    String code,
+    String product,
+  ) {
+    return 'Code $read was not found. Did you mean $code: $product?';
+  }
+
+  @override
+  String get scanAlternativeCodeUse => 'Use';
+
+  @override
   String get settings => 'Settings';
 
   @override

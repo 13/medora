@@ -225,8 +225,47 @@ void main() {
     },
   );
 
+  testWidgets('a supplement code missing from the register asks before using a '
+      'matching alternative', (tester) async {
+    final registry = _FakeRegistry(const [_zinco]);
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('707018', CodeKind.supplement, alternatives: ['107018']),
+      overrides: [
+        supplementRegistryServiceProvider.overrideWithValue(registry),
+      ],
+    );
+
+    await scanWithChip(tester);
+
+    // Review I1: nothing is prefilled before the user confirms.
+    expect(registry.lookups, ['707018', '107018']);
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(
+      find.text(
+        l10n.scanAlternativeCodeConfirm(
+          '707018',
+          '107018',
+          'ZINCO-C',
+          'SYGNUM SRL',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(field('ZINCO-C'), findsNothing);
+    expect(field('707018'), findsOneWidget);
+
+    await tester.tap(find.text(l10n.scanAlternativeCodeUse));
+    await tester.pumpAndSettle();
+
+    expect(field('ZINCO-C'), findsOneWidget);
+    expect(field('107018'), findsOneWidget);
+    expect(field('707018'), findsNothing);
+    expect(find.text(l10n.supplementNotFound), findsNothing);
+  });
+
   testWidgets(
-    'a supplement code missing from the register uses a matching alternative',
+    'cancelling the alternative keeps the code as read and says not found',
     (tester) async {
       final registry = _FakeRegistry(const [_zinco]);
       await pumpWithFakeScanner(
@@ -242,15 +281,91 @@ void main() {
       );
 
       await scanWithChip(tester);
-
-      expect(registry.lookups, ['707018', '107018']);
-      expect(field('ZINCO-C'), findsOneWidget);
-      expect(field('107018'), findsOneWidget);
-      expect(field('707018'), findsNothing);
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
-      expect(find.text(l10n.supplementNotFound), findsNothing);
+      await tester.tap(find.text(l10n.cancel));
+      await tester.pumpAndSettle();
+
+      expect(field('707018'), findsOneWidget);
+      expect(field('107018'), findsNothing);
+      expect(field('ZINCO-C'), findsNothing);
+      expect(find.text(l10n.supplementNotFound), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'cancelling the picker for an alternative keeps the code as read',
+    (tester) async {
+      // Review M6: the field held the unconfirmed alternative.
+      const forte = SupplementEntry(
+        code: '107018',
+        product: 'ZINCO-C FORTE',
+        company: 'SYGNUM SRL',
+      );
+      final registry = _FakeRegistry(const [_zinco, forte]);
+      await pumpWithFakeScanner(
+        tester,
+        const ScanResult(
+          '707018',
+          CodeKind.supplement,
+          alternatives: ['107018'],
+        ),
+        overrides: [
+          supplementRegistryServiceProvider.overrideWithValue(registry),
+        ],
+      );
+
+      await scanWithChip(tester);
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.supplementSelectProduct), findsOneWidget);
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.supplementSelectProduct), findsNothing);
+      expect(field('707018'), findsOneWidget);
+      expect(field('107018'), findsNothing);
+      expect(field('ZINCO-C'), findsNothing);
+    },
+  );
+
+  testWidgets('a product picked for an alternative is confirmed before use', (
+    tester,
+  ) async {
+    const forte = SupplementEntry(
+      code: '107018',
+      product: 'ZINCO-C FORTE',
+      company: 'SYGNUM SRL',
+    );
+    final registry = _FakeRegistry(const [_zinco, forte]);
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('707018', CodeKind.supplement, alternatives: ['107018']),
+      overrides: [
+        supplementRegistryServiceProvider.overrideWithValue(registry),
+      ],
+    );
+
+    await scanWithChip(tester);
+    await tester.tap(find.text('ZINCO-C FORTE'));
+    await tester.pumpAndSettle();
+
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(
+      find.text(
+        l10n.scanAlternativeCodeConfirm(
+          '707018',
+          '107018',
+          'ZINCO-C FORTE',
+          'SYGNUM SRL',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(field('707018'), findsOneWidget);
+    await tester.tap(find.text(l10n.scanAlternativeCodeUse));
+    await tester.pumpAndSettle();
+    expect(field('ZINCO-C FORTE'), findsOneWidget);
+    expect(field('107018'), findsOneWidget);
+  });
 
   testWidgets('no matching alternative keeps the primary code and says so', (
     tester,

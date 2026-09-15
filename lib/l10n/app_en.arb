@@ -276,6 +276,25 @@
   "supplementRegisterDownloadPrompt": "Supplement codes are looked up in the Ministry of Health register. Download it now (about 2 MB)? An internet connection is required.",
   "supplementNotFound": "Supplement not found in the register — enter details manually",
   "supplementSelectProduct": "Select product",
+  "scanAlternativeCodeConfirm": "Code {read} was not found. Did you mean {code}: {product} ({company})?",
+  "@scanAlternativeCodeConfirm": {
+    "description": "Asks before using a register or AIFA match found only through another OCR reading of the scanned code",
+    "placeholders": {
+      "read": { "type": "String" },
+      "code": { "type": "String" },
+      "product": { "type": "String" },
+      "company": { "type": "String" }
+    }
+  },
+  "scanAlternativeCodeConfirmNoCompany": "Code {read} was not found. Did you mean {code}: {product}?",
+  "@scanAlternativeCodeConfirmNoCompany": {
+    "placeholders": {
+      "read": { "type": "String" },
+      "code": { "type": "String" },
+      "product": { "type": "String" }
+    }
+  },
+  "scanAlternativeCodeUse": "Use",
 
   "settings": "Settings",
   "about": "About",

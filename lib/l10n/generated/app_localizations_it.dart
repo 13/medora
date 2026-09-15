@@ -572,6 +572,28 @@ class AppLocalizationsIt extends AppLocalizations {
   String get supplementSelectProduct => 'Seleziona prodotto';
 
   @override
+  String scanAlternativeCodeConfirm(
+    String read,
+    String code,
+    String product,
+    String company,
+  ) {
+    return 'Codice $read non trovato. Intendevi $code: $product ($company)?';
+  }
+
+  @override
+  String scanAlternativeCodeConfirmNoCompany(
+    String read,
+    String code,
+    String product,
+  ) {
+    return 'Codice $read non trovato. Intendevi $code: $product?';
+  }
+
+  @override
+  String get scanAlternativeCodeUse => 'Usa';
+
+  @override
   String get settings => 'Impostazioni';
 
   @override

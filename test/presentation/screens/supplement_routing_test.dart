@@ -72,6 +72,35 @@ void main() {
     });
   });
 
+  group('findByCodes', () {
+    test('tries the code, then alternatives, with any lookup', () async {
+      final lookups = <String>[];
+      Future<List<String>> lookup(String code) async {
+        lookups.add(code);
+        return code == '134567891' ? ['Tachipirina'] : const [];
+      }
+
+      final found = await findByCodes(lookup, '734567891', const [
+        '174567891',
+        '134567891',
+        '130000000',
+      ]);
+      expect(found.code, '134567891');
+      expect(found.matches, ['Tachipirina']);
+      expect(lookups, ['734567891', '174567891', '134567891']);
+    });
+
+    test('no match keeps the code with no matches', () async {
+      final found = await findByCodes(
+        (_) async => const <String>[],
+        '734567891',
+        const ['134567891'],
+      );
+      expect(found.code, '734567891');
+      expect(found.matches, isEmpty);
+    });
+  });
+
   test('the Add Medication location carries the encoded code', () {
     expect(
       addMedicationWithBarcode('107018'),

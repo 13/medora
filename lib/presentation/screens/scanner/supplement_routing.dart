@@ -36,21 +36,29 @@ SupplementRoute supplementRouteFor(List<SupplementEntry> matches) =>
       _ => SupplementPick(matches),
     };
 
-/// The register matches for a scanned supplement [code]: when [code] has
-/// none, each of its [alternatives] (other OCR readings, see
-/// `CodeCandidate.alternatives`) in order. Returns the first code with
-/// matches, else [code] with no matches.
-Future<({String code, List<SupplementEntry> matches})> findSupplementByCodes(
-  SupplementRegistryService service,
+/// The [lookup] matches for a scanned [code]: when [code] has none, each of
+/// its [alternatives] (other OCR readings, see `CodeCandidate.alternatives`)
+/// in order. Returns the first code with matches, else [code] with no
+/// matches. A returned code other than [code] was not read as such: confirm
+/// it with the user before using it (`confirmAlternativeCode`).
+Future<({String code, List<T> matches})> findByCodes<T>(
+  Future<List<T>> Function(String code) lookup,
   String code, [
   List<String> alternatives = const [],
 ]) async {
   for (final candidate in [code, ...alternatives]) {
-    final matches = await service.findByCode(candidate);
+    final matches = await lookup(candidate);
     if (matches.isNotEmpty) return (code: candidate, matches: matches);
   }
-  return (code: code, matches: const <SupplementEntry>[]);
+  return (code: code, matches: <T>[]);
 }
+
+/// [findByCodes] in the food-supplement register.
+Future<({String code, List<SupplementEntry> matches})> findSupplementByCodes(
+  SupplementRegistryService service,
+  String code, [
+  List<String> alternatives = const [],
+]) => findByCodes(service.findByCode, code, alternatives);
 
 /// Add Medication with [code] in the barcode field.
 String addMedicationWithBarcode(String code) =>

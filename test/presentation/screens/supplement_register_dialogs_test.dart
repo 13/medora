@@ -85,4 +85,67 @@ void main() {
 
     expect(await picked, forte);
   });
+
+  group('confirmAlternativeCode', () {
+    testWidgets('names the code as read and the product found; Use is true', (
+      tester,
+    ) async {
+      final context = await pumpHost(tester);
+      final confirmed = confirmAlternativeCode(
+        context,
+        read: '707018',
+        code: '107018',
+        product: 'ZINCO-C',
+        company: 'SYGNUM SRL',
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Code 707018 was not found. '
+          'Did you mean 107018: ZINCO-C (SYGNUM SRL)?',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Use'));
+      await tester.pumpAndSettle();
+      expect(await confirmed, isTrue);
+      expect(find.byType(AlertDialog), findsNothing);
+    });
+
+    testWidgets('Cancel is false', (tester) async {
+      final context = await pumpHost(tester);
+      final confirmed = confirmAlternativeCode(
+        context,
+        read: '707018',
+        code: '107018',
+        product: 'ZINCO-C',
+        company: 'SYGNUM SRL',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(await confirmed, isFalse);
+    });
+
+    testWidgets('dismissing is false', (tester) async {
+      final context = await pumpHost(tester);
+      final confirmed = confirmAlternativeCode(
+        context,
+        read: '734567891',
+        code: '134567891',
+        product: 'Tachipirina',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Code 734567891 was not found. Did you mean 134567891: Tachipirina?',
+        ),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(await confirmed, isFalse);
+    });
+  });
 }

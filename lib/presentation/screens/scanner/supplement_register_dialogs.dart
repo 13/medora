@@ -102,6 +102,39 @@ class _SupplementRegisterDownloadDialogState
   }
 }
 
+/// Asks whether to use [code], found as [product] (by [company]), in place
+/// of the code as [read] that was not found (a lookup matched only another
+/// OCR reading of it). True for Use; false for Cancel or when dismissed.
+Future<bool> confirmAlternativeCode(
+  BuildContext context, {
+  required String read,
+  required String code,
+  required String product,
+  String? company,
+}) async {
+  final l10n = AppLocalizations.of(context);
+  final message = company == null || company.trim().isEmpty
+      ? l10n.scanAlternativeCodeConfirmNoCompany(read, code, product)
+      : l10n.scanAlternativeCodeConfirm(read, code, product, company);
+  final use = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(l10n.scanAlternativeCodeUse),
+        ),
+      ],
+    ),
+  );
+  return use ?? false;
+}
+
 /// Lets the user choose one of several register [entries] for one code.
 Future<SupplementEntry?> showSupplementPicker(
   BuildContext context,

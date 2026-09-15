@@ -1114,6 +1114,33 @@ abstract class AppLocalizations {
   /// **'Select product'**
   String get supplementSelectProduct;
 
+  /// Asks before using a register or AIFA match found only through another OCR reading of the scanned code
+  ///
+  /// In en, this message translates to:
+  /// **'Code {read} was not found. Did you mean {code}: {product} ({company})?'**
+  String scanAlternativeCodeConfirm(
+    String read,
+    String code,
+    String product,
+    String company,
+  );
+
+  /// No description provided for @scanAlternativeCodeConfirmNoCompany.
+  ///
+  /// In en, this message translates to:
+  /// **'Code {read} was not found. Did you mean {code}: {product}?'**
+  String scanAlternativeCodeConfirmNoCompany(
+    String read,
+    String code,
+    String product,
+  );
+
+  /// No description provided for @scanAlternativeCodeUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Use'**
+  String get scanAlternativeCodeUse;
+
   /// No description provided for @settings.
   ///
   /// In en, this message translates to:

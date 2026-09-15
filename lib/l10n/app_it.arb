@@ -188,6 +188,9 @@
   "supplementRegisterDownloadPrompt": "I codici degli integratori vengono cercati nel registro del Ministero della Salute. Scaricarlo ora (circa 2 MB)? Serve una connessione a internet.",
   "supplementNotFound": "Integratore non trovato nel registro — inserisci i dati manualmente",
   "supplementSelectProduct": "Seleziona prodotto",
+  "scanAlternativeCodeConfirm": "Codice {read} non trovato. Intendevi {code}: {product} ({company})?",
+  "scanAlternativeCodeConfirmNoCompany": "Codice {read} non trovato. Intendevi {code}: {product}?",
+  "scanAlternativeCodeUse": "Usa",
 
   "settings": "Impostazioni",
 

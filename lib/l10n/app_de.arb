@@ -188,6 +188,9 @@
   "supplementRegisterDownloadPrompt": "Codes von Nahrungsergänzungsmitteln werden im Register des Gesundheitsministeriums nachgeschlagen. Jetzt herunterladen (ca. 2 MB)? Dafür ist eine Internetverbindung nötig.",
   "supplementNotFound": "Nicht im Register gefunden — bitte manuell eingeben",
   "supplementSelectProduct": "Produkt auswählen",
+  "scanAlternativeCodeConfirm": "Code {read} wurde nicht gefunden. Meinten Sie {code}: {product} ({company})?",
+  "scanAlternativeCodeConfirmNoCompany": "Code {read} wurde nicht gefunden. Meinten Sie {code}: {product}?",
+  "scanAlternativeCodeUse": "Verwenden",
 
   "settings": "Einstellungen",
 

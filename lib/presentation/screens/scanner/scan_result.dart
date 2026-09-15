@@ -5,7 +5,8 @@
 /// right place (AIFA for AIC codes, the food-supplement register for
 /// supplement codes) or just keep it (EAN and other numbers). Supplement
 /// and AIC codes carry the candidate's alternative readings, tried in order
-/// when the code itself is not in the register.
+/// when the code itself is not found (in the register or in AIFA); a match
+/// found only through an alternative is used after the user confirms it.
 library;
 
 import 'package:flutter/foundation.dart';

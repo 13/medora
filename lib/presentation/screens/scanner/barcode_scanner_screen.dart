@@ -613,7 +613,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
     switch (candidate.kind) {
       case CodeKind.aic:
-        _handleCode(candidate.code);
+        _handleCode(candidate.code, alternatives: candidate.alternatives);
       case CodeKind.supplement:
         _openSupplement(candidate);
       case CodeKind.ean:
@@ -625,7 +625,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   /// Looks the code up in the food-supplement register (offering the
   /// first download), then its alternative readings when it is not there,
-  /// and opens Add Medication prefilled with the code that matched, a picker
+  /// and opens Add Medication prefilled with the code that matched (after
+  /// the user confirms a match found only through an alternative), a picker
   /// for several products, or Add Medication with just the scanned code.
   Future<void> _openSupplement(CodeCandidate candidate) async {
     final code = candidate.code;
@@ -658,18 +659,38 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       );
       if (!mounted) return;
       setState(() => _isSearching = false);
+      final SupplementEntry? entry;
       switch (supplementRouteFor(found.matches)) {
-        case SupplementPrefill(:final entry):
-          _selectSupplement(entry, found.code);
+        case SupplementPrefill(entry: final only):
+          entry = only;
         case SupplementPick(:final entries):
-          final picked = await showSupplementPicker(context, entries);
-          if (picked != null && mounted) _selectSupplement(picked, found.code);
+          entry = await showSupplementPicker(context, entries);
         case SupplementNotFound():
           _leaveAndPush(
             addMedicationWithBarcode(code),
             message: l10n.supplementNotFound,
           );
+          return;
       }
+      if (entry == null || !mounted) return;
+      if (found.code != code) {
+        final use = await confirmAlternativeCode(
+          context,
+          read: code,
+          code: found.code,
+          product: entry.product,
+          company: entry.company,
+        );
+        if (!mounted) return;
+        if (!use) {
+          _leaveAndPush(
+            addMedicationWithBarcode(code),
+            message: l10n.supplementNotFound,
+          );
+          return;
+        }
+      }
+      _selectSupplement(entry, found.code);
     } catch (e) {
       debugPrint('Supplement register lookup error: $e');
       if (!mounted) return;
@@ -955,7 +976,12 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
     final l10n = AppLocalizations.of(context);
     try {
-      final results = await AifaCacheService.instance.search(rawCode);
+      final found = await findByCodes(
+        AifaCacheService.instance.search,
+        rawCode,
+        alternatives,
+      );
+      final results = found.matches;
       if (!mounted) return;
       setState(() => _isSearching = false);
 
@@ -968,9 +994,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       }
 
       if (results.length == 1) {
-        await _selectResult(results.first, rawCode);
+        await _selectResult(results.first, found.code, read: rawCode);
       } else {
-        await _showResultPicker(results, rawCode);
+        await _showResultPicker(results, found.code, read: rawCode);
       }
     } catch (e) {
       if (mounted) {
@@ -984,8 +1010,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   Future<void> _showResultPicker(
     List<AifaSearchResult> results,
-    String code,
-  ) async {
+    String code, {
+    required String read,
+  }) async {
     final l10n = AppLocalizations.of(context);
 
     final selected = await showModalBottomSheet<AifaSearchResult>(
@@ -1093,12 +1120,35 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     );
 
     if (selected != null && mounted) {
-      await _selectResult(selected, code);
+      await _selectResult(selected, code, read: read);
     }
   }
 
-  Future<void> _selectResult(AifaSearchResult result, String code) async {
+  /// Opens Add Medication with the AIFA [result] for [code]; when [code] is
+  /// an alternative reading of the code as [read], only after the user
+  /// confirms it (declined: "not found", staying on the photo).
+  Future<void> _selectResult(
+    AifaSearchResult result,
+    String code, {
+    required String read,
+  }) async {
     final l10n = AppLocalizations.of(context);
+    if (code != read) {
+      final use = await confirmAlternativeCode(
+        context,
+        read: read,
+        code: code,
+        product: result.name,
+        company: result.manufacturer,
+      );
+      if (!mounted) return;
+      if (!use) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
+        return;
+      }
+    }
     _leaveAndPush(
       addMedicationWithBarcode(code),
       message: l10n.autoFilledFromBarcode,

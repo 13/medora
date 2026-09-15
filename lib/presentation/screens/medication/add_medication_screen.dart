@@ -239,7 +239,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _stockExpanded.value = true;
     switch (result.kind) {
       case CodeKind.aic:
-        await _searchBarcode(result.code);
+        await _searchBarcode(result.code, result.alternatives);
       case CodeKind.supplement:
         await _searchSupplement(result.code, result.alternatives);
       case CodeKind.ean || CodeKind.other:
@@ -249,8 +249,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
 
   /// Look a supplement [code] up in the register (offering the first
   /// download), then its [alternatives] (other OCR readings) in order, and
-  /// apply the chosen entry with the code that matched; the scanned code
-  /// stays in the field when nothing matches.
+  /// apply the chosen entry with the code that matched. A match found only
+  /// through an alternative is confirmed first; the scanned code stays in
+  /// the field when nothing matches, the picker is dismissed or the
+  /// alternative is declined.
   Future<void> _searchSupplement(
     String code, [
     List<String> alternatives = const [],
@@ -274,9 +276,6 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       }
       final found = await findSupplementByCodes(service, code, alternatives);
       if (!mounted) return;
-      if (found.matches.isNotEmpty && found.code != code) {
-        setState(() => _barcodeController.text = found.code);
-      }
       final SupplementEntry? entry;
       switch (supplementRouteFor(found.matches)) {
         case SupplementPrefill(entry: final only):
@@ -290,7 +289,26 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           return;
       }
       if (entry == null || !mounted) return;
-      setState(() => _applySupplementEntry(entry!));
+      if (found.code != code) {
+        final use = await confirmAlternativeCode(
+          context,
+          read: code,
+          code: found.code,
+          product: entry.product,
+          company: entry.company,
+        );
+        if (!mounted) return;
+        if (!use) {
+          messenger.showSnackBar(
+            SnackBar(content: Text(l10n.supplementNotFound)),
+          );
+          return;
+        }
+      }
+      setState(() {
+        _barcodeController.text = found.code;
+        _applySupplementEntry(entry!);
+      });
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.autoFilledFromBarcode)),
       );
@@ -302,8 +320,13 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     }
   }
 
-  /// Search AIFA database by code and apply the result.
-  Future<void> _searchBarcode(String barcode) async {
+  /// Search AIFA database by code, then by its [alternatives] (other OCR
+  /// readings) in order, and apply the result; a result found only through
+  /// an alternative is confirmed first.
+  Future<void> _searchBarcode(
+    String barcode, [
+    List<String> alternatives = const [],
+  ]) async {
     final l10n = AppLocalizations.of(context);
 
     // Show loading
@@ -325,7 +348,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
 
     try {
-      final results = await AifaCacheService.instance.search(barcode);
+      final found = await findByCodes(
+        AifaCacheService.instance.search,
+        barcode,
+        alternatives,
+      );
+      final results = found.matches;
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -347,6 +375,23 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
             );
 
       if (selected == null || !mounted) return;
+      if (found.code != barcode) {
+        final use = await confirmAlternativeCode(
+          context,
+          read: barcode,
+          code: found.code,
+          product: selected.name,
+          company: selected.manufacturer,
+        );
+        if (!mounted) return;
+        if (!use) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(l10n.barcodeNotFound)));
+          return;
+        }
+        _barcodeController.text = found.code;
+      }
 
       _applyAifaResult(selected);
       setState(() {}); // rebuild
