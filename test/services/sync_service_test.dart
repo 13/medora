@@ -624,6 +624,22 @@ void main() {
       },
     );
 
+    test('force pull forgets every failure record', () async {
+      final h = Harness();
+      await seedFailingMedication(h);
+      await h.service.syncAll();
+      expect(await h.failures.get('medications', 'bad'), isNotNull);
+
+      h.service.debugSetStateForTest(SyncState.idle);
+      await h.service.forcePull();
+
+      expect(
+        await h.failures.listAll(),
+        isEmpty,
+        reason: 'the rows those records described no longer exist',
+      );
+    });
+
     test('discardFailedRow deletes a row the server does not have', () async {
       final h = Harness();
       await seedFailingMedication(h);

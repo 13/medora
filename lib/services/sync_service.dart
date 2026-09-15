@@ -169,6 +169,9 @@ class SyncService {
   /// Wipe local rows and pull everything again.
   Future<SyncReport?> forcePull() => _run('force pull', (report) async {
     await _cursors.clear();
+    // Every local row is about to be replaced by the server's, so no row is
+    // still waiting to be pushed and no backoff record means anything.
+    await _failures.clearAll();
     await AppDatabase.instance.clearAllData();
     await _pullAll(report, force: true);
   });
