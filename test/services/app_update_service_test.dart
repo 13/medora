@@ -375,6 +375,28 @@ void main() {
       );
     });
 
+    test('a checksum mismatch never reports 1.0 progress', () async {
+      final service = AppUpdateService(
+        repo: _repo,
+        client: downloadClient(sums: sumsFor('00' * 32)),
+      );
+      final release = releaseWith(withChecksums: true);
+      final progress = <double>[];
+      await expectLater(
+        service.download(
+          release,
+          release.assets.first,
+          root,
+          onProgress: progress.add,
+        ),
+        throwsA(isA<UpdateException>()),
+      );
+      // 1.0 means "installable": it is only reported once size and checksum
+      // verification passed.
+      expect(progress, isNot(contains(1.0)));
+      expect(progress.every((v) => v >= 0.0 && v <= 0.99), isTrue);
+    });
+
     test('an unreadable SHA256SUMS.txt is a checksum failure', () async {
       final service = AppUpdateService(repo: _repo, client: downloadClient());
       final release = releaseWith(withChecksums: true);

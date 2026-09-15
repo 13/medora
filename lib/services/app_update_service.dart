@@ -219,6 +219,10 @@ class AppUpdateService {
   static const apkMimeType = 'application/vnd.android.package-archive';
   static const _universalSuffix = '-universal.apk';
 
+  /// Highest progress reported while bytes are still arriving; 1.0 is kept
+  /// for a download that passed verification.
+  static const _almostDone = 0.99;
+
   /// `<owner>/<name>` on GitHub, from `AppConfig.updateRepo`.
   final String repo;
 
@@ -337,7 +341,9 @@ class AppUpdateService {
         hasher.add(chunk);
         received += chunk.length;
         if (asset.size > 0) {
-          onProgress?.call((received / asset.size).clamp(0, 1));
+          // Stops just short of 1.0: 100% means "verified and installable",
+          // which only the size and checksum checks below can decide.
+          onProgress?.call((received / asset.size).clamp(0, _almostDone));
         }
       }
       await sink.flush();
