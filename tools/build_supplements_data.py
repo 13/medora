@@ -9,6 +9,7 @@ of the "COD MINSAN" / notification code printed on supplement labels.
 Usage:
   tools/build_supplements_data.py [--pdf PATH] [--out integratori.csv.gz]
                                   [--publish [--repo OWNER/NAME]]
+  tools/build_supplements_data.py --self-test   # offline checks, no download
 
 Requires Python 3 (stdlib only) and `pdftotext` (poppler-utils); --publish
 also needs an authenticated `gh`. Without --pdf the script fetches
@@ -32,6 +33,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -56,16 +58,41 @@ WORD_RE = re.compile(
 
 def fetch(url: str) -> bytes:
     req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept-Language': 'it-IT,it;q=0.9'})
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        return resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f'download failed: HTTP {e.code} {e.reason} for {url}; {BLOCKED_HINT}')
+    except urllib.error.URLError as e:
+        raise SystemExit(f'download failed: {e.reason} for {url}')
+
+
+def _pick_latest(names):
+    """The register PDF path with the highest numeric suffix.
+
+    >>> _pick_latest(['/f/INTEGRATORI_NOTIFICATI_ORD_PROD_9.pdf',
+    ...               '/f/INTEGRATORI_NOTIFICATI_ORD_PROD_10.pdf'])
+    '/f/INTEGRATORI_NOTIFICATI_ORD_PROD_10.pdf'
+    >>> _pick_latest(['/f/INTEGRATORI_NOTIFICATI_ORD_PROD_123.pdf'])
+    '/f/INTEGRATORI_NOTIFICATI_ORD_PROD_123.pdf'
+    """
+    return max(names, key=lambda n: int(re.search(r'_(\d+)\.pdf$', n)[1]))
+
+
+def self_test() -> int:
+    """Runs the doctests of this module (no network, no pdftotext)."""
+    import doctest
+    failed, attempted = doctest.testmod(sys.modules[__name__])
+    print(f'self-test: {attempted - failed}/{attempted} checks passed', file=sys.stderr)
+    return 1 if failed else 0
 
 
 def discover_pdf_url() -> str:
     page = fetch(REGISTER_PAGE).decode('utf-8', 'ignore').replace('\\u002F', '/')
-    names = sorted(set(re.findall(r'/new/sites/default/files/INTEGRATORI_NOTIFICATI_ORD_PROD_\d+\.pdf', page)))
+    names = set(re.findall(r'/new/sites/default/files/INTEGRATORI_NOTIFICATI_ORD_PROD_\d+\.pdf', page))
     if not names:
-        raise SystemExit('register PDF link not found on the register page')
-    return BASE + names[-1]
+        raise SystemExit(f'register PDF link not found on the register page; {BLOCKED_HINT}')
+    return BASE + _pick_latest(names)
 
 
 def source_updated(pdf: Path):
@@ -168,18 +195,18 @@ def main() -> int:
     ap.add_argument('--publish', action='store_true',
                     help=f'upload the CSV and meta JSON to the {RELEASE_TAG} pre-release with gh')
     ap.add_argument('--repo', default=DEFAULT_REPO, help=f'GitHub repository (default {DEFAULT_REPO})')
+    ap.add_argument('--self-test', action='store_true', help='run the offline self-checks and exit')
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
 
     out = Path(args.out)
     meta_path = Path(args.meta) if args.meta else out.with_name('integratori.meta.json')
     with tempfile.TemporaryDirectory() as tmp:
         pdf = Path(args.pdf) if args.pdf else Path(tmp) / 'register.pdf'
-        source = str(pdf.resolve()) if args.pdf else None
+        # The meta file is published: never record a local absolute path.
+        source = pdf.name if args.pdf else discover_pdf_url()
         if not args.pdf:
-            try:
-                source = discover_pdf_url()
-            except UnicodeDecodeError as e:
-                raise SystemExit(f'register page unreadable ({e}); {BLOCKED_HINT}')
             print('downloading', source, file=sys.stderr)
             pdf.write_bytes(fetch(source))
         with pdf.open('rb') as f:

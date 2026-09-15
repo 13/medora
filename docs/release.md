@@ -247,7 +247,12 @@ workflow: refresh the data **monthly, from a machine in Italy**, with Python 3,
 tools/build_supplements_data.py --publish            # default repo 13/medora
 tools/build_supplements_data.py --publish --repo OWNER/NAME
 tools/build_supplements_data.py --pdf register.pdf   # convert a local PDF only
+tools/build_supplements_data.py --self-test          # offline self-checks
 ```
+
+`--self-test` runs the script's doctests (for example `_pick_latest`, which
+picks the register PDF with the highest numeric suffix, so `_10` beats `_9`)
+without network access or `pdftotext`; run it after editing the script.
 
 `--publish` uploads both files with `gh release upload data-integratori …
 --clobber` and creates the pre-release if it is missing. The script refuses to
