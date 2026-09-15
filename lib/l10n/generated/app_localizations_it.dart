@@ -1560,6 +1560,16 @@ class AppLocalizationsIt extends AppLocalizations {
       'Nessun pacchetto di installazione per questo dispositivo';
 
   @override
+  String get updateCancel => 'Annulla il download';
+
+  @override
+  String get updateInstallExplainTitle => 'Installa l\'aggiornamento';
+
+  @override
+  String get updateInstallExplainBody =>
+      'Android ti chiederà di consentire a Medora di installare app, poi aprirà il programma di installazione. I tuoi dati restano sul dispositivo.';
+
+  @override
   String get backupData => 'Backup dei dati';
 
   @override
@@ -1601,6 +1611,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String restoreSummary(String created, int rows, int photos) {
     return 'Creato $created · $rows righe · $photos foto';
   }
+
+  @override
+  String get restoreInProgress => 'Ripristino in corso…';
 
   @override
   String restoreDone(int rows) {
@@ -1668,6 +1681,18 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get cloudTestFailed =>
       'Impossibile raggiungere il progetto con questi valori';
+
+  @override
+  String get cloudProbeBadKey =>
+      'Raggiungibile, ma la chiave è stata rifiutata';
+
+  @override
+  String get cloudProbeTimeout => 'Il progetto non ha risposto in tempo';
+
+  @override
+  String cloudProbeHttpError(int code) {
+    return 'Il progetto ha risposto con HTTP $code';
+  }
 
   @override
   String get cloudInvalidUrl =>

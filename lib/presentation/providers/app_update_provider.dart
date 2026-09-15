@@ -17,7 +17,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/presentation/providers/app_config_provider.dart';
-import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/services/app_update_service.dart';
 import 'package:medora/services/connectivity_service.dart';
@@ -29,6 +29,13 @@ const kUpdateLastCheckAt = 'update.last_check_at';
 
 /// The release tag the user dismissed on the Home banner.
 const kUpdateDismissedTag = 'update.dismissed_tag';
+
+/// The release tag last handed to Android's package installer.
+///
+/// Written before the installer opens and cleared once the running build is
+/// that release (or newer): an installer the user backed out of leaves it in
+/// place, which is how the app knows the APK on disk is still worth offering.
+const kUpdateInstallingTag = 'update.installing_tag';
 
 // ── State ────────────────────────────────────────────────────
 
@@ -164,11 +171,50 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
 
   bool _disposed = false;
 
+  /// Which download owns the state.
+  ///
+  /// [download] takes the next number for itself and [cancelDownload] burns
+  /// the current one, so "was I cancelled?" and "am I still the download the
+  /// user is waiting for?" are the same question - and a download started
+  /// while an older one is still unwinding cannot be answered by that older
+  /// one. Nothing resets it: a generation is spent once and never returns.
+  int _downloadGeneration = 0;
+
+  /// The release the current generation is downloading, so cancelling can put
+  /// it back on offer - [UpdateDownloading] does not carry the asset. Set by
+  /// [download] beside the generation it belongs to.
+  UpdateAvailable? _downloadTarget;
+
   @override
   Future<UpdateStatus> build() async {
     _disposed = false;
     ref.onDispose(() => _disposed = true);
-    return const UpdateUnknown();
+    return await _reconcileInstall() ?? const UpdateUnknown();
+  }
+
+  /// Settles what happened to the last install that was started.
+  ///
+  /// Returns null when there is nothing to settle - no install was started,
+  /// or the running build already is that release, in which case the APK is
+  /// deleted and the pref cleared. Returns [UpdateReady] when the release is
+  /// still not installed and the verified APK is still on disk: the user
+  /// backed out of Android's installer, so the sheet offers Install again.
+  Future<UpdateReady?> _reconcileInstall() async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final tag = prefs.getString(kUpdateInstallingTag);
+    if (tag == null) return null;
+    final dir = await ref.read(updateDownloadDirProvider.future);
+    final pending = ReleaseInfo.forTag(tag);
+    final current = await ref.read(currentReleaseVersionProvider.future);
+    final apk = AppUpdateService.downloadedApk(dir);
+    if (pending == null ||
+        apk == null ||
+        !pending.version.isNewerThan(current)) {
+      AppUpdateService.clearDownloads(dir);
+      await prefs.remove(kUpdateInstallingTag);
+      return null;
+    }
+    return UpdateReady(pending, apk);
   }
 
   /// True when this build may look for updates at all.
@@ -186,20 +232,32 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   ///
   /// [force] is the Settings button: it skips the 24 h throttle but not the
   /// platform, configuration and connectivity gates - none of those can be
-  /// satisfied by trying harder. A download already in flight (or a verified
-  /// APK waiting to install) is never clobbered by a fresh check, forced or
-  /// not.
+  /// satisfied by trying harder. A download in flight, and an APK this
+  /// session downloaded and verified, are never clobbered by a check.
+  ///
+  /// An install that was started before and backed out of is not in that
+  /// group. It is reported first, so the sheet can offer Install again right
+  /// away, but the check goes on: `update.installing_tag` only records that
+  /// the installer was opened once, and a release newer than the APK on disk
+  /// has to be able to take over. Nothing newer means the pending install
+  /// stands - including when GitHub cannot be reached at all.
   Future<void> check({bool force = false}) async {
+    final pending = await _reconcileInstall();
+    if (pending != null) _emit(pending);
+
     final current = state.value;
-    if (current is UpdateDownloading || current is UpdateReady) return;
+    if (current is UpdateDownloading) return;
+    if (pending == null && current is UpdateReady) return;
     if (!_enabled) {
-      _emit(const UpdateUnknown());
+      if (pending == null) _emit(const UpdateUnknown());
       return;
     }
     if (!ref.read(updateIsOnlineProvider)()) return;
     if (!force && !_intervalElapsed()) return;
 
-    _emit(const UpdateChecking());
+    // Not while a pending install is showing: "checking" would replace the
+    // Install offer with a spinner, and a failed check has to leave it up.
+    if (pending == null) _emit(const UpdateChecking());
     final service = ref.read(appUpdateServiceProvider);
     try {
       final release = await service.checkLatest();
@@ -209,6 +267,12 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
             kUpdateLastCheckAt,
             ref.read(nowProvider)().toUtc().toIso8601String(),
           );
+      if (pending != null) {
+        if (!release.version.isNewerThan(pending.release.version)) return;
+        // The APK on disk has been overtaken: it will never be installed,
+        // so the pin and the file both go before the newer one is offered.
+        await _clearPendingInstall();
+      }
       final current = await ref.read(currentReleaseVersionProvider.future);
       if (!release.version.isNewerThan(current)) {
         _emit(UpdateUpToDate(current));
@@ -228,14 +292,31 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
       }
       _emit(UpdateAvailable(release, asset));
     } on UpdateException catch (error) {
+      // A pending install survives a check that could not run: the APK is
+      // still there and the error says nothing about it.
+      if (pending != null) return;
       _emit(UpdateFailed(error));
     }
   }
 
+  /// Forgets the install that was started: the pin and the APK behind it.
+  Future<void> _clearPendingInstall() async {
+    final dir = await ref.read(updateDownloadDirProvider.future);
+    AppUpdateService.clearDownloads(dir);
+    await ref.read(sharedPreferencesProvider).remove(kUpdateInstallingTag);
+  }
+
   /// Downloads and verifies the available APK.
+  ///
+  /// Every step reports only while this call is still the current
+  /// generation: a cancelled download, or one a newer download replaced,
+  /// unwinds in silence rather than writing progress over what took its
+  /// place.
   Future<void> download() async {
     final status = state.value;
     if (status is! UpdateAvailable) return;
+    final gen = ++_downloadGeneration;
+    _downloadTarget = status;
     _emit(UpdateDownloading(status.release, 0));
     try {
       final dir = await ref.read(updateDownloadDirProvider.future);
@@ -245,19 +326,68 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
             status.release,
             status.asset,
             dir,
-            onProgress: (progress) =>
-                _emit(UpdateDownloading(status.release, progress)),
+            onProgress: (progress) {
+              if (gen != _downloadGeneration) return;
+              _emit(UpdateDownloading(status.release, progress));
+            },
+            isCancelled: () => gen != _downloadGeneration,
           );
+      if (gen != _downloadGeneration) {
+        // A cancel that arrived while the last chunks were being verified:
+        // the APK finished anyway and nobody asked for it. A download that
+        // took over instead clears `updates/` itself before it writes, so
+        // only tidy up when none is running.
+        if (state.value is! UpdateDownloading) {
+          AppUpdateService.clearDownloads(dir);
+        }
+        return;
+      }
       _emit(UpdateReady(status.release, file));
     } on UpdateException catch (error) {
+      // Cancelling is not a failure and [cancelDownload] already said so.
+      if (error.kind == UpdateErrorKind.cancelled) return;
+      if (gen != _downloadGeneration) return;
       _emit(UpdateFailed(error));
     }
+  }
+
+  /// Stops a download in flight and offers it again.
+  ///
+  /// The state goes back to [UpdateAvailable] at once - the user asked for
+  /// the progress bar to go away - while the service unwinds the stream and
+  /// removes the partial file on its own schedule. Burning the generation is
+  /// what tells that download it no longer owns anything.
+  void cancelDownload() {
+    final status = state.value;
+    if (status is! UpdateDownloading) return;
+    _downloadGeneration++;
+    final target = _downloadTarget;
+    if (target != null) _emit(target);
   }
 
   /// Hands the verified APK to Android's package installer.
   Future<void> install() async {
     final status = state.value;
     if (status is! UpdateReady) return;
+    try {
+      // Written first: the installer replaces this process, so anything
+      // recorded after the hand-over would never be written at all. A write
+      // that fails therefore stops the install - handing the APK over with
+      // no record of it would strand the pref on the previous release.
+      await ref
+          .read(sharedPreferencesProvider)
+          .setString(kUpdateInstallingTag, status.release.tag);
+    } catch (e) {
+      _emit(
+        UpdateFailed(
+          UpdateException(
+            UpdateErrorKind.io,
+            'Could not record the pending install: $e',
+          ),
+        ),
+      );
+      return;
+    }
     try {
       await ref.read(appUpdateServiceProvider).install(status.file);
     } on UpdateException catch (error) {
@@ -266,9 +396,22 @@ class AppUpdateNotifier extends AsyncNotifier<UpdateStatus> {
   }
 
   /// Hides the Home banner for the release the status refers to.
+  ///
+  /// "Later" on an install that was started before and backed out of means
+  /// more than hiding a banner: the pin and the APK go too, so the next check
+  /// starts from whatever GitHub has rather than from a file the user has now
+  /// turned down twice.
   Future<void> dismiss() async {
-    final tag = updateTagOf(state.value);
+    final status = state.value;
+    final tag = updateTagOf(status);
     if (tag == null) return;
+    final pinned = ref
+        .read(sharedPreferencesProvider)
+        .getString(kUpdateInstallingTag);
+    if (status is UpdateReady && pinned == tag) {
+      await _clearPendingInstall();
+      _emit(const UpdateUnknown());
+    }
     await ref.read(updateDismissedTagProvider.notifier).set(tag);
   }
 

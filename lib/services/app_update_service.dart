@@ -153,6 +153,24 @@ class ReleaseInfo {
     );
   }
 
+  /// A release known only by its tag.
+  ///
+  /// The app persists the tag it handed to the installer, not the whole
+  /// payload; after a restart that tag is all there is to describe the APK
+  /// still sitting in `updates/`. Null when the tag is unusable.
+  static ReleaseInfo? forTag(String tag) {
+    final version = ReleaseVersion.parse(tag);
+    if (version == null) return null;
+    return ReleaseInfo(
+      tag: tag,
+      version: version,
+      title: 'Medora ${version.label}',
+      notes: '',
+      publishedAt: null,
+      assets: const <ReleaseAsset>[],
+    );
+  }
+
   final String tag;
   final ReleaseVersion version;
   final String title;
@@ -188,6 +206,9 @@ enum UpdateErrorKind {
 
   /// Writing to or reading from disk failed, or the file is the wrong size.
   io,
+
+  /// The user stopped the download; nothing is wrong and nothing is kept.
+  cancelled,
 }
 
 class UpdateException implements Exception {
@@ -300,11 +321,18 @@ class AppUpdateService {
   /// enough, and APKs are large). The finished file must match the size GitHub
   /// reported and, when the release carries `SHA256SUMS.txt`, its sha256 line;
   /// on any mismatch the file is deleted before the error is thrown.
+  ///
+  /// [isCancelled] is asked once per chunk: the first true leaves the stream
+  /// (cancelling the subscription, so the rest of the response is never
+  /// fetched), deletes the partial file and throws
+  /// [UpdateErrorKind.cancelled]. An APK is tens of megabytes on a phone
+  /// connection - starting one has to be undoable.
   Future<File> download(
     ReleaseInfo release,
     ReleaseAsset asset,
     Directory dir, {
     void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
   }) async {
     final target = Directory(p.join(dir.path, updatesFolder));
     final File file;
@@ -320,6 +348,8 @@ class AppUpdateService {
     }
 
     Digest? digest;
+    // Closed on every path out of the streaming loop below, not only the one
+    // that reads the digest: a chunked converter left open holds its buffers.
     final hasher = sha256.startChunkedConversion(
       ChunkedConversionSink<Digest>.withCallback(
         (digests) => digest = digests.single,
@@ -337,6 +367,14 @@ class AppUpdateService {
         );
       }
       await for (final chunk in response.stream) {
+        if (isCancelled?.call() ?? false) {
+          // Throwing out of `await for` cancels the subscription; the handler
+          // below closes the sink and removes the half-written file.
+          throw const UpdateException(
+            UpdateErrorKind.cancelled,
+            'The download was cancelled.',
+          );
+        }
         sink.add(chunk);
         hasher.add(chunk);
         received += chunk.length;
@@ -349,10 +387,12 @@ class AppUpdateService {
       await sink.flush();
     } on UpdateException {
       await sink.close();
+      hasher.close();
       _deleteQuietly(file);
       rethrow;
     } on Exception catch (error) {
       await sink.close();
+      hasher.close();
       _deleteQuietly(file);
       throw UpdateException(
         error is FileSystemException
@@ -386,6 +426,32 @@ class AppUpdateService {
 
     onProgress?.call(1);
     return file;
+  }
+
+  /// Empties `<dir>/updates/`, so an APK that has done its job (or one no
+  /// version of the app will ever install) stops taking up space.
+  ///
+  /// A missing folder is not an error, and a file that refuses to go does not
+  /// stop the rest.
+  static void clearDownloads(Directory dir) {
+    final target = Directory(p.join(dir.path, updatesFolder));
+    if (!target.existsSync()) return;
+    _clearFolder(target);
+  }
+
+  /// The APK waiting in `<dir>/updates/`, or null when there is none.
+  ///
+  /// At most one download is kept ([download] clears the folder first), so
+  /// the first APK found is the one.
+  static File? downloadedApk(Directory dir) {
+    final target = Directory(p.join(dir.path, updatesFolder));
+    if (!target.existsSync()) return null;
+    for (final entity in target.listSync()) {
+      if (entity is File && entity.path.toLowerCase().endsWith('.apk')) {
+        return entity;
+      }
+    }
+    return null;
   }
 
   /// Hands the APK to Android's package installer.

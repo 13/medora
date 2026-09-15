@@ -5,7 +5,7 @@ import 'package:medora/core/app_config.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
-import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/services/app_update_service.dart';
 import 'package:path/path.dart' as p;
@@ -20,6 +20,10 @@ class FakeUpdateService extends AppUpdateService {
     this._asset,
     this.hasAsset = true,
   }) : super(repo: 'acme/medora');
+
+  /// Chunks the fake download reports before it finishes; the cancellation
+  /// seam is asked before each one, like the real streaming loop.
+  static const progressSteps = <double>[0, 0.5];
 
   final ReleaseInfo? release;
   final UpdateException? error;
@@ -48,9 +52,19 @@ class FakeUpdateService extends AppUpdateService {
     ReleaseAsset asset,
     Directory dir, {
     void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
   }) async {
-    onProgress?.call(0);
-    onProgress?.call(0.5);
+    for (final step in progressSteps) {
+      if (isCancelled?.call() ?? false) {
+        throw const UpdateException(UpdateErrorKind.cancelled, 'cancelled');
+      }
+      onProgress?.call(step);
+      // Give a caller that cancels between chunks a turn of the loop.
+      await Future<void>.delayed(Duration.zero);
+    }
+    if (isCancelled?.call() ?? false) {
+      throw const UpdateException(UpdateErrorKind.cancelled, 'cancelled');
+    }
     final failure = downloadError;
     if (failure != null) throw failure;
     onProgress?.call(1);
@@ -86,6 +100,7 @@ ReleaseInfo fakeRelease(ReleaseVersion version) => ReleaseInfo(
 /// [isOnline], when given, replaces the fixed [online] flag - pass a closure
 /// over a mutable local so a single test can flip connectivity mid-run
 /// without re-overriding the provider (which a `ProviderContainer` forbids).
+/// [prefs] replaces the real `SharedPreferences` for the same reason.
 Future<List<Override>> updateOverrides({
   required AppUpdateService service,
   required Directory downloadDir,
@@ -95,10 +110,11 @@ Future<List<Override>> updateOverrides({
   bool online = true,
   bool Function()? isOnline,
   ReleaseVersion current = fakeCurrentVersion,
+  SharedPreferences? prefs,
 }) async {
-  final prefs = await SharedPreferences.getInstance();
+  final resolved = prefs ?? await SharedPreferences.getInstance();
   return <Override>[
-    sharedPreferencesProvider.overrideWithValue(prefs),
+    sharedPreferencesProvider.overrideWithValue(resolved),
     platformCapabilitiesProvider.overrideWithValue(caps),
     appConfigProvider.overrideWithValue(
       AppConfig(

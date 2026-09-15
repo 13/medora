@@ -45,7 +45,17 @@ class CloudConfigSheet extends ConsumerStatefulWidget {
   ConsumerState<CloudConfigSheet> createState() => _CloudConfigSheetState();
 }
 
-enum _ProbeState { idle, running, reachable, unreachable }
+/// What the probe row shows for [outcome].
+String probeMessage(AppLocalizations l10n, CloudProbe probe) =>
+    switch (probe.outcome) {
+      CloudProbeOutcome.ok => l10n.cloudTestOk,
+      CloudProbeOutcome.badKey => l10n.cloudProbeBadKey,
+      CloudProbeOutcome.httpError => l10n.cloudProbeHttpError(
+        probe.status ?? 0,
+      ),
+      CloudProbeOutcome.timedOut => l10n.cloudProbeTimeout,
+      CloudProbeOutcome.unreachable => l10n.cloudTestFailed,
+    };
 
 class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
   late final TextEditingController _url;
@@ -59,7 +69,11 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
   /// Why the last Save attempt did not go through; shown inside the sheet so
   /// the user can correct the values instead of losing them.
   String? _saveError;
-  _ProbeState _probe = _ProbeState.idle;
+
+  /// The last probe result, or null when none has been asked for since the
+  /// values last changed.
+  CloudProbe? _probe;
+  bool _probing = false;
   bool _saving = false;
 
   @override
@@ -100,22 +114,24 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
 
   Future<void> _test(AppLocalizations l10n) async {
     if (!_validate(l10n)) return;
-    setState(() => _probe = _ProbeState.running);
-    bool reachable;
-    try {
-      reachable = await probeCloudCredentials(
-        ref.read(cloudHttpClientProvider),
-        _current,
-      );
-    } catch (_) {
-      // Any transport failure reads the same to the user: not reachable.
-      reachable = false;
-    }
-    if (!mounted) return;
-    setState(
-      () =>
-          _probe = reachable ? _ProbeState.reachable : _ProbeState.unreachable,
+    // Stamped with what it tested: a project can take up to
+    // [cloudProbeTimeout] to answer, and "these credentials work" shown
+    // against credentials the user has since retyped is worse than no answer
+    // at all.
+    final tested = _current.normalized;
+    setState(() {
+      _probing = true;
+      _probe = null;
+    });
+    final probe = await probeCloudCredentials(
+      ref.read(cloudHttpClientProvider),
+      tested,
     );
+    if (!mounted) return;
+    setState(() {
+      _probing = false;
+      if (_current.normalized == tested) _probe = probe;
+    });
   }
 
   Future<void> _save(AppLocalizations l10n) async {
@@ -150,7 +166,7 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
   /// A typed value changed: the probe result and the save failure both
   /// describe the values as they were, so they no longer apply.
   void _invalidateResults() {
-    _probe = _ProbeState.idle;
+    _probe = null;
     _saveError = null;
   }
 
@@ -251,10 +267,8 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
             Row(
               children: [
                 OutlinedButton.icon(
-                  onPressed: _probe == _ProbeState.running
-                      ? null
-                      : () => _test(l10n),
-                  icon: _probe == _ProbeState.running
+                  onPressed: _probing ? null : () => _test(l10n),
+                  icon: _probing
                       ? const SizedBox(
                           width: 16,
                           height: 16,
@@ -265,37 +279,34 @@ class _CloudConfigSheetState extends ConsumerState<CloudConfigSheet> {
                 ),
               ],
             ),
-            if (_probe == _ProbeState.reachable ||
-                _probe == _ProbeState.unreachable)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      _probe == _ProbeState.reachable
-                          ? Icons.check_circle_outline
-                          : Icons.error_outline,
-                      size: 18,
-                      color: _probe == _ProbeState.reachable
-                          ? context.medora.success
-                          : context.colors.error,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _probe == _ProbeState.reachable
-                            ? l10n.cloudTestOk
-                            : l10n.cloudTestFailed,
-                        style: text.bodySmall?.copyWith(
-                          color: _probe == _ProbeState.reachable
-                              ? context.medora.success
-                              : context.colors.error,
+            if (_probe case final probe?)
+              Builder(
+                builder: (context) {
+                  final ok = probe.outcome == CloudProbeOutcome.ok;
+                  final color = ok
+                      ? context.medora.success
+                      : context.colors.error;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          ok ? Icons.check_circle_outline : Icons.error_outline,
+                          size: 18,
+                          color: color,
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            probeMessage(l10n, probe),
+                            style: text.bodySmall?.copyWith(color: color),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             if (_saveError != null)
               Padding(

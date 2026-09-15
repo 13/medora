@@ -2944,6 +2944,24 @@ abstract class AppLocalizations {
   /// **'No installer for this device'**
   String get updateNoAsset;
 
+  /// No description provided for @updateCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel download'**
+  String get updateCancel;
+
+  /// No description provided for @updateInstallExplainTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Install update'**
+  String get updateInstallExplainTitle;
+
+  /// No description provided for @updateInstallExplainBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.'**
+  String get updateInstallExplainBody;
+
   /// No description provided for @backupData.
   ///
   /// In en, this message translates to:
@@ -3015,6 +3033,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Created {created} · {rows} rows · {photos} photos'**
   String restoreSummary(String created, int rows, int photos);
+
+  /// No description provided for @restoreInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Restoring…'**
+  String get restoreInProgress;
 
   /// No description provided for @restoreDone.
   ///
@@ -3135,6 +3159,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Could not reach the project with these values'**
   String get cloudTestFailed;
+
+  /// No description provided for @cloudProbeBadKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Reachable, but the key was rejected'**
+  String get cloudProbeBadKey;
+
+  /// No description provided for @cloudProbeTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The project did not answer in time'**
+  String get cloudProbeTimeout;
+
+  /// No description provided for @cloudProbeHttpError.
+  ///
+  /// In en, this message translates to:
+  /// **'The project answered HTTP {code}'**
+  String cloudProbeHttpError(int code);
 
   /// No description provided for @cloudInvalidUrl.
   ///

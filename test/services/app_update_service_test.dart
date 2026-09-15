@@ -451,6 +451,57 @@ void main() {
       );
     });
 
+    test('cancelling mid-stream deletes the partial file', () async {
+      final service = AppUpdateService(
+        repo: _repo,
+        client: downloadClient(sums: sumsFor(digest)),
+      );
+      final release = releaseWith(withChecksums: true);
+      final progress = <double>[];
+
+      await expectLater(
+        service.download(
+          release,
+          release.assets.first,
+          root,
+          onProgress: progress.add,
+          isCancelled: () => true,
+        ),
+        throwsA(
+          isA<UpdateException>().having(
+            (e) => e.kind,
+            'kind',
+            UpdateErrorKind.cancelled,
+          ),
+        ),
+      );
+
+      expect(
+        File(
+          p.join(root.path, 'updates', 'medora-0.1.0-10-universal.apk'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(progress, isNot(contains(1.0)));
+    });
+
+    test('a download nobody cancels still finishes', () async {
+      final service = AppUpdateService(
+        repo: _repo,
+        client: downloadClient(sums: sumsFor(digest)),
+      );
+      final release = releaseWith(withChecksums: true);
+
+      final file = await service.download(
+        release,
+        release.assets.first,
+        root,
+        isCancelled: () => false,
+      );
+
+      expect(file.lengthSync(), payload.length);
+    });
+
     test('older downloads are removed before the new one lands', () async {
       final updates = Directory(p.join(root.path, 'updates'))
         ..createSync(recursive: true);
@@ -465,6 +516,66 @@ void main() {
       expect(updates.listSync().map((e) => p.basename(e.path)).toList(), [
         'medora-0.1.0-10-universal.apk',
       ]);
+    });
+  });
+
+  group('downloads folder', () {
+    late Directory root;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('medora_update_folder_');
+    });
+    tearDown(() => root.delete(recursive: true));
+
+    Directory updatesDir() =>
+        Directory(p.join(root.path, 'updates'))..createSync(recursive: true);
+
+    test('clearDownloads empties updates/ and leaves the folder', () {
+      final updates = updatesDir();
+      File(p.join(updates.path, 'medora-0.2.0-12-universal.apk'))
+        ..createSync()
+        ..writeAsBytesSync(const [1, 2, 3]);
+      File(p.join(updates.path, 'SHA256SUMS.txt')).writeAsStringSync('x');
+
+      AppUpdateService.clearDownloads(root);
+
+      expect(updates.existsSync(), isTrue);
+      expect(updates.listSync(), isEmpty);
+    });
+
+    test('clearDownloads without an updates/ folder is not an error', () {
+      AppUpdateService.clearDownloads(root);
+      expect(Directory(p.join(root.path, 'updates')).existsSync(), isFalse);
+    });
+
+    test('downloadedApk finds the APK, ignoring anything else', () {
+      final updates = updatesDir();
+      File(p.join(updates.path, 'notes.txt')).writeAsStringSync('x');
+      final apk = File(p.join(updates.path, 'medora-0.2.0-12-universal.apk'))
+        ..writeAsBytesSync(const [1, 2, 3]);
+
+      expect(AppUpdateService.downloadedApk(root)?.path, apk.path);
+    });
+
+    test('downloadedApk is null with no folder and with no APK', () {
+      expect(AppUpdateService.downloadedApk(root), isNull);
+      updatesDir();
+      expect(AppUpdateService.downloadedApk(root), isNull);
+    });
+  });
+
+  group('ReleaseInfo.forTag', () {
+    test('describes a release the app only knows by tag', () {
+      final release = ReleaseInfo.forTag('v0.2.0+12')!;
+
+      expect(release.tag, 'v0.2.0+12');
+      expect(release.version, const ReleaseVersion(0, 2, 0, 12));
+      expect(release.title, 'Medora 0.2.0 (12)');
+      expect(release.assets, isEmpty);
+    });
+
+    test('an unusable tag has no release', () {
+      expect(ReleaseInfo.forTag('nightly'), isNull);
     });
   });
 

@@ -49,4 +49,33 @@ void main() {
     expect(none.expiredAt(now), isFalse);
     expect(none.daysUntilExpiry(now), isNull);
   });
+
+  test('an expiry date is good for the whole of that day', () {
+    final today = Medication(
+      id: 'e',
+      name: 'e',
+      quantity: 1,
+      expiryDate: DateTime(2026, 3, 4),
+    );
+    final yesterday = Medication(
+      id: 'f',
+      name: 'f',
+      quantity: 1,
+      expiryDate: DateTime(2026, 3, 3),
+    );
+
+    // Midnight, midday and the last minute of the expiry day all agree.
+    for (final clock in [
+      DateTime(2026, 3, 4),
+      DateTime(2026, 3, 4, 12),
+      DateTime(2026, 3, 4, 23, 59),
+    ]) {
+      expect(today.expiredAt(clock), isFalse, reason: '$clock');
+      expect(today.daysUntilExpiry(clock), 0, reason: '$clock');
+      expect(today.isExpiringSoon(now: clock), isTrue, reason: '$clock');
+      expect(yesterday.expiredAt(clock), isTrue, reason: '$clock');
+    }
+
+    expect(today.expiredAt(DateTime(2026, 3, 5)), isTrue);
+  });
 }

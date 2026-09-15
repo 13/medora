@@ -6,6 +6,7 @@ import 'package:medora/core/app_config.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
@@ -14,6 +15,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/test_database.dart';
+
+/// Turning cloud mode on can fail (no preferences backend, a pref write that
+/// throws); the screen has to say so rather than look like it worked.
+class _RefusingAppMode extends AppModeNotifier {
+  @override
+  Future<void> set(AppMode mode) async => throw StateError('prefs are gone');
+}
 
 const _fixedBuildInfo = BuildInfo(
   version: '1.0.0',
@@ -270,4 +278,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Project URL'), findsOneWidget);
   });
+
+  testWidgets(
+    'a "Turn on" that cannot be saved reports it and keeps the mode',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // Configured, so the tile offers "Turn on" - no client is created, and
+      // nothing here reaches Supabase.
+      SupabaseConfig.debugSetConfiguredForTest(true);
+      addTearDown(SupabaseConfig.resetForTest);
+
+      final container = await pumpMedoraApp(
+        tester,
+        const SettingsScreen(),
+        overrides: [
+          ...await baseOverrides(),
+          appModeProvider.overrideWith(_RefusingAppMode.new),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      final turnOn = find.text('Turn on');
+      await tester.scrollUntilVisible(
+        turnOn,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(turnOn);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.textContaining('prefs are gone'), findsOneWidget);
+      expect(container.read(appModeProvider), AppMode.localOnly);
+    },
+  );
 }

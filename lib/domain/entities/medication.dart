@@ -78,10 +78,15 @@ class Medication {
   }
 
   /// Returns true if the medication had expired at [now].
+  ///
+  /// Calendar days, not instants: an expiry date is a date, so a medication
+  /// stamped "expires today" is good for the whole of today and expires
+  /// tomorrow. Comparing instants made it expire at midnight, which
+  /// disagreed with the badge and the countdown - both of which round to
+  /// whole days through [daysUntilExpiry].
   bool expiredAt(DateTime now) {
-    final expiry = expiryDate;
-    if (expiry == null) return false;
-    return expiry.isBefore(now);
+    final remaining = daysUntilExpiry(now);
+    return remaining != null && remaining < 0;
   }
 
   /// Returns true if the medication has expired, per the system clock.

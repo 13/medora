@@ -13,6 +13,7 @@
 /// is a [_RecordingBackupService] that replays what was parsed there.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -116,6 +117,36 @@ class _RecordingBackupService implements BackupService {
   Future<int> estimatePhotoBytes() async => 0;
 }
 
+/// A restore that does not finish until the test lets it, so the progress
+/// dialog can be looked at while it is up.
+class _GatedRestoreService extends _RecordingBackupService {
+  _GatedRestoreService({required super.manifest, required super.rows});
+
+  final gate = Completer<void>();
+
+  @override
+  Future<BackupManifest> restore(
+    File file, {
+    required RestoreMode mode,
+    bool markPending = false,
+  }) async {
+    await gate.future;
+    return super.restore(file, mode: mode, markPending: markPending);
+  }
+}
+
+/// A restore that fails after the dialog is up.
+class _ThrowingRestoreService extends _RecordingBackupService {
+  _ThrowingRestoreService({required super.manifest, required super.rows});
+
+  @override
+  Future<BackupManifest> restore(
+    File file, {
+    required RestoreMode mode,
+    bool markPending = false,
+  }) async => throw StateError('the transaction rolled back');
+}
+
 void main() {
   late Directory photoRoot;
   late Directory outDir;
@@ -182,13 +213,31 @@ void main() {
   ];
 
   /// Opens Settings on a tall screen and taps "Restore from backup".
-  Future<void> tapRestore(WidgetTester tester, List<Override> given) async {
+  ///
+  /// [nested] mounts the screen the way the router's `ShellRoute` does -
+  /// inside a second [Navigator] below the app's own - so that anything the
+  /// screen pops has to name the navigator it means.
+  Future<void> tapRestore(
+    WidgetTester tester,
+    List<Override> given, {
+    bool nested = false,
+  }) async {
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await pumpMedoraApp(tester, const SettingsScreen(), overrides: given);
+    await pumpMedoraApp(
+      tester,
+      nested
+          ? Navigator(
+              onGenerateRoute: (_) => MaterialPageRoute<void>(
+                builder: (_) => const SettingsScreen(),
+              ),
+            )
+          : const SettingsScreen(),
+      overrides: given,
+    );
     await tester.pumpAndSettle();
 
     final tile = find.text('Restore from backup');
@@ -228,6 +277,72 @@ void main() {
       greaterThan(cancelledBefore),
       reason: 'the reminders are reset and reconciled after a restore',
     );
+  });
+
+  testWidgets('the restore is blocked behind a progress dialog', (
+    tester,
+  ) async {
+    final service = _GatedRestoreService(manifest: manifest, rows: rows);
+    await tapRestore(tester, await overrides(service));
+
+    await tester.tap(find.text('Restore'));
+    // Explicit pumps, not pumpAndSettle: the spinner never stops animating.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    // The restore is still running: the screen says so and takes no taps.
+    expect(find.text('Restoring…'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text('Restored ${manifest.totalRows} rows'), findsNothing);
+
+    service.gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    // Gone once the rows are in, and the result is reported as usual.
+    expect(find.text('Restoring…'), findsNothing);
+    expect(find.text('Restored ${manifest.totalRows} rows'), findsOneWidget);
+  });
+
+  testWidgets('the progress dialog is taken down without popping the screen', (
+    tester,
+  ) async {
+    // Inside the shell `Navigator.of(context)` is the shell's navigator, not
+    // the one `showDialog` pushed onto: closing the dialog with it would pop
+    // Settings and leave the dialog up.
+    final service = _GatedRestoreService(manifest: manifest, rows: rows);
+    await tapRestore(tester, await overrides(service), nested: true);
+
+    await tester.tap(find.text('Restore'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Restoring…'), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    service.gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Restoring…'), findsNothing);
+    expect(
+      find.byType(SettingsScreen),
+      findsOneWidget,
+      reason: 'the dialog went, not the screen underneath it',
+    );
+    expect(find.text('Restored ${manifest.totalRows} rows'), findsOneWidget);
+  });
+
+  testWidgets('a restore that throws still takes the progress dialog down', (
+    tester,
+  ) async {
+    final service = _ThrowingRestoreService(manifest: manifest, rows: rows);
+    await tapRestore(tester, await overrides(service));
+
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restoring…'), findsNothing);
+    expect(find.textContaining('the transaction rolled back'), findsOneWidget);
   });
 
   testWidgets('cloud mode marks the restored rows for upload, and merge is '

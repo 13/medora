@@ -8,6 +8,7 @@ import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/widgets/forms/tag_input_field.dart';

@@ -1548,6 +1548,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateNoAsset => 'No installer for this device';
 
   @override
+  String get updateCancel => 'Cancel download';
+
+  @override
+  String get updateInstallExplainTitle => 'Install update';
+
+  @override
+  String get updateInstallExplainBody =>
+      'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.';
+
+  @override
   String get backupData => 'Back up data';
 
   @override
@@ -1589,6 +1599,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String restoreSummary(String created, int rows, int photos) {
     return 'Created $created · $rows rows · $photos photos';
   }
+
+  @override
+  String get restoreInProgress => 'Restoring…';
 
   @override
   String restoreDone(int rows) {
@@ -1655,6 +1668,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cloudTestFailed => 'Could not reach the project with these values';
+
+  @override
+  String get cloudProbeBadKey => 'Reachable, but the key was rejected';
+
+  @override
+  String get cloudProbeTimeout => 'The project did not answer in time';
+
+  @override
+  String cloudProbeHttpError(int code) {
+    return 'The project answered HTTP $code';
+  }
 
   @override
   String get cloudInvalidUrl =>

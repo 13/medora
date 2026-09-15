@@ -12,6 +12,7 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -98,12 +99,35 @@ List<DoseLog> goldenDoses() => [
   ),
 ];
 
+/// The same day with two doses already due at [goldenNow], so the
+/// "Take all due" bar (which needs at least two) is on screen.
+List<DoseLog> goldenDosesTwoDue() => [
+  for (final dose in goldenDoses())
+    dose.id == 'd1'
+        ? DoseLog(
+            id: dose.id,
+            prescriptionId: dose.prescriptionId,
+            scheduledTime: dose.scheduledTime,
+            medicationName: dose.medicationName,
+            dosageAmount: dose.dosageAmount,
+            medicationUnit: dose.medicationUnit,
+            treatmentName: dose.treatmentName,
+            patientTags: dose.patientTags,
+          )
+        : dose,
+];
+
 /// Pumps [home] at 412×915 @1x with fixed data and clock. Golden files live
 /// next to the test.
+///
+/// [doses] replaces the day's doses for both the "today" provider and the
+/// per-day one, so a fixture can put the screen in a state the default day
+/// does not reach.
 Future<void> pumpGolden(
   WidgetTester tester,
   Widget home, {
   required Brightness brightness,
+  List<DoseLog>? doses,
 }) async {
   tester.view.physicalSize = const Size(412, 915);
   tester.view.devicePixelRatio = 1.0;
@@ -127,9 +151,12 @@ Future<void> pumpGolden(
     appUpdateProvider.overrideWith(_NoUpdate.new),
     medicationListProvider.overrideWith(_FixedMedications.new),
     treatmentListProvider.overrideWith(_FixedTreatments.new),
-    todaysDoseLogsProvider.overrideWith(_FixedTodaysDoses.new),
+    todaysDoseLogsProvider.overrideWith(
+      () => _FixedTodaysDoses(doses ?? goldenDoses()),
+    ),
     dosesForDayProvider.overrideWith(
-      (ref, day) async => day == goldenToday ? goldenDoses() : <DoseLog>[],
+      (ref, day) async =>
+          day == goldenToday ? (doses ?? goldenDoses()) : <DoseLog>[],
     ),
   ];
 
@@ -164,8 +191,12 @@ class _FixedTreatments extends TreatmentListNotifier {
 }
 
 class _FixedTodaysDoses extends TodaysDoseLogsNotifier {
+  _FixedTodaysDoses(this.doses);
+
+  final List<DoseLog> doses;
+
   @override
-  Future<List<DoseLog>> build() async => goldenDoses();
+  Future<List<DoseLog>> build() async => doses;
 }
 
 class _NoUpdate extends AppUpdateNotifier {

@@ -14,7 +14,7 @@ devices through Supabase.
 ## Features
 
 - **Medication inventory** — name, active ingredient, category, quantity, expiry date, barcode, storage location, photo and notes.
-- **Expiry & stock alerts** — flags medications expiring within 30 days and anything at or below the low-stock threshold.
+- **Expiry & stock alerts** — flags medications expiring within 30 days and anything at or below the low-stock threshold. Expiry is a date, not a moment: something stamped "expires today" is good for the whole of that day.
 - **AIC code scanner** — point the camera at an Italian package; on-device OCR (ML Kit) reads the AIC code and looks it up in the AIFA database, cached locally after a one-time download.
 - **Treatments** — illness/treatment plans with symptoms, start and end dates, and notes.
 - **Prescriptions** — attach a medication to a treatment with dosage, interval and duration.
@@ -76,7 +76,8 @@ Then open **Settings → Cloud sync → Turn on** and sign in. Without defines t
 
 A build without those defines can still reach a project: open **Settings → Cloud
 sync → Configure cloud sync**, paste the project URL and the anon/publishable
-key, and use **Test connection** to check them before saving. The pair is stored
+key, and use **Test connection** to check them before saving — it tells a
+rejected key apart from a project it could not reach at all. The pair is stored
 in `SharedPreferences` on that device only (keys `cloud.supabase_url` and
 `cloud.supabase_anon_key`), never logged, and the key is masked once saved —
 replace it rather than read it back. Settings values take precedence over the
@@ -128,13 +129,19 @@ presentation layer.
 ### Updates
 
 Android builds distributed from GitHub Releases check once a day for a newer
-release and can also be checked on demand from **Settings → About**. See
-[`docs/release.md`](docs/release.md#cutting-a-release) for how a release is
-cut and named.
+release, and on demand from **Settings → About**. The sheet shows the release
+notes and downloads the APK for the device's ABI, verifying its size and
+`SHA256SUMS.txt` entry before offering to install it; a download in progress can
+be cancelled, which deletes the partial file. Installing explains Android's
+"allow this app to install apps" prompt first, and because Android never reports
+back, the app records the release it handed over and settles it on the next
+launch: installed, or still installable and offered again. See
+[`docs/release.md`](docs/release.md#cutting-a-release) for how a release is cut
+and named.
 
 ## Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — layers, app modes, the local schema ledger, reminders, sync, theming and the test layout.
+- [`docs/architecture.md`](docs/architecture.md) — layers, the provider graph, app modes, the local schema ledger, backup, reminders, expiry, updates, sync, theming and the test layout.
 - [`docs/release.md`](docs/release.md) — keystore setup, signed Android/iOS/web builds, CI secrets, versioning.
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — design specs; [`docs/superpowers/plans/`](docs/superpowers/plans/) — implementation plans.
 
