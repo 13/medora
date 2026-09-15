@@ -298,11 +298,24 @@ class SyncService {
     final where = forceAll ? null : 'sync_status != ?';
     final whereArgs = forceAll ? null : [SyncStatus.synced];
 
+    // Families are pushed by two batches: this one sends live rows, and the
+    // one after the members finishes the tombstones a "leave family" leaves
+    // behind. Tombstones are excluded here by the query rather than skipped
+    // inside the callback, so a row the second batch is backing off is not
+    // visited twice per cycle — the earlier visit used to clear the very
+    // failure record the second batch had just written, and the backoff
+    // could never escalate.
+    final familyWhere = forceAll
+        ? 'sync_status != ?'
+        : 'sync_status != ? AND sync_status != ?';
+    final familyWhereArgs = forceAll
+        ? [SyncStatus.pendingDelete]
+        : [SyncStatus.synced, SyncStatus.pendingDelete];
+
     // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
-    await _pushBatch('families', report, where, whereArgs, (row) async {
-      if (row['sync_status'] == SyncStatus.pendingDelete) {
-        return false; // Task 5
-      }
+    await _pushBatch('families', report, familyWhere, familyWhereArgs, (
+      row,
+    ) async {
       final model = FamilyModel.fromJson(row);
       await familyRemote!.upsertFamily(model);
       await db.update(
@@ -502,8 +515,13 @@ class SyncService {
         continue;
       }
       try {
-        if (await processRow(row)) report.pushed++;
-        if (failure != null) await _failures.clear(table, id);
+        // Only a row that actually went through is forgiven: a row that was
+        // skipped (stale, or waiting for another batch) has proved nothing
+        // and must keep whatever backoff it had.
+        if (await processRow(row)) {
+          report.pushed++;
+          if (failure != null) await _failures.clear(table, id);
+        }
       } catch (e) {
         await _failures.recordFailure(table, id, _now());
         report.failures.add(SyncFailure(table, id, 'push: $e'));

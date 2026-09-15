@@ -24,8 +24,11 @@ import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
 class Harness {
-  Harness({DateTime? start, StreamController<bool>? online})
-    : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
+  Harness({
+    DateTime? start,
+    StreamController<bool>? online,
+    FamilyLocalDatasource? familyLocal,
+  }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = FakeMedicationRemote(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
     prescriptions = FakePrescriptionRemote(clock.now);
@@ -42,7 +45,7 @@ class Harness {
       prescriptionRemote: prescriptions,
       doseLogLocal: DoseLogLocalDatasource(),
       doseLogRemote: doses,
-      familyLocal: FamilyLocalDatasource(),
+      familyLocal: familyLocal ?? FamilyLocalDatasource(),
       familyRemote: family,
       cursors: cursors,
       failures: failures,
@@ -64,6 +67,14 @@ class Harness {
   late final SyncCursorStore cursors;
   late final SyncFailureStore failures;
   late final SyncService service;
+}
+
+/// A local family store whose final "drop the family row" step fails, so the
+/// dedicated pending_delete batch records a push failure for the row.
+class FailingFamilyDelete extends FamilyLocalDatasource {
+  @override
+  Future<void> deleteFamily(String id) async =>
+      throw StateError('cannot drop family $id');
 }
 
 /// Hand-advanced clock shared by the service and the fake remotes.
@@ -1132,6 +1143,61 @@ void main() {
         expect(h.family.members.rows['me'], isNotNull);
       },
     );
+
+    test('a failing family leave keeps escalating its backoff', () async {
+      // Families are visited by two push batches per cycle. The first one
+      // must leave tombstones entirely alone: when it visited them it also
+      // cleared the failure record the second batch had just written, and
+      // the backoff count was reset to 1 on every cycle.
+      final local = FailingFamilyDelete();
+      final h = Harness(familyLocal: local);
+      await local.upsertFamily(
+        const FamilyModel(
+          id: 'f1',
+          name: 'S',
+          inviteCode: 'X',
+          ownerId: 'owner',
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      await local.upsertMember(
+        const FamilyMemberModel(
+          id: 'me',
+          familyId: 'f1',
+          userId: 'user-a',
+          role: 'member',
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      h.family.members.seed(
+        const FamilyMemberModel(
+          id: 'me',
+          familyId: 'f1',
+          userId: 'user-a',
+          role: 'member',
+        ).toJson(),
+      );
+      await local.markMemberDeleted('me');
+      await local.markFamilyDeleted('f1');
+
+      final first = (await h.service.syncAll())!;
+      expect(first.failures.map((f) => '${f.table}/${f.id}'), ['families/f1']);
+      expect((await h.failures.get('families', 'f1'))?.count, 1);
+
+      // Past the 2-minute backoff the row is retried and fails again.
+      h.clock.advance(const Duration(minutes: 3));
+      h.service.debugSetStateForTest(SyncState.idle);
+      final second = (await h.service.syncAll())!;
+
+      expect(second.failures.map((f) => '${f.table}/${f.id}'), ['families/f1']);
+      expect(
+        (await h.failures.get('families', 'f1'))?.count,
+        2,
+        reason:
+            'the backoff must grow, not restart, while the push keeps '
+            'failing',
+      );
+    });
 
     test(
       'a pending_delete family is dropped locally after its members are pushed',
