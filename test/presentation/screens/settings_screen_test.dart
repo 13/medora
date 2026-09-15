@@ -160,4 +160,29 @@ void main() {
       expect(find.text('AIFA-Datenbank'), findsOneWidget);
     },
   );
+
+  testWidgets('the Data group offers a backup and a restore tile', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await baseOverrides(),
+    );
+    await tester.pumpAndSettle();
+
+    for (final title in ['Back up data', 'Restore from backup']) {
+      await tester.scrollUntilVisible(
+        find.text(title),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text(title), findsOneWidget, reason: title);
+    }
+  });
 }

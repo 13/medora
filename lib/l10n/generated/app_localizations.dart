@@ -2943,6 +2943,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No installer for this device'**
   String get updateNoAsset;
+
+  /// No description provided for @backupData.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up data'**
+  String get backupData;
+
+  /// No description provided for @backupDataHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Save everything as a JSON file'**
+  String get backupDataHint;
+
+  /// No description provided for @restoreBackup.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore from backup'**
+  String get restoreBackup;
+
+  /// No description provided for @restoreBackupHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Read a backup file back into the app'**
+  String get restoreBackupHint;
+
+  /// No description provided for @restoreAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore'**
+  String get restoreAction;
+
+  /// No description provided for @restoreReplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace everything'**
+  String get restoreReplace;
+
+  /// No description provided for @restoreMerge.
+  ///
+  /// In en, this message translates to:
+  /// **'Merge with this device'**
+  String get restoreMerge;
+
+  /// No description provided for @restoreReplaceWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything on this device is deleted first and replaced by the backup.'**
+  String get restoreReplaceWarning;
+
+  /// No description provided for @restoreSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {created} · {rows} rows · {photos} photos'**
+  String restoreSummary(String created, int rows, int photos);
+
+  /// No description provided for @restoreDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Restored {rows} rows'**
+  String restoreDone(int rows);
+
+  /// No description provided for @backupNotABackup.
+  ///
+  /// In en, this message translates to:
+  /// **'That file is not a Medora backup.'**
+  String get backupNotABackup;
+
+  /// No description provided for @backupNewerVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup comes from a newer version of Medora. Update the app and try again.'**
+  String get backupNewerVersion;
+
+  /// No description provided for @backupCorrupt.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup could not be read. Nothing was changed.'**
+  String get backupCorrupt;
 }
 
 class _AppLocalizationsDelegate

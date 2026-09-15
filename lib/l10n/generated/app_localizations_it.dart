@@ -1559,4 +1559,50 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get updateNoAsset =>
       'Nessun pacchetto di installazione per questo dispositivo';
+
+  @override
+  String get backupData => 'Backup dei dati';
+
+  @override
+  String get backupDataHint => 'Salva tutto in un file JSON';
+
+  @override
+  String get restoreBackup => 'Ripristina da backup';
+
+  @override
+  String get restoreBackupHint => 'Rileggi un file di backup nell\'app';
+
+  @override
+  String get restoreAction => 'Ripristina';
+
+  @override
+  String get restoreReplace => 'Sostituisci tutto';
+
+  @override
+  String get restoreMerge => 'Unisci a questo dispositivo';
+
+  @override
+  String get restoreReplaceWarning =>
+      'Tutto ciò che è su questo dispositivo viene prima eliminato e sostituito dal backup.';
+
+  @override
+  String restoreSummary(String created, int rows, int photos) {
+    return 'Creato $created · $rows righe · $photos foto';
+  }
+
+  @override
+  String restoreDone(int rows) {
+    return 'Ripristinate $rows righe';
+  }
+
+  @override
+  String get backupNotABackup => 'Questo file non è un backup di Medora.';
+
+  @override
+  String get backupNewerVersion =>
+      'Questo backup proviene da una versione più recente di Medora. Aggiorna l\'app e riprova.';
+
+  @override
+  String get backupCorrupt =>
+      'Impossibile leggere questo backup. Non è stato modificato nulla.';
 }

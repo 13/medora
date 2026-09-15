@@ -39,6 +39,8 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/services/app_startup_tasks.dart';
+import 'package:medora/services/backup_file_picker.dart';
+import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
 import 'package:medora/services/local_data_wiper.dart';
@@ -203,6 +205,21 @@ final photoStorageProvider = Provider<PhotoStorage>(
 /// Resolved photo file for a stored image name (null when absent/missing).
 final resolvedPhotoProvider = FutureProvider.family<File?, String?>(
   (ref, stored) => ref.watch(photoStorageProvider).resolve(stored),
+);
+
+final backupServiceProvider = Provider<BackupService>((ref) {
+  final info = ref.watch(buildInfoProvider).value;
+  return BackupService(
+    database: AppDatabase.instance,
+    photos: ref.watch(photoStorageProvider),
+    now: ref.watch(nowProvider),
+    appVersion: info == null ? '' : '${info.version}+${info.buildNumber}',
+  );
+});
+
+/// The system file picker for a backup; widget tests inject their own.
+final backupFilePickerProvider = Provider<Future<File?> Function()>(
+  (ref) => pickBackupFile,
 );
 
 final localDataWiperProvider = Provider<LocalDataWiper>(

@@ -35,6 +35,33 @@ edited. The ledger holds v11 tombstone columns, v12 photos stored as bare
 filenames, and v13 dose timestamps normalised to naive local ISO strings so string
 range comparisons line up with local day boundaries.
 
+## Backup and restore
+
+`BackupService` (`lib/services/backup_service.dart`) writes the whole local
+database and the photo folder into one versioned JSON envelope:
+`{format: "medora-backup", version: 1, schemaVersion: kSchemaVersion, createdAt,
+appVersion, tables: {...}, photos: {<filename>: <base64>}}`. Rows are exported
+exactly as stored - naive-local ISO timestamps, tombstones included - minus
+`sync_status`, which is local bookkeeping. Settings -> Data shares the file
+through the same share sheet as the CSV/PDF export, and picks one back with
+`file_picker`.
+
+`inspect` validates the envelope before anything is touched and throws
+`BackupException(BackupErrorKind)`: `notABackup`, `newerFormat` or
+`newerSchema` (a backup from a newer build is refused, never half-applied),
+`corrupt`, `io`. `restore` applies the file inside a single transaction, in
+foreign-key order (families, family_members, medications, treatments,
+prescriptions, dose_logs), so a file that cannot be applied in full leaves the
+device exactly as it was. `RestoreMode.replace` clears the tables first;
+`RestoreMode.merge` upserts by id and keeps whichever copy has the newer
+`updated_at`. Restored rows are stamped `synced`, or `pending_update` when the
+caller passes `markPending` (cloud mode) so the next cycle uploads them.
+Photos are written after the transaction commits and are never deleted.
+
+Settings drives the rest: after a restore it resets and reconciles the
+reminders, invalidates the dose/medication/treatment caches and, in cloud mode,
+calls `LocalUploadMarker.markAllForUpload` to clear the pull cursors.
+
 ## Reminders
 
 `ReminderScheduler` (`lib/services/reminder_scheduler.dart`) is the single owner of

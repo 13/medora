@@ -529,5 +529,18 @@
   "updateView": "Ansehen",
   "updateFailed": "Suche nach Updates fehlgeschlagen",
   "updateChecksumFailed": "Der Download konnte nicht überprüft werden",
-  "updateNoAsset": "Kein Installationspaket für dieses Gerät"
+  "updateNoAsset": "Kein Installationspaket für dieses Gerät",
+  "backupData": "Daten sichern",
+  "backupDataHint": "Alles als JSON-Datei speichern",
+  "restoreBackup": "Aus Sicherung wiederherstellen",
+  "restoreBackupHint": "Eine Sicherungsdatei zurück in die App einlesen",
+  "restoreAction": "Wiederherstellen",
+  "restoreReplace": "Alles ersetzen",
+  "restoreMerge": "Mit diesem Gerät zusammenführen",
+  "restoreReplaceWarning": "Alles auf diesem Gerät wird zuerst gelöscht und durch die Sicherung ersetzt.",
+  "restoreSummary": "Erstellt {created} · {rows} Datensätze · {photos} Fotos",
+  "restoreDone": "{rows} Datensätze wiederhergestellt",
+  "backupNotABackup": "Diese Datei ist keine Medora-Sicherung.",
+  "backupNewerVersion": "Diese Sicherung stammt aus einer neueren Medora-Version. Bitte aktualisiere die App.",
+  "backupCorrupt": "Diese Sicherung konnte nicht gelesen werden. Es wurde nichts geändert."
 }

@@ -22,6 +22,7 @@ devices through Supabase.
 - **Reminders** — local notifications for upcoming doses.
 - **Dashboard** — today's doses, expiring medications, low stock, active treatments.
 - **Export** — CSV and PDF of medications, treatments and dose history.
+- **Backup** — the whole cabinet (and its photos) as one JSON file, restored by replacing or merging.
 - **Family sharing** — optional, on top of cloud sync: join a family by invite code and share the cabinet.
 - **English, German and Italian**, light and dark themes, biometric lock.
 

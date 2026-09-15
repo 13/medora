@@ -666,5 +666,20 @@
   "updateView": "View",
   "updateFailed": "Could not check for updates",
   "updateChecksumFailed": "The download could not be verified",
-  "updateNoAsset": "No installer for this device"
+  "updateNoAsset": "No installer for this device",
+  "backupData": "Back up data",
+  "backupDataHint": "Save everything as a JSON file",
+  "restoreBackup": "Restore from backup",
+  "restoreBackupHint": "Read a backup file back into the app",
+  "restoreAction": "Restore",
+  "restoreReplace": "Replace everything",
+  "restoreMerge": "Merge with this device",
+  "restoreReplaceWarning": "Everything on this device is deleted first and replaced by the backup.",
+  "restoreSummary": "Created {created} · {rows} rows · {photos} photos",
+  "@restoreSummary": { "placeholders": { "created": { "type": "String" }, "rows": { "type": "int" }, "photos": { "type": "int" } } },
+  "restoreDone": "Restored {rows} rows",
+  "@restoreDone": { "placeholders": { "rows": { "type": "int" } } },
+  "backupNotABackup": "That file is not a Medora backup.",
+  "backupNewerVersion": "This backup comes from a newer version of Medora. Update the app and try again.",
+  "backupCorrupt": "This backup could not be read. Nothing was changed."
 }
