@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/supabase_config.dart';
@@ -13,6 +14,7 @@ import 'package:medora/services/sync_cursor_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../helpers/fonts.dart';
 import '../../helpers/pump_app.dart';
 
 /// A sign-in that always succeeds, so the test never needs a Supabase client.
@@ -77,6 +79,60 @@ void main() {
       expect(prefs.getString('app_mode'), 'localOnly');
     },
   );
+
+  group('the "or sign in" divider', () {
+    const label = 'Or sign in to sync across devices';
+
+    // Measured, not drawn: without the real face every glyph is a 1-em box
+    // and the label is three times the width it has on a device.
+    setUpAll(loadAppFonts);
+
+    /// The cloud form on a 412 px phone, at [scale] text size.
+    Future<void> pumpAt(WidgetTester tester, double scale) async {
+      tester.view.physicalSize = const Size(412, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SupabaseConfig.debugSetConfiguredForTest(true);
+      addTearDown(SupabaseConfig.resetForTest);
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
+      await pumpMedoraApp(
+        tester,
+        Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: const AuthScreen(),
+          ),
+        ),
+        overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('fits on one line at normal text size', (tester) async {
+      await pumpAt(tester, 1);
+
+      // One line: the laid-out paragraph is no taller than a single line of
+      // its own text.
+      final paragraph = tester.renderObject<RenderParagraph>(find.text(label));
+      expect(
+        paragraph.size.height,
+        lessThan(paragraph.preferredLineHeight * 1.5),
+        reason: 'the divider label wrapped',
+      );
+    });
+
+    testWidgets('gives way instead of overflowing at 2x', (tester) async {
+      await pumpAt(tester, 2);
+
+      expect(find.text(label), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
 
   testWidgets('a sign-in that cannot claim the local rows says so', (
     tester,

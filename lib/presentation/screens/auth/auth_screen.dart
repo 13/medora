@@ -172,11 +172,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     const SizedBox(height: 24),
                     Row(
                       children: [
+                        // The label is a sentence, so it gets the lion's
+                        // share: an even three-way split wrapped the English
+                        // one at 412 px. Flexible, not Expanded, so it still
+                        // gives way at a large text scale instead of
+                        // overflowing.
                         const Expanded(child: Divider()),
-                        // Flexible, not fixed: the label is a sentence, and
-                        // the German one at a large text scale is wider than
-                        // the 420 the form is capped at.
                         Flexible(
+                          flex: 6,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Text(
