@@ -109,6 +109,15 @@ stay honest. The grace period is a setting — **120 minutes (2 h)** by default
 (`lib/presentation/providers/settings_providers.dart:170`), chosen from 30/60/120/240
 minutes (`settings_providers.dart:159`).
 
+## Expiry
+
+Expiry is a **date**, so every comparison rounds to whole calendar days
+through `calendarDaysBetween` (`lib/core/clock.dart`). A medication stamped
+"expires today" is good for the whole of today: `Medication.expiredAt(now)` is
+true only once `daysUntilExpiry` goes negative, which is the same rule the
+`ExpiryBadge` (`lib/presentation/widgets/shared_widgets.dart`) and the Home
+countdown already used. `isExpiringSoon` is the 30-day window before that.
+
 ## Sync
 
 `SyncService` (`lib/services/sync_service.dart`) runs a cycle as push, then pull:
