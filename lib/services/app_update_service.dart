@@ -22,10 +22,37 @@ import 'package:path/path.dart' as p;
 
 /// A `<major>.<minor>.<patch>+<build>` release version.
 ///
-/// The build number is the authority for "newer" (it increases on every
-/// release); semver only breaks ties between equal builds.
+/// Semver decides which release is newer; the build number only breaks ties
+/// between equal semvers. Build numbers are not comparable across install
+/// kinds on their own: a `--split-per-abi` APK reports `1000 * abi + build`
+/// as its Android version code (see [fromPackageInfo]).
 class ReleaseVersion implements Comparable<ReleaseVersion> {
   const ReleaseVersion(this.major, this.minor, this.patch, this.build);
+
+  /// Flutter's `--split-per-abi` adds `abi * 1000` to the version code
+  /// (armeabi-v7a 1, arm64-v8a 2, x86_64 4), so release build numbers must
+  /// stay below this value.
+  static const abiVersionCodeMultiplier = 1000;
+
+  /// The release build number behind an Android version code, with the
+  /// split-per-abi offset removed (`2012` -> `12`). Non-numeric -> 0.
+  static int releaseBuildOf(String buildNumber) {
+    final code = int.tryParse(buildNumber.trim()) ?? 0;
+    return code >= abiVersionCodeMultiplier
+        ? code % abiVersionCodeMultiplier
+        : code;
+  }
+
+  /// The running app's version from `PackageInfo.version` / `buildNumber`.
+  static ReleaseVersion fromPackageInfo(String version, String buildNumber) {
+    final semver = parse(version) ?? const ReleaseVersion(0, 0, 0, 0);
+    return ReleaseVersion(
+      semver.major,
+      semver.minor,
+      semver.patch,
+      releaseBuildOf(buildNumber),
+    );
+  }
 
   static final RegExp _pattern = RegExp(r'^v?(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?$');
 
@@ -56,10 +83,10 @@ class ReleaseVersion implements Comparable<ReleaseVersion> {
 
   @override
   int compareTo(ReleaseVersion other) {
-    if (build != other.build) return build.compareTo(other.build);
     if (major != other.major) return major.compareTo(other.major);
     if (minor != other.minor) return minor.compareTo(other.minor);
-    return patch.compareTo(other.patch);
+    if (patch != other.patch) return patch.compareTo(other.patch);
+    return build.compareTo(other.build);
   }
 
   @override

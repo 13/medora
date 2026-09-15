@@ -70,19 +70,34 @@ void main() {
     });
   });
 
-  group('ReleaseVersion comparison', () {
-    test('the build number wins over semver', () {
-      final a = ReleaseVersion.parse('v1.2.3+4')!;
-      final b = ReleaseVersion.parse('1.2.3+5')!;
-      expect(b.isNewerThan(a), isTrue);
-      expect(a.isNewerThan(b), isFalse);
-
-      // A lower semver with a higher build is still the newer release.
-      final old = ReleaseVersion.parse('9.9.9+4')!;
-      expect(b.isNewerThan(old), isTrue);
+  group('ReleaseVersion.fromPackageInfo', () {
+    test('strips the split-per-abi version code offset', () {
+      // arm64-v8a split APK of 0.2.0+12 reports version code 2012.
+      expect(ReleaseVersion.releaseBuildOf('2012'), 12);
+      expect(ReleaseVersion.releaseBuildOf('1012'), 12); // armeabi-v7a
+      expect(ReleaseVersion.releaseBuildOf('4012'), 12); // x86_64
+      expect(ReleaseVersion.releaseBuildOf('12'), 12); // universal APK
+      expect(ReleaseVersion.releaseBuildOf(''), 0);
+      expect(ReleaseVersion.releaseBuildOf('abc'), 0);
+      expect(
+        ReleaseVersion.fromPackageInfo('0.2.0', '2012'),
+        const ReleaseVersion(0, 2, 0, 12),
+      );
     });
 
-    test('semver decides when the builds are equal', () {
+    test('an installed split APK sees the next release as newer', () {
+      final installed = ReleaseVersion.fromPackageInfo('0.2.0', '2012');
+      final latest = ReleaseVersion.parse('v0.2.1+13')!;
+      expect(latest.isNewerThan(installed), isTrue);
+      expect(installed.isNewerThan(latest), isFalse);
+      // The same release is not offered again.
+      final same = ReleaseVersion.fromPackageInfo('0.2.1', '2013');
+      expect(latest.isNewerThan(same), isFalse);
+    });
+  });
+
+  group('ReleaseVersion comparison', () {
+    test('semver decides which release is newer', () {
       final a = ReleaseVersion.parse('1.3.0+4')!;
       final b = ReleaseVersion.parse('1.2.9+4')!;
       expect(a.isNewerThan(b), isTrue);
@@ -93,6 +108,20 @@ void main() {
         )!.isNewerThan(ReleaseVersion.parse('1.2.9+4')!),
         isTrue,
       );
+      // A higher semver wins even against a larger build number.
+      expect(
+        ReleaseVersion.parse(
+          '0.2.1+13',
+        )!.isNewerThan(ReleaseVersion.parse('0.2.0+2012')!),
+        isTrue,
+      );
+    });
+
+    test('the build number breaks ties between equal semvers', () {
+      final a = ReleaseVersion.parse('v1.2.3+4')!;
+      final b = ReleaseVersion.parse('1.2.3+5')!;
+      expect(b.isNewerThan(a), isTrue);
+      expect(a.isNewerThan(b), isFalse);
     });
 
     test('an identical version is not newer', () {
@@ -118,8 +147,8 @@ void main() {
       ]..sort();
       expect(versions.map((v) => v.label).toList(), <String>[
         '0.9.0 (1)',
-        '2.0.0 (2)',
         '1.0.0 (3)',
+        '2.0.0 (2)',
       ]);
     });
   });

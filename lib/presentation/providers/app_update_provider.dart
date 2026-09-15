@@ -118,8 +118,7 @@ final currentReleaseVersionProvider = FutureProvider<ReleaseVersion>((
   ref,
 ) async {
   final info = await PackageInfo.fromPlatform();
-  return ReleaseVersion.parse('${info.version}+${info.buildNumber}') ??
-      const ReleaseVersion(0, 0, 0, 0);
+  return ReleaseVersion.fromPackageInfo(info.version, info.buildNumber);
 });
 
 /// Where downloaded APKs land. Support (not documents): an update is a cache

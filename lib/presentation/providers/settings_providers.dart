@@ -14,6 +14,7 @@ import 'package:medora/core/app_config.dart';
 import 'package:medora/core/cloud_credentials_prefs.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/presentation/providers/app_config_provider.dart';
+import 'package:medora/services/app_update_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -221,7 +222,7 @@ final buildInfoProvider = FutureProvider<BuildInfo>((ref) async {
   final config = ref.watch(appConfigProvider);
   return BuildInfo(
     version: packageInfo.version,
-    buildNumber: packageInfo.buildNumber,
+    buildNumber: '${ReleaseVersion.releaseBuildOf(packageInfo.buildNumber)}',
     buildDate: config.buildDate,
     gitSha: config.gitSha,
     channel: config.buildChannel,
