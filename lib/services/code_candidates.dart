@@ -67,7 +67,7 @@ class CodeCandidate {
 }
 
 /// Ranks the codes found in [lines]: AIC codes first (9-digit before
-/// shorter), then supplement codes, then EAN barcodes, then other
+/// shorter; a 6-8 digit AIC needs an AIC label), then supplement codes, then EAN barcodes, then other
 /// number-like tokens (>= 6 alphanumerics with >= 4 digits, e.g. lot/batch).
 /// Within a kind candidates run top-to-bottom, then left-to-right.
 /// Deduplicated by kind and code (first occurrence wins), at most [limit].
@@ -139,12 +139,17 @@ List<CodeCandidate> findCodeCandidates(
       );
     }
 
-    // AIC codes: optional letter + 6-9 digits, not already claimed.
+    // AIC codes: optional letter + 9 digits, not already claimed; 6-8 digits
+    // only after an AIC label on the line (unlabelled, they are "other").
+    final aicLabel = _aicLabel.firstMatch(text);
     for (final m in BarcodeLookupDatasource.aicPattern.allMatches(text)) {
       final span = _Span(m.start, m.end);
       if (isClaimed(span)) continue;
       final code = BarcodeLookupDatasource.cleanCode(m[0]!);
       if (code.length < 6) continue;
+      if (code.length < 9 && (aicLabel == null || m.start < aicLabel.end)) {
+        continue;
+      }
       claimed.add(span);
       add(code, CodeKind.aic, span);
     }
@@ -251,6 +256,12 @@ final _supplementLabel = () {
     caseSensitive: false,
   );
 }();
+
+/// The AIC label on medicine packs (case-insensitive): AIC, A.I.C., A I C.
+final _aicLabel = RegExp(
+  r'(?<![A-Za-z])A[.\s]?I[.\s]?C(?![A-Za-z])',
+  caseSensitive: false,
+);
 
 /// A supplement code right after a label: 3-9 digits. Register codes run
 /// from 2 to 7 digits (2: ~140 rows, 3: ~970, 4: ~1,050, 5: ~25,600, 6:

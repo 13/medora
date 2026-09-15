@@ -57,8 +57,9 @@ void main() {
     });
 
     test('9-digit AIC ranks before 6-digit, then top and left', () {
+      // A 6-digit AIC (group code) needs an AIC label.
       final result = findCodeCandidates([
-        _line('034567', 0),
+        _line('AIC 034567', 0),
         _line('B023834118', 300, left: 50),
         _line('A012345678', 300, left: 10),
         _line('A098765432', 100),
@@ -162,13 +163,14 @@ void main() {
       }
     });
 
-    test('a number two lines after the label stays an AIC', () {
+    test('a number two lines after the label is not a supplement', () {
+      // Unlabelled 6-digit runs are "other" (AIC codes are 9 digits).
       final result = findCodeCandidates([
         _line('COD MINSAN', 0),
         _line('Integratore alimentare', 50),
         _line('107018', 100),
       ]);
-      expect(result.single.kind, CodeKind.aic);
+      expect(result.single.kind, CodeKind.other);
     });
 
     test('a letter-prefixed 9-digit code without a label stays AIC', () {
@@ -422,6 +424,46 @@ void main() {
         CodeKind.ean,
         CodeKind.other,
       ]);
+    });
+  });
+
+  group('findCodeCandidates: AIC length', () {
+    String describe(List<CodeCandidate> list) =>
+        list.map((c) => '${c.kind.name}:${c.code}').join(' ');
+
+    test('unlabelled 6-8 digit runs are "other", not AIC', () {
+      for (final (text, code) in [
+        ('057737', '057737'),
+        ('Lotto 141836', '141836'),
+        ('1234567', '1234567'),
+        ('B1234567', 'B1234567'),
+        ('12345678 x', '12345678'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(describe(result), 'other:$code', reason: text);
+      }
+    });
+
+    test('unlabelled 9-digit runs, with or without a letter, are AIC', () {
+      expect(
+        describe(findCodeCandidates([_line('034567891', 0)])),
+        'aic:034567891',
+      );
+      expect(
+        describe(findCodeCandidates([_line('A034567891', 0)])),
+        'aic:034567891',
+      );
+    });
+
+    test('an AIC label keeps 6-8 digit codes as AIC', () {
+      for (final (text, code) in [
+        ('AIC 034567', '034567'),
+        ('A.I.C. n. 03456789', '03456789'),
+        ('Cod. AIC: 0345678', '0345678'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(describe(result), 'aic:$code', reason: text);
+      }
     });
   });
 }
