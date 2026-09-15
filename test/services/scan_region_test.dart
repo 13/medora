@@ -138,8 +138,10 @@ void main() {
           kind: CodeKind.ean,
           sourceText: '8057737141836',
           box: Rect.fromLTWH(241, 682, 1116, 252),
+          alternatives: ['1057737141836'],
         ),
       ], offset);
+      expect(moved.single.alternatives, ['1057737141836']);
       expect(moved.single.code, '8057737141836');
       expect(moved.single.kind, CodeKind.ean);
       expect(moved.single.sourceText, '8057737141836');
@@ -190,5 +192,17 @@ void main() {
       'ean:8057737141836',
     ]);
     expect(merged.last.box, const Rect.fromLTWH(841, 1842, 1116, 252));
+  });
+
+  test('the device photo: region pass reads COD MINSAN: T07018', () {
+    // Phone run at 58653b4: the region pass read the leading 1 as T.
+    const regionOffset = Offset(629, 1198);
+    final regionLines = offsetOcrLines(const [
+      OcrLine('COD MINSAN: T07018', Rect.fromLTWH(0, 254, 565, 64)),
+    ], regionOffset);
+    final supplement = findCodeCandidates(regionLines).single;
+    expect(supplement.kind, CodeKind.supplement);
+    expect(supplement.code, '707018');
+    expect(supplement.alternatives, ['107018']);
   });
 }

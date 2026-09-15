@@ -34,4 +34,18 @@ void main() {
       '[scan] candidate: supplement 107018 (COD MINSAN: 107018) @ 200,20 110x40',
     ]);
   });
+
+  test('describeCandidates lists alternatives when there are any', () {
+    const candidate = CodeCandidate(
+      code: '707018',
+      kind: CodeKind.supplement,
+      sourceText: 'COD MINSAN: T07018',
+      box: Rect.fromLTWH(200, 20, 110, 40),
+      alternatives: ['107018'],
+    );
+    expect(describeCandidates([candidate]), [
+      '[scan] candidate: supplement 707018 (COD MINSAN: T07018) @ 200,20 110x40 '
+          'or 107018',
+    ]);
+  });
 }

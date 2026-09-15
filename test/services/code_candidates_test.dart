@@ -543,6 +543,66 @@ void main() {
       }
     });
 
+    test('an ambiguous lookalike offers the other digit as alternative', () {
+      final result = findCodeCandidates([_line('COD MINSAN: T07018', 0)]);
+      expect(describe(result), 'supplement:707018');
+      expect(result.single.alternatives, contains('107018'));
+      expect(result.single.alternatives, isNot(contains('707018')));
+    });
+
+    test('a token without lookalikes has no alternatives', () {
+      final result = findCodeCandidates([_line('COD MINSAN: 107018', 0)]);
+      expect(describe(result), 'supplement:107018');
+      expect(result.single.alternatives, isEmpty);
+    });
+
+    test('unambiguous lookalikes have no alternatives', () {
+      final result = findCodeCandidates([_line('COD MINSAN: 1O7O18', 0)]);
+      expect(describe(result), 'supplement:107018');
+      expect(result.single.alternatives, isEmpty);
+    });
+
+    test('each ambiguous lookalike has its second digit', () {
+      for (final (text, code, alternative) in [
+        ('COD MINSAN: 10t018', '107018', '101018'),
+        ('COD MINSAN: 10?018', '107018', '101018'),
+        ('COD MINSAN: 70l018', '701018', '707018'),
+        ('COD MINSAN: 70I018', '701018', '707018'),
+        ('COD MINSAN: 70|018', '701018', '707018'),
+        ('COD MINSAN: 70i018', '701018', '707018'),
+        ('COD MINSAN: 70!018', '701018', '707018'),
+        ('COD MINSAN: 10B018', '108018', '103018'),
+        ('COD MINSAN: 10G018', '106018', '100018'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(describe(result), 'supplement:$code', reason: text);
+        expect(result.single.alternatives, [alternative], reason: text);
+      }
+    });
+
+    test('alternatives combine, fewest changes first, unique', () {
+      final result = findCodeCandidates([_line('COD MINSAN: T0B018', 0)]);
+      expect(describe(result), 'supplement:708018');
+      expect(result.single.alternatives, ['108018', '703018', '103018']);
+    });
+
+    test('alternatives are capped', () {
+      final result = findCodeCandidates([_line('COD MINSAN: TlBG12345', 0)]);
+      expect(result.single.code, '718612345');
+      final alternatives = result.single.alternatives;
+      expect(alternatives, hasLength(15)); // 2^4 - 1: under the cap
+      expect(alternatives.toSet(), hasLength(15));
+      expect(alternatives.first, '118612345');
+      expect(alternatives.last, '173012345');
+      expect(alternatives.length, lessThanOrEqualTo(maxCodeAlternatives));
+    });
+
+    test('an AIC code keeps its alternatives through the ranking', () {
+      final result = findCodeCandidates([_line('AIC n. T34567891', 0)]);
+      expect(describe(result), 'aic:734567891');
+      expect(result.single.alternatives, ['134567891']);
+    });
+
     test('lookalikes without a label are not repaired', () {
       final result = findCodeCandidates([_line('Lotto 10T018', 0)]);
       expect(describe(result), 'other:10T018');

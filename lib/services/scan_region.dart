@@ -82,5 +82,6 @@ List<CodeCandidate> offsetCandidates(
       kind: c.kind,
       sourceText: c.sourceText,
       box: c.box.shift(offset),
+      alternatives: c.alternatives,
     ),
 ];

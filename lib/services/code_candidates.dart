@@ -37,6 +37,7 @@ class CodeCandidate {
     required this.kind,
     required this.sourceText,
     required this.box,
+    this.alternatives = const [],
   });
 
   /// An EAN decoded by a barcode scanner rather than read by OCR; null unless
@@ -61,6 +62,12 @@ class CodeCandidate {
 
   /// Image-pixel rect: the element(s) containing the code, else the line.
   final Rect box;
+
+  /// Other readings of [code] when OCR read an ambiguous lookalike in it
+  /// (`T` for 7 or 1, see [_ambiguousLookalikes]): unique, without [code],
+  /// fewest changed characters first, at most [maxCodeAlternatives]. A
+  /// lookup can try them in order when [code] itself is not found.
+  final List<String> alternatives;
 
   @override
   String toString() => 'CodeCandidate(${kind.name} $code @ $box)';
@@ -87,7 +94,7 @@ List<CodeCandidate> findCodeCandidates(
 
   for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     final line = lines[lineIndex];
-    final text = _repairCodeTokens(line.text);
+    final (:text, :repairs) = _repairCodeTokens(line.text);
     final elementSpans = _elementSpans(line);
     final claimed = <_Span>[];
 
@@ -104,13 +111,21 @@ List<CodeCandidate> findCodeCandidates(
 
     bool isClaimed(_Span span) => claimed.any((c) => c.overlaps(span));
 
-    void add(String code, CodeKind kind, _Span span) {
+    void add(
+      String code,
+      CodeKind kind,
+      _Span span, {
+      String Function(String)? codeOf,
+    }) {
       found.add(
         CodeCandidate(
           code: code,
           kind: kind,
           sourceText: line.text.trim(),
           box: boxFor(span),
+          alternatives: codeOf == null
+              ? const []
+              : _alternativeCodes(text, span, repairs, code, codeOf),
         ),
       );
     }
@@ -141,6 +156,7 @@ List<CodeCandidate> findCodeCandidates(
         text.substring(supplement.start, supplement.end),
         CodeKind.supplement,
         supplement,
+        codeOf: (digits) => digits,
       );
     }
 
@@ -156,7 +172,7 @@ List<CodeCandidate> findCodeCandidates(
         continue;
       }
       claimed.add(span);
-      add(code, CodeKind.aic, span);
+      add(code, CodeKind.aic, span, codeOf: BarcodeLookupDatasource.cleanCode);
     }
 
     // Other number-like tokens.
@@ -187,6 +203,7 @@ List<CodeCandidate> findCodeCandidates(
         kind: barcode.kind,
         sourceText: ocrText.isEmpty ? barcode.sourceText : ocrText,
         box: barcode.box,
+        alternatives: found[index].alternatives,
       );
     }
   }
@@ -381,7 +398,7 @@ Set<int> _labelPartners(List<OcrLine> lines) {
   final partners = <int>{};
   for (var i = 0; i < lines.length; i++) {
     final label = lines[i];
-    final labelText = _repairCodeTokens(label.text);
+    final labelText = _repairCodeTokens(label.text).text;
     final match = _supplementLabel.firstMatch(labelText);
     if (match == null) continue;
     final eanSpans = [for (final e in _findEans(labelText)) e.span];
@@ -428,12 +445,23 @@ bool _followsLabel(OcrLine label, OcrLine next) {
   return below && overlaps;
 }
 
+/// The most alternatives a candidate carries ([CodeCandidate.alternatives]).
+const maxCodeAlternatives = 16;
+
 /// OCR letters read in place of digits, mapped by [_repairCodeTokens].
 const _digitLookalikes = {
   'O': '0', 'o': '0', 'Q': '0', 'D': '0', //
   'I': '1', 'l': '1', '|': '1', 'i': '1', '!': '1', //
   'Z': '2', 'z': '2', 'S': '5', 's': '5', 'G': '6', 'b': '6', //
   'T': '7', 't': '7', '?': '7', 'B': '8', 'g': '9', 'q': '9',
+};
+
+/// Lookalikes OCR reads for two digits: the second digit of each, the first
+/// being its [_digitLookalikes] mapping.
+const _ambiguousLookalikes = {
+  'T': '1', 't': '1', '?': '1', //
+  'l': '7', 'I': '7', '|': '7', 'i': '7', '!': '7', //
+  'B': '3', 'G': '0',
 };
 
 final _nonSpaceRun = RegExp(r'\S+');
@@ -445,12 +473,14 @@ final _edgePunctuation = RegExp(r'^[.:,;]+|[.:,;]+$');
 /// holds at least 3 digits, at least half of it is digits, every other
 /// character is a lookalike and it does not end in a quantity unit
 /// (`100g`); e.g. `COD MINSAN: 10T018` becomes `COD MINSAN: 107018`.
-String _repairCodeTokens(String text) {
+/// [repairs] maps each replaced position to the original character.
+({String text, Map<int, String> repairs}) _repairCodeTokens(String text) {
+  final repairs = <int, String>{};
   final labelEnds = [
     for (final label in [_supplementLabel, _aicLabel])
       ?label.firstMatch(text)?.end,
   ];
-  if (labelEnds.isEmpty) return text;
+  if (labelEnds.isEmpty) return (text: text, repairs: repairs);
   final chars = text.split('');
   for (final from in labelEnds) {
     for (final m in _nonSpaceRun.allMatches(text, from).take(2)) {
@@ -472,11 +502,61 @@ String _repairCodeTokens(String text) {
       }
       if (!repairable || digits == token.length) continue;
       for (var k = 0; k < token.length; k++) {
-        chars[start + k] = _digitLookalikes[token[k]] ?? token[k];
+        final digit = _digitLookalikes[token[k]];
+        if (digit == null) continue;
+        chars[start + k] = digit;
+        repairs[start + k] = token[k];
       }
     }
   }
-  return chars.join();
+  return (text: chars.join(), repairs: repairs);
+}
+
+/// The other codes [span] of the repaired [text] reads as when its
+/// ambiguous lookalikes ([repairs] holding an [_ambiguousLookalikes] key)
+/// take their second digit, each cleaned by [codeOf]; fewest changes first,
+/// then leftmost, unique, without [code], at most [maxCodeAlternatives].
+List<String> _alternativeCodes(
+  String text,
+  _Span span,
+  Map<int, String> repairs,
+  String code,
+  String Function(String) codeOf,
+) {
+  final positions = [
+    for (var i = span.start; i < span.end; i++)
+      if (_ambiguousLookalikes.containsKey(repairs[i])) i,
+  ];
+  if (positions.isEmpty) return const [];
+  // Every non-empty subset of positions, as bit masks, fewest bits first;
+  // ties keep the order in which lower positions change first.
+  final masks = [for (var m = 1; m < 1 << positions.length; m++) m];
+  int bits(int m) => m.toRadixString(2).replaceAll('0', '').length;
+  int reversed(int m) {
+    var r = 0;
+    for (var b = 0; b < positions.length; b++) {
+      if (m & (1 << b) != 0) r |= 1 << (positions.length - 1 - b);
+    }
+    return r;
+  }
+
+  masks.sort((a, b) {
+    final cmp = bits(a).compareTo(bits(b));
+    return cmp != 0 ? cmp : reversed(b).compareTo(reversed(a));
+  });
+  final result = <String>{};
+  for (final mask in masks) {
+    final chars = text.substring(span.start, span.end).split('');
+    for (var b = 0; b < positions.length; b++) {
+      if (mask & (1 << b) == 0) continue;
+      final i = positions[b];
+      chars[i - span.start] = _ambiguousLookalikes[repairs[i]]!;
+    }
+    final alternative = codeOf(chars.join());
+    if (alternative != code) result.add(alternative);
+    if (result.length == maxCodeAlternatives) break;
+  }
+  return result.toList();
 }
 
 /// Character spans of each element inside the line text (null if an element

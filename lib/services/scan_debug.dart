@@ -40,5 +40,6 @@ List<String> describeOcrLines(List<OcrLine> lines) => [
 List<String> describeCandidates(List<CodeCandidate> candidates) => [
   for (final c in candidates)
     '[scan] candidate: ${c.kind.name} ${c.code} '
-        '(${c.sourceText}) @ ${describeRect(c.box)}',
+        '(${c.sourceText}) @ ${describeRect(c.box)}'
+        '${c.alternatives.isEmpty ? '' : ' or ${c.alternatives.join('/')}'}',
 ];
