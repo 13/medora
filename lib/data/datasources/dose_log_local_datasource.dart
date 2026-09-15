@@ -1,6 +1,7 @@
 /// Medora - Dose Log Local Datasource
 library;
 
+import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
@@ -194,10 +195,27 @@ class DoseLogLocalDatasource {
     required String syncStatus,
   }) async {
     final db = await _db;
+    // Never stamp a time at or before the row's current one: see
+    // [nextUpdatedAt]. A dose toggled twice in the same millisecond, or on a
+    // device whose clock just stepped back, must still look like the newer
+    // write to last-write-wins sync.
+    final rows = await db.query(
+      'dose_logs',
+      columns: ['updated_at'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    final previousRaw = rows.isEmpty
+        ? null
+        : rows.first['updated_at'] as String?;
+    final previous = previousRaw == null
+        ? null
+        : DateTime.tryParse(previousRaw);
     final updates = <String, dynamic>{
       'status': status,
       'sync_status': syncStatus,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': nextUpdatedAt(previous, DateTime.now()).toIso8601String(),
     };
     if (clearTakenTime) {
       updates['taken_time'] = null;

@@ -6,10 +6,11 @@
 /// **last write wins by `updated_at`**, on both sides:
 ///
 /// - On the **push** side a `pending_update` is compared against the remote
-///   row's `updated_at` first ([_remoteIsNewer]); a strictly newer remote row
-///   is left alone and the local row stays pending, so the pull phase
-///   overwrites it. The skip is counted in [SyncReport.skippedStale], not as
-///   a failure. `pending_create` rows (the remote row does not exist yet) and
+///   row's `updated_at` first ([_staleAgainstRemote]); a strictly newer
+///   remote row is left alone and the local row stays pending, so the pull
+///   phase overwrites it — the pull cursor is rewound far enough to guarantee
+///   that ([_skipStale]). The skip is counted in [SyncReport.skippedStale],
+///   not as a failure. `pending_create` rows (the remote row does not exist yet) and
 ///   `pending_delete` tombstones (a delete always wins) push unconditionally,
 ///   and `forcePush` skips the comparison entirely.
 /// - On the **pull** side [_localPendingIsNewer] keeps a locally pending row
@@ -353,12 +354,13 @@ class SyncService {
         await medicationRemote!.deleteMedication(model.id);
         await medicationLocal.hardDelete(model.id);
       } else {
-        if (await _remoteIsNewer(
+        final staleAt = await _staleAgainstRemote(
           row,
           medicationRemote!.getUpdatedAt,
           force: forceAll,
-        )) {
-          report.skippedStale++;
+        );
+        if (staleAt != null) {
+          await _skipStale('medications', report, staleAt);
           return false;
         }
         await medicationRemote!.upsertMedication(model);
@@ -373,12 +375,13 @@ class SyncService {
         await treatmentRemote!.deleteTreatment(model.id);
         await treatmentLocal.hardDelete(model.id);
       } else {
-        if (await _remoteIsNewer(
+        final staleAt = await _staleAgainstRemote(
           row,
           treatmentRemote!.getUpdatedAt,
           force: forceAll,
-        )) {
-          report.skippedStale++;
+        );
+        if (staleAt != null) {
+          await _skipStale('treatments', report, staleAt);
           return false;
         }
         await treatmentRemote!.upsertTreatment(model);
@@ -393,12 +396,13 @@ class SyncService {
         await prescriptionRemote!.deletePrescription(model.id);
         await prescriptionLocal.hardDelete(model.id);
       } else {
-        if (await _remoteIsNewer(
+        final staleAt = await _staleAgainstRemote(
           row,
           prescriptionRemote!.getUpdatedAt,
           force: forceAll,
-        )) {
-          report.skippedStale++;
+        );
+        if (staleAt != null) {
+          await _skipStale('prescriptions', report, staleAt);
           return false;
         }
         await prescriptionRemote!.upsertPrescription(model);
@@ -413,12 +417,13 @@ class SyncService {
         await doseLogRemote!.deleteDoseLog(model.id);
         await doseLogLocal.hardDelete(model.id);
       } else {
-        if (await _remoteIsNewer(
+        final staleAt = await _staleAgainstRemote(
           row,
           doseLogRemote!.getUpdatedAt,
           force: forceAll,
-        )) {
-          report.skippedStale++;
+        );
+        if (staleAt != null) {
+          await _skipStale('dose_logs', report, staleAt);
           return false;
         }
         await doseLogRemote!.upsertDoseLog(model);
@@ -428,26 +433,49 @@ class SyncService {
     });
   }
 
-  /// True when the push of [row] must be skipped because the remote copy is
-  /// strictly newer than the local edit — the other half of last-write-wins.
+  /// The remote `updated_at` when the push of [row] must be skipped because
+  /// the remote copy is strictly newer than the local edit — the other half
+  /// of last-write-wins. Null when the push may go ahead.
   ///
   /// Only `pending_update` rows are compared: a `pending_create` has no remote
   /// row to lose to, a `pending_delete` tombstone always wins, and a forced
   /// push ([forcePush]) is an explicit "my copy is the truth" request. When
   /// either side has no usable `updated_at`, or the remote row is gone, the
   /// push goes ahead.
-  Future<bool> _remoteIsNewer(
+  Future<DateTime?> _staleAgainstRemote(
     Map<String, dynamic> row,
     Future<DateTime?> Function(String id) remoteUpdatedAt, {
     required bool force,
   }) async {
-    if (force || row['sync_status'] != SyncStatus.pendingUpdate) return false;
+    if (force || row['sync_status'] != SyncStatus.pendingUpdate) return null;
     final localRaw = row['updated_at'] as String?;
     final local = localRaw == null ? null : DateTime.tryParse(localRaw);
-    if (local == null) return false;
+    if (local == null) return null;
     final remote = await remoteUpdatedAt(row['id'] as String);
-    if (remote == null) return false;
-    return remote.toUtc().isAfter(local.toUtc());
+    if (remote == null) return null;
+    return remote.toUtc().isAfter(local.toUtc()) ? remote.toUtc() : null;
+  }
+
+  /// Records a push skipped as stale and makes sure the pull that is supposed
+  /// to replace the local row actually re-fetches it.
+  ///
+  /// The remote `updated_at` is stamped by the server (`BEFORE UPDATE`
+  /// trigger) while the cursor tracks rows this device has already seen, so
+  /// the cursor can easily sit *past* the remote row that just won: the delta
+  /// pull asks for `updated_at > cursor`, would not return it, and the local
+  /// row would stay pending for ever. Rewinding the cursor to just before the
+  /// winning row's stamp puts it back in the next pull's window.
+  Future<void> _skipStale(
+    String table,
+    SyncReport report,
+    DateTime remoteUpdatedAt,
+  ) async {
+    report.skippedStale++;
+    final current = await _cursors.lastPullAt(table);
+    // A null cursor already means "fetch everything".
+    if (current == null) return;
+    final target = remoteUpdatedAt.toUtc().subtract(const Duration(seconds: 1));
+    if (target.isBefore(current)) await _cursors.setLastPullAt(table, target);
   }
 
   /// Runs [processRow] per row; a thrown error becomes a [SyncFailure] and the

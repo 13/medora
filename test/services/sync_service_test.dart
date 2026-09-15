@@ -319,6 +319,51 @@ void main() {
       },
     );
 
+    test(
+      'a stale skipped push rewinds the cursor so the pull refetches the row',
+      () async {
+        final h = Harness();
+        final t = h.clock.now();
+        // The server stamped the winning remote row at T+20 …
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'm9b',
+            name: 'Remote',
+            quantity: 1,
+          ).toJson(),
+          updatedAt: t.add(const Duration(minutes: 20)),
+        );
+        // … but this device's cursor already sits past it: `updated_at` is
+        // server-clock on the remote side and device-clock locally, so a
+        // delta pull asking for `> cursor` would never return the row again.
+        await h.cursors.setLastPullAt(
+          'medications',
+          t.add(const Duration(minutes: 30)),
+        );
+        await MedicationLocalDatasource().upsert(
+          MedicationModel(
+            id: 'm9b',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: t.add(const Duration(minutes: 10)),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.skippedStale, 1);
+        expect(report.failures, isEmpty);
+        final row = await localRow('medications', 'm9b');
+        expect(
+          row?['name'],
+          'Remote',
+          reason: 'the skipped row must be replaced by the pull it relies on',
+        );
+        expect(row?['sync_status'], SyncStatus.synced);
+      },
+    );
+
     test('a pending update newer than the remote row is pushed', () async {
       final h = Harness();
       await MedicationLocalDatasource().upsert(

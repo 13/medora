@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
@@ -76,7 +77,10 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
     Prescription prescription,
   ) async {
     try {
-      final now = DateTime.now();
+      final previous = await localDatasource.getPrescriptionById(
+        prescription.id,
+      );
+      final now = nextUpdatedAt(previous?.updatedAt, DateTime.now());
       final updated = prescription.copyWith(updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);

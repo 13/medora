@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
@@ -71,8 +72,11 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   @override
   Future<Result<Treatment>> updateTreatment(Treatment treatment) async {
     try {
+      final previous = await localDatasource.getTreatmentById(treatment.id);
       final model = TreatmentModel.fromDomain(
-        treatment.copyWith(updatedAt: DateTime.now()),
+        treatment.copyWith(
+          updatedAt: nextUpdatedAt(previous?.updatedAt, DateTime.now()),
+        ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground((r) => r.updateTreatment(model), model.id);
@@ -112,7 +116,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
         isActive: false,
         notes: existing.notes,
         createdAt: existing.createdAt,
-        updatedAt: DateTime.now(),
+        updatedAt: nextUpdatedAt(existing.updatedAt, DateTime.now()),
       );
       await localDatasource.upsert(ended, syncStatus: SyncStatus.pendingUpdate);
       _syncInBackground((r) => r.endTreatment(id), id);
