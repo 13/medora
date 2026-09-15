@@ -2,13 +2,18 @@
 ///
 /// Bidirectional sync between local SQLite and Supabase.
 ///
-/// Offline-first. A cycle pushes first, then pulls, and the push upserts
-/// unconditionally — so in practice the effective rule is **last pusher
-/// wins**: whichever device syncs last overwrites the remote row, regardless
-/// of which edit is newer. The `updated_at` comparison in
-/// [_localPendingIsNewer] is a last-write-wins tiebreak that only comes into
-/// play on the pull side, for rows whose push failed and which are therefore
-/// still pending locally.
+/// Offline-first. A cycle pushes first, then pulls, and conflicts resolve
+/// **last write wins by `updated_at`**, on both sides:
+///
+/// - On the **push** side a `pending_update` is compared against the remote
+///   row's `updated_at` first ([_remoteIsNewer]); a strictly newer remote row
+///   is left alone and the local row stays pending, so the pull phase
+///   overwrites it. The skip is counted in [SyncReport.skippedStale], not as
+///   a failure. `pending_create` rows (the remote row does not exist yet) and
+///   `pending_delete` tombstones (a delete always wins) push unconditionally,
+///   and `forcePush` skips the comparison entirely.
+/// - On the **pull** side [_localPendingIsNewer] keeps a locally pending row
+///   that is at least as new as the remote copy.
 ///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
@@ -204,7 +209,8 @@ class SyncService {
     _lastReport = report;
     debugPrint(
       'Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
-      'deleted ${report.deleted}, failed ${report.failures.length}',
+      'deleted ${report.deleted}, skipped-stale ${report.skippedStale}, '
+      'failed ${report.failures.length}',
     );
     _setState(
       report.fatal != null
@@ -298,6 +304,14 @@ class SyncService {
         await medicationRemote!.deleteMedication(model.id);
         await medicationLocal.hardDelete(model.id);
       } else {
+        if (await _remoteIsNewer(
+          row,
+          medicationRemote!.getUpdatedAt,
+          force: forceAll,
+        )) {
+          report.skippedStale++;
+          return false;
+        }
         await medicationRemote!.upsertMedication(model);
         await medicationLocal.markSynced(model.id);
       }
@@ -310,6 +324,14 @@ class SyncService {
         await treatmentRemote!.deleteTreatment(model.id);
         await treatmentLocal.hardDelete(model.id);
       } else {
+        if (await _remoteIsNewer(
+          row,
+          treatmentRemote!.getUpdatedAt,
+          force: forceAll,
+        )) {
+          report.skippedStale++;
+          return false;
+        }
         await treatmentRemote!.upsertTreatment(model);
         await treatmentLocal.markSynced(model.id);
       }
@@ -322,6 +344,14 @@ class SyncService {
         await prescriptionRemote!.deletePrescription(model.id);
         await prescriptionLocal.hardDelete(model.id);
       } else {
+        if (await _remoteIsNewer(
+          row,
+          prescriptionRemote!.getUpdatedAt,
+          force: forceAll,
+        )) {
+          report.skippedStale++;
+          return false;
+        }
         await prescriptionRemote!.upsertPrescription(model);
         await prescriptionLocal.markSynced(model.id);
       }
@@ -334,11 +364,41 @@ class SyncService {
         await doseLogRemote!.deleteDoseLog(model.id);
         await doseLogLocal.hardDelete(model.id);
       } else {
+        if (await _remoteIsNewer(
+          row,
+          doseLogRemote!.getUpdatedAt,
+          force: forceAll,
+        )) {
+          report.skippedStale++;
+          return false;
+        }
         await doseLogRemote!.upsertDoseLog(model);
         await doseLogLocal.markSynced(model.id);
       }
       return true;
     });
+  }
+
+  /// True when the push of [row] must be skipped because the remote copy is
+  /// strictly newer than the local edit — the other half of last-write-wins.
+  ///
+  /// Only `pending_update` rows are compared: a `pending_create` has no remote
+  /// row to lose to, a `pending_delete` tombstone always wins, and a forced
+  /// push ([forcePush]) is an explicit "my copy is the truth" request. When
+  /// either side has no usable `updated_at`, or the remote row is gone, the
+  /// push goes ahead.
+  Future<bool> _remoteIsNewer(
+    Map<String, dynamic> row,
+    Future<DateTime?> Function(String id) remoteUpdatedAt, {
+    required bool force,
+  }) async {
+    if (force || row['sync_status'] != SyncStatus.pendingUpdate) return false;
+    final localRaw = row['updated_at'] as String?;
+    final local = localRaw == null ? null : DateTime.tryParse(localRaw);
+    if (local == null) return false;
+    final remote = await remoteUpdatedAt(row['id'] as String);
+    if (remote == null) return false;
+    return remote.toUtc().isAfter(local.toUtc());
   }
 
   /// Runs [processRow] per row; a thrown error becomes a [SyncFailure] and the

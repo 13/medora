@@ -73,6 +73,13 @@ class FakeRemoteTable {
     }).toList();
   }
 
+  /// The stored `updated_at` for [id], or null when the row is absent —
+  /// mirrors `select('updated_at').eq('id', id).maybeSingle()`.
+  DateTime? updatedAt(String id) {
+    final raw = rows[id]?['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
+  }
+
   /// Test helper: seed a row that is already synced remotely.
   void seed(Map<String, dynamic> json, {DateTime? updatedAt}) {
     rows[json['id'] as String] = {
@@ -86,6 +93,9 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   FakeMedicationRemote(DateTime Function() clock)
     : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
+
+  @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
   Future<List<MedicationModel>> getMedications() async =>
@@ -123,6 +133,9 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
+
+  @override
   Future<List<TreatmentModel>> getTreatments() async =>
       table.live().map(TreatmentModel.fromJson).toList();
   @override
@@ -154,6 +167,9 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   FakePrescriptionRemote(DateTime Function() clock)
     : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
+
+  @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
   Future<List<PrescriptionModel>> getPrescriptions() async =>
@@ -196,6 +212,9 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
 class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   FakeDoseLogRemote(DateTime Function() clock) : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
+
+  @override
+  Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
   Future<List<DoseLogModel>> getDoseLogs() async =>

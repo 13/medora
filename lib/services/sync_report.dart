@@ -21,6 +21,12 @@ class SyncReport {
   int pushed = 0;
   int pulled = 0;
   int deleted = 0;
+
+  /// Pending updates whose push was skipped because the remote row was
+  /// strictly newer — the pull phase overwrites the local copy instead.
+  /// Not a failure.
+  int skippedStale = 0;
+
   final List<SyncFailure> failures = [];
 
   /// Set when the whole cycle aborted (not a per-row error).

@@ -67,12 +67,16 @@ minutes (`settings_providers.dart:159`).
   advances the cursor to the newest `updated_at` it saw minus **1 second** of
   overlap (`sync_service.dart:469`), so a row written in the same second is not
   missed. The cursor advances only when the whole table applied cleanly.
-- **Conflicts** resolve **last pusher wins**: the push runs first and upserts
-  unconditionally, so the device that syncs last overwrites the server copy.
-  The `updated_at` comparison on the pull side is a tiebreak for rows that are
-  still locally pending (`_localPendingIsNewer`), and a local tombstone waiting
-  to be pushed always beats a live remote row — a pull must never resurrect a
-  deleted row.
+- **Conflicts** resolve **last write wins by `updated_at`**, enforced on both
+  sides. Before upserting a `pending_update` row the push reads the remote
+  row's `updated_at` (`getUpdatedAt` on each remote datasource) and, if the
+  remote copy is strictly newer, skips the push and leaves the row pending so
+  the pull phase overwrites it — counted in `SyncReport.skippedStale`, not as a
+  failure. `pending_create` rows and `pending_delete` tombstones push
+  unconditionally, and `forcePush` skips the comparison. On the pull side
+  `_localPendingIsNewer` keeps a locally pending row that is at least as new as
+  the remote copy, and a local tombstone waiting to be pushed always beats a
+  live remote row — a pull must never resurrect a deleted row.
 - **Reporting**: each cycle fills a `SyncReport` (`lib/services/sync_report.dart`)
   — pushed/pulled/deleted counters, per-row `SyncFailure`s, and a `fatal` field
   for an aborted cycle. Settings renders the last report.

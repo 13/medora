@@ -281,6 +281,132 @@ void main() {
       },
     );
 
+    test(
+      'a stale pending update is not pushed and the remote copy wins',
+      () async {
+        final h = Harness();
+        // Local edit at T+10min, remote edit at T+20min. No failIds trick:
+        // the push itself must notice the remote row is newer and stand down.
+        await MedicationLocalDatasource().upsert(
+          MedicationModel(
+            id: 'm9',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: h.clock.now().add(const Duration(minutes: 10)),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
+        h.meds.table.seed(
+          const MedicationModel(id: 'm9', name: 'Remote', quantity: 1).toJson(),
+          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+        );
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.skippedStale, 1);
+        expect(report.pushed, 0);
+        expect(report.failures, isEmpty);
+        expect(h.service.currentState, SyncState.success);
+        expect(h.meds.table.rows['m9']?['name'], 'Remote');
+        final row = await localRow('medications', 'm9');
+        expect(row?['name'], 'Remote');
+        expect(row?['sync_status'], SyncStatus.synced);
+      },
+    );
+
+    test('a pending update newer than the remote row is pushed', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm10',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm10', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().add(const Duration(minutes: 5)),
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.skippedStale, 0);
+      expect(report.pushed, 1);
+      expect(h.meds.table.rows['m10']?['name'], 'Local');
+      expect((await localRow('medications', 'm10'))?['name'], 'Local');
+    });
+
+    test(
+      'a pending create and a tombstone push even against a newer remote row',
+      () async {
+        final h = Harness();
+        final local = MedicationLocalDatasource();
+        // pending_create whose id already exists remotely, newer.
+        await local.upsert(
+          MedicationModel(
+            id: 'm11',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: h.clock.now(),
+          ),
+          syncStatus: SyncStatus.pendingCreate,
+        );
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'm11',
+            name: 'Remote',
+            quantity: 1,
+          ).toJson(),
+          updatedAt: h.clock.now().add(const Duration(hours: 1)),
+        );
+        // pending_delete against a newer remote row.
+        h.meds.table.seed(
+          const MedicationModel(
+            id: 'm12',
+            name: 'Doomed',
+            quantity: 1,
+          ).toJson(),
+          updatedAt: h.clock.now().add(const Duration(hours: 1)),
+        );
+        await local.upsert(
+          const MedicationModel(id: 'm12', name: 'Doomed', quantity: 1),
+          syncStatus: SyncStatus.synced,
+        );
+        await local.markDeleted('m12');
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.skippedStale, 0);
+        expect(h.meds.table.rows['m11']?['name'], 'Local');
+        expect(h.meds.table.rows['m12']?['deleted_at'], isNotNull);
+      },
+    );
+
+    test('force push ignores a newer remote row', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm13',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm13', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().add(const Duration(hours: 1)),
+      );
+
+      final report = (await h.service.forcePush())!;
+
+      expect(report.skippedStale, 0);
+      expect(report.pushed, 1);
+      expect(h.meds.table.rows['m13']?['name'], 'Local');
+    });
+
     test('skips when offline or signed out', () async {
       final h = Harness()..online = false;
       await h.service.syncAll();
