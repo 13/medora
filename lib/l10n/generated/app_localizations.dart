@@ -814,6 +814,24 @@ abstract class AppLocalizations {
   /// **'Share record'**
   String get shareEpisode;
 
+  /// Subject of a shared episode (shown in e-mail lists and notifications), so it never names the illness. {period} is the illness period, e.g. 'Mar 2, 2026 – Mar 11, 2026'.
+  ///
+  /// In en, this message translates to:
+  /// **'Illness record: {period}'**
+  String episodeShareSubject(String period);
+
+  /// Label of the line naming who was ill in a shared episode, followed by the patient names.
+  ///
+  /// In en, this message translates to:
+  /// **'Patient'**
+  String get episodePatient;
+
+  /// The unit of one prescribed dose, after its amount ('1 tablet', '2 tablets'). {count} is the amount (it may be a fraction), {unit} the stored unit key; an unknown key is shown as it is.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{unit, select, pieces{piece} pills{pill} tablets{tablet} capsules{capsule} ml{ml} drops{drop} bustine{sachet} ampoules{ampoule} suppositories{suppository} patches{patch} other{{unit}}}} other{{unit, select, pieces{pieces} pills{pills} tablets{tablets} capsules{capsules} ml{ml} drops{drops} bustine{sachets} ampoules{ampoules} suppositories{suppositories} patches{patches} other{{unit}}}}}'**
+  String dosageUnitName(num count, String unit);
+
   /// No description provided for @prescriptions.
   ///
   /// In en, this message translates to:

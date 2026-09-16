@@ -433,6 +433,51 @@ class AppLocalizationsIt extends AppLocalizations {
   String get shareEpisode => 'Condividi resoconto';
 
   @override
+  String episodeShareSubject(String period) {
+    return 'Decorso della malattia: $period';
+  }
+
+  @override
+  String get episodePatient => 'Paziente';
+
+  @override
+  String dosageUnitName(num count, String unit) {
+    String _temp0 = intl.Intl.selectLogic(unit, {
+      'pieces': 'pezzi',
+      'pills': 'pillole',
+      'tablets': 'compresse',
+      'capsules': 'capsule',
+      'ml': 'ml',
+      'drops': 'gocce',
+      'bustine': 'bustine',
+      'ampoules': 'fiale',
+      'suppositories': 'supposte',
+      'patches': 'cerotti',
+      'other': '$unit',
+    });
+    String _temp1 = intl.Intl.selectLogic(unit, {
+      'pieces': 'pezzo',
+      'pills': 'pillola',
+      'tablets': 'compressa',
+      'capsules': 'capsula',
+      'ml': 'ml',
+      'drops': 'goccia',
+      'bustine': 'bustina',
+      'ampoules': 'fiala',
+      'suppositories': 'supposta',
+      'patches': 'cerotto',
+      'other': '$unit',
+    });
+    String _temp2 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$_temp0',
+      one: '$_temp1',
+    );
+    return '$_temp2';
+  }
+
+  @override
   String get prescriptions => 'Prescrizioni';
 
   @override
