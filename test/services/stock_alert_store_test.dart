@@ -61,7 +61,9 @@ void main() {
     SharedPreferences.setMockInitialValues({
       StockAlertStore.prefsKey: jsonEncode({
         'v': StockAlertStore.version + 1,
-        'alerts': {'7': {'when': 1, 'extra': 'something'}},
+        'alerts': {
+          '7': {'when': 1, 'extra': 'something'},
+        },
       }),
     });
     final prefs = await SharedPreferences.getInstance();

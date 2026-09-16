@@ -476,7 +476,8 @@ void main() {
     expect(
       port.pendingStockAlertIds,
       {lowStockId},
-      reason: 'what turning notifications off destroyed, turning them on restores',
+      reason:
+          'what turning notifications off destroyed, turning them on restores',
     );
   });
 
