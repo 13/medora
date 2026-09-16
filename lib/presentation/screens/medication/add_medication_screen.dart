@@ -91,6 +91,11 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
 
   /// The pack's EAN, remembered next to the barcode field's label code.
   String? _ean;
+
+  /// The label code [_ean] was read with. A scan or a hand edit that moves
+  /// the barcode field to another code drops the remembered EAN with it,
+  /// because that EAN belongs to the pack the old code came from.
+  String? _eanCode;
   Medication? _existingMedication;
   String? _imagePath;
 
@@ -109,6 +114,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     _storageLocationController = TextEditingController();
     _barcodeController = TextEditingController(text: widget.initialBarcode);
     _ean = widget.initialEan;
+    _eanCode = widget.initialBarcode;
     _notesController = TextEditingController();
 
     _isEditMode = widget.medicationId != null;
@@ -225,6 +231,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           _storageLocationController.text = med.storageLocation ?? '';
           _barcodeController.text = med.barcode ?? '';
           _ean = med.ean;
+          _eanCode = med.barcode;
           _notesController.text = med.notes ?? '';
           _imagePath = med.imagePath;
         });
@@ -248,7 +255,16 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     if (result == null || !mounted) return;
     setState(() {
       _barcodeController.text = result.code;
-      _ean = result.ean;
+      // A rescan of the same pack whose photo showed no barcode stripe
+      // carries no EAN: keep the one already remembered. A scan that read
+      // a different code is a different pack, so the old EAN goes.
+      if (result.ean != null) {
+        _ean = result.ean;
+        _eanCode = result.code;
+      } else if (result.code != _eanCode) {
+        _ean = null;
+        _eanCode = null;
+      }
     });
     // The barcode field lives in Stock & storage: show what was filled.
     _stockExpanded.value = true;
@@ -731,7 +747,14 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                         ],
                       ),
                     ),
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (value) => setState(() {
+                      // Typed over the scanned code: the remembered EAN
+                      // belongs to the pack that carried the old code.
+                      if (value.trim() != _eanCode) {
+                        _ean = null;
+                        _eanCode = null;
+                      }
+                    }),
                     onFieldSubmitted: (value) {
                       if (value.trim().isNotEmpty) {
                         _searchBarcode(value.trim());
