@@ -21,7 +21,9 @@ import 'package:medora/presentation/screens/treatment/add_treatment_screen.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/fake_reminder_port.dart';
+import '../../helpers/fonts.dart';
 import '../../helpers/test_database.dart';
+import '../../helpers/text_fit.dart';
 
 void main() {
   final now = DateTime(2026, 3, 4, 12);
@@ -34,8 +36,14 @@ void main() {
 
   /// Pumps the form under a real router, pushed on top of a stub page, so
   /// the screen's `context.pop()` after a save is a real pop.
-  Future<void> pump(WidgetTester tester, {String? treatmentId}) async {
-    tester.view.physicalSize = const Size(800, 2400);
+  Future<void> pump(
+    WidgetTester tester, {
+    String? treatmentId,
+    Locale locale = const Locale('en'),
+    double scale = 1.0,
+    Size size = const Size(800, 2400),
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -68,13 +76,16 @@ void main() {
         ),
         GoRoute(
           path: '/form',
-          builder: (_, _) => AddTreatmentScreen(treatmentId: treatmentId),
+          builder: (_, _) => withTextScale(
+            scale,
+            AddTreatmentScreen(treatmentId: treatmentId),
+          ),
         ),
       ],
     );
     addTearDown(router.dispose);
     final previousLocale = Intl.defaultLocale;
-    Intl.defaultLocale = 'en';
+    Intl.defaultLocale = locale.languageCode;
     addTearDown(() => Intl.defaultLocale = previousLocale);
 
     await tester.pumpWidget(
@@ -82,7 +93,7 @@ void main() {
         container: container,
         child: MaterialApp.router(
           theme: AppTheme.lightThemeFrom(const Color(0xFF2E7D6F)),
-          locale: const Locale('en'),
+          locale: locale,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
@@ -125,8 +136,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> save(WidgetTester tester, {String label = 'Create Treatment'}) =>
-      tester.tap(find.text(label)).then((_) => tester.pumpAndSettle());
+  /// Taps the form's only ElevatedButton (Create or Update, any locale).
+  Future<void> save(WidgetTester tester) async {
+    final button = find.byType(ElevatedButton);
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+  }
+
+  Finder clearButtonOf(Key field) => find.descendant(
+    of: find.byKey(field),
+    matching: find.byIcon(Icons.clear),
+  );
+
+  /// The section's error line, which has to reach a screen reader on its
+  /// own: Save does nothing else a blind user could notice. (testWidgets
+  /// enables semantics by default.)
+  void expectAnnounced(WidgetTester tester, String message) {
+    expect(find.text(message), findsOneWidget);
+    expect(
+      tester.getSemantics(find.text(message)),
+      isSemantics(isLiveRegion: true, label: message),
+    );
+  }
+
+  const fromMissing = 'Please also enter "Unable to work from"';
+  const toBeforeFrom =
+      '"Unable to work until" can\'t be before "Unable to work from"';
 
   testWidgets('the Krankenstand section is collapsed by default', (
     tester,
@@ -210,37 +247,27 @@ void main() {
     await save(tester);
 
     expect(sectionVisible(tester), isTrue);
-    expect(
-      find.text('Pick a start date on or before the end date'),
-      findsOneWidget,
-    );
+    expectAnnounced(tester, fromMissing);
     expect(await TreatmentLocalDatasource().getTreatments(), isEmpty);
     expect(find.text('stub home'), findsNothing);
   });
 
-  testWidgets('an end date before the start date is rejected', (tester) async {
+  testWidgets('the start picker cannot go past the end date', (tester) async {
     await pump(tester);
     await tester.enterText(find.byType(TextFormField).first, 'Grippe');
     await openSection(tester);
 
-    // "To" first, then a later "from": the "to" picker's firstDate cannot
-    // stop this order, so the save guard has to.
-    await pickDate(tester, const Key('sickLeaveToField'), day: 4);
-    await pickDate(tester, const Key('sickLeaveFromField'), day: 6);
+    // "Until" first, on a day before today: the "from" picker is bounded by
+    // it, so it opens on that day instead of today and the pair stays valid.
+    await pickDate(tester, const Key('sickLeaveToField'), day: 2);
+    await pickDate(tester, const Key('sickLeaveFromField'));
+    expect(tester.takeException(), isNull);
     await save(tester);
 
-    expect(
-      find.text('Pick a start date on or before the end date'),
-      findsOneWidget,
-    );
-    expect(await TreatmentLocalDatasource().getTreatments(), isEmpty);
-
-    // Changing a date clears the error.
-    await pickDate(tester, const Key('sickLeaveToField'), day: 8);
-    expect(
-      find.text('Pick a start date on or before the end date'),
-      findsNothing,
-    );
+    expect(find.text(toBeforeFrom), findsNothing);
+    final stored = (await TreatmentLocalDatasource().getTreatments()).single;
+    expect(stored.sickLeaveFrom, DateTime(2026, 3, 2));
+    expect(stored.sickLeaveTo, DateTime(2026, 3, 2));
   });
 
   testWidgets('a start date after today still opens the end-date picker', (
@@ -263,19 +290,30 @@ void main() {
   });
 
   group('edit mode', () {
-    Future<void> seed({DateTime? from, DateTime? to, String? doctor}) =>
-        TreatmentLocalDatasource().upsert(
-          TreatmentModel(
-            id: 't1',
-            name: 'Sinusitis',
-            startDate: DateTime(2026, 3, 3),
-            sickLeaveFrom: from,
-            sickLeaveTo: to,
-            sickLeaveRef: from == null ? null : '1234567890',
-            doctor: doctor,
-          ),
-          syncStatus: 'synced',
-        );
+    Future<void> seed({
+      DateTime? from,
+      DateTime? to,
+      String? doctor,
+      String? ref,
+    }) => TreatmentLocalDatasource().upsert(
+      TreatmentModel(
+        id: 't1',
+        name: 'Sinusitis',
+        startDate: DateTime(2026, 3, 3),
+        sickLeaveFrom: from,
+        sickLeaveTo: to,
+        sickLeaveRef: ref ?? (from == null ? null : '1234567890'),
+        doctor: doctor,
+      ),
+      syncStatus: 'synced',
+    );
+
+    /// The collapsed section's summary line (the text fields are offstage
+    /// while collapsed, so they do not match).
+    Finder summary(String text) => find.descendant(
+      of: find.byKey(const Key('sickLeaveSection')),
+      matching: find.byWidgetPredicate((w) => w is Text && w.data == text),
+    );
 
     testWidgets('opens the section and fills it when the treatment has a '
         'sick leave', (tester) async {
@@ -299,6 +337,76 @@ void main() {
       expect(sectionVisible(tester), isTrue);
     });
 
+    testWidgets('opens the section for an end date alone', (tester) async {
+      await seed(to: DateTime(2026, 3, 9));
+      await pump(tester, treatmentId: 't1');
+      expect(sectionVisible(tester), isTrue);
+    });
+
+    testWidgets('collapsed without dates, the summary names the doctor, '
+        'else the certificate', (tester) async {
+      await seed(doctor: 'Dr. Rossi', ref: '9999');
+      await pump(tester, treatmentId: 't1');
+      await openSection(tester); // collapse
+      expect(sectionVisible(tester), isFalse);
+      expect(summary('Dr. Rossi'), findsOneWidget);
+
+      await openSection(tester);
+      await tester.enterText(find.byKey(const Key('doctorField')), '');
+      await openSection(tester);
+      expect(summary('9999'), findsOneWidget);
+    });
+
+    testWidgets('a stored leave that ends before it starts blocks the save', (
+      tester,
+    ) async {
+      await seed(from: DateTime(2026, 3, 9), to: DateTime(2026, 3, 3));
+      await pump(tester, treatmentId: 't1');
+      await openSection(tester); // collapse, so the save must reopen it
+      await save(tester);
+
+      expect(sectionVisible(tester), isTrue);
+      expectAnnounced(tester, toBeforeFrom);
+      final stored = await TreatmentLocalDatasource().getTreatmentById('t1');
+      expect(stored!.sickLeaveTo, DateTime(2026, 3, 3));
+      expect(find.text('stub home'), findsNothing);
+
+      // Changing a date clears the error.
+      await pickDate(tester, const Key('sickLeaveToField'), day: 12);
+      expect(find.text(toBeforeFrom), findsNothing);
+      await save(tester);
+      final fixed = await TreatmentLocalDatasource().getTreatmentById('t1');
+      expect(fixed!.sickLeaveTo, DateTime(2026, 3, 12));
+    });
+
+    testWidgets('clearing the start date also clears the end date', (
+      tester,
+    ) async {
+      // Without a start an end date means nothing; keeping it would block
+      // the save with an error about the field the user just emptied.
+      await seed(from: DateTime(2026, 3, 3), to: DateTime(2026, 3, 9));
+      await pump(tester, treatmentId: 't1');
+
+      await tester.tap(clearButtonOf(const Key('sickLeaveFromField')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('sickLeaveToField')),
+          matching: find.text('Select date'),
+        ),
+        findsOneWidget,
+      );
+      expect(clearButtonOf(const Key('sickLeaveToField')), findsNothing);
+
+      await save(tester);
+      expect(find.text(fromMissing), findsNothing);
+      expect(find.text('stub home'), findsOneWidget);
+      final stored = await TreatmentLocalDatasource().getTreatmentById('t1');
+      expect(stored!.sickLeaveFrom, isNull);
+      expect(stored.sickLeaveTo, isNull);
+      expect(stored.sickLeaveRef, '1234567890');
+    });
+
     testWidgets('stays collapsed for a treatment without either', (
       tester,
     ) async {
@@ -317,25 +425,13 @@ void main() {
       );
       await pump(tester, treatmentId: 't1');
 
-      // Clear "to" first: clearing "from" first would leave an end without
-      // a start, which the guard rejects.
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key('sickLeaveToField')),
-          matching: find.byIcon(Icons.clear),
-        ),
-      );
+      await tester.tap(clearButtonOf(const Key('sickLeaveToField')));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key('sickLeaveFromField')),
-          matching: find.byIcon(Icons.clear),
-        ),
-      );
+      await tester.tap(clearButtonOf(const Key('sickLeaveFromField')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('sickLeaveRefField')), '');
       await tester.enterText(find.byKey(const Key('doctorField')), '  ');
-      await save(tester, label: 'Update Treatment');
+      await save(tester);
 
       final stored = await TreatmentLocalDatasource().getTreatmentById('t1');
       expect(stored!.sickLeaveFrom, isNull);
@@ -343,5 +439,81 @@ void main() {
       expect(stored.sickLeaveRef, isNull);
       expect(stored.doctor, isNull);
     });
+  });
+
+  group('error wording and layout at 360 dp', () {
+    setUpAll(loadAppFonts);
+
+    // Each message names the sick-leave fields as the form labels them, not
+    // the treatment's own start and end dates.
+    const messages = {
+      'de': (
+        missing: 'Bitte auch "Arbeitsunfähig von" angeben',
+        order:
+            '"Arbeitsunfähig bis" darf nicht vor "Arbeitsunfähig von" liegen',
+      ),
+      'it': (
+        missing: 'Indica anche "In malattia dal"',
+        order: '"In malattia fino al" non può precedere "In malattia dal"',
+      ),
+      'en': (missing: fromMissing, order: toBeforeFrom),
+    };
+
+    Future<void> seedRow({DateTime? from, required DateTime to}) =>
+        TreatmentLocalDatasource().upsert(
+          TreatmentModel(
+            id: 't1',
+            name: 'Sinusitis',
+            startDate: DateTime(2026, 3, 3),
+            sickLeaveFrom: from,
+            sickLeaveTo: to,
+          ),
+          syncStatus: 'synced',
+        );
+
+    Future<void> expectWhole(WidgetTester tester, String message) async {
+      expect(find.text(message), findsOneWidget);
+      await tester.ensureVisible(find.text(message));
+      final fit = measureText(tester, find.text(message));
+      printOnFailure('"$message": $fit');
+      expect(
+        fit.minIntrinsic,
+        lessThanOrEqualTo(fit.maxWidth + 0.5),
+        reason: '"$message" is broken mid-word: $fit',
+      );
+      expect(fit.exceeded, isFalse, reason: '"$message" is cut: $fit');
+      expect(tester.takeException(), isNull);
+    }
+
+    for (final MapEntry(key: locale, value: text) in messages.entries) {
+      testWidgets('an end date without a start reads right in $locale at '
+          '1.6x', (tester) async {
+        await seedRow(to: DateTime(2026, 3, 9));
+        await pump(
+          tester,
+          treatmentId: 't1',
+          locale: Locale(locale),
+          scale: 1.6,
+          size: const Size(360, 2400),
+        );
+        await save(tester);
+        await expectWhole(tester, text.missing);
+      });
+
+      testWidgets('an end before the start reads right in $locale at 1.6x', (
+        tester,
+      ) async {
+        await seedRow(from: DateTime(2026, 3, 9), to: DateTime(2026, 3, 3));
+        await pump(
+          tester,
+          treatmentId: 't1',
+          locale: Locale(locale),
+          scale: 1.6,
+          size: const Size(360, 2400),
+        );
+        await save(tester);
+        await expectWhole(tester, text.order);
+      });
+    }
   });
 }

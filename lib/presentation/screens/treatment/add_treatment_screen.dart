@@ -85,7 +85,10 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
           _doctorController.text = t.doctor ?? '';
         });
         _sickLeaveExpanded.value =
-            t.hasSickLeave || t.sickLeaveRef != null || t.doctor != null;
+            t.sickLeaveFrom != null ||
+            t.sickLeaveTo != null ||
+            t.sickLeaveRef != null ||
+            t.doctor != null;
       },
       failure: (msg) {
         if (mounted) {
@@ -233,69 +236,83 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
             const SizedBox(height: 16),
 
             // Sick leave (Krankenstand): collapsed by default, so an
-            // ordinary therapy still shows the form it always had.
-            FormSection(
-              key: const Key('sickLeaveSection'),
-              title: l10n.sickLeave,
-              icon: Icons.work_off,
-              initiallyExpanded: false,
-              controller: _sickLeaveExpanded,
-              summary: _sickLeaveSummary(l10n),
-              children: [
-                DatePickerField(
-                  key: const Key('sickLeaveFromField'),
-                  label: l10n.sickLeaveFrom,
-                  icon: Icons.event_busy,
-                  date: _sickLeaveFrom,
-                  now: now,
-                  onDateSelected: (d) => setState(() {
-                    _sickLeaveFrom = d;
-                    _sickLeaveError = null;
-                  }),
-                ),
-                const SizedBox(height: 12),
-                DatePickerField(
-                  key: const Key('sickLeaveToField'),
-                  label: l10n.sickLeaveTo,
-                  icon: Icons.event_available,
-                  date: _sickLeaveTo,
-                  now: now,
-                  firstDate: _sickLeaveFrom,
-                  onDateSelected: (d) => setState(() {
-                    _sickLeaveTo = d;
-                    _sickLeaveError = null;
-                  }),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  key: const Key('sickLeaveRefField'),
-                  controller: _sickLeaveRefController,
-                  decoration: InputDecoration(
-                    labelText: l10n.sickLeaveRef,
-                    prefixIcon: const Icon(Icons.confirmation_number),
-                    hintText: l10n.sickLeaveRefHint,
+            // ordinary therapy still shows the form it always had. Rebuilt
+            // on expand/collapse: the summary may show the text fields, which
+            // can only change while the section is open.
+            ListenableBuilder(
+              listenable: _sickLeaveExpanded,
+              builder: (context, _) => FormSection(
+                key: const Key('sickLeaveSection'),
+                title: l10n.sickLeave,
+                icon: Icons.work_off,
+                initiallyExpanded: false,
+                controller: _sickLeaveExpanded,
+                summary: _sickLeaveSummary(l10n),
+                children: [
+                  DatePickerField(
+                    key: const Key('sickLeaveFromField'),
+                    label: l10n.sickLeaveFrom,
+                    icon: Icons.event_busy,
+                    date: _sickLeaveFrom,
+                    now: now,
+                    lastDate: _sickLeaveTo,
+                    onDateSelected: (d) => setState(() {
+                      _sickLeaveFrom = d;
+                      // With no start, an end date means nothing; keeping it
+                      // would block the save with an error about this field.
+                      if (d == null) _sickLeaveTo = null;
+                      _sickLeaveError = null;
+                    }),
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  key: const Key('doctorField'),
-                  controller: _doctorController,
-                  decoration: InputDecoration(
-                    labelText: l10n.doctorLabel,
-                    prefixIcon: const Icon(Icons.medical_services),
-                    hintText: l10n.doctorHint,
+                  const SizedBox(height: 12),
+                  DatePickerField(
+                    key: const Key('sickLeaveToField'),
+                    label: l10n.sickLeaveTo,
+                    icon: Icons.event_available,
+                    date: _sickLeaveTo,
+                    now: now,
+                    firstDate: _sickLeaveFrom,
+                    onDateSelected: (d) => setState(() {
+                      _sickLeaveTo = d;
+                      _sickLeaveError = null;
+                    }),
                   ),
-                ),
-                if (_sickLeaveError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _sickLeaveError!,
-                    style: context.text.bodySmall?.copyWith(
-                      color: context.colors.error,
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    key: const Key('sickLeaveRefField'),
+                    controller: _sickLeaveRefController,
+                    decoration: InputDecoration(
+                      labelText: l10n.sickLeaveRef,
+                      prefixIcon: const Icon(Icons.confirmation_number),
+                      hintText: l10n.sickLeaveRefHint,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    key: const Key('doctorField'),
+                    controller: _doctorController,
+                    decoration: InputDecoration(
+                      labelText: l10n.doctorLabel,
+                      prefixIcon: const Icon(Icons.medical_services),
+                      hintText: l10n.doctorHint,
+                    ),
+                  ),
+                  if (_sickLeaveError != null) ...[
+                    const SizedBox(height: 8),
+                    // A live region, so a screen reader announces why Save
+                    // did nothing.
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _sickLeaveError!,
+                        style: context.text.bodySmall?.copyWith(
+                          color: context.colors.error,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
             const SizedBox(height: 32),
 
@@ -320,20 +337,30 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
   }
 
   /// The collapsed section's one-line summary: the range once a start date
-  /// is set, otherwise nothing (FormSection hides a null summary).
+  /// is set, else the doctor, else the certificate number, otherwise nothing
+  /// (FormSection hides a null summary), so a filled section never looks
+  /// empty.
   String? _sickLeaveSummary(AppLocalizations l10n) {
     final from = _sickLeaveFrom;
-    if (from == null) return null;
-    return '${from.formatted} – ${_sickLeaveTo.formattedOr(l10n.ongoing)}';
+    if (from != null) {
+      return '${from.formatted} – ${_sickLeaveTo.formattedOr(l10n.ongoing)}';
+    }
+    return _textOrNull(_doctorController) ??
+        _textOrNull(_sickLeaveRefController);
   }
 
   /// The error to show, or null when the section is consistent. An end
-  /// without a start, or an end before its start, are both rejected.
+  /// without a start, or an end before its start, are both rejected; each
+  /// message names the sick-leave fields as they are labelled, so it cannot
+  /// be read as being about the treatment's own start and end dates.
   String? _validateSickLeave(AppLocalizations l10n) {
     final to = _sickLeaveTo;
     if (to == null) return null;
     final from = _sickLeaveFrom;
-    if (from == null || to.isBefore(from)) return l10n.sickLeaveToBeforeFrom;
+    if (from == null) return l10n.sickLeaveFromMissing(l10n.sickLeaveFrom);
+    if (to.isBefore(from)) {
+      return l10n.sickLeaveToBeforeFrom(l10n.sickLeaveTo, l10n.sickLeaveFrom);
+    }
     return null;
   }
 

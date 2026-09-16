@@ -190,7 +190,21 @@
   "sickLeaveDuration": "Duration",
   "sickLeaveRef": "Certificate no.",
   "sickLeaveRefHint": "e.g. 1234567890",
-  "sickLeaveToBeforeFrom": "Pick a start date on or before the end date",
+  "sickLeaveToBeforeFrom": "\"{to}\" can't be before \"{from}\"",
+  "@sickLeaveToBeforeFrom": {
+    "description": "Sick-leave form error. {to} and {from} are the sickLeaveTo and sickLeaveFrom field labels.",
+    "placeholders": {
+      "to": { "type": "String" },
+      "from": { "type": "String" }
+    }
+  },
+  "sickLeaveFromMissing": "Please also enter \"{from}\"",
+  "@sickLeaveFromMissing": {
+    "description": "Sick-leave form error when only the end date is set. {from} is the sickLeaveFrom field label.",
+    "placeholders": {
+      "from": { "type": "String" }
+    }
+  },
   "sickLeaveEndToday": "Also end sick leave today",
   "doctorLabel": "Doctor",
   "doctorHint": "e.g. Dr. Rossi, Bolzano",

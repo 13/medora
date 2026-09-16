@@ -754,11 +754,17 @@ abstract class AppLocalizations {
   /// **'e.g. 1234567890'**
   String get sickLeaveRefHint;
 
-  /// No description provided for @sickLeaveToBeforeFrom.
+  /// Sick-leave form error. {to} and {from} are the sickLeaveTo and sickLeaveFrom field labels.
   ///
   /// In en, this message translates to:
-  /// **'Pick a start date on or before the end date'**
-  String get sickLeaveToBeforeFrom;
+  /// **'\"{to}\" can\'t be before \"{from}\"'**
+  String sickLeaveToBeforeFrom(String to, String from);
+
+  /// Sick-leave form error when only the end date is set. {from} is the sickLeaveFrom field label.
+  ///
+  /// In en, this message translates to:
+  /// **'Please also enter \"{from}\"'**
+  String sickLeaveFromMissing(String from);
 
   /// No description provided for @sickLeaveEndToday.
   ///

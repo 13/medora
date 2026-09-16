@@ -383,8 +383,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sickLeaveRefHint => 'e.g. 1234567890';
 
   @override
-  String get sickLeaveToBeforeFrom =>
-      'Pick a start date on or before the end date';
+  String sickLeaveToBeforeFrom(String to, String from) {
+    return '\"$to\" can\'t be before \"$from\"';
+  }
+
+  @override
+  String sickLeaveFromMissing(String from) {
+    return 'Please also enter \"$from\"';
+  }
 
   @override
   String get sickLeaveEndToday => 'Also end sick leave today';
