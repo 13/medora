@@ -20,5 +20,10 @@ sed -i "s/^version: .*/version: $NEW/" pubspec.yaml
 git add pubspec.yaml
 git commit -q -m "chore(release): v$NEW"
 git tag -a "v$NEW" -m "Medora $NEW"
+# The release body, built from the tag that now exists. The workflow
+# rebuilds it the same way from the pushed tag, so this copy is only for
+# reading the changelog before it goes out (and for a manual gh release).
+tools/release_notes.sh "v$NEW" > dist-notes.md
+echo "release notes written to dist-notes.md"
 git push origin main "v$NEW"
 echo "tagged v$NEW — watch: gh run list --workflow Release"

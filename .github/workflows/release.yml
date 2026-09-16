@@ -18,7 +18,9 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
     steps:
+      # Full history: the changelog step walks back to the previous tag.
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - name: Check tag matches pubspec version
         id: ver
         run: |
@@ -55,7 +57,12 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk "dist/medora-$V-$B-universal.apk"
           cp build/app/outputs/bundle/release/app-release.aab "dist/medora-$V-$B.aab"
           (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Build release notes
+        run: |
+          tools/release_notes.sh "$GITHUB_REF_NAME" > dist-notes.md
+          test -s dist-notes.md || echo "See the commit log." > dist-notes.md
+          cat dist-notes.md
       - name: Create GitHub release
         env: { GH_TOKEN: "${{ github.token }}", V: "${{ steps.ver.outputs.version }}", B: "${{ steps.ver.outputs.build }}" }
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Medora $V ($B)" --generate-notes
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Medora $V ($B)" --notes-file dist-notes.md
