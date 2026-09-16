@@ -3,9 +3,14 @@ library;
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/datasources/pull_page.dart';
+import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// The migration that adds the sick-leave columns this datasource sends.
+const treatmentSickLeaveMigration =
+    'supabase/migrations/20260917000000_treatment_sick_leave.sql';
 
 class TreatmentRemoteDatasource {
   TreatmentRemoteDatasource(this._client);
@@ -80,14 +85,23 @@ class TreatmentRemoteDatasource {
   /// Upsert a treatment (insert or update). Returns the `updated_at` the
   /// server gave this write (see `settlePushedRow`). An answer without
   /// the written row is an error, so the row stays pending.
-  Future<DateTime?> upsertTreatment(TreatmentModel model) async {
-    final response = await _client
-        .from(AppConstants.treatmentsTable)
-        .upsert(model.toJson())
-        .select('updated_at')
-        .single();
-    return serverStampOf(response);
-  }
+  ///
+  /// `toJson` always sends the sick-leave keys, so a project without
+  /// [treatmentSickLeaveMigration] rejects every push; that rejection is a
+  /// [MissingColumnException] naming the file (review I-2).
+  Future<DateTime?> upsertTreatment(TreatmentModel model) => mapMissingColumn(
+    () async {
+      final response = await _client
+          .from(AppConstants.treatmentsTable)
+          .upsert(model.toJson())
+          .select('updated_at')
+          .single();
+      return serverStampOf(response);
+    },
+    table: AppConstants.treatmentsTable,
+    migration: treatmentSickLeaveMigration,
+    fallbackColumn: 'sick_leave_from',
+  );
 
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`
   /// set so other devices pull the deletion; see spec §4.6.

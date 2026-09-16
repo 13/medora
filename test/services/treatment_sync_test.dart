@@ -7,25 +7,34 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
+import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthClientOptions, SupabaseClient;
 
 import '../helpers/fake_remotes.dart';
 import '../helpers/test_database.dart';
 
 class _Rig {
-  _Rig({this.serverSkew = Duration.zero}) {
+  _Rig({
+    this.serverSkew = Duration.zero,
+    FakeTreatmentRemote Function(DateTime Function() clock)? treatmentRemote,
+  }) {
     DateTime serverNow() => DateTime.now().toUtc().add(serverSkew);
-    remote = FakeTreatmentRemote(serverNow);
+    remote = (treatmentRemote ?? FakeTreatmentRemote.new)(serverNow);
     service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
       medicationRemote: FakeMedicationRemote(serverNow),
@@ -96,6 +105,41 @@ class _Rig {
   }
 }
 
+/// A server that has not had `20260917000000_treatment_sick_leave.sql`
+/// applied: every treatment push goes through the real datasource, and
+/// PostgREST answers PGRST204 for the first sick-leave key. Reads still come
+/// from the fake table. No Supabase project is contacted.
+class _UnmigratedTreatmentRemote extends FakeTreatmentRemote {
+  _UnmigratedTreatmentRemote(super.clock) {
+    _client = SupabaseClient(
+      'http://supabase.invalid',
+      'anon-key',
+      httpClient: MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'code': 'PGRST204',
+            'message':
+                "Could not find the 'doctor' column of 'treatments' in the "
+                'schema cache',
+          }),
+          400,
+          headers: {'content-type': 'application/json'},
+          // PostgREST's client reads the method off the answer's request.
+          request: request,
+        ),
+      ),
+      authOptions: const AuthClientOptions(autoRefreshToken: false),
+    );
+    addTearDown(_client.dispose);
+  }
+
+  late final SupabaseClient _client;
+
+  @override
+  Future<DateTime?> upsertTreatment(TreatmentModel model) =>
+      TreatmentRemoteDatasource(_client).upsertTreatment(model);
+}
+
 void main() {
   setUp(setUpTestDatabase);
   tearDown(tearDownTestDatabase);
@@ -153,6 +197,30 @@ void main() {
     expect(row['is_active'], isFalse);
     expect(row['end_date'], isNotNull);
     expect((await r.localRow('t1'))['sync_status'], SyncStatus.synced);
+  });
+
+  test('a project without the sick-leave migration reports the file to '
+      'apply, and the row stays pending (I-2)', () async {
+    final r = _Rig(treatmentRemote: _UnmigratedTreatmentRemote.new);
+    await r.local.upsert(episode, syncStatus: SyncStatus.pendingCreate);
+
+    await r.service.syncAll();
+
+    final failures = r.service.lastReport!.failures;
+    expect(failures, hasLength(1));
+    expect(failures.single.table, 'treatments');
+    expect(failures.single.id, 't1');
+    // The text the settings failures dialog shows for the row.
+    expect(
+      failures.single.error,
+      allOf(
+        startsWith('push: '),
+        contains('treatments.doctor'),
+        contains('supabase/migrations/20260917000000_treatment_sick_leave.sql'),
+      ),
+    );
+    expect((await r.localRow('t1'))['sync_status'], SyncStatus.pendingCreate);
+    expect(r.remote.table.rows, isEmpty);
   });
 
   test('End creates the server row when the server has none', () async {

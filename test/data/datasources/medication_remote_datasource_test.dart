@@ -5,6 +5,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
+import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
@@ -19,6 +20,8 @@ void main() {
     final missing = missingMedicationColumn(error);
     expect(missing, isNotNull);
     expect(missing!.column, 'ean');
+    expect(missing.table, 'medications');
+    expect(missing.toString(), contains('medications.ean'));
     expect(
       missing.toString(),
       contains('supabase/migrations/20260916000000_medication_ean.sql'),
@@ -58,7 +61,7 @@ void main() {
           ),
         ),
         throwsA(
-          isA<MissingMedicationColumnException>().having(
+          isA<MissingColumnException>().having(
             (e) => e.toString(),
             'message',
             contains('20260916000000_medication_ean.sql'),
