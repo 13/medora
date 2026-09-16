@@ -9,16 +9,18 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
-import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/intake_count.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/screens/treatment/prescription_sheet.dart';
@@ -50,9 +52,15 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
     final prescriptionsAsync = ref.watch(
       prescriptionsByTreatmentProvider(widget.treatmentId),
     );
-    final episodeDoses =
-        ref.watch(doseLogsByTreatmentProvider(widget.treatmentId)).value ??
-        const <DoseLog>[];
+    // Null while the doses load or when they cannot be read: no intake
+    // line then, rather than a "Not taken" that is not known to be true.
+    final dosesAsync = ref.watch(
+      doseLogsByTreatmentProvider(widget.treatmentId),
+    );
+    final episodeDoses = dosesAsync.hasError ? null : dosesAsync.value;
+    final grace = Duration(minutes: ref.watch(missedGraceMinutesProvider));
+    final units = _unitsById(ref.watch(medicationListProvider).value);
+    final intakeLabels = EpisodeLabels.fromL10n(l10n, keepDatesTogether: true);
     final canShare = ref.watch(platformCapabilitiesProvider).hasFileShare;
     final treatment = treatmentsAsync.value
         ?.where((t) => t.id == widget.treatmentId)
@@ -364,13 +372,20 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                 data: (prescriptions) {
                   return Column(
                     children: prescriptions.map((p) {
-                      final intake = _intakeText(
-                        l10n,
-                        p,
-                        treatment,
-                        episodeDoses,
-                        now,
-                      );
+                      // A line may break after the dash of the date
+                      // range, never before it.
+                      final intake = episodeDoses == null
+                          ? null
+                          : intakeText(
+                              IntakeCount.of(
+                                p,
+                                episodeDoses,
+                                now: now,
+                                treatmentActive: treatment.isActive,
+                                grace: grace,
+                              ),
+                              intakeLabels,
+                            )?.replaceAll(' – ', '\u00A0– ');
                       return Dismissible(
                         key: ValueKey(p.id),
                         direction: DismissDirection.endToStart,
@@ -447,7 +462,13 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(_prescriptionSummary(l10n, p)),
+                                    Text(
+                                      _prescriptionSummary(
+                                        l10n,
+                                        p,
+                                        units[p.medicationId],
+                                      ),
+                                    ),
                                     if (!p.isActive)
                                       Container(
                                         margin: const EdgeInsets.only(top: 4),
@@ -760,44 +781,64 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
     );
   }
 
-  /// "5 of 7 taken", or "3 taken (…)" for an as-needed prescription; null
-  /// while nothing of the schedule is due yet.
-  String? _intakeText(
-    AppLocalizations l10n,
-    Prescription p,
-    Treatment treatment,
-    List<DoseLog> doses,
-    DateTime now,
-  ) => intakeText(
-    IntakeCount.of(p, doses, now: now, treatmentActive: treatment.isActive),
-    EpisodeLabels.fromL10n(l10n),
-  );
+  /// Each medication's quantity unit, by id: a prescription that uses the
+  /// medication's own unit stores no unit of its own.
+  static Map<String, String?> _unitsById(List<Medication>? medications) => {
+    for (final m in medications ?? const <Medication>[]) m.id: m.quantityUnit,
+  };
 
   /// Shares this episode, and nothing else, as plain text.
   Future<void> _shareEpisode(Treatment treatment) async {
     final l10n = AppLocalizations.of(context);
-    // Read fresh: the list on screen may still be loading.
-    final prescriptions = await ref.read(
-      prescriptionsByTreatmentProvider(widget.treatmentId).future,
-    );
-    final doses = await ref.read(
-      doseLogsByTreatmentProvider(widget.treatmentId).future,
-    );
+    final String text;
+    final String subject;
+    try {
+      // Read fresh: the list on screen may still be loading.
+      final prescriptions = await ref.read(
+        prescriptionsByTreatmentProvider(widget.treatmentId).future,
+      );
+      final doses = await ref.read(
+        doseLogsByTreatmentProvider(widget.treatmentId).future,
+      );
+      // Only for the units, and the stored unit key is the fallback, so a
+      // failed read here does not stop the share.
+      final units = _unitsById(
+        await ref
+            .read(medicationListProvider.future)
+            .then<List<Medication>?>((m) => m, onError: (_) => null),
+      );
+      final labels = EpisodeLabels.fromL10n(l10n);
+      text = buildEpisodeSummary(
+        treatment: treatment,
+        prescriptions: prescriptions,
+        doses: doses,
+        labels: labels,
+        now: ref.read(nowProvider)(),
+        grace: Duration(minutes: ref.read(missedGraceMinutesProvider)),
+        dosageText: (p) => prescriptionDosageLabel(
+          l10n,
+          p,
+          medicationUnit: units[p.medicationId],
+        ),
+      );
+      subject = episodeShareSubject(treatment, labels);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+      return;
+    }
     if (!mounted) return;
-    final text = buildEpisodeSummary(
-      treatment: treatment,
-      prescriptions: prescriptions,
-      doses: doses,
-      labels: EpisodeLabels.fromL10n(l10n),
-      now: ref.read(nowProvider)(),
-      dosageText: (p) => prescriptionDosageLabel(l10n, p),
-    );
     // An iPad anchors its share sheet to a rectangle; the screen will do.
     final box = context.findRenderObject() as RenderBox?;
     await SharePlus.instance.share(
       ShareParams(
         text: text,
-        subject: treatment.name,
+        // Not the treatment's name: a subject shows in mail lists and
+        // notifications, and the name is usually the diagnosis.
+        subject: subject,
         sharePositionOrigin: box == null
             ? null
             : box.localToGlobal(Offset.zero) & box.size,
@@ -805,8 +846,16 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
     );
   }
 
-  String _prescriptionSummary(AppLocalizations l10n, Prescription p) {
-    final dosageText = prescriptionDosageLabel(l10n, p);
+  String _prescriptionSummary(
+    AppLocalizations l10n,
+    Prescription p,
+    String? medicationUnit,
+  ) {
+    final dosageText = prescriptionDosageLabel(
+      l10n,
+      p,
+      medicationUnit: medicationUnit,
+    );
     if (p.scheduleType == 'as_needed') {
       return '$dosageText · ${l10n.scheduleAsNeeded}';
     }

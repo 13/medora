@@ -8,6 +8,7 @@ import 'package:medora/domain/entities/intake_count.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/formatters.dart';
 import 'package:medora/services/export_service.dart';
 
 void main() {
@@ -67,6 +68,7 @@ void main() {
     final sinusitis = Treatment(
       id: 't1',
       name: 'Stirnhöhlenentzündung',
+      patientTags: const ['Lena'],
       symptomTags: const ['Kopfschmerzen', 'Fieber'],
       startDate: DateTime(2026, 3, 2),
       endDate: DateTime(2026, 3, 11),
@@ -126,6 +128,7 @@ void main() {
       List<Prescription>? prescriptions,
       List<DoseLog>? doses,
       DateTime? now,
+      Duration grace = Duration.zero,
     }) {
       final l10n = lookupAppLocalizations(Locale(locale));
       return buildEpisodeSummary(
@@ -134,11 +137,11 @@ void main() {
         doses: doses ?? sinusitisDoses,
         labels: EpisodeLabels.fromL10n(l10n),
         now: now ?? DateTime(2026, 3, 12),
-        dosageText: (p) => l10n.localeName == 'de'
-            ? '1 Tablette'
-            : l10n.localeName == 'it'
-            ? '1 compressa'
-            : '1 tablet',
+        grace: grace,
+        // The real formatter, with the unit the medication is counted in:
+        // the sheet stores "1 tablets", the raw key.
+        dosageText: (p) =>
+            prescriptionDosageLabel(l10n, p, medicationUnit: 'tablets'),
       );
     }
 
@@ -146,6 +149,7 @@ void main() {
       expect(
         summary('de'),
         'Stirnhöhlenentzündung\n'
+        'Patient/in: Lena\n'
         'Krankheit: 2. März 2026 – 11. März 2026\n'
         'Krankenstand: 3. März 2026 – 9. März 2026 (7 Tage)\n'
         'Protokollnummer: 1234567890\n'
@@ -165,6 +169,7 @@ void main() {
       expect(
         summary('it'),
         'Stirnhöhlenentzündung\n'
+        'Paziente: Lena\n'
         'Malattia: 2 mar 2026 – 11 mar 2026\n'
         'Assenza per malattia: 3 mar 2026 – 9 mar 2026 (7 giorni)\n'
         'Numero di protocollo: 1234567890\n'
@@ -183,6 +188,7 @@ void main() {
       expect(
         summary('en'),
         'Stirnhöhlenentzündung\n'
+        'Patient: Lena\n'
         'Illness: Mar 2, 2026 – Mar 11, 2026\n'
         'Sick leave: Mar 3, 2026 – Mar 9, 2026 (7 days)\n'
         'Certificate no.: 1234567890\n'
@@ -222,16 +228,51 @@ void main() {
       );
     });
 
-    test('blank certificate, doctor and notes are left out', () {
+    test('who was ill is named once, each name trimmed', () {
       final text = summary(
         'de',
         treatment: Treatment(
           id: 't2',
-          name: 'Grippe',
+          name: 'Magen-Darm',
+          startDate: DateTime(2026, 3, 2),
+          patientTags: const [' Lena', 'Marco ', ''],
+        ),
+        prescriptions: const [],
+        doses: const [],
+      );
+      expect(text.split('\n'), [
+        'Magen-Darm',
+        'Patient/in: Lena, Marco',
+        'Krankheit: 2. März 2026 – Laufend',
+      ]);
+    });
+
+    test('a treatment without patients names nobody', () {
+      final text = summary(
+        'en',
+        treatment: Treatment(
+          id: 't2',
+          name: 'Flu',
+          startDate: DateTime(2026, 3, 2),
+        ),
+        prescriptions: const [],
+        doses: const [],
+      );
+      expect(text, isNot(contains('Patient')));
+      expect(text, 'Flu\nIllness: Mar 2, 2026 – Ongoing');
+    });
+
+    test('blank certificate, doctor, patient and notes are left out', () {
+      final text = summary(
+        'de',
+        treatment: Treatment(
+          id: 't2',
+          name: ' Grippe ',
           startDate: DateTime(2026, 3, 2),
           sickLeaveRef: '  ',
           doctor: '',
           notes: ' \n ',
+          patientTags: const ['  '],
         ),
         prescriptions: const [],
         doses: const [],
@@ -382,6 +423,7 @@ void main() {
         ],
         labels: EpisodeLabels.fromL10n(l10n),
         now: DateTime(2026, 3, 5),
+        grace: Duration.zero,
         dosageText: (p) => p.dosage,
       );
       expect(
@@ -427,6 +469,89 @@ void main() {
         ],
       );
       expect(text, endsWith('\n  1 von 1 eingenommen'));
+    });
+
+    test('a dose inside the grace period is not yet missing', () {
+      final doses = [
+        DoseLog(
+          id: 'g1',
+          prescriptionId: 'p1',
+          scheduledTime: DateTime(2026, 3, 5, 8),
+          status: DoseStatus.taken,
+        ),
+        DoseLog(
+          id: 'g2',
+          prescriptionId: 'p1',
+          scheduledTime: DateTime(2026, 3, 5, 14),
+        ),
+      ];
+      final running = Treatment(
+        id: 't1',
+        name: 'Grippe',
+        startDate: DateTime(2026, 3, 5),
+      );
+      String at(DateTime now) => summary(
+        'de',
+        treatment: running,
+        prescriptions: [ibuprofen],
+        doses: doses,
+        now: now,
+        grace: const Duration(hours: 2),
+      );
+      // At 15:00 the 14:00 dose is still within its two hours.
+      expect(at(DateTime(2026, 3, 5, 15)), endsWith('\n  1 von 1 eingenommen'));
+      // At 16:00 it is due, and it was not taken.
+      expect(at(DateTime(2026, 3, 5, 16)), endsWith('\n  1 von 2 eingenommen'));
+    });
+
+    test('none taken of what was due reads "0 of N", not nothing', () {
+      final labels = labelsFor('de');
+      final c = IntakeCount.of(
+        ibuprofen,
+        [
+          for (var i = 0; i < 6; i++)
+            DoseLog(
+              id: 'n$i',
+              prescriptionId: 'p1',
+              scheduledTime: ibuprofen.scheduledDoseTimes[i],
+              status: DoseStatus.missed,
+            ),
+        ],
+        now: DateTime(2026, 3, 12),
+        treatmentActive: true,
+      );
+      expect(intakeText(c, labels), '0 von 6 eingenommen');
+      expect(intakeText(c, labelsFor('it')), '0 su 6 assunte');
+      expect(intakeText(c, labelsFor('en')), '0 of 6 taken');
+    });
+
+    test('the share subject names the period, never the illness', () {
+      expect(
+        episodeShareSubject(sinusitis, labelsFor('de')),
+        'Krankheitsverlauf: 2. März 2026 – 11. März 2026',
+      );
+      expect(
+        episodeShareSubject(sinusitis, labelsFor('it')),
+        'Decorso della malattia: 2 mar 2026 – 11 mar 2026',
+      );
+      final open = Treatment(
+        id: 't2',
+        name: 'Gastroenteritis',
+        startDate: DateTime(2026, 3, 2),
+      );
+      final subject = episodeShareSubject(open, labelsFor('en'));
+      expect(subject, 'Illness record: Mar 2, 2026 – Ongoing');
+      expect(subject, isNot(contains('Gastroenteritis')));
+    });
+
+    test('on screen a date keeps together; in the shared text it does not', () {
+      final l10n = lookupAppLocalizations(const Locale('de'));
+      final screen = EpisodeLabels.fromL10n(l10n, keepDatesTogether: true);
+      expect(screen.date(DateTime(2026, 3, 4)), '4.\u00A0März\u00A02026');
+      expect(
+        EpisodeLabels.fromL10n(l10n).date(DateTime(2026, 3, 4)),
+        '4. März 2026',
+      );
     });
 
     test('the intake line of a scheduled prescription', () {

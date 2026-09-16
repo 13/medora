@@ -13,7 +13,9 @@ import 'package:medora/domain/entities/prescription.dart';
 /// - **Taken:** a dose with status taken.
 /// - **Due:** every dose recorded as taken, skipped or missed, whatever its
 ///   time (a dose taken or skipped ahead of time counts), plus every pending
-///   dose whose time is at or before now. So [taken] never exceeds [due].
+///   dose whose grace period has run out by now: the app does not call a
+///   dose missed before then, so the count does not either. So [taken] never
+///   exceeds [due].
 /// - A missed dose counts as due and not taken, whether the user marked it
 ///   or the app did. The app's own "missed" stays on this device and every
 ///   device draws it from its own copy; a dose taken on another device
@@ -35,12 +37,15 @@ class IntakeCount {
 
   /// Counts [prescription]'s doses among [doses] (other prescriptions'
   /// doses are ignored) as of [now]. [treatmentActive] is whether the
-  /// prescription's treatment is still running.
+  /// prescription's treatment is still running. [grace] is how long after
+  /// its time a pending dose still counts as on time (the app's missed-dose
+  /// grace period).
   factory IntakeCount.of(
     Prescription prescription,
     Iterable<DoseLog> doses, {
     required DateTime now,
     required bool treatmentActive,
+    Duration grace = Duration.zero,
   }) {
     final mine = doses.where((d) => d.prescriptionId == prescription.id);
     final taken = mine.where((d) => d.status == DoseStatus.taken).toList();
@@ -59,7 +64,8 @@ class IntakeCount {
     final due = mine.where(
       (d) => switch (d.status) {
         DoseStatus.taken || DoseStatus.skipped || DoseStatus.missed => true,
-        DoseStatus.pending => expecting && !d.scheduledTime.isAfter(now),
+        DoseStatus.pending =>
+          expecting && !d.scheduledTime.add(grace).isAfter(now),
       },
     );
     return IntakeCount._(asNeeded: false, taken: taken.length, due: due.length);

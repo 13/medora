@@ -79,6 +79,29 @@ void main() {
       expect(c.due, 3);
     });
 
+    test('with a grace period, a pending dose counts only once its grace has '
+        'run out, as the app marks it missed', () {
+      final doses = [
+        dose(DateTime(2026, 3, 5, 8), DoseStatus.taken),
+        // Two hours ago: the grace has just run out.
+        dose(DateTime(2026, 3, 5, 10), DoseStatus.pending),
+        // An hour ago, and exactly now: still on time.
+        dose(DateTime(2026, 3, 5, 11), DoseStatus.pending),
+        dose(now, DoseStatus.pending),
+        // Facts count whatever the grace.
+        dose(DateTime(2026, 3, 5, 11, 30), DoseStatus.missed),
+      ];
+      final c = IntakeCount.of(
+        prescription(),
+        doses,
+        now: now,
+        treatmentActive: true,
+        grace: const Duration(hours: 2),
+      );
+      expect(c.taken, 1);
+      expect(c.due, 3);
+    });
+
     test('skipped and missed doses were due and not taken', () {
       final doses = [
         dose(DateTime(2026, 3, 4, 8), DoseStatus.taken),

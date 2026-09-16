@@ -204,6 +204,8 @@ final _formulaStart = RegExp(r'[=+\-@\t\r]');
 /// [ExportLabels.fromL10n] so this service stays free of [BuildContext].
 class EpisodeLabels {
   const EpisodeLabels({
+    required this.patient,
+    required this.subject,
     required this.illness,
     required this.sickLeave,
     required this.sickLeaveFrom,
@@ -225,10 +227,18 @@ class EpisodeLabels {
     required this.date,
   });
 
-  factory EpisodeLabels.fromL10n(AppLocalizations l10n) {
+  /// [keepDatesTogether] joins the words of each date with no-break spaces,
+  /// so a line on screen never wraps inside one ("4. März / 2026"). The
+  /// shared text keeps plain spaces.
+  factory EpisodeLabels.fromL10n(
+    AppLocalizations l10n, {
+    bool keepDatesTogether = false,
+  }) {
     // The labels' own locale, not Intl.defaultLocale: the text is one piece.
     final dateFormat = DateFormat.yMMMd(l10n.localeName);
     return EpisodeLabels(
+      patient: l10n.episodePatient,
+      subject: l10n.episodeShareSubject,
       illness: l10n.illness,
       sickLeave: l10n.sickLeavePeriod,
       sickLeaveFrom: l10n.sickLeaveFrom,
@@ -247,10 +257,17 @@ class EpisodeLabels {
       timesDaily: l10n.xTimesDaily,
       takenOfDue: l10n.dosesTakenOfPlanned,
       takenAsNeeded: l10n.dosesTakenAsNeeded,
-      date: dateFormat.format,
+      date: keepDatesTogether
+          ? (d) => dateFormat.format(d).replaceAll(' ', '\u00A0')
+          : dateFormat.format,
     );
   }
 
+  /// Label of the line naming who was ill.
+  final String patient;
+
+  /// The share's subject, around the illness period.
+  final String Function(String period) subject;
   final String illness;
   final String sickLeave;
   final String sickLeaveFrom;
@@ -295,6 +312,19 @@ String? intakeText(IntakeCount count, EpisodeLabels labels) {
   return labels.takenOfDue(count.taken, count.due);
 }
 
+/// The illness period of [treatment]: "Mar 2, 2026 – Ongoing".
+String _illnessPeriod(Treatment treatment, EpisodeLabels labels) {
+  final end = treatment.endDate;
+  return '${labels.date(treatment.startDate)} – '
+      '${end == null ? labels.ongoing : labels.date(end)}';
+}
+
+/// The subject of a shared episode: "Illness record: Mar 2, 2026 – Mar 11,
+/// 2026". It never names the illness, since mail lists, notifications and
+/// message previews show the subject to anyone who glances at the screen.
+String episodeShareSubject(Treatment treatment, EpisodeLabels labels) =>
+    labels.subject(_illnessPeriod(treatment, labels));
+
 /// A plain-text record of one illness episode, for
 /// `SharePlus.instance.share(ShareParams(text: …))`.
 ///
@@ -302,7 +332,10 @@ String? intakeText(IntakeCount count, EpisodeLabels labels) {
 /// this illness, its sick leave and what was taken for it, not their whole
 /// medicine history. It holds no ids and no sync state, and leaves out every
 /// field that is not set. [doses] may hold other prescriptions' doses; only
-/// those of [prescriptions] are counted, as of [now].
+/// those of [prescriptions] are counted, as of [now], with [grace] as the
+/// app's missed-dose grace period (see [IntakeCount.of]). The patients are
+/// named when the treatment has any: in a household the reader could not
+/// otherwise tell whose record it is.
 ///
 /// Pure, so it is unit-testable without a share sheet. [dosageText] formats
 /// a prescription's dose: the caller passes `prescriptionDosageLabel`, which
@@ -313,6 +346,7 @@ String buildEpisodeSummary({
   required List<DoseLog> doses,
   required EpisodeLabels labels,
   required DateTime now,
+  required Duration grace,
   required String Function(Prescription) dosageText,
 }) {
   final date = labels.date;
@@ -321,10 +355,11 @@ String buildEpisodeSummary({
     return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 
+  final patients = [for (final tag in treatment.patientTags) ?text(tag)];
   final lines = <String>[
-    treatment.name,
-    '${labels.illness}: ${date(treatment.startDate)} – '
-        '${treatment.endDate == null ? labels.ongoing : date(treatment.endDate!)}',
+    treatment.name.trim(),
+    if (patients.isNotEmpty) '${labels.patient}: ${patients.join(', ')}',
+    '${labels.illness}: ${_illnessPeriod(treatment, labels)}',
   ];
 
   final from = treatment.sickLeaveFrom;
@@ -371,7 +406,13 @@ String buildEpisodeSummary({
       final name = text(p.medicationName) ?? labels.unknownMedication;
       lines.add('- $name: $parts');
       final intake = intakeText(
-        IntakeCount.of(p, doses, now: now, treatmentActive: treatment.isActive),
+        IntakeCount.of(
+          p,
+          doses,
+          now: now,
+          treatmentActive: treatment.isActive,
+          grace: grace,
+        ),
         labels,
       );
       if (intake != null) lines.add('  $intake');
