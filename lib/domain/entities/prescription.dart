@@ -49,7 +49,12 @@ class Prescription {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
-  /// 'fixed_interval' or 'times_per_day'
+  /// 'fixed_interval', 'times_per_day' or 'as_needed'.
+  ///
+  /// An 'as_needed' prescription ("bei Bedarf") has no schedule at all: it
+  /// generates no doses, so nothing is ever due, overdue or reminded, and
+  /// each intake is recorded when it happens. Its [intervalHours] and
+  /// [durationDays] keep their stored values but mean nothing.
   final String scheduleType;
 
   /// List of time strings like ['08:00', '12:00', '18:00'] for times_per_day
@@ -76,8 +81,9 @@ class Prescription {
   /// Calculate the end time based on start + duration.
   DateTime get endTime => startTime.add(Duration(days: durationDays));
 
-  /// Number of doses per day.
+  /// Number of doses per day. Zero for an as-needed prescription.
   int get dosesPerDay {
+    if (scheduleType == 'as_needed') return 0;
     if (scheduleType == 'times_per_day' && scheduleTimes != null) {
       return scheduleTimes!.length;
     }
@@ -88,6 +94,9 @@ class Prescription {
   /// Includes a sanity limit of 1000 doses to prevent performance issues
   /// if a user enters an extremely long duration or tiny interval.
   List<DateTime> get scheduledDoseTimes {
+    // No schedule, so no generated doses: nothing pending for the dashboard,
+    // the reminders or the missed-dose sweep to find.
+    if (scheduleType == 'as_needed') return const [];
     final times = <DateTime>[];
     final end = endTime;
     const maxDoses = 1000;

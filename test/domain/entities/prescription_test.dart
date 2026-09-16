@@ -139,4 +139,31 @@ void main() {
       );
     });
   });
+
+  group('as_needed', () {
+    test('generates no scheduled doses', () {
+      expect(_p(scheduleType: 'as_needed').scheduledDoseTimes, isEmpty);
+    });
+
+    test('dosesPerDay is zero', () {
+      expect(_p(scheduleType: 'as_needed').dosesPerDay, 0);
+    });
+
+    test('previewTimes is empty', () {
+      expect(_p(scheduleType: 'as_needed').previewTimes(), isEmpty);
+    });
+
+    test('ignores interval, duration and leftover times entirely', () {
+      // The sheet hides these fields for an as-needed prescription but keeps
+      // their stored values, e.g. after switching from another schedule.
+      final p = _p(
+        scheduleType: 'as_needed',
+        intervalHours: 4,
+        durationDays: 30,
+        scheduleTimes: ['08:00', '20:00'],
+      );
+      expect(p.scheduledDoseTimes, isEmpty);
+      expect(p.dosesPerDay, 0);
+    });
+  });
 }

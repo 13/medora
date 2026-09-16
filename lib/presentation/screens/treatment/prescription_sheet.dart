@@ -262,8 +262,12 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
                       _buildDosageFields(l10n, medUnit),
                       const SizedBox(height: 20),
                       _buildScheduleSection(l10n),
-                      const SizedBox(height: 20),
-                      _buildDurationField(l10n),
+                      // An as-needed prescription has no schedule to last
+                      // for; unmounting the field also skips its validator.
+                      if (_scheduleType != 'as_needed') ...[
+                        const SizedBox(height: 20),
+                        _buildDurationField(l10n),
+                      ],
                       const SizedBox(height: 16),
 
                       // ── Auto-diminish toggle ──
@@ -460,7 +464,11 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
           ),
         ),
         const SizedBox(height: 8),
+        // Stacked, not side by side: three segments share a 360 dp row too
+        // narrowly for "Intervallo fisso" or "Festes Intervall" at a large
+        // text size, and a segment breaks its label mid-word.
         SegmentedButton<String>(
+          direction: Axis.vertical,
           segments: [
             ButtonSegment(
               value: 'fixed_interval',
@@ -477,6 +485,14 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
                 style: const TextStyle(fontSize: 12),
               ),
               icon: const Icon(Icons.schedule, size: 16),
+            ),
+            ButtonSegment(
+              value: 'as_needed',
+              label: Text(
+                l10n.scheduleAsNeeded,
+                style: const TextStyle(fontSize: 12),
+              ),
+              icon: const Icon(Icons.touch_app, size: 16),
             ),
           ],
           selected: {_scheduleType},

@@ -1128,6 +1128,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get timesPerDay => 'Times per Day';
 
   @override
+  String get scheduleAsNeeded => 'As Needed';
+
+  @override
+  String get logDoseNow => 'Log dose';
+
+  @override
+  String get doseLogged => 'Dose logged';
+
+  @override
   String get specificTimes => 'Specific Times';
 
   @override

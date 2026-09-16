@@ -2077,6 +2077,24 @@ abstract class AppLocalizations {
   /// **'Times per Day'**
   String get timesPerDay;
 
+  /// No description provided for @scheduleAsNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'As Needed'**
+  String get scheduleAsNeeded;
+
+  /// No description provided for @logDoseNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Log dose'**
+  String get logDoseNow;
+
+  /// No description provided for @doseLogged.
+  ///
+  /// In en, this message translates to:
+  /// **'Dose logged'**
+  String get doseLogged;
+
   /// No description provided for @specificTimes.
   ///
   /// In en, this message translates to:

@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
+import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -53,6 +54,7 @@ void main() {
     String? doctor,
     Locale locale = const Locale('en'),
     double scale = 1.0,
+    Future<void> Function()? beforePump,
   }) async {
     await TreatmentLocalDatasource().upsert(
       TreatmentModel(
@@ -66,6 +68,7 @@ void main() {
       ),
       syncStatus: 'synced',
     );
+    await beforePump?.call();
     await pumpMedoraApp(
       tester,
       withTextScale(scale, const TreatmentDetailScreen(treatmentId: 't1')),
@@ -511,6 +514,201 @@ void main() {
       await tester.tap(checkbox);
       await tester.pump();
       expect(tester.widget<CheckboxListTile>(checkbox).value, isTrue);
+    });
+  });
+
+  group('an as-needed prescription', () {
+    final logButton = find.byKey(const Key('logDose_p1'));
+
+    /// Seeds Ibuprofen (10 tablets) and prescription `p1` for treatment t1.
+    Future<void> seedPrescription({
+      String scheduleType = 'as_needed',
+      bool isActive = true,
+      bool autoDiminish = false,
+    }) async {
+      final db = await AppDatabase.instance.database;
+      await db.insert('medications', {
+        'id': 'm1',
+        'name': 'Ibuprofen',
+        'quantity': 10,
+        'minimum_stock_level': 0,
+        'created_at': '2026-03-01T08:00:00.000',
+        'updated_at': '2026-03-01T08:00:00.000',
+        'sync_status': 'synced',
+      });
+      await db.insert('prescriptions', {
+        'id': 'p1',
+        'treatment_id': 't1',
+        'medication_id': 'm1',
+        'dosage': '1 tablet',
+        'dosage_amount': 1.0,
+        'interval_hours': 8,
+        'duration_days': 7,
+        'start_time': '2026-03-03T08:00:00.000',
+        'is_active': isActive ? 1 : 0,
+        'auto_diminish': autoDiminish ? 1 : 0,
+        'schedule_type': scheduleType,
+        'created_at': '2026-03-03T08:00:00.000',
+        'updated_at': '2026-03-03T08:00:00.000',
+        'sync_status': 'synced',
+      });
+    }
+
+    Future<List<Map<String, Object?>>> doses() async =>
+        (await AppDatabase.instance.database).query(
+          'dose_logs',
+          where: 'prescription_id = ?',
+          whereArgs: ['p1'],
+        );
+
+    testWidgets('reads "As Needed" instead of an interval and duration', (
+      tester,
+    ) async {
+      await seedAndPump(tester, beforePump: seedPrescription);
+      expect(find.text('1 tablet · As Needed'), findsOneWidget);
+      expect(find.textContaining('every'), findsNothing);
+      expect(logButton, findsOneWidget);
+      expect(
+        find.descendant(of: logButton, matching: find.text('Log dose')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('"Log dose" records one taken dose at the app clock and says '
+        'so', (tester) async {
+      await seedAndPump(
+        tester,
+        beforePump: () => seedPrescription(autoDiminish: true),
+      );
+
+      await tester.tap(logButton);
+      await tester.pumpAndSettle();
+
+      final rows = await doses();
+      expect(rows, hasLength(1));
+      expect(rows.single['status'], 'taken');
+      expect(DateTime.parse(rows.single['taken_time']! as String), now);
+      expect(DateTime.parse(rows.single['scheduled_time']! as String), now);
+      expect(find.text('Dose logged'), findsOneWidget);
+      // The stock path of a tapped dose ran too.
+      final med = await (await AppDatabase.instance.database).query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: ['m1'],
+      );
+      expect(med.single['quantity'], 9);
+
+      // A second intake is a second dose.
+      await tester.tap(logButton);
+      await tester.pumpAndSettle();
+      expect(await doses(), hasLength(2));
+    });
+
+    testWidgets('German reads "Bei Bedarf" and "Dosis eintragen"', (
+      tester,
+    ) async {
+      await seedAndPump(
+        tester,
+        beforePump: seedPrescription,
+        locale: const Locale('de'),
+      );
+      expect(find.text('1 tablet · Bei Bedarf'), findsOneWidget);
+      await tester.tap(find.text('Dosis eintragen'));
+      await tester.pumpAndSettle();
+      expect(find.text('Dosis eingetragen'), findsOneWidget);
+    });
+
+    testWidgets('a paused one offers no "Log dose"', (tester) async {
+      await seedAndPump(
+        tester,
+        beforePump: () => seedPrescription(isActive: false),
+      );
+      expect(find.text('1 tablet · As Needed'), findsOneWidget);
+      expect(logButton, findsNothing);
+    });
+
+    testWidgets('a scheduled one offers no "Log dose"', (tester) async {
+      await seedAndPump(
+        tester,
+        beforePump: () => seedPrescription(scheduleType: 'fixed_interval'),
+      );
+      expect(find.text('1 tablet · every 8h · 7 days'), findsOneWidget);
+      expect(logButton, findsNothing);
+      expect(find.text('Log dose'), findsNothing);
+    });
+
+    group('layout at 360 dp', () {
+      setUpAll(loadAppFonts);
+
+      for (final locale in const ['de', 'it', 'en']) {
+        testWidgets('the summary and "Log dose" stay whole in $locale at '
+            '1.6x', (tester) async {
+          usePhone(tester);
+          // App-wide, so the snackbar is scaled as well; the screen's own
+          // scale has to match, or its wrapper would reset it to 1.0.
+          useAppTextScale(tester, 1.6);
+          await seedAndPump(
+            tester,
+            beforePump: seedPrescription,
+            locale: Locale(locale),
+            scale: 1.6,
+          );
+          final l10n = lookupAppLocalizations(Locale(locale));
+          await tester.scrollUntilVisible(logButton, 100);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          expect(
+            MediaQuery.textScalerOf(tester.element(logButton)).scale(1),
+            1.6,
+          );
+
+          final screen = tester.getRect(find.byType(Scaffold).first);
+          final card = tester.getRect(
+            find.ancestor(of: logButton, matching: find.byType(Card)),
+          );
+          void expectWhole(Finder text, Rect box) {
+            final data = tester.widget<Text>(text).data;
+            final fit = measureText(tester, text);
+            expect(
+              fit.minIntrinsic,
+              lessThanOrEqualTo(fit.maxWidth + 0.5),
+              reason: '"$data" is broken mid-word: $fit',
+            );
+            expect(fit.exceeded, isFalse, reason: '"$data" is cut: $fit');
+            final paragraph = tester.renderObject<RenderParagraph>(
+              find.descendant(of: text, matching: find.byType(RichText)),
+            );
+            expect(
+              paragraph.softWrap || fit.maxIntrinsic <= fit.maxWidth + 0.5,
+              isTrue,
+              reason: '"$data" does not wrap and is cut: $fit',
+            );
+            final rect = tester.getRect(text);
+            expect(
+              box.contains(rect.topLeft) && box.contains(rect.bottomRight),
+              isTrue,
+              reason: '"$data" at $rect lies outside $box',
+            );
+          }
+
+          expectWhole(find.text('1 tablet · ${l10n.scheduleAsNeeded}'), card);
+          expectWhole(
+            find.descendant(
+              of: logButton,
+              matching: find.text(l10n.logDoseNow),
+            ),
+            card,
+          );
+
+          await tester.tap(logButton);
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          final snack = find.text(l10n.doseLogged);
+          expect(snack, findsOneWidget);
+          expectWhole(snack, screen);
+          expect(tester.takeException(), isNull);
+        });
+      }
     });
   });
 }

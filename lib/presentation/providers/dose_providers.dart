@@ -9,6 +9,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:uuid/uuid.dart';
 
 /// Counter that is incremented whenever dose statuses change.
 /// Providers that depend on this (e.g. dose history) will auto-refetch.
@@ -151,6 +152,31 @@ class DoseActions {
     // One refresh/bump/reconcile for the whole batch, not one per dose.
     await _refresh();
     return taken;
+  }
+
+  /// Records one dose of an as-needed prescription, taken right now.
+  ///
+  /// An 'as_needed' prescription generates no doses, so there is nothing to
+  /// tick off: this inserts the dose that just happened, with
+  /// `scheduledTime == takenTime ==` [nowProvider], and then runs the same
+  /// auto-diminish and refresh a tapped dose does. Returns the new dose's
+  /// id, or null when the write failed (and then stock is left alone).
+  Future<String?> logAsNeededDose(String prescriptionId) async {
+    final now = _ref.read(nowProvider)();
+    final dose = DoseLog(
+      id: const Uuid().v4(),
+      prescriptionId: prescriptionId,
+      scheduledTime: now,
+      takenTime: now,
+      status: DoseStatus.taken,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final repo = _ref.read(doseLogRepositoryProvider);
+    final result = await repo.addDoseLog(dose);
+    if (result.isSuccess) await _autoDiminish(_ref, dose.id);
+    await _refresh();
+    return result.isSuccess ? dose.id : null;
   }
 
   Future<void> _refresh() async {

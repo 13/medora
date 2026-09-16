@@ -1146,6 +1146,15 @@ class AppLocalizationsDe extends AppLocalizations {
   String get timesPerDay => 'Mal pro Tag';
 
   @override
+  String get scheduleAsNeeded => 'Bei Bedarf';
+
+  @override
+  String get logDoseNow => 'Dosis eintragen';
+
+  @override
+  String get doseLogged => 'Dosis eingetragen';
+
+  @override
   String get specificTimes => 'Bestimmte Zeiten';
 
   @override

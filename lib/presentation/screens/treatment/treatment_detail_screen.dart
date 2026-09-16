@@ -413,6 +413,21 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(_prescriptionSummary(l10n, p)),
+                                // Nothing is scheduled, so there is nothing to
+                                // tick off: each intake is logged here.
+                                if (p.scheduleType == 'as_needed' && p.isActive)
+                                  Align(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: TextButton.icon(
+                                      key: Key('logDose_${p.id}'),
+                                      onPressed: () => _logAsNeededDose(p),
+                                      icon: const Icon(
+                                        Icons.add_circle_outline,
+                                        size: 18,
+                                      ),
+                                      label: Text(l10n.logDoseNow),
+                                    ),
+                                  ),
                                 if (!p.isActive)
                                   Container(
                                     margin: const EdgeInsets.only(top: 4),
@@ -635,8 +650,20 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
     );
   }
 
+  Future<void> _logAsNeededDose(Prescription p) async {
+    final l10n = AppLocalizations.of(context);
+    final id = await ref.read(doseActionsProvider).logAsNeededDose(p.id);
+    if (!mounted || id == null) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.doseLogged)));
+  }
+
   String _prescriptionSummary(AppLocalizations l10n, Prescription p) {
     final dosageText = prescriptionDosageLabel(l10n, p);
+    if (p.scheduleType == 'as_needed') {
+      return '$dosageText · ${l10n.scheduleAsNeeded}';
+    }
     if (p.scheduleType == 'times_per_day') {
       final times = p.scheduleTimes ?? [];
       final labels = times

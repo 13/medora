@@ -1,16 +1,19 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/prescription.dart';
+import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../helpers/failing_dose_repo.dart';
@@ -298,4 +301,207 @@ void main() {
       expect(after.any((d) => d.prescriptionId == prescriptionId), isTrue);
     },
   );
+
+  group('logAsNeededDose', () {
+    // A clock distinct from the real one, so a dose stamped with
+    // DateTime.now() instead of nowProvider cannot pass. Still today and in
+    // the past, so the dose lands in today's list whatever the hour.
+    final pinned = recentToday(
+      now,
+      minutes: 7,
+    ).copyWith(millisecond: 123, microsecond: 0);
+
+    Future<ProviderContainer> pinnedContainer({
+      DoseLogRepository? doseRepo,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          syncStartupDelayProvider.overrideWithValue(Duration.zero),
+          reminderPortProvider.overrideWithValue(FakePort()),
+          nowProvider.overrideWithValue(() => pinned),
+          if (doseRepo != null)
+            doseLogRepositoryProvider.overrideWithValue(doseRepo),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    Future<int> quantity(Database db, String medicationId) async {
+      final med = await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [medicationId],
+      );
+      return med.single['quantity']! as int;
+    }
+
+    test('records one taken dose at the injected now', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final container = await pinnedContainer();
+
+      final id = await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+      expect(id, isNotNull);
+
+      final rows = await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      expect(rows, hasLength(1));
+      expect(rows.single['id'], id);
+      expect(rows.single['sync_status'], SyncStatus.pendingCreate);
+
+      final logged = (await DoseLogLocalDatasource().getDoseLogById(id!))!;
+      expect(logged.status, DoseStatus.taken);
+      expect(logged.takenTime, pinned);
+      expect(logged.scheduledTime, pinned);
+    });
+
+    test('each call records another dose', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final actions = (await pinnedContainer()).read(doseActionsProvider);
+
+      final a = await actions.logAsNeededDose(s.prescriptionId);
+      final b = await actions.logAsNeededDose(s.prescriptionId);
+      expect(a, isNot(b));
+      final rows = await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      expect(rows, hasLength(2));
+    });
+
+    test(
+      'shows as taken in today\'s lists and is never the next due dose',
+      () async {
+        final db = await AppDatabase.instance.database;
+        final s = await seedPrescription(db, scheduleType: 'as_needed');
+        final container = await pinnedContainer();
+        // Build the list first, so the test also proves the action refreshes it.
+        expect(await container.read(todaysDoseLogsProvider.future), isEmpty);
+
+        final id = await container
+            .read(doseActionsProvider)
+            .logAsNeededDose(s.prescriptionId);
+
+        final todays = await container.read(todaysDoseLogsProvider.future);
+        expect(todays.map((d) => d.id), [id]);
+        expect(todays.single.status, DoseStatus.taken);
+        expect(container.read(nextDueDoseProvider), isNull);
+        final day = await container.read(dosesForDayProvider(pinned).future);
+        expect(day.map((d) => d.id), [id]);
+      },
+    );
+
+    test('loading today\'s doses generates none for an as-needed '
+        'prescription', () async {
+      final db = await AppDatabase.instance.database;
+      final midnight = DateTime(now.year, now.month, now.day);
+      final asNeeded = await seedPrescription(
+        db,
+        scheduleType: 'as_needed',
+        startTime: midnight,
+      );
+      // The fixed one is the control: its doses prove generation has run.
+      final fixed = await seedPrescription(db, startTime: midnight);
+      final container = await pinnedContainer();
+
+      await container.read(todaysDoseLogsProvider.future);
+      Future<int> count(String prescriptionId) async => (await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [prescriptionId],
+      )).length;
+      for (var i = 0; i < 100 && await count(fixed.prescriptionId) == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(await count(fixed.prescriptionId), greaterThan(0));
+      expect(await count(asNeeded.prescriptionId), 0);
+    });
+
+    test('runs auto-diminish with the prescription\'s amount', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1, 'dosage_amount': 2.0},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer();
+
+      await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      expect(await quantity(db, s.medicationId), 8);
+      final med = await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      // The absolute quantity, marked for the sync cycle to push.
+      expect(med.single['sync_status'], SyncStatus.pendingUpdate);
+    });
+
+    test('leaves stock alone without auto-diminish', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final container = await pinnedContainer();
+
+      await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      expect(await quantity(db, s.medicationId), 10);
+    });
+
+    test('a failed write returns null and leaves stock alone', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer(
+        doseRepo: _FailingAddRepo(
+          DoseLogRepositoryImpl(
+            localDatasource: DoseLogLocalDatasource(),
+            prescriptionLocal: PrescriptionLocalDatasource(),
+          ),
+        ),
+      );
+
+      final id = await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      expect(id, isNull);
+      expect(await quantity(db, s.medicationId), 10);
+      expect(await db.query('dose_logs'), isEmpty);
+    });
+  });
+}
+
+/// Fails every [addDoseLog]; everything else reaches the real repository.
+class _FailingAddRepo extends FailingTakeRepo {
+  _FailingAddRepo(super.inner);
+
+  @override
+  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) async =>
+      const Result.failure('db down');
+
+  @override
+  Future<Result<DoseLog>> markDoseTaken(String id) => inner.markDoseTaken(id);
 }

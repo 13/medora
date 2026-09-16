@@ -1139,6 +1139,15 @@ class AppLocalizationsIt extends AppLocalizations {
   String get timesPerDay => 'Volte al giorno';
 
   @override
+  String get scheduleAsNeeded => 'Al bisogno';
+
+  @override
+  String get logDoseNow => 'Registra dose';
+
+  @override
+  String get doseLogged => 'Dose registrata';
+
+  @override
   String get specificTimes => 'Orari specifici';
 
   @override

@@ -235,6 +235,31 @@ void main() {
       expect(requests.statuses, hasLength(1));
     });
 
+    test('an as-needed prescription generates nothing and asks for no '
+        'sync', () async {
+      final db = await AppDatabase.instance.database;
+      final prescriptionId = (await seedPrescription(
+        db,
+        scheduleType: 'as_needed',
+      )).prescriptionId;
+      final requests = _Requests('dose_logs');
+      final repo = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        requestSync: requests.call,
+      );
+
+      final generated = await repo.generateDoseLogsForPrescription(
+        prescriptionId,
+      );
+      await repo.regenerateDoseLogsForPrescription(prescriptionId);
+      await pumpEventQueue();
+
+      expect(generated.dataOrNull, isEmpty);
+      expect(await db.query('dose_logs'), isEmpty);
+      expect(requests.statuses, isEmpty);
+    });
+
     test(
       'marking overdue doses asks for a sync only when one changed',
       () async {
