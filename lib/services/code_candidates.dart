@@ -331,20 +331,24 @@ void _dropConflictingReadings(
   found.removeWhere(dropped.contains);
 }
 
-/// How much of the smaller box two readings must share to count as readings
-/// of the same printing.
+/// How much of the *larger* box two readings must share to count as
+/// readings of the same printing. Normalising by the larger box asks the
+/// two to cover each other: containment alone would score 1.0 and delete a
+/// small token that merely sits inside a generous region-pass line box —
+/// a lot number under the code block is a different printing, not a re-read
+/// of the same one (review I2).
 const double _rereadOverlap = 0.5;
 
 double _overlapFraction(Rect a, Rect b) {
   final i = a.intersect(b);
   if (i.width <= 0 || i.height <= 0) return 0;
-  final smaller = math.min(a.width * a.height, b.width * b.height);
-  return smaller <= 0 ? 0 : (i.width * i.height) / smaller;
+  final larger = math.max(a.width * a.height, b.width * b.height);
+  return larger <= 0 ? 0 : (i.width * i.height) / larger;
 }
 
 /// Drops the garbled "other" tokens of the photo pass that a later, better
 /// reading covers: a photo-pass `other` (line index < [regionStart]) whose
-/// box shares at least [_rereadOverlap] of the smaller box with a
+/// box shares at least [_rereadOverlap] of the larger box with a
 /// region-pass candidate of another kind, or with any decoded barcode, is
 /// OCR noise from the same printing — the region pass read it at a higher
 /// resolution and the barcode scanner read it from the bars.

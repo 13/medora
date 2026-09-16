@@ -634,6 +634,31 @@ void main() {
       expect(describe(result), 'ean:8057737141836');
     });
 
+    test('a small token inside a wide region-pass line box survives', () {
+      // Review I2: normalising by the smaller box scored containment 1.0, so
+      // a lot token sitting inside a generous region line box was deleted.
+      final result = findCodeCandidates(
+        const [OcrLine('Lotto 4R5T21', Rect.fromLTWH(100, 100, 120, 20))],
+        regionLines: const [
+          OcrLine('COD MINSAN 107018', Rect.fromLTWH(0, 90, 400, 60)),
+        ],
+      );
+      expect(describe(result), 'supplement:107018 other:4R5T21');
+    });
+
+    test('a small token inside a barcode box survives', () {
+      final result = findCodeCandidates(
+        const [OcrLine('Lotto 4R5T21', Rect.fromLTWH(100, 100, 120, 20))],
+        barcodes: [
+          CodeCandidate.eanFromBarcode(
+            '8057737141836',
+            const Rect.fromLTWH(0, 90, 400, 60),
+          )!,
+        ],
+      );
+      expect(describe(result), 'ean:8057737141836 other:4R5T21');
+    });
+
     test('two "other" readings of the same area both survive', () {
       final result = findCodeCandidates(
         const [OcrLine('Lotto 4R5T21', Rect.fromLTWH(0, 100, 400, 60))],
