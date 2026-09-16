@@ -68,6 +68,60 @@ Future<void> _pump(
   );
 }
 
+/// Pumps the review view with the rescan affordance wired up.
+Future<void> _pumpRescan(
+  WidgetTester tester, {
+  bool selecting = true,
+  ValueChanged<Rect>? onRescanArea,
+  VoidCallback? onToggleSelecting,
+  Size imageSize = const Size(1000, 1000),
+}) async {
+  await pumpMedoraApp(
+    tester,
+    Scaffold(
+      body: ScanReviewView(
+        image: MemoryImage(_png),
+        imageSize: imageSize,
+        candidates: const [],
+        onSelected: (_) {},
+        onRetake: () {},
+        onManualEntry: () {},
+        selecting: selecting,
+        onToggleSelecting: onToggleSelecting ?? () {},
+        onRescanArea: onRescanArea ?? (_) {},
+      ),
+    ),
+    locale: const Locale('de'),
+  );
+}
+
+/// A symmetric two-finger spread centred on [centre], widening by
+/// 2 * [steps] * [step] logical pixels.
+Future<void> _pinch(
+  WidgetTester tester,
+  Offset centre, {
+  int steps = 10,
+  double step = 8,
+}) async {
+  final left = await tester.startGesture(centre - const Offset(20, 0));
+  final right = await tester.startGesture(centre + const Offset(20, 0));
+  await tester.pump();
+  for (var i = 0; i < steps; i++) {
+    await left.moveBy(Offset(-step, 0));
+    await right.moveBy(Offset(step, 0));
+    await tester.pump();
+  }
+  await left.up();
+  await right.up();
+  await tester.pumpAndSettle();
+}
+
+double _scale(WidgetTester tester) => tester
+    .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+    .transformationController!
+    .value
+    .getMaxScaleOnAxis();
+
 void main() {
   testWidgets('a banner renders above the candidate list', (tester) async {
     _setSurface(tester, const Size(800, 1600));
@@ -471,5 +525,51 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('scanRescanArea')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a pinch zooms while selecting instead of drawing a box', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    Rect? selected;
+    await _pumpRescan(tester, onRescanArea: (area) => selected = area);
+
+    await _pinch(
+      tester,
+      tester.getRect(find.byKey(const ValueKey('scanPhoto'))).center,
+    );
+
+    expect(_scale(tester), greaterThan(1.5));
+    expect(find.byKey(const ValueKey('scanRescanArea')), findsNothing);
+    expect(selected, isNull);
+  });
+
+  testWidgets('a pinch leaves an already drawn rectangle untouched', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    Rect? selected;
+    await _pumpRescan(tester, onRescanArea: (area) => selected = area);
+    final box = tester.getRect(find.byKey(const ValueKey('scanPhoto')));
+
+    await tester.timedDragFrom(
+      box.topLeft + Offset(box.width / 4, box.height / 4),
+      Offset(box.width / 4, box.height / 4),
+      const Duration(milliseconds: 200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('scanRescanArea')), findsOneWidget);
+
+    // The pinch zooms and hands the rectangle back exactly as drawn: the
+    // first finger of a pinch must neither redraw it nor wipe the user's work.
+    await _pinch(tester, box.center);
+    expect(_scale(tester), greaterThan(1.5));
+
+    await tester.tap(find.byKey(const ValueKey('scanRescanArea')));
+    await tester.pumpAndSettle();
+    expect(selected!.left, closeTo(0.25, 0.02));
+    expect(selected!.top, closeTo(0.25, 0.02));
+    expect(selected!.right, closeTo(0.5, 0.02));
+    expect(selected!.bottom, closeTo(0.5, 0.02));
   });
 }

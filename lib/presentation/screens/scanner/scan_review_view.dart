@@ -7,12 +7,16 @@
 /// When the caller offers a rescan ([ScanReviewView.onRescanArea]), the user
 /// can switch to selection mode and drag a rectangle over the photo; the
 /// rectangle is reported in fractions (0..1) of the photo so the caller can
-/// crop the original file. Pinch-zoom keeps working while selecting - only
-/// panning is off, so a one-finger drag draws instead of moving the photo.
+/// crop the original file. Pinch-zoom keeps working while selecting: panning
+/// is off so a one-finger drag draws instead of moving the photo, and the
+/// drawing recognizer leaves the gesture arena the moment a second finger
+/// lands, so the zoom - the whole point of selecting a small code - still
+/// reaches the [InteractiveViewer].
 library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/code_candidates.dart';
@@ -255,7 +259,9 @@ class _Photo extends StatefulWidget {
 
   /// The drawn rectangle in fractions (0..1) of the photo.
   final Rect? selection;
-  final ValueChanged<Rect> onSelectionChanged;
+
+  /// Null clears the rectangle (a pinch undoes what the first finger drew).
+  final ValueChanged<Rect?> onSelectionChanged;
 
   @override
   State<_Photo> createState() => _PhotoState();
@@ -264,6 +270,30 @@ class _Photo extends StatefulWidget {
 class _PhotoState extends State<_Photo> {
   /// Where the current drag started, in photo-box pixels.
   Offset? _dragStart;
+
+  /// What was drawn when the current drag began, so a pinch that started as
+  /// a one-finger drag can put it back instead of leaving a stray rectangle.
+  Rect? _selectionBeforeDrag;
+
+  void _startDrag(Offset local) {
+    _dragStart = local;
+    _selectionBeforeDrag = widget.selection;
+  }
+
+  void _endDrag() {
+    _dragStart = null;
+    _selectionBeforeDrag = null;
+  }
+
+  /// A second finger means a pinch, not a drawing gesture: the recognizer has
+  /// just left the arena so [InteractiveViewer] can zoom, and whatever the
+  /// first finger drew on its way in is taken back.
+  void _cancelForPinch() {
+    if (_dragStart == null) return;
+    final before = _selectionBeforeDrag;
+    _endDrag();
+    widget.onSelectionChanged(before);
+  }
 
   /// The drag positions arrive in the photo's own coordinates: the gesture
   /// detector sits inside [InteractiveViewer]'s transform, so the zoom is
@@ -330,16 +360,29 @@ class _PhotoState extends State<_Photo> {
             );
             if (!widget.selecting) return stack;
             final size = Size(width, height);
-            return GestureDetector(
+            return RawGestureDetector(
               behavior: HitTestBehavior.opaque,
-              // onDown, not onStart: a pan is only recognised once the
-              // finger has travelled the touch slop, and the rectangle has
-              // to start where the finger actually landed.
-              onPanDown: (details) => _dragStart = details.localPosition,
-              onPanUpdate: (details) =>
-                  _extendSelection(details.localPosition, size),
-              onPanEnd: (_) => _dragStart = null,
-              onPanCancel: () => _dragStart = null,
+              gestures: <Type, GestureRecognizerFactory>{
+                _DrawPanGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                      _DrawPanGestureRecognizer
+                    >(() => _DrawPanGestureRecognizer(debugOwner: this), (
+                      recognizer,
+                    ) {
+                      recognizer.onSecondPointer = _cancelForPinch;
+                      // onDown, not onStart: a pan is only recognised once
+                      // the finger has travelled the touch slop, and the
+                      // rectangle has to start where the finger landed.
+                      recognizer.onDown = (details) {
+                        _startDrag(details.localPosition);
+                      };
+                      recognizer.onUpdate = (details) {
+                        _extendSelection(details.localPosition, size);
+                      };
+                      recognizer.onEnd = (_) => _endDrag();
+                      recognizer.onCancel = _endDrag;
+                    }),
+              },
               child: stack,
             );
           },
@@ -411,6 +454,41 @@ class _PhotoState extends State<_Photo> {
         ),
       ),
     ];
+  }
+}
+
+/// A pan that draws only while a single finger is down.
+///
+/// [PanGestureRecognizer] happily tracks a second pointer, and sitting below
+/// [InteractiveViewer] it takes the arena before the viewer's scale
+/// recognizer can - which killed pinch-zoom in selection mode and drew a
+/// stray rectangle under the pinching fingers instead. Rejecting as soon as a
+/// second finger lands hands the sequence back to the viewer, so the pinch
+/// zooms.
+class _DrawPanGestureRecognizer extends PanGestureRecognizer {
+  _DrawPanGestureRecognizer({super.debugOwner});
+
+  /// Called when a second finger lands, before this recognizer leaves the
+  /// arena, so the drawing in progress can be undone.
+  VoidCallback? onSecondPointer;
+
+  bool _tracking = false;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    if (_tracking) {
+      onSecondPointer?.call();
+      resolve(GestureDisposition.rejected);
+      return;
+    }
+    _tracking = true;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _tracking = false;
+    super.didStopTrackingLastPointer(pointer);
   }
 }
 
