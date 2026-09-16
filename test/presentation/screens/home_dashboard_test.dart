@@ -21,17 +21,51 @@ import '../../helpers/pump_app.dart';
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
 
-/// How many times the overridden cabinet has been built this test.
-int _medBuilds = 0;
+/// How long the deliberately slow cabinet takes to answer a re-read.
+const _slowRead = Duration(seconds: 3);
+
+/// The one medication every fake cabinet below serves once it works.
+const _alpha = Medication(id: 'a', name: 'Alpha', quantity: 0);
 
 /// A cabinet that fails its first read and serves one low-stock medication
 /// afterwards — the shape of a transient database error behind Retry.
+///
+/// Riverpod builds a fresh notifier for every rebuild, so the build count
+/// cannot live on the instance; each test passes in its own counter rather
+/// than sharing a file-level one, which would make the cases depend on the
+/// order they run in.
 class _FailsOnceMedications extends MedicationListNotifier {
+  _FailsOnceMedications(this.countBuild);
+
+  /// Returns this build's 1-based number.
+  final int Function() countBuild;
+
   @override
   Future<List<Medication>> build() async {
-    _medBuilds++;
-    if (_medBuilds == 1) throw Exception('db down');
-    return const [Medication(id: 'a', name: 'Alpha', quantity: 0)];
+    if (countBuild() == 1) throw Exception('db down');
+    return const [_alpha];
+  }
+}
+
+/// A cabinet that never works, the way a locked or corrupt database read
+/// keeps failing however often it is retried.
+class _AlwaysFailsMedications extends MedicationListNotifier {
+  @override
+  Future<List<Medication>> build() async => throw Exception('db down');
+}
+
+/// A cabinet whose first read is instant and whose every later read takes
+/// [_slowRead] — a cold re-read behind a pull to refresh.
+class _SlowSecondRead extends MedicationListNotifier {
+  _SlowSecondRead(this.countBuild);
+
+  /// Returns this build's 1-based number.
+  final int Function() countBuild;
+
+  @override
+  Future<List<Medication>> build() async {
+    if (countBuild() > 1) await Future<void>.delayed(_slowRead);
+    return const [_alpha];
   }
 }
 
@@ -39,7 +73,6 @@ void main() {
   final now = DateTime(2026, 3, 4, 15);
 
   setUp(() async {
-    _medBuilds = 0;
     await setUpTestDatabase();
     SharedPreferences.setMockInitialValues({});
   });
@@ -74,6 +107,19 @@ void main() {
   Future<void> pullToRefresh(WidgetTester tester) async {
     await tester.fling(find.byType(ListView), const Offset(0, 800), 1000);
     await tester.pumpAndSettle();
+  }
+
+  /// Pumps [total] of fake time in frame-sized steps.
+  ///
+  /// `pumpAndSettle` is no use where a spinner turns or a retry timer is
+  /// pending — it either never settles or returns before the timer is due —
+  /// and one long `pump` collapses every intermediate frame into one, so a
+  /// widget that appeared and vanished again leaves no trace.
+  Future<void> pumpFor(WidgetTester tester, Duration total) async {
+    const step = Duration(milliseconds: 50);
+    for (var elapsed = Duration.zero; elapsed < total; elapsed += step) {
+      await tester.pump(step);
+    }
   }
 
   testWidgets('the Low Stock card lists its rows and the tile counts them', (
@@ -241,7 +287,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // The card takes three and offers no "+N more" affordance; the tile is
-    // the only place the other two are represented at all.
+    // the only place the other two are represented at all. This is a record
+    // of today's behaviour, not a requirement: _ExpiringSoonCard already
+    // has a `moreCount` row, and a task that gives Low Stock and Active
+    // Treatments the same affordance should change this expectation rather
+    // than work around it.
     final shown = [
       'LS1',
       'LS2',
@@ -261,12 +311,15 @@ void main() {
     tester,
   ) async {
     useTallPhone(tester);
+    var builds = 0;
     await pumpMedoraApp(
       tester,
       const HomeScreen(),
       overrides: [
         ...await overrides(),
-        medicationListProvider.overrideWith(_FailsOnceMedications.new),
+        medicationListProvider.overrideWith(
+          () => _FailsOnceMedications(() => ++builds),
+        ),
       ],
       // Riverpod retries a failed provider on a timer of its own. Left on,
       // the cabinet heals itself while the test waits and the button is
@@ -343,5 +396,44 @@ void main() {
 
     expect(find.text('Flu'), findsOneWidget);
     expect(find.text('No active treatments'), findsNothing);
+  });
+
+  testWidgets('the refresh spinner stays up until the slow read lands', (
+    tester,
+  ) async {
+    useTallPhone(tester);
+    var builds = 0;
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: [
+        ...await overrides(),
+        medicationListProvider.overrideWith(
+          () => _SlowSecondRead(() => ++builds),
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Alpha'), findsOneWidget);
+
+    // Not pullToRefresh: the indicator turns for as long as the read is in
+    // flight, so pumpAndSettle would run out of patience rather than
+    // return. Every pump below is deliberate.
+    await tester.fling(find.byType(ListView), const Offset(0, 800), 1000);
+    await pumpFor(tester, const Duration(milliseconds: 600));
+    expect(builds, 2, reason: 'the pull re-read the cabinet');
+
+    // A second and a half in, with that read still pending, the indicator
+    // is still on screen. Drop the `await` from onRefresh and it has long
+    // since retracted by here, telling the user that a dashboard still
+    // showing yesterday's data is fresh.
+    await pumpFor(tester, const Duration(seconds: 1));
+    expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+    // Only once the source lands does the pull actually finish.
+    await tester.pump(_slowRead);
+    await tester.pumpAndSettle();
+    expect(find.byType(RefreshProgressIndicator), findsNothing);
+    expect(find.text('Alpha'), findsOneWidget);
   });
 }
