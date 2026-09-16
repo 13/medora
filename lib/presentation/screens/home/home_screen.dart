@@ -537,11 +537,13 @@ class _ExpiringSoonCard extends ConsumerWidget {
         return Card(
           child: Column(
             children: meds.take(3).map((med) {
-              final days = med.daysUntilExpiry(now);
+              final expired = med.expiredAt(now);
               return ListTile(
                 leading: Icon(
-                  Icons.warning_amber_rounded,
-                  color: context.medora.warning,
+                  expired ? Icons.error_outline : Icons.warning_amber_rounded,
+                  color: expired
+                      ? context.medora.danger
+                      : context.medora.warning,
                 ),
                 title: Text(med.name),
                 subtitle: Column(
@@ -564,27 +566,11 @@ class _ExpiringSoonCard extends ConsumerWidget {
                     ],
                   ],
                 ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${days ?? 0}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: context.medora.warning,
-                      ),
-                    ),
-                    Text(
-                      l10n.daysLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: context.colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+                // The badge the medication list and the detail screen
+                // already show: red "Expired" below zero, amber "Expires in
+                // N days" up to the threshold. The old hand-rolled day
+                // column would have read "-93 Days" for an expired box.
+                trailing: ExpiryBadge(expiryDate: med.expiryDate, now: now),
                 dense: true,
                 onTap: () => context.push('/medications/${med.id}'),
               );
