@@ -231,6 +231,11 @@ def main() -> int:
     write_meta(meta_path, len(rows), updated, source)
     print(f'{len(rows)} rows -> {out}, {meta_path} (sourceUpdated {updated})', file=sys.stderr)
     if args.publish:
+        # CSV first, meta second: `gh release upload` is not atomic across
+        # multiple files, and this order is the safe one if it's
+        # interrupted between them — a partial upload then leaves new data
+        # paired with an old sourceUpdated, so the app over-warns rather
+        # than silently under-warns. Do not reorder this list.
         publish([out, meta_path], args.repo)
     return 0
 
