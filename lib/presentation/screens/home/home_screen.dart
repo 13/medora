@@ -406,7 +406,9 @@ class _StatTiles extends ConsumerWidget {
           label: l10n.statExpiring,
           value: expiring,
           color: anyExpired ? context.medora.danger : context.medora.warning,
-          onTap: () => MainShellScope.of(context)?.switchTab(1),
+          // The same list the section header opens: the count and the list it
+          // leads to have to agree.
+          onTap: () => context.push(AppRoutes.expiringMedications),
         ),
         const SizedBox(width: 12),
         _StatTile(
