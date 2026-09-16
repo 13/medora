@@ -22,6 +22,7 @@ import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/medication_expiry_tile.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
+import 'package:medora/presentation/widgets/sick_leave_badge.dart';
 import 'package:medora/presentation/widgets/sync_status_chip.dart';
 import 'package:medora/presentation/widgets/update_banner.dart';
 
@@ -500,7 +501,9 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-/// Thin progress bar summarizing today's doses, hidden when there are none.
+/// Thin progress bar summarizing today's scheduled doses, hidden when there
+/// are none. A dose logged for an as-needed prescription was never scheduled,
+/// so it counts in neither number.
 class _TodayProgress extends ConsumerWidget {
   const _TodayProgress();
 
@@ -510,7 +513,8 @@ class _TodayProgress extends ConsumerWidget {
     final dosesAsync = ref.watch(todaysDoseLogsProvider);
 
     return dosesAsync.maybeWhen(
-      data: (doses) {
+      data: (all) {
+        final doses = all.where((d) => !d.asNeeded).toList();
         final total = doses.length;
         if (total == 0) return const SizedBox.shrink();
         final taken = doses.where((d) => d.status == DoseStatus.taken).length;
@@ -728,6 +732,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final treatmentsAsync = ref.watch(activeTreatmentsProvider);
+    final now = ref.watch(nowProvider)();
 
     return AsyncValueView<List<Treatment>>(
       value: treatmentsAsync,
@@ -746,7 +751,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
         return Card(
           child: Column(
             children: treatments.take(3).map((t) {
-              return _ActiveTreatmentTile(treatment: t);
+              return _ActiveTreatmentTile(treatment: t, now: now);
             }).toList(),
           ),
         );
@@ -756,8 +761,11 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
 }
 
 class _ActiveTreatmentTile extends StatelessWidget {
-  const _ActiveTreatmentTile({required this.treatment});
+  const _ActiveTreatmentTile({required this.treatment, required this.now});
   final Treatment treatment;
+
+  /// "Now" from the card's `nowProvider`, for the sick-leave day count.
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
@@ -776,6 +784,18 @@ class _ActiveTreatmentTile extends StatelessWidget {
             l10n.startedOn(treatment.startDate.formatted),
             style: const TextStyle(fontSize: 12),
           ),
+          // Only a leave that is running today: one planned for next week
+          // would read as if the user were off work now.
+          if (treatment.isSickLeaveOpen &&
+              treatment.sickLeaveDaysAt(now) != null) ...[
+            const SizedBox(height: 4),
+            SickLeaveBadge(
+              key: const Key('sickLeaveBadge'),
+              treatment: treatment,
+              now: now,
+              fontSize: 10,
+            ),
+          ],
           if (treatment.patientTags.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(

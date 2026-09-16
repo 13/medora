@@ -6,9 +6,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:uuid/uuid.dart';
 
 /// Counter that is incremented whenever dose statuses change.
 /// Providers that depend on this (e.g. dose history) will auto-refetch.
@@ -106,12 +108,35 @@ class DoseActions {
     return result.isSuccess;
   }
 
+  /// Undo a take: the dose is pending again and its stock comes back.
+  ///
+  /// A dose of an as-needed prescription was only ever a record of an
+  /// intake, so undoing it deletes it instead: back to pending it would be
+  /// a dose nobody is due to take.
+  ///
+  /// Only a dose that is still taken can be undone. Two undo buttons can
+  /// hold the same dose (the dose sheet and the snackbar); the second one
+  /// returns false and gives no stock back.
   Future<bool> undoTake(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    final result = await repo.markDosePending(id);
-    if (result.isSuccess) await _autoDiminish(_ref, id, reverse: true);
+    final dose = (await repo.getDoseLogById(id)).dataOrNull;
+    if (dose == null || dose.status != DoseStatus.taken) return false;
+    final prescription =
+        (await _ref
+                .read(prescriptionRepositoryProvider)
+                .getPrescriptionById(dose.prescriptionId))
+            .dataOrNull;
+    final bool ok;
+    if (prescription?.scheduleType == 'as_needed') {
+      ok = (await repo.deleteDoseLog(id)).isSuccess;
+      // By the prescription already loaded, not by the deleted dose's id.
+      if (ok) await _diminishFor(_ref, prescription!, reverse: true);
+    } else {
+      ok = (await repo.markDosePending(id)).isSuccess;
+      if (ok) await _autoDiminish(_ref, id, reverse: true);
+    }
     await _refresh();
-    return result.isSuccess;
+    return ok;
   }
 
   Future<bool> skip(String id) async {
@@ -153,6 +178,31 @@ class DoseActions {
     return taken;
   }
 
+  /// Records one dose of an as-needed prescription, taken right now.
+  ///
+  /// An 'as_needed' prescription generates no doses, so there is nothing to
+  /// tick off: this inserts the dose that just happened, with
+  /// `scheduledTime == takenTime ==` [nowProvider], and then runs the same
+  /// auto-diminish and refresh a tapped dose does. Returns the new dose's
+  /// id, or null when the write failed (and then stock is left alone).
+  Future<String?> logAsNeededDose(String prescriptionId) async {
+    final now = _ref.read(nowProvider)();
+    final dose = DoseLog(
+      id: const Uuid().v4(),
+      prescriptionId: prescriptionId,
+      scheduledTime: now,
+      takenTime: now,
+      status: DoseStatus.taken,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final repo = _ref.read(doseLogRepositoryProvider);
+    final result = await repo.addDoseLog(dose);
+    if (result.isSuccess) await _autoDiminish(_ref, dose.id);
+    await _refresh();
+    return result.isSuccess ? dose.id : null;
+  }
+
   Future<void> _refresh() async {
     await _ref.read(todaysDoseLogsProvider.notifier).refresh(reconcile: false);
     _ref.read(doseDataVersionProvider.notifier).bump();
@@ -180,12 +230,30 @@ Future<void> _autoDiminish(
       dose.prescriptionId,
     );
     final prescription = prescResult.dataOrNull;
-    if (prescription == null || !prescription.autoDiminish) return;
+    if (prescription == null) return;
+    await _diminishFor(ref, prescription, reverse: reverse);
+  } catch (_) {
+    // Non-critical: don't fail the dose marking
+  }
+}
 
-    // Parse numeric amount from dosageAmount or dosage text
-    final amount =
-        prescription.dosageAmount?.round() ??
-        _parseDosageAmount(prescription.dosage);
+/// Moves [prescription]'s medication stock by one dose, if it auto-diminishes.
+Future<void> _diminishFor(
+  Ref ref,
+  Prescription prescription, {
+  bool reverse = false,
+}) async {
+  try {
+    if (!prescription.autoDiminish) return;
+
+    final medication =
+        (await ref
+                .read(medicationRepositoryProvider)
+                .getMedicationById(prescription.medicationId))
+            .dataOrNull;
+    final amount = prescription.unitsPerDose(
+      medicationUnit: medication?.quantityUnit,
+    );
     if (amount <= 0) return;
 
     final medNotifier = ref.read(medicationListProvider.notifier);
@@ -196,15 +264,6 @@ Future<void> _autoDiminish(
   } catch (_) {
     // Non-critical: don't fail the dose marking
   }
-}
-
-/// Parse leading integer from dosage string. Falls back to 1.
-int _parseDosageAmount(String dosage) {
-  final match = RegExp(r'^(\d+)').firstMatch(dosage.trim());
-  if (match != null) {
-    return int.tryParse(match.group(1)!) ?? 1;
-  }
-  return 1;
 }
 
 /// Provider for today's dose logs.
@@ -233,69 +292,17 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     );
   }
 
-  /// Ensure dose logs exist for all active prescriptions.
-  /// Runs in background to avoid blocking app startup.
+  /// Generates the doses any active prescription lacks (see
+  /// [DoseScheduleService.ensureScheduled]) and, if it did, refetches.
+  /// Runs in the background to keep app startup snappy.
   Future<void> _ensureDoseLogsExistInBackground() async {
     try {
-      final prescRepo = ref.read(prescriptionRepositoryProvider);
-      final doseRepo = ref.read(doseLogRepositoryProvider);
-
-      final prescResult = await prescRepo.getActivePrescriptions();
-      final prescriptions = prescResult.dataOrNull ?? [];
-
-      if (prescriptions.isEmpty) return;
-
-      final now = ref.read(nowProvider)();
-      final today = DateTime(now.year, now.month, now.day);
-      final tomorrow = today.add(const Duration(days: 1));
-
-      // Get ALL dose logs for today in one query instead of looping
-      final logsResult = await doseRepo.getTodaysDoseLogs();
-      final allTodayLogs = logsResult.dataOrNull ?? [];
-
-      // Build a map for O(1) lookup instead of filtering repeatedly
-      final logsByPrescription = <String, List<dynamic>>{};
-      for (final log in allTodayLogs) {
-        logsByPrescription.putIfAbsent(log.prescriptionId, () => []).add(log);
-      }
-
-      // Collect prescriptions that need dose generation
-      final needsGeneration = <String>[];
-
-      for (final p in prescriptions) {
-        // Skip prescriptions that ended before today
-        if (p.endTime.isBefore(today)) continue;
-
-        // Check how many doses SHOULD exist today
-        final scheduledToday = p.scheduledDoseTimes
-            .where((t) => !t.isBefore(today) && t.isBefore(tomorrow))
-            .toList();
-
-        if (scheduledToday.isEmpty) continue;
-
-        // O(1) lookup using map
-        final todayLogs = logsByPrescription[p.id] ?? [];
-
-        if (todayLogs.length < scheduledToday.length) {
-          debugPrint(
-            '⚠ Missing dose logs for prescription ${p.id} '
-            '(${p.medicationName ?? "unknown"}): '
-            'has ${todayLogs.length}, expected ${scheduledToday.length}. Generating missing...',
-          );
-          needsGeneration.add(p.id);
-        }
-      }
-
-      // Generate all missing dose logs in parallel
-      if (needsGeneration.isNotEmpty) {
-        await Future.wait(
-          needsGeneration.map(doseRepo.generateDoseLogsForPrescription),
-        );
-
-        // Refresh the state after generation
-        state = await AsyncValue.guard(_fetchTodaysDoses);
-        unawaited(ref.read(reminderSchedulerProvider).reconcile());
-      }
+      final regenerated = await ref
+          .read(doseScheduleServiceProvider)
+          .ensureScheduled();
+      if (regenerated == 0 || !ref.mounted) return;
+      state = await AsyncValue.guard(_fetchTodaysDoses);
+      unawaited(ref.read(reminderSchedulerProvider).reconcile());
     } catch (e) {
       debugPrint('⚠ _ensureDoseLogsExist error: $e');
     }
@@ -341,6 +348,20 @@ class SelectedDoseDay extends Notifier<DateTime> {
     }
   }
 }
+
+/// Every dose logged under a treatment, oldest first: the episode's intake
+/// record. Re-fetches when [doseDataVersionProvider] changes, so logging,
+/// taking or undoing a dose updates the counts without a manual invalidate.
+final doseLogsByTreatmentProvider =
+    FutureProvider.family<List<DoseLog>, String>((ref, treatmentId) async {
+      ref.watch(doseDataVersionProvider);
+      final repo = ref.watch(doseLogRepositoryProvider);
+      final result = await repo.getDoseLogsByTreatment(treatmentId);
+      return result.when(
+        success: (data) => data,
+        failure: (msg) => throw Exception(msg),
+      );
+    });
 
 /// Provider for dose logs by prescription.
 final doseLogsByPrescriptionProvider =

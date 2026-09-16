@@ -10,7 +10,7 @@ abstract class PrescriptionRepository {
     String treatmentId,
   );
 
-  /// Get all active prescriptions.
+  /// The running prescriptions: active, and not part of an ended treatment.
   Future<Result<List<Prescription>>> getActivePrescriptions();
 
   /// Get a single prescription by ID.

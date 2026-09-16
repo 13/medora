@@ -1,25 +1,26 @@
 /// Medora - Medication Repository Implementation (Offline-First)
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
-import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
-import 'package:medora/services/connectivity_service.dart';
 
+/// Writes go to the local database only: each one stores the row as pending
+/// and asks for a sync cycle, which is the one place that pushes (see
+/// `TreatmentRepositoryImpl`). A stock change is pushed as the new quantity,
+/// under last-write-wins, like every other column.
 class MedicationRepositoryImpl implements MedicationRepository {
-  MedicationRepositoryImpl({
-    required this.localDatasource,
-    required this.remoteDatasource,
-  });
+  /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
+  /// failure only logs. Null in local-only mode, where nothing is pushed.
+  MedicationRepositoryImpl({required this.localDatasource, this._requestSync});
 
   final MedicationLocalDatasource localDatasource;
-  final MedicationRemoteDatasource? remoteDatasource;
+  final RequestSync? _requestSync;
 
   @override
   Future<Result<List<Medication>>> getMedications() async {
@@ -92,7 +93,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncInBackground((r) => r.addMedication(model), model.id);
+      _syncSoon();
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to add medication: $e', st);
@@ -102,14 +103,24 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> updateMedication(Medication medication) async {
     try {
+      final status = await localDatasource.syncStatusOf(medication.id);
+      // An edit of a deleted medication would bring it back.
+      if (status == SyncStatus.pendingDelete) {
+        return const Result.failure('Medication was deleted');
+      }
       final previous = await localDatasource.getMedicationById(medication.id);
       final model = MedicationModel.fromDomain(
         medication.copyWith(
           updatedAt: nextUpdatedAt(previous?.updatedAt, DateTime.now()),
         ),
       );
-      await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground((r) => r.updateMedication(model), model.id);
+      await localDatasource.upsert(
+        model,
+        syncStatus: status == null
+            ? SyncStatus.pendingCreate
+            : MedicationLocalDatasource.editedSyncStatus(status),
+      );
+      _syncSoon();
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to update medication: $e', st);
@@ -120,10 +131,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<void>> deleteMedication(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      _syncInBackground((r) async {
-        await r.deleteMedication(id);
-        await localDatasource.hardDelete(id);
-      }, id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete medication: $e', st);
@@ -133,41 +141,13 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> updateQuantity(String id, int delta) async {
     try {
-      final existing = await localDatasource.getMedicationById(id);
-      if (existing == null) {
+      // Only the quantity is written: a stock change neither drops another
+      // column nor brings a deleted medication back.
+      final updated = await localDatasource.adjustQuantity(id, delta);
+      if (updated == null) {
         return const Result.failure('Medication not found');
       }
-      final newQty = (existing.quantity + delta).clamp(0, 999999);
-      final updated = MedicationModel(
-        id: existing.id,
-        userId: existing.userId,
-        name: existing.name,
-        description: existing.description,
-        activeIngredients: existing.activeIngredients,
-        category: existing.category,
-        manufacturer: existing.manufacturer,
-        form: existing.form,
-        atcCode: existing.atcCode,
-        symptoms: existing.symptoms,
-        patientTags: existing.patientTags,
-        purchaseDate: existing.purchaseDate,
-        expiryDate: existing.expiryDate,
-        quantity: newQty,
-        quantityUnit: existing.quantityUnit,
-        minimumStockLevel: existing.minimumStockLevel,
-        storageLocation: existing.storageLocation,
-        barcode: existing.barcode,
-        imagePath: existing.imagePath,
-        notes: existing.notes,
-        isArchived: existing.isArchived,
-        createdAt: existing.createdAt,
-        updatedAt: nextUpdatedAt(existing.updatedAt, DateTime.now()),
-      );
-      await localDatasource.upsert(
-        updated,
-        syncStatus: SyncStatus.pendingUpdate,
-      );
-      _syncInBackground((r) => r.updateQuantity(id, delta), id);
+      _syncSoon();
       return Result.success(updated.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to update quantity: $e', st);
@@ -177,7 +157,10 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<void>> archiveMedication(String id) async {
     try {
-      await localDatasource.archiveMedication(id);
+      if (!await localDatasource.archiveMedication(id)) {
+        return const Result.failure('Medication not found');
+      }
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to archive medication: $e', st);
@@ -187,7 +170,10 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<void>> unarchiveMedication(String id) async {
     try {
-      await localDatasource.unarchiveMedication(id);
+      if (!await localDatasource.unarchiveMedication(id)) {
+        return const Result.failure('Medication not found');
+      }
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to unarchive medication: $e', st);
@@ -204,21 +190,6 @@ class MedicationRepositoryImpl implements MedicationRepository {
     }
   }
 
-  /// Fire-and-forget remote sync. No-op in local-only mode.
-  void _syncInBackground(
-    Future<dynamic> Function(MedicationRemoteDatasource remote) remoteFn,
-    String id,
-  ) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remoteFn(remote);
-        await localDatasource.markSynced(id);
-      } catch (e) {
-        debugPrint('⚠ Background sync failed for medication $id: $e');
-      }
-    });
-  }
+  /// Asks for a sync cycle without waiting for it.
+  void _syncSoon() => requestSyncSoon(_requestSync, 'medication');
 }

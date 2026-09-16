@@ -179,6 +179,21 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
   String _formatTimeOfDay(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+  /// When the saved schedule starts.
+  ///
+  /// New prescriptions use `_roundedNow`, captured when the sheet was
+  /// opened, so the fixed-interval preview matches what is saved. So does an
+  /// as-needed prescription that is switched to a schedule: it had no
+  /// schedule, and its stored start is only when it was created, possibly
+  /// weeks ago. Starting there would put the whole new schedule in the past,
+  /// to be marked missed at once, when the user means "from now on".
+  DateTime _startTime(Prescription? existing) {
+    if (existing == null) return _roundedNow;
+    final leavesAsNeeded =
+        existing.scheduleType == 'as_needed' && _scheduleType != 'as_needed';
+    return leavesAsNeeded ? _roundedNow : existing.startTime;
+  }
+
   /// Builds a throwaway [Prescription] from the current fixed-interval
   /// inputs, purely to compute the first-day preview.
   Prescription _previewPrescription() {
@@ -191,7 +206,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       dosage: '',
       intervalHours: interval,
       durationDays: duration,
-      startTime: widget.existing?.startTime ?? _roundedNow,
+      startTime: _startTime(widget.existing),
     );
   }
 
@@ -262,8 +277,12 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
                       _buildDosageFields(l10n, medUnit),
                       const SizedBox(height: 20),
                       _buildScheduleSection(l10n),
-                      const SizedBox(height: 20),
-                      _buildDurationField(l10n),
+                      // An as-needed prescription has no schedule to last
+                      // for; unmounting the field also skips its validator.
+                      if (_scheduleType != 'as_needed') ...[
+                        const SizedBox(height: 20),
+                        _buildDurationField(l10n),
+                      ],
                       const SizedBox(height: 16),
 
                       // ── Auto-diminish toggle ──
@@ -460,7 +479,19 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
           ),
         ),
         const SizedBox(height: 8),
+        // Stacked, not side by side: three segments share a 360 dp row too
+        // narrowly for "Intervallo fisso" or "Festes Intervall" at a large
+        // text size, and a segment breaks its label mid-word.
         SegmentedButton<String>(
+          direction: Axis.vertical,
+          // The default stadium outline turns into an oval when stacked.
+          style: const ButtonStyle(
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
+            ),
+          ),
           segments: [
             ButtonSegment(
               value: 'fixed_interval',
@@ -477,6 +508,14 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
                 style: const TextStyle(fontSize: 12),
               ),
               icon: const Icon(Icons.schedule, size: 16),
+            ),
+            ButtonSegment(
+              value: 'as_needed',
+              label: Text(
+                l10n.scheduleAsNeeded,
+                style: const TextStyle(fontSize: 12),
+              ),
+              icon: const Icon(Icons.touch_app, size: 16),
             ),
           ],
           selected: {_scheduleType},
@@ -674,6 +713,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       interval = (24 / _selectedTimes.length).round();
     }
 
+    final asNeeded = _scheduleType == 'as_needed';
     final prescription = Prescription(
       id: existing?.id ?? const Uuid().v4(),
       treatmentId: widget.treatmentId,
@@ -682,10 +722,14 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       dosageAmount: amount,
       dosageUnit: _dosageUnitOverride,
       intervalHours: interval,
-      durationDays: int.tryParse(_durationController.text.trim()) ?? 7,
-      // New prescriptions use `_roundedNow`, captured when the sheet was
-      // opened, so the fixed-interval preview above matches what is saved.
-      startTime: existing?.startTime ?? _roundedNow,
+      // An as-needed prescription is saved with no duration. Older builds
+      // read the type as a fixed interval, and a zero duration is what keeps
+      // them from generating (and reminding, and marking missed) doses for
+      // it. Switching back to a schedule then asks for a real duration.
+      durationDays: asNeeded
+          ? 0
+          : int.tryParse(_durationController.text.trim()) ?? 7,
+      startTime: _startTime(existing),
       autoDiminish: _autoDiminish,
       notes: _notesController.text.trim().isEmpty
           ? null

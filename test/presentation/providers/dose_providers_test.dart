@@ -1,16 +1,19 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/prescription.dart';
+import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../helpers/failing_dose_repo.dart';
@@ -23,6 +26,22 @@ import '../../helpers/test_database.dart';
 final invalidateDoseDataProvider = Provider<void Function()>(
   (ref) => ref.invalidateDoseData,
 );
+
+/// A dose repository whose treatment read fails.
+class _FailingTreatmentRead extends FailingTakeRepo {
+  _FailingTreatmentRead()
+    : super(
+        DoseLogRepositoryImpl(
+          localDatasource: DoseLogLocalDatasource(),
+          prescriptionLocal: PrescriptionLocalDatasource(),
+        ),
+      );
+
+  @override
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(
+    String treatmentId,
+  ) async => const Result.failure('db down');
+}
 
 void main() {
   late ProviderContainer c;
@@ -130,6 +149,40 @@ void main() {
   });
 
   test(
+    'taking a scheduled "400 mg" dose takes one tablet from stock',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1, 'dosage': '400 mg', 'dosage_amount': null},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      await db.update(
+        'medications',
+        {'quantity': 20},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      final id = await seedDoseLog(db, s.prescriptionId, recentToday(now));
+
+      await c.read(doseActionsProvider).take(id);
+      Future<int?> stock() async =>
+          (await db.query(
+                'medications',
+                where: 'id = ?',
+                whereArgs: [s.medicationId],
+              )).single['quantity']
+              as int?;
+      expect(await stock(), 19);
+
+      await c.read(doseActionsProvider).undoTake(id);
+      expect(await stock(), 20);
+    },
+  );
+
+  test(
     'takeAllDue skips ids that are not pending and does not double-count or double-diminish them',
     () async {
       final db = await AppDatabase.instance.database;
@@ -205,6 +258,37 @@ void main() {
     },
   );
 
+  test('undoing a scheduled dose twice restores its stock once', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await db.update(
+      'prescriptions',
+      {'auto_diminish': 1},
+      where: 'id = ?',
+      whereArgs: [s.prescriptionId],
+    );
+    final id = await seedDoseLog(db, s.prescriptionId, recentToday(now));
+    Future<int?> stock() async =>
+        (await db.query(
+              'medications',
+              where: 'id = ?',
+              whereArgs: [s.medicationId],
+            )).single['quantity']
+            as int?;
+    final actions = c.read(doseActionsProvider);
+
+    await actions.take(id);
+    expect(await stock(), 9);
+    expect(await actions.undoTake(id), isTrue);
+    expect(await stock(), 10);
+    expect(await actions.undoTake(id), isFalse);
+    expect(await stock(), 10);
+    // Undoing a dose that was never taken gives nothing back either.
+    final pending = await seedDoseLog(db, s.prescriptionId, laterToday(now));
+    expect(await actions.undoTake(pending), isFalse);
+    expect(await stock(), 10);
+  });
+
   test('undoTake restores pending and clears takenTime', () async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
@@ -240,7 +324,6 @@ void main() {
           FailingTakeRepo(
             DoseLogRepositoryImpl(
               localDatasource: DoseLogLocalDatasource(),
-              remoteDatasource: null,
               prescriptionLocal: PrescriptionLocalDatasource(),
             ),
           ),
@@ -299,4 +382,439 @@ void main() {
       expect(after.any((d) => d.prescriptionId == prescriptionId), isTrue);
     },
   );
+
+  test('doseLogsByTreatmentProvider lists the treatment\'s doses and '
+      'refetches after a dose action', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db, scheduleType: 'as_needed');
+    final first = await seedDoseLog(
+      db,
+      s.prescriptionId,
+      DateTime(2026, 3, 1, 8),
+      status: 'taken',
+    );
+
+    expect(
+      (await c.read(
+        doseLogsByTreatmentProvider(s.treatmentId).future,
+      )).map((d) => d.id),
+      [first],
+    );
+
+    final logged = await c
+        .read(doseActionsProvider)
+        .logAsNeededDose(s.prescriptionId);
+
+    expect(
+      (await c.read(
+        doseLogsByTreatmentProvider(s.treatmentId).future,
+      )).map((d) => d.id),
+      [first, logged],
+    );
+  });
+
+  test('doseLogsByTreatmentProvider reports a failed read', () async {
+    final container = ProviderContainer(
+      overrides: [
+        doseLogRepositoryProvider.overrideWithValue(_FailingTreatmentRead()),
+      ],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await expectLater(
+      container.read(doseLogsByTreatmentProvider('t').future),
+      throwsA(isA<Exception>()),
+    );
+  });
+
+  group('logAsNeededDose', () {
+    // A clock distinct from the real one, so a dose stamped with
+    // DateTime.now() instead of nowProvider cannot pass. Still today and in
+    // the past, so the dose lands in today's list whatever the hour.
+    final pinned = recentToday(
+      now,
+      minutes: 7,
+    ).copyWith(millisecond: 123, microsecond: 0);
+
+    Future<ProviderContainer> pinnedContainer({
+      DoseLogRepository? doseRepo,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          syncStartupDelayProvider.overrideWithValue(Duration.zero),
+          reminderPortProvider.overrideWithValue(FakePort()),
+          nowProvider.overrideWithValue(() => pinned),
+          if (doseRepo != null)
+            doseLogRepositoryProvider.overrideWithValue(doseRepo),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    Future<int> quantity(Database db, String medicationId) async {
+      final med = await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [medicationId],
+      );
+      return med.single['quantity']! as int;
+    }
+
+    test('records one taken dose at the injected now', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final container = await pinnedContainer();
+
+      final id = await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+      expect(id, isNotNull);
+
+      final rows = await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      expect(rows, hasLength(1));
+      expect(rows.single['id'], id);
+      expect(rows.single['sync_status'], SyncStatus.pendingCreate);
+
+      final logged = (await DoseLogLocalDatasource().getDoseLogById(id!))!;
+      expect(logged.status, DoseStatus.taken);
+      expect(logged.takenTime, pinned);
+      expect(logged.scheduledTime, pinned);
+    });
+
+    test('each call records another dose', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final actions = (await pinnedContainer()).read(doseActionsProvider);
+
+      final a = await actions.logAsNeededDose(s.prescriptionId);
+      final b = await actions.logAsNeededDose(s.prescriptionId);
+      expect(a, isNot(b));
+      final rows = await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      expect(rows, hasLength(2));
+    });
+
+    test(
+      'shows as taken in today\'s lists and is never the next due dose',
+      () async {
+        final db = await AppDatabase.instance.database;
+        final s = await seedPrescription(db, scheduleType: 'as_needed');
+        final container = await pinnedContainer();
+        // Build the list first, so the test also proves the action refreshes it.
+        expect(await container.read(todaysDoseLogsProvider.future), isEmpty);
+
+        final id = await container
+            .read(doseActionsProvider)
+            .logAsNeededDose(s.prescriptionId);
+
+        final todays = await container.read(todaysDoseLogsProvider.future);
+        expect(todays.map((d) => d.id), [id]);
+        expect(todays.single.status, DoseStatus.taken);
+        expect(container.read(nextDueDoseProvider), isNull);
+        final day = await container.read(dosesForDayProvider(pinned).future);
+        expect(day.map((d) => d.id), [id]);
+      },
+    );
+
+    test('loading today\'s doses generates none for an as-needed '
+        'prescription', () async {
+      final db = await AppDatabase.instance.database;
+      final midnight = DateTime(now.year, now.month, now.day);
+      final asNeeded = await seedPrescription(
+        db,
+        scheduleType: 'as_needed',
+        startTime: midnight,
+      );
+      // The fixed one is the control: its doses prove generation has run.
+      final fixed = await seedPrescription(db, startTime: midnight);
+      final container = await pinnedContainer();
+
+      await container.read(todaysDoseLogsProvider.future);
+      Future<int> count(String prescriptionId) async => (await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [prescriptionId],
+      )).length;
+      for (var i = 0; i < 100 && await count(fixed.prescriptionId) == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(await count(fixed.prescriptionId), greaterThan(0));
+      expect(await count(asNeeded.prescriptionId), 0);
+    });
+
+    test('runs auto-diminish with the prescription\'s amount', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1, 'dosage_amount': 2.0},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer();
+
+      await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      expect(await quantity(db, s.medicationId), 8);
+      final med = await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      // The absolute quantity, marked for the sync cycle to push.
+      expect(med.single['sync_status'], SyncStatus.pendingUpdate);
+    });
+
+    test(
+      'a dosage of "400 mg" takes one tablet, or one unit, from stock',
+      () async {
+        final db = await AppDatabase.instance.database;
+        for (final unit in <String?>['tablets', null]) {
+          final s = await seedPrescription(db, scheduleType: 'as_needed');
+          await db.update(
+            'prescriptions',
+            {'auto_diminish': 1, 'dosage': '400 mg', 'dosage_amount': null},
+            where: 'id = ?',
+            whereArgs: [s.prescriptionId],
+          );
+          await db.update(
+            'medications',
+            {'quantity': 20, 'quantity_unit': unit},
+            where: 'id = ?',
+            whereArgs: [s.medicationId],
+          );
+          final container = await pinnedContainer();
+
+          await container
+              .read(doseActionsProvider)
+              .logAsNeededDose(s.prescriptionId);
+
+          expect(await quantity(db, s.medicationId), 19, reason: '$unit');
+        }
+      },
+    );
+
+    test('drops dosed from a bottle counted in drops take that many', () async {
+      // Whether the amount is counted depends on the medication's own unit.
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {
+          'auto_diminish': 1,
+          'dosage': '20 drops',
+          'dosage_amount': 20.0,
+          'dosage_unit': 'drops',
+        },
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      await db.update(
+        'medications',
+        {'quantity': 100, 'quantity_unit': 'drops'},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      final actions = (await pinnedContainer()).read(doseActionsProvider);
+
+      await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 80);
+
+      // The same dose from a medication counted in ml is one unit.
+      await db.update(
+        'medications',
+        {'quantity_unit': 'ml'},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 79);
+    });
+
+    test('logging a dose does not bring a deleted medication back', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer();
+      await container
+          .read(medicationRepositoryProvider)
+          .deleteMedication(s.medicationId);
+
+      await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      final med = (await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      )).single;
+      expect(med['sync_status'], SyncStatus.pendingDelete);
+      expect(med['deleted_at'], isNotNull);
+      expect(med['quantity'], 10);
+      final list = await container
+          .read(medicationRepositoryProvider)
+          .getMedications();
+      expect(list.dataOrNull, isEmpty);
+    });
+
+    test('leaves stock alone without auto-diminish', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final container = await pinnedContainer();
+
+      await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      expect(await quantity(db, s.medicationId), 10);
+    });
+
+    test('undoing it removes the dose and gives the stock back', () async {
+      // Back to pending would leave a dose nobody is due to take; the
+      // sync cycle deletes the tombstone on the server as well.
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer();
+      final actions = container.read(doseActionsProvider);
+      final kept = await actions.logAsNeededDose(s.prescriptionId);
+      final id = await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 8);
+
+      expect(await actions.undoTake(id!), isTrue);
+
+      expect(await quantity(db, s.medicationId), 9);
+      final row = await db.query('dose_logs', where: 'id = ?', whereArgs: [id]);
+      expect(row.single['sync_status'], SyncStatus.pendingDelete);
+      expect(row.single['status'], 'taken');
+      final todays = await container.read(todaysDoseLogsProvider.future);
+      expect(todays.map((d) => d.id), [kept]);
+      final day = await container.read(dosesForDayProvider(pinned).future);
+      expect(day.map((d) => d.id), [kept]);
+    });
+
+    test('a second undo gives nothing back', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final actions = (await pinnedContainer()).read(doseActionsProvider);
+      final id = await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 9);
+
+      expect(await actions.undoTake(id!), isTrue);
+      expect(await quantity(db, s.medicationId), 10);
+      // The snackbar's Undo after the dose sheet's, for example.
+      expect(await actions.undoTake(id), isFalse);
+      expect(await quantity(db, s.medicationId), 10);
+    });
+
+    test('a failed removal keeps the dose and the stock', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final id = await (await pinnedContainer())
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+      final failing = await pinnedContainer(
+        doseRepo: _FailingDeleteRepo(
+          DoseLogRepositoryImpl(
+            localDatasource: DoseLogLocalDatasource(),
+            prescriptionLocal: PrescriptionLocalDatasource(),
+          ),
+        ),
+      );
+
+      expect(await failing.read(doseActionsProvider).undoTake(id!), isFalse);
+
+      expect(await quantity(db, s.medicationId), 9);
+      final row = await db.query('dose_logs', where: 'id = ?', whereArgs: [id]);
+      expect(row.single['sync_status'], SyncStatus.pendingCreate);
+      expect(row.single['status'], 'taken');
+    });
+
+    test('a failed write returns null and leaves stock alone', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer(
+        doseRepo: _FailingAddRepo(
+          DoseLogRepositoryImpl(
+            localDatasource: DoseLogLocalDatasource(),
+            prescriptionLocal: PrescriptionLocalDatasource(),
+          ),
+        ),
+      );
+
+      final id = await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      expect(id, isNull);
+      expect(await quantity(db, s.medicationId), 10);
+      expect(await db.query('dose_logs'), isEmpty);
+    });
+  });
+}
+
+/// Fails every [addDoseLog]; everything else reaches the real repository.
+class _FailingAddRepo extends FailingTakeRepo {
+  _FailingAddRepo(super.inner);
+
+  @override
+  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) async =>
+      const Result.failure('db down');
+
+  @override
+  Future<Result<DoseLog>> markDoseTaken(String id) => inner.markDoseTaken(id);
+}
+
+/// Fails every [deleteDoseLog]; everything else reaches the real repository.
+class _FailingDeleteRepo extends FailingTakeRepo {
+  _FailingDeleteRepo(super.inner);
+
+  @override
+  Future<Result<void>> deleteDoseLog(String id) async =>
+      const Result.failure('db down');
+
+  @override
+  Future<Result<DoseLog>> markDoseTaken(String id) => inner.markDoseTaken(id);
 }

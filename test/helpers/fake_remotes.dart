@@ -2,6 +2,7 @@ import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/family_member_model.dart';
@@ -37,8 +38,9 @@ class FakeRemoteTable {
   }
 
   /// Insert keeps the client's `updated_at` (or stamps now); update stamps now
-  /// like the `update_updated_at` trigger.
-  Future<void> upsert(Map<String, dynamic> json) async {
+  /// like the `update_updated_at` trigger. Returns the stored `updated_at`,
+  /// as `upsert(...).select('updated_at')` does.
+  Future<DateTime?> upsert(Map<String, dynamic> json) async {
     await beforeCall?.call();
     final id = json['id'] as String;
     _guard(id);
@@ -47,6 +49,41 @@ class FakeRemoteTable {
     final merged = {...?existing, ...json};
     merged['updated_at'] = existing == null ? (json['updated_at'] ?? now) : now;
     rows[id] = merged;
+    return updatedAt(id);
+  }
+
+  /// Inserts the rows whose id is not there yet, keeping each client
+  /// `updated_at` (no `BEFORE INSERT` trigger), and leaves the others alone
+  /// — `upsert(rows, ignoreDuplicates: true)`. Returns how many it inserted.
+  Future<int> insertIfAbsent(List<Map<String, dynamic>> jsons) async {
+    await beforeCall?.call();
+    for (final json in jsons) {
+      _guard(json['id'] as String);
+    }
+    insertBatches.add(jsons.length);
+    var inserted = 0;
+    for (final json in jsons) {
+      final id = json['id'] as String;
+      if (rows.containsKey(id)) continue;
+      rows[id] = {
+        ...json,
+        'updated_at': json['updated_at'] ?? clock().toUtc().toIso8601String(),
+      };
+      inserted++;
+    }
+    return inserted;
+  }
+
+  /// The size of every [insertIfAbsent] request, in order.
+  final List<int> insertBatches = [];
+
+  /// The rows with these ids, tombstones included — `select().inFilter`.
+  Future<List<Map<String, dynamic>>> getMany(List<String> ids) async {
+    await beforeCall?.call();
+    return [
+      for (final id in ids)
+        if (rows[id] != null) Map<String, dynamic>.from(rows[id]!),
+    ];
   }
 
   void tombstone(String id) {
@@ -66,22 +103,64 @@ class FakeRemoteTable {
       rows.values.map(Map<String, dynamic>.from).toList();
 
   /// Live rows only — mirrors the `.isFilter('deleted_at', null)` the
-  /// non-delta remote getters apply. Delta pulls use [since] and still see
+  /// non-delta remote getters apply. Delta pulls use [page] and still see
   /// tombstones.
   List<Map<String, dynamic>> live() =>
       all().where((r) => r['deleted_at'] == null).toList();
 
-  Future<List<Map<String, dynamic>>> since(DateTime? since) async {
+  /// The most rows one fetch answers, whatever it asked for — the PostgREST
+  /// `max_rows` a hosted Supabase project applies (1000 by default). A
+  /// longer answer is cut short without any sign.
+  int rowCap = 1000;
+
+  /// Every page request, in order: the `since` and `after` it asked with.
+  final List<({DateTime? since, PullKey? after})> pageCalls = [];
+
+  /// Optional hook run on every page request before it is answered; a test
+  /// can throw from it to fail one page.
+  void Function(int call, DateTime? since, PullKey? after)? onPage;
+
+  /// One page of a delta pull, as `pullPage` asks the server for it: rows
+  /// changed after [since] (all rows when null), tombstones included, that
+  /// come after [after] in `updated_at, id` order, in that order, at most
+  /// [limit] and at most [rowCap] of them.
+  Future<List<Map<String, dynamic>>> page(
+    DateTime? since,
+    PullKey? after, {
+    int limit = pullPageSize,
+  }) async {
     await beforeCall?.call();
     sinceCalls.add(since);
+    pageCalls.add((since: since, after: after));
+    onPage?.call(pageCalls.length, since, after);
     final failure = throwOnFetch;
     if (failure != null) throw failure;
-    if (since == null) return all();
-    return all().where((r) {
-      final u = r['updated_at'] as String?;
-      return u != null && DateTime.parse(u).toUtc().isAfter(since.toUtc());
-    }).toList();
+    final matching = [
+      for (final r in all())
+        if (_stampOf(r) case final u?)
+          if (since == null || u.isAfter(since.toUtc()))
+            if (after == null || _compareKey(u, r['id'] as String, after) > 0)
+              r,
+    ]..sort(_compareRows);
+    return matching.take(limit < rowCap ? limit : rowCap).toList();
   }
+
+  static DateTime? _stampOf(Map<String, dynamic> row) {
+    final raw = row['updated_at'] as String?;
+    return raw == null ? null : DateTime.parse(raw).toUtc();
+  }
+
+  static int _compareKey(DateTime stamp, String id, PullKey key) {
+    final byStamp = stamp.compareTo(key.updatedAt.toUtc());
+    return byStamp != 0 ? byStamp : id.compareTo(key.id);
+  }
+
+  static int _compareRows(Map<String, dynamic> a, Map<String, dynamic> b) =>
+      _compareKey(
+        _stampOf(a)!,
+        a['id'] as String,
+        PullKey(_stampOf(b)!, b['id'] as String),
+      );
 
   /// One row by id, or null when it is absent — mirrors
   /// `.eq('id', id).maybeSingle()`.
@@ -115,11 +194,11 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
-  Future<List<MedicationModel>> getMedications() async =>
-      table.live().map(MedicationModel.fromJson).toList();
-  @override
-  Future<List<MedicationModel>> getMedicationsSince(DateTime? since) async =>
-      (await table.since(since)).map(MedicationModel.fromJson).toList();
+  Future<List<MedicationModel>> getMedicationsSince(
+    DateTime? since, {
+    PullKey? after,
+  }) async =>
+      (await table.page(since, after)).map(MedicationModel.fromJson).toList();
   @override
   Future<MedicationModel?> getMedicationById(String id) async {
     final row = table.get(id);
@@ -127,24 +206,10 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   }
 
   @override
-  Future<List<MedicationModel>> searchMedications(String query) async =>
-      (await getMedications()).where((m) => m.name.contains(query)).toList();
-  @override
-  Future<void> addMedication(MedicationModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> updateMedication(MedicationModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> upsertMedication(MedicationModel model) async =>
+  Future<DateTime?> upsertMedication(MedicationModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deleteMedication(String id) async => table.tombstone(id);
-  @override
-  Future<void> updateQuantity(String id, int delta) async {
-    final row = table.rows[id]!;
-    await table.upsert({...row, 'quantity': (row['quantity'] as int) + delta});
-  }
 }
 
 class FakeTreatmentRemote implements TreatmentRemoteDatasource {
@@ -156,14 +221,11 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
-  Future<List<TreatmentModel>> getTreatments() async =>
-      table.live().map(TreatmentModel.fromJson).toList();
-  @override
-  Future<List<TreatmentModel>> getTreatmentsSince(DateTime? since) async =>
-      (await table.since(since)).map(TreatmentModel.fromJson).toList();
-  @override
-  Future<List<TreatmentModel>> getActiveTreatments() async =>
-      (await getTreatments()).where((t) => t.isActive).toList();
+  Future<List<TreatmentModel>> getTreatmentsSince(
+    DateTime? since, {
+    PullKey? after,
+  }) async =>
+      (await table.page(since, after)).map(TreatmentModel.fromJson).toList();
   @override
   Future<TreatmentModel?> getTreatmentById(String id) async {
     final row = table.get(id);
@@ -171,19 +233,10 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   }
 
   @override
-  Future<void> addTreatment(TreatmentModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> updateTreatment(TreatmentModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> upsertTreatment(TreatmentModel model) async =>
+  Future<DateTime?> upsertTreatment(TreatmentModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deleteTreatment(String id) async => table.tombstone(id);
-  @override
-  Future<void> endTreatment(String id) async =>
-      table.upsert({...table.rows[id]!, 'is_active': false});
 }
 
 class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
@@ -199,9 +252,10 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
       table.live().map(PrescriptionModel.fromJson).toList();
   @override
   Future<List<PrescriptionModel>> getPrescriptionsSince(
-    DateTime? since,
-  ) async =>
-      (await table.since(since)).map(PrescriptionModel.fromJson).toList();
+    DateTime? since, {
+    PullKey? after,
+  }) async =>
+      (await table.page(since, after)).map(PrescriptionModel.fromJson).toList();
   @override
   Future<List<PrescriptionModel>> getPrescriptionsByTreatment(
     String treatmentId,
@@ -218,22 +272,29 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   }
 
   @override
-  Future<void> addPrescription(PrescriptionModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> updatePrescription(PrescriptionModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> upsertPrescription(PrescriptionModel model) async =>
-      table.upsert(model.toJson());
+  Future<DateTime?> upsertPrescription(PrescriptionModel model) async {
+    final json = model.toJson();
+    json['start_time'] = asTimestamptz(json['start_time'] as String);
+    return table.upsert(json);
+  }
+
+  /// What a `timestamptz` column in a UTC session gives back for [raw]: a
+  /// time without an offset is read as UTC, and the answer always carries
+  /// one (`2026-03-01T08:00:00+00:00`), which `DateTime.parse` turns into a
+  /// UTC value.
+  static String asTimestamptz(String raw) {
+    final hasOffset = RegExp(
+      r'(Z|[+-]\d{2}(:?\d{2})?)$',
+    ).hasMatch(raw.substring(raw.indexOf('T') + 1));
+    final utc = hasOffset
+        ? DateTime.parse(raw).toUtc()
+        : DateTime.parse('${raw}Z');
+    final text = utc.toIso8601String();
+    return '${text.substring(0, text.length - 1)}+00:00';
+  }
+
   @override
   Future<void> deletePrescription(String id) async => table.tombstone(id);
-  @override
-  Future<void> deactivatePrescription(String id) async =>
-      table.upsert({...table.rows[id]!, 'is_active': false});
-  @override
-  Future<void> reactivatePrescription(String id) async =>
-      table.upsert({...table.rows[id]!, 'is_active': true});
 }
 
 class FakeDoseLogRemote implements DoseLogRemoteDatasource {
@@ -247,8 +308,11 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   Future<List<DoseLogModel>> getDoseLogs() async =>
       table.live().map(DoseLogModel.fromJson).toList();
   @override
-  Future<List<DoseLogModel>> getDoseLogsSince(DateTime? since) async =>
-      (await table.since(since)).map(DoseLogModel.fromJson).toList();
+  Future<List<DoseLogModel>> getDoseLogsSince(
+    DateTime? since, {
+    PullKey? after,
+  }) async =>
+      (await table.page(since, after)).map(DoseLogModel.fromJson).toList();
   @override
   Future<DoseLogModel?> getDoseLogById(String id) async {
     final row = table.get(id);
@@ -258,28 +322,14 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   @override
   Future<List<DoseLogModel>> getTodaysDoseLogs() async => getDoseLogs();
   @override
-  Future<void> addDoseLog(DoseLogModel model) async =>
+  Future<DateTime?> upsertDoseLog(DoseLogModel model) async =>
       table.upsert(model.toJson());
   @override
-  Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
-    for (final m in models) {
-      await table.upsert(m.toJson());
-    }
-  }
-
+  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async =>
+      table.insertIfAbsent([for (final m in models) m.toJson()]);
   @override
-  Future<void> upsertDoseLog(DoseLogModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> updateDoseLogStatus(
-    String id,
-    String status, {
-    DateTime? takenTime,
-  }) async => table.upsert({
-    ...table.rows[id]!,
-    'status': status,
-    'taken_time': takenTime?.toUtc().toIso8601String(),
-  });
+  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async =>
+      (await table.getMany(ids)).map(DoseLogModel.fromJson).toList();
   @override
   Future<void> deleteDoseLog(String id) async => table.tombstone(id);
 }

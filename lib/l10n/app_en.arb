@@ -163,7 +163,7 @@
   "treatment": "Treatment",
   "treatmentNotFound": "Treatment not found",
   "endTreatment": "End Treatment",
-  "endTreatmentConfirm": "End \"{name}\"? This will deactivate all prescriptions.",
+  "endTreatmentConfirm": "End \"{name}\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.",
   "@endTreatmentConfirm": {
     "placeholders": {
       "name": { "type": "String" }
@@ -172,6 +172,88 @@
   "startDate": "Start Date",
   "endDate": "End Date",
   "ongoing": "Ongoing",
+  "sickLeave": "Sick leave",
+  "sickLeaveFrom": "Unable to work from",
+  "sickLeaveTo": "Unable to work until",
+  "sickLeaveDays": "{days, plural, =1{1 day} other{{days} days}}",
+  "@sickLeaveDays": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "sickLeaveDay": "Day {days}",
+  "@sickLeaveDay": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "sickLeaveDuration": "Duration",
+  "sickLeaveRef": "Certificate no.",
+  "sickLeaveRefHint": "e.g. 1234567890",
+  "sickLeaveToBeforeFrom": "\"{to}\" can't be before \"{from}\"",
+  "@sickLeaveToBeforeFrom": {
+    "description": "Sick-leave form error. {to} and {from} are the sickLeaveTo and sickLeaveFrom field labels.",
+    "placeholders": {
+      "to": { "type": "String" },
+      "from": { "type": "String" }
+    }
+  },
+  "sickLeaveFromMissing": "Please also enter \"{from}\"",
+  "@sickLeaveFromMissing": {
+    "description": "Sick-leave form error when only the end date is set. {from} is the sickLeaveFrom field label.",
+    "placeholders": {
+      "from": { "type": "String" }
+    }
+  },
+  "sickLeaveEndToday": "Also end sick leave today (until {date})",
+  "@sickLeaveEndToday": {
+    "description": "End-treatment dialog checkbox. {date} is the formatted end date that will be stored; today counts as a day of the leave.",
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "doctorLabel": "Doctor",
+  "doctorHint": "e.g. Dr. Rossi, Bolzano",
+  "illness": "Illness",
+  "sickLeavePeriod": "Sick leave",
+  "@sickLeavePeriod": {
+    "description": "Label of the sick-leave line in a shared episode, next to the illness line. Must read differently from 'illness' (in Italian both would be 'Malattia')."
+  },
+  "dosesTakenOfPlanned": "{taken} of {total} taken",
+  "@dosesTakenOfPlanned": {
+    "description": "Doses of a scheduled prescription taken, out of the doses that were due up to now.",
+    "placeholders": {
+      "taken": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "dosesTakenAsNeeded": "{taken, plural, =0{Not taken} =1{1 dose taken} other{{taken} doses taken}}",
+  "@dosesTakenAsNeeded": {
+    "description": "Doses logged for an as-needed prescription.",
+    "placeholders": {
+      "taken": { "type": "int" }
+    }
+  },
+  "shareEpisode": "Share record",
+  "episodeShareSubject": "Illness record: {period}",
+  "@episodeShareSubject": {
+    "description": "Subject of a shared episode (shown in e-mail lists and notifications), so it never names the illness. {period} is the illness period, e.g. 'Mar 2, 2026 – Mar 11, 2026'.",
+    "placeholders": {
+      "period": { "type": "String" }
+    }
+  },
+  "episodePatient": "Patient",
+  "@episodePatient": {
+    "description": "Label of the line naming who was ill in a shared episode, followed by the patient names."
+  },
+  "dosageUnitName": "{count, plural, =1{{unit, select, pieces{piece} pills{pill} tablets{tablet} capsules{capsule} ml{ml} drops{drop} bustine{sachet} ampoules{ampoule} suppositories{suppository} patches{patch} other{{unit}}}} other{{unit, select, pieces{pieces} pills{pills} tablets{tablets} capsules{capsules} ml{ml} drops{drops} bustine{sachets} ampoules{ampoules} suppositories{suppositories} patches{patches} other{{unit}}}}}",
+  "@dosageUnitName": {
+    "description": "The unit of one prescribed dose, after its amount ('1 tablet', '2 tablets'). {count} is the amount (it may be a fraction), {unit} the stored unit key; an unknown key is shown as it is.",
+    "placeholders": {
+      "count": { "type": "num" },
+      "unit": { "type": "String" }
+    }
+  },
   "prescriptions": "Prescriptions",
   "numPrescriptions": "{count, plural, =0{No prescriptions} =1{1 prescription} other{{count} prescriptions}}",
   "@numPrescriptions": {
@@ -492,6 +574,9 @@
   "scheduleType": "Schedule Type",
   "fixedInterval": "Fixed Interval",
   "timesPerDay": "Times per Day",
+  "scheduleAsNeeded": "As Needed",
+  "logDoseNow": "Log dose",
+  "doseLogged": "Dose logged",
   "specificTimes": "Specific Times",
   "morning": "Morning",
   "noon": "Noon",

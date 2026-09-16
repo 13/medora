@@ -27,6 +27,14 @@ jobs:
       #   fvm flutter test --update-goldens test/goldens/
       # and commit the PNGs; a bare `flutter test` compares against them.
       - run: flutter test
+      # The runner's zone is UTC, where the daylight-saving and calendar-day
+      # tests (dose schedules, sick-leave day counts, expiry reminders) pass
+      # trivially. Run the suite again in a zone with daylight saving, so
+      # those tests can fail here too.
+      - name: flutter test (TZ=Europe/Rome)
+        run: flutter test
+        env:
+          TZ: Europe/Rome
 
   build-web:
     runs-on: ubuntu-latest

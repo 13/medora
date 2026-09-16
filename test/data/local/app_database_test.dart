@@ -80,12 +80,24 @@ void main() {
       final upgraded = await AppDatabase.instance.database;
 
       expect(await columnsOf(upgraded, 'medications'), contains('deleted_at'));
-      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
+      expect(await AppDatabase.instance.appliedMigrations(), [
+        11,
+        12,
+        13,
+        14,
+        15,
+      ]);
 
       // Reopen: nothing re-applied, no duplicate rows.
       await AppDatabase.instance.reset();
       final again = await AppDatabase.instance.database;
-      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
+      expect(await AppDatabase.instance.appliedMigrations(), [
+        11,
+        12,
+        13,
+        14,
+        15,
+      ]);
       await again.close();
       await dir.delete(recursive: true);
     },
@@ -137,7 +149,13 @@ void main() {
       'med_def.jpg',
       null,
     ]);
-    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
+    expect(await AppDatabase.instance.appliedMigrations(), [
+      11,
+      12,
+      13,
+      14,
+      15,
+    ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
   });
@@ -200,7 +218,13 @@ void main() {
       expect(rows['n'], '2026-03-01T08:00:00.000');
       expect(rows['z'], isNot(endsWith('Z')));
       expect(DateTime.parse(rows['z']!), DateTime.utc(2026, 3, 1, 7).toLocal());
-      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
+      expect(await AppDatabase.instance.appliedMigrations(), [
+        11,
+        12,
+        13,
+        14,
+        15,
+      ]);
       await AppDatabase.instance.reset();
       await dir.delete(recursive: true);
     },
@@ -213,6 +237,82 @@ void main() {
       "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'medications'",
     );
     expect(indexes.map((r) => r['name']), contains('idx_local_med_ean'));
+  });
+
+  test('migration 15 adds the sick-leave and doctor columns', () async {
+    final db = await AppDatabase.instance.database;
+    expect(
+      await columnsOf(db, 'treatments'),
+      containsAll([
+        'sick_leave_from',
+        'sick_leave_to',
+        'sick_leave_ref',
+        'doctor',
+      ]),
+    );
+  });
+
+  test('upgrading a v14 database adds the sick-leave columns', () async {
+    final dir = await Directory.systemTemp.createTemp('medora_mig15_');
+    final path = p.join(dir.path, 'medora.db');
+    final legacy = await databaseFactory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 14,
+        onCreate: (db, _) async {
+          await AppDatabase.createBaseSchema(db);
+          for (final m in kMigrations.where((m) => m.version <= 14)) {
+            await m.run(db);
+          }
+        },
+      ),
+    );
+    await legacy.insert('treatments', {
+      'id': 't-old',
+      'name': 'Influenza',
+      'start_date': '2026-03-01',
+      'is_active': 1,
+    });
+    expect(
+      await columnsOf(legacy, 'treatments'),
+      isNot(contains('sick_leave_from')),
+    );
+    await legacy.close();
+
+    AppDatabase.debugPathOverride = path;
+    await AppDatabase.instance.reset();
+    final upgraded = await AppDatabase.instance.database;
+
+    expect(
+      await columnsOf(upgraded, 'treatments'),
+      containsAll([
+        'sick_leave_from',
+        'sick_leave_to',
+        'sick_leave_ref',
+        'doctor',
+      ]),
+    );
+    expect(await AppDatabase.instance.appliedMigrations(), [
+      11,
+      12,
+      13,
+      14,
+      15,
+    ]);
+    // The pre-existing row survives with the new columns null.
+    final row = (await upgraded.query(
+      'treatments',
+      where: 'id = ?',
+      whereArgs: ['t-old'],
+    )).single;
+    expect(row['name'], 'Influenza');
+    expect(row['sick_leave_from'], isNull);
+    expect(row['sick_leave_to'], isNull);
+    expect(row['sick_leave_ref'], isNull);
+    expect(row['doctor'], isNull);
+
+    await AppDatabase.instance.reset();
+    await dir.delete(recursive: true);
   });
 
   test('clearAllData empties every table', () async {

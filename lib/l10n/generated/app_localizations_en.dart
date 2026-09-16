@@ -336,7 +336,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String endTreatmentConfirm(String name) {
-    return 'End \"$name\"? This will deactivate all prescriptions.';
+    return 'End \"$name\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.';
   }
 
   @override
@@ -347,6 +347,132 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get ongoing => 'Ongoing';
+
+  @override
+  String get sickLeave => 'Sick leave';
+
+  @override
+  String get sickLeaveFrom => 'Unable to work from';
+
+  @override
+  String get sickLeaveTo => 'Unable to work until';
+
+  @override
+  String sickLeaveDays(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days',
+      one: '1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sickLeaveDay(int days) {
+    return 'Day $days';
+  }
+
+  @override
+  String get sickLeaveDuration => 'Duration';
+
+  @override
+  String get sickLeaveRef => 'Certificate no.';
+
+  @override
+  String get sickLeaveRefHint => 'e.g. 1234567890';
+
+  @override
+  String sickLeaveToBeforeFrom(String to, String from) {
+    return '\"$to\" can\'t be before \"$from\"';
+  }
+
+  @override
+  String sickLeaveFromMissing(String from) {
+    return 'Please also enter \"$from\"';
+  }
+
+  @override
+  String sickLeaveEndToday(String date) {
+    return 'Also end sick leave today (until $date)';
+  }
+
+  @override
+  String get doctorLabel => 'Doctor';
+
+  @override
+  String get doctorHint => 'e.g. Dr. Rossi, Bolzano';
+
+  @override
+  String get illness => 'Illness';
+
+  @override
+  String get sickLeavePeriod => 'Sick leave';
+
+  @override
+  String dosesTakenOfPlanned(int taken, int total) {
+    return '$taken of $total taken';
+  }
+
+  @override
+  String dosesTakenAsNeeded(int taken) {
+    String _temp0 = intl.Intl.pluralLogic(
+      taken,
+      locale: localeName,
+      other: '$taken doses taken',
+      one: '1 dose taken',
+      zero: 'Not taken',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get shareEpisode => 'Share record';
+
+  @override
+  String episodeShareSubject(String period) {
+    return 'Illness record: $period';
+  }
+
+  @override
+  String get episodePatient => 'Patient';
+
+  @override
+  String dosageUnitName(num count, String unit) {
+    String _temp0 = intl.Intl.selectLogic(unit, {
+      'pieces': 'pieces',
+      'pills': 'pills',
+      'tablets': 'tablets',
+      'capsules': 'capsules',
+      'ml': 'ml',
+      'drops': 'drops',
+      'bustine': 'sachets',
+      'ampoules': 'ampoules',
+      'suppositories': 'suppositories',
+      'patches': 'patches',
+      'other': '$unit',
+    });
+    String _temp1 = intl.Intl.selectLogic(unit, {
+      'pieces': 'piece',
+      'pills': 'pill',
+      'tablets': 'tablet',
+      'capsules': 'capsule',
+      'ml': 'ml',
+      'drops': 'drop',
+      'bustine': 'sachet',
+      'ampoules': 'ampoule',
+      'suppositories': 'suppository',
+      'patches': 'patch',
+      'other': '$unit',
+    });
+    String _temp2 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$_temp0',
+      one: '$_temp1',
+    );
+    return '$_temp2';
+  }
 
   @override
   String get prescriptions => 'Prescriptions';
@@ -1071,6 +1197,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get timesPerDay => 'Times per Day';
+
+  @override
+  String get scheduleAsNeeded => 'As Needed';
+
+  @override
+  String get logDoseNow => 'Log dose';
+
+  @override
+  String get doseLogged => 'Dose logged';
 
   @override
   String get specificTimes => 'Specific Times';

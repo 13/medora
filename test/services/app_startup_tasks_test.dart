@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 
 void main() {
-  test('runs maintenance, then reminders, then sync after the delay', () async {
+  test('runs sync after the delay, then maintenance, then reminders', () async {
     final calls = <String>[];
     final tasks = AppStartupTasks(
       maintenance: () async => calls.add('maintenance'),
@@ -12,7 +12,21 @@ void main() {
       minSyncInterval: Duration.zero,
     );
     await tasks.run();
-    expect(calls, ['maintenance', 'reminders', 'sync']);
+    expect(calls, ['sync', 'maintenance', 'reminders']);
+  });
+
+  test('without a sync, maintenance runs at once', () async {
+    final calls = <String>[];
+    final tasks = AppStartupTasks(
+      maintenance: () async => calls.add('maintenance'),
+      reminders: () async => calls.add('reminders'),
+      sync: () async => calls.add('sync'),
+      syncEnabled: () => false,
+      syncDelay: const Duration(hours: 1),
+      minSyncInterval: Duration.zero,
+    );
+    await tasks.run().timeout(const Duration(seconds: 5));
+    expect(calls, ['maintenance', 'reminders']);
   });
 
   test('the update check runs last, after sync', () async {
@@ -27,7 +41,7 @@ void main() {
       minUpdateCheckInterval: Duration.zero,
     );
     await tasks.run();
-    expect(calls, ['maintenance', 'reminders', 'sync', 'updateCheck']);
+    expect(calls, ['sync', 'maintenance', 'reminders', 'updateCheck']);
   });
 
   test('the update check still runs when sync is skipped', () async {
@@ -102,7 +116,7 @@ void main() {
       minSyncInterval: Duration.zero,
     );
     await tasks.run();
-    expect(calls, ['r', 's']);
+    expect(calls, ['s', 'r']);
   });
 
   test('concurrent runs are coalesced', () async {

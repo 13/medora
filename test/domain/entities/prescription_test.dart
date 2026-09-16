@@ -139,4 +139,183 @@ void main() {
       );
     });
   });
+
+  group('as_needed', () {
+    test('generates no scheduled doses', () {
+      expect(_p(scheduleType: 'as_needed').scheduledDoseTimes, isEmpty);
+    });
+
+    test('dosesPerDay is zero', () {
+      expect(_p(scheduleType: 'as_needed').dosesPerDay, 0);
+    });
+
+    test('previewTimes is empty', () {
+      expect(_p(scheduleType: 'as_needed').previewTimes(), isEmpty);
+    });
+
+    test('ignores interval, duration and leftover times entirely', () {
+      // The sheet hides these fields for an as-needed prescription but keeps
+      // their stored values, e.g. after switching from another schedule.
+      final p = _p(
+        scheduleType: 'as_needed',
+        intervalHours: 4,
+        durationDays: 30,
+        scheduleTimes: ['08:00', '20:00'],
+      );
+      expect(p.scheduledDoseTimes, isEmpty);
+      expect(p.dosesPerDay, 0);
+    });
+  });
+
+  group('unitsPerDose', () {
+    Prescription dose(String dosage, {double? amount, String? unit}) =>
+        Prescription(
+          id: 'p1',
+          treatmentId: 't1',
+          medicationId: 'm1',
+          dosage: dosage,
+          dosageAmount: amount,
+          dosageUnit: unit,
+          startTime: DateTime(2026, 3, 1, 8),
+        );
+
+    test('"400 mg" of ibuprofen is one tablet, with or without a unit', () {
+      expect(dose('400 mg').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('400 mg').unitsPerDose(), 1);
+      expect(dose('400mg').unitsPerDose(medicationUnit: ''), 1);
+      expect(dose('400 mg ibuprofen').unitsPerDose(), 1);
+    });
+
+    test('an amount in the medication\'s own unit is counted', () {
+      expect(
+        dose('2 tablets', amount: 2).unitsPerDose(medicationUnit: 'tablets'),
+        2,
+      );
+      expect(
+        dose(
+          '2 tablets',
+          amount: 2,
+          unit: 'tablets',
+        ).unitsPerDose(medicationUnit: 'tablets'),
+        2,
+      );
+      expect(dose('5 ml', amount: 5).unitsPerDose(medicationUnit: 'ml'), 5);
+      expect(dose('', amount: 1.5).unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('', amount: 0.25).unitsPerDose(medicationUnit: 'tablets'), 0);
+    });
+
+    test('an amount in another unit is one pack unit', () {
+      expect(dose('2 capsules').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('2 x 500 mg').unitsPerDose(medicationUnit: 'tablets'), 1);
+    });
+
+    test('drops from a stock in ml count twenty to the millilitre, rounded '
+        'down', () {
+      expect(
+        dose(
+          '20 drops',
+          amount: 20,
+          unit: 'drops',
+        ).unitsPerDose(medicationUnit: 'ml'),
+        1,
+      );
+      expect(dose('40 gocce').unitsPerDose(medicationUnit: 'ml'), 2);
+      expect(dose('5 gocce').unitsPerDose(medicationUnit: 'ml'), 0);
+      expect(dose('30 Tropfen').unitsPerDose(medicationUnit: 'ml'), 1);
+    });
+
+    test('a volume never takes a counted pack unit', () {
+      // A syrup or drops kept as bottles, pieces or without a unit: one dose
+      // is not a whole bottle.
+      for (final stock in [null, '', 'pieces', 'tablets', 'bustine']) {
+        expect(
+          dose(
+            '5 ml',
+            amount: 5,
+            unit: 'ml',
+          ).unitsPerDose(medicationUnit: stock),
+          0,
+          reason: '$stock',
+        );
+        expect(dose('10 ml').unitsPerDose(medicationUnit: stock), 0);
+        expect(dose('20 Tropfen').unitsPerDose(medicationUnit: stock), 0);
+      }
+      expect(dose('5 ml').unitsPerDose(medicationUnit: 'drops'), 0);
+    });
+
+    test('a fraction is rounded down, never up', () {
+      expect(dose('0,5 compresse').unitsPerDose(), 0);
+      expect(dose('1,5 cpr').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('', amount: 0.5).unitsPerDose(medicationUnit: 'tablets'), 0);
+      expect(dose('½ compressa').unitsPerDose(medicationUnit: 'tablets'), 0);
+      expect(dose('1/2 Tablette').unitsPerDose(medicationUnit: 'tablets'), 0);
+      expect(dose('3/2 Tabletten').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('2,75 ml').unitsPerDose(medicationUnit: 'ml'), 2);
+    });
+
+    test('pieces, pills and tablets count the same things', () {
+      expect(dose('2 Tabletten').unitsPerDose(medicationUnit: 'pieces'), 2);
+      expect(dose('2 pills').unitsPerDose(medicationUnit: 'tablets'), 2);
+      expect(dose('3 Stück').unitsPerDose(medicationUnit: 'pills'), 3);
+      expect(dose('2 capsules').unitsPerDose(medicationUnit: 'pieces'), 1);
+    });
+
+    test('the Italian abbreviations cp and cps are counted', () {
+      expect(dose('2 cp').unitsPerDose(medicationUnit: 'tablets'), 2);
+      expect(dose('2 cps').unitsPerDose(medicationUnit: 'capsules'), 2);
+    });
+
+    test('an amount with no unit anywhere is a count', () {
+      expect(dose('', amount: 2).unitsPerDose(), 2);
+      expect(dose('2').unitsPerDose(), 2);
+    });
+
+    test('free text in a counting unit is counted, in any language', () {
+      for (final text in [
+        '2 tablets',
+        '2 Tabletten',
+        '2 compresse',
+        '2 cpr.',
+      ]) {
+        expect(dose(text).unitsPerDose(), 2, reason: text);
+        expect(
+          dose(text).unitsPerDose(medicationUnit: 'tablets'),
+          2,
+          reason: text,
+        );
+      }
+      expect(dose('1 tablet').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('3 Kapseln').unitsPerDose(medicationUnit: 'capsules'), 3);
+      expect(dose('2 Stück').unitsPerDose(), 2);
+      expect(dose('2,0 ml').unitsPerDose(medicationUnit: 'ml'), 2);
+    });
+
+    test('free text without a count, or in a unit that is not counted, is '
+        'one pack unit', () {
+      expect(dose('one tablet').unitsPerDose(), 1);
+      expect(dose('').unitsPerDose(), 1);
+      expect(dose('400 mg').unitsPerDose(medicationUnit: 'ml'), 1);
+      expect(dose('20 Tropfen').unitsPerDose(medicationUnit: 'drops'), 20);
+    });
+  });
+
+  test('a zero duration generates nothing, whatever the type is read as', () {
+    // An older build reads 'as_needed' as a fixed interval: with the zero
+    // duration an as-needed prescription is saved with, that is no dose.
+    for (final type in ['fixed_interval', 'as_needed', 'a_future_type']) {
+      expect(
+        _p(durationDays: 0, scheduleType: type).scheduledDoseTimes,
+        isEmpty,
+        reason: type,
+      );
+    }
+    expect(
+      _p(
+        durationDays: 0,
+        scheduleType: 'times_per_day',
+        scheduleTimes: ['08:00', '20:00'],
+      ).scheduledDoseTimes,
+      isEmpty,
+    );
+  });
 }

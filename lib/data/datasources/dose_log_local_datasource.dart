@@ -24,6 +24,7 @@ class DoseLogLocalDatasource {
            p.dosage_amount AS dosage_amount,
            p.dosage_unit AS dosage_unit,
            p.notes AS prescription_notes,
+           p.schedule_type AS schedule_type,
            t.name AS treatment_name
     FROM dose_logs d
     LEFT JOIN prescriptions p ON d.prescription_id = p.id
@@ -42,19 +43,49 @@ class DoseLogLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
-  /// One dose log with its joined display fields, or null.
+  /// Every dose logged under [treatmentId]'s prescriptions, oldest first,
+  /// whatever its status or its prescription's state; a deleted dose is left
+  /// out.
+  ///
+  /// This is the episode's real intake record: it is derived from the dose
+  /// history the user already produces day by day, never retyped.
+  Future<List<DoseLogModel>> getDoseLogsByTreatment(String treatmentId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      '$_joinQuery WHERE p.treatment_id = ? AND d.sync_status != ? '
+      'ORDER BY d.scheduled_time ASC',
+      [treatmentId, SyncStatus.pendingDelete],
+    );
+    return _dedupeById(rows).map(_fromRow).toList();
+  }
+
+  /// One dose log with its joined display fields, or null. A deleted dose
+  /// (a tombstone waiting to be pushed) is not returned, so it can be
+  /// neither changed nor deleted again.
   Future<DoseLogModel?> getDoseLogById(String id) async {
     final db = await _db;
-    final rows = await db.rawQuery('$_joinQuery WHERE d.id = ? LIMIT 1', [id]);
+    final rows = await db.rawQuery(
+      '$_joinQuery WHERE d.id = ? AND d.sync_status != ? LIMIT 1',
+      [id, SyncStatus.pendingDelete],
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
 
   /// Shared WHERE fragment: non-pending rows are always included (they are
   /// historical facts); pending rows only when their prescription/treatment
-  /// is active and their medication is not archived (or absent).
+  /// is active, their medication is not archived (or absent) and their
+  /// prescription has a schedule ([_scheduled]).
   static const _pendingOnlyIfActive =
-      '''(d.status != 'pending' OR ((p.is_active IS NULL OR p.is_active = 1) AND (t.id IS NULL OR t.is_active = 1) AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))))''';
+      '''(d.status != 'pending' OR ((p.is_active IS NULL OR p.is_active = 1) AND (t.id IS NULL OR t.is_active = 1) AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0)) AND $_scheduled))''';
+
+  /// An as-needed prescription has no schedule, so a pending dose of one is
+  /// never due: this app never creates one, but an older build that reads
+  /// 'as_needed' as a fixed interval generates them and syncs them over, and
+  /// a prescription switched to as-needed elsewhere leaves its old ones.
+  /// Such a dose is neither listed, nor reminded, nor marked missed.
+  static const _scheduled =
+      '''(p.schedule_type IS NULL OR p.schedule_type != 'as_needed')''';
 
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
@@ -102,8 +133,9 @@ class DoseLogLocalDatasource {
     return _dedupeById(rows).map(_fromRow).toList();
   }
 
-  /// Pending doses with scheduled_time in [start, end), for active
-  /// prescriptions/treatments and non-archived medications, earliest first.
+  /// Pending doses with scheduled_time in [start, end), for active scheduled
+  /// prescriptions, active treatments and non-archived medications, earliest
+  /// first.
   Future<List<DoseLogModel>> getPendingBetween(
     DateTime start,
     DateTime end,
@@ -117,6 +149,7 @@ class DoseLogLocalDatasource {
         AND (p.is_active IS NULL OR p.is_active = 1)
         AND (t.id IS NULL OR t.is_active = 1)
         AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
+        AND $_scheduled
         ORDER BY d.scheduled_time ASC''',
       [
         start.toIso8601String(),
@@ -162,23 +195,21 @@ class DoseLogLocalDatasource {
     }
   }
 
-  Future<void> upsertBatch(
+  /// Inserts [models] in one transaction, leaving any row that already has
+  /// one of their ids untouched: a generated dose never replaces a dose
+  /// already stored, whatever its time or status.
+  Future<void> insertBatchIfAbsent(
     List<DoseLogModel> models, {
     required String syncStatus,
   }) async {
     final db = await _db;
-    // Optimize: Use a single transaction and direct insert if possible
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (final model in models) {
-        final row = _toRow(model, syncStatus);
-        // Use insert with ConflictAlgorithm.replace or manual logic.
-        // Since generateDoseLogsForPrescription handles the existence check,
-        // we can just use insert here.
         batch.insert(
           'dose_logs',
-          row,
-          conflictAlgorithm: ConflictAlgorithm.replace,
+          _toRow(model, syncStatus),
+          conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }
       await batch.commit(noResult: true);
@@ -222,7 +253,12 @@ class DoseLogLocalDatasource {
     } else if (takenTime != null) {
       updates['taken_time'] = takenTime.toIso8601String();
     }
-    await db.update('dose_logs', updates, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'dose_logs',
+      updates,
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.pendingDelete],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
@@ -231,16 +267,6 @@ class DoseLogLocalDatasource {
       'dose_logs',
       where: 'sync_status != ?',
       whereArgs: [SyncStatus.synced],
-    );
-  }
-
-  Future<void> markSynced(String id) async {
-    final db = await _db;
-    await db.update(
-      'dose_logs',
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ?',
-      whereArgs: [id],
     );
   }
 
@@ -254,8 +280,8 @@ class DoseLogLocalDatasource {
         'sync_status': SyncStatus.pendingDelete,
         'deleted_at': DateTime.now().toIso8601String(),
       },
-      where: 'id = ?',
-      whereArgs: [id],
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.pendingDelete],
     );
   }
 
@@ -269,29 +295,55 @@ class DoseLogLocalDatasource {
     await db.delete('dose_logs');
   }
 
-  /// Delete only pending dose logs for a specific prescription.
-  /// Preserves taken/skipped/missed logs.
-  Future<int> deletePendingByPrescription(String prescriptionId) async {
+  /// Delete only pending dose logs for a specific prescription, except the
+  /// ones in [keepIds]. Preserves taken/skipped/missed logs.
+  Future<int> deletePendingByPrescription(
+    String prescriptionId, {
+    Set<String> keepIds = const {},
+  }) async {
     final db = await _db;
+    final keep = keepIds.toList();
     return db.delete(
       'dose_logs',
-      where: 'prescription_id = ? AND status = ?',
-      whereArgs: [prescriptionId, 'pending'],
+      where:
+          'prescription_id = ? AND status = ?'
+          '${keep.isEmpty ? '' : ' AND id NOT IN (${List.filled(keep.length, '?').join(', ')})'}',
+      whereArgs: [prescriptionId, 'pending', ...keep],
     );
   }
 
-  /// Mark pending doses scheduled before [cutoff] as missed. Returns the
-  /// count. Scoped to doses whose prescription is active, whose treatment is
-  /// active (or absent), and whose medication is not archived (or absent) —
-  /// the same predicates [getPendingBetween] uses.
-  Future<int> markOverduePendingAsMissed(DateTime cutoff) async {
+  /// Mark pending doses scheduled before [cutoff] as missed. Returns how
+  /// many changed, and how many of those still have to be pushed. Scoped to doses whose prescription is active and scheduled,
+  /// whose treatment is active (or absent), and whose medication is not
+  /// archived (or absent) — the same predicates [getPendingBetween] uses.
+  ///
+  /// "Missed" is the app's own conclusion, not something the user did, so
+  /// it must never beat a dose taken on another device that this device has
+  /// not pulled yet:
+  /// - each row is stamped just past its own stamp ([automaticUpdatedAt]),
+  ///   not with the current time;
+  /// - `sync_status` is left alone. A row the server already has stays
+  ///   `synced`, so the change is not pushed: the server would stamp the
+  ///   update with its own clock and turn it into the newest write. Every
+  ///   device draws the same conclusion from its own copy, and a later pull
+  ///   of a real change replaces it. A row the server does not have yet
+  ///   (`pending_create`) is inserted only if still absent there.
+  /// - a row with a change still waiting to be pushed (`pending_update`, for
+  ///   example an undo made offline) is left alone: the push would send the
+  ///   sweep's "missed" as the user's change, and the server would stamp it
+  ///   as the newest write. It is swept once it is synced.
+  Future<({int changed, int unpushed})> markOverduePendingAsMissed(
+    DateTime cutoff,
+  ) async {
     final db = await _db;
-    return db.rawUpdate(
-      '''UPDATE dose_logs
-         SET status = 'missed', sync_status = ?, updated_at = ?
-         WHERE status = 'pending'
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'dose_logs',
+        columns: ['id', 'updated_at', 'sync_status'],
+        where:
+            '''status = 'pending'
            AND scheduled_time < ?
-           AND sync_status != ?
+           AND sync_status NOT IN (?, ?)
            AND prescription_id IN (
              SELECT p.id FROM prescriptions p
              LEFT JOIN treatments t ON p.treatment_id = t.id
@@ -299,14 +351,90 @@ class DoseLogLocalDatasource {
              WHERE p.is_active = 1
                AND (t.id IS NULL OR t.is_active = 1)
                AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
+               AND $_scheduled
            )''',
-      [
-        SyncStatus.pendingUpdate,
-        DateTime.now().toIso8601String(),
-        cutoff.toIso8601String(),
-        SyncStatus.pendingDelete,
-      ],
+        whereArgs: [
+          cutoff.toIso8601String(),
+          SyncStatus.pendingDelete,
+          SyncStatus.pendingUpdate,
+        ],
+      );
+      for (final row in rows) {
+        final raw = row['updated_at'] as String?;
+        final previous = raw == null ? null : DateTime.tryParse(raw);
+        await txn.update(
+          'dose_logs',
+          {
+            'status': 'missed',
+            'updated_at': automaticUpdatedAt(previous).toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+      return (
+        changed: rows.length,
+        unpushed: rows
+            .where((r) => r['sync_status'] != SyncStatus.synced)
+            .length,
+      );
+    });
+  }
+
+  /// Stores the server's copy of a dose this device pushed as new, as
+  /// `synced`, but only if the local row is still the `pending_create` copy
+  /// stamped [pushedUpdatedAt]. Returns false when the row changed meanwhile
+  /// (it stays pending for the next cycle) or is gone.
+  Future<bool> adoptPushedCreate(
+    DoseLogModel remote, {
+    required Object? pushedUpdatedAt,
+  }) async {
+    final db = await _db;
+    final changed = await db.update(
+      'dose_logs',
+      _toRow(remote, SyncStatus.synced),
+      where: 'id = ? AND updated_at IS ? AND sync_status = ?',
+      whereArgs: [remote.id, pushedUpdatedAt, SyncStatus.pendingCreate],
     );
+    return changed > 0;
+  }
+
+  /// Deletes the dose [id] when the server has a tombstone for it, but only
+  /// if the local row is still the `pending_create` copy stamped
+  /// [pushedUpdatedAt] (see [adoptPushedCreate]).
+  Future<bool> deletePushedCreate(
+    String id, {
+    required Object? pushedUpdatedAt,
+  }) async {
+    final db = await _db;
+    final deleted = await db.delete(
+      'dose_logs',
+      where: 'id = ? AND updated_at IS ? AND sync_status = ?',
+      whereArgs: [id, pushedUpdatedAt, SyncStatus.pendingCreate],
+    );
+    return deleted > 0;
+  }
+
+  /// True when the local copy of [remote] is an overdue dose this device
+  /// marked missed on its own ([markOverduePendingAsMissed]) and [remote] is
+  /// the still-pending copy that conclusion was drawn from, or an older one.
+  /// A pull must not turn such a dose back into a pending one.
+  Future<bool> isAutomaticallyMissedCopyOf(DoseLogModel remote) async {
+    if (remote.status != DoseStatus.pending) return false;
+    final db = await _db;
+    final rows = await db.query(
+      'dose_logs',
+      columns: ['updated_at'],
+      where: 'id = ? AND status = ? AND sync_status = ?',
+      whereArgs: [remote.id, 'missed', SyncStatus.synced],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    final raw = rows.first['updated_at'] as String?;
+    final local = raw == null ? null : DateTime.tryParse(raw);
+    final remoteAt = remote.updatedAt;
+    if (local == null || remoteAt == null) return false;
+    return !remoteAt.toUtc().isAfter(local.toUtc());
   }
 
   DoseLogModel _fromRow(Map<String, dynamic> row) {
@@ -333,6 +461,7 @@ class DoseLogLocalDatasource {
       patientTags: MedicationModel.parseTags(row['patient_tags']),
       treatmentName: row['treatment_name'] as String?,
       prescriptionNotes: row['prescription_notes'] as String?,
+      asNeeded: row['schedule_type'] == 'as_needed',
     );
   }
 

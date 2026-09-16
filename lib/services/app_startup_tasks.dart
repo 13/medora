@@ -1,9 +1,11 @@
 /// Medora - Work that runs on app start and on foreground resume.
 ///
-/// Order matters: maintenance changes dose statuses, reminders are then
-/// reconciled from the corrected data, sync (cloud mode) runs after a short
-/// delay so the first frame is not competing with network work, and the
-/// update check comes last - it is the least urgent of the four.
+/// Order matters. When a sync runs (cloud mode), it comes first, after a
+/// short delay so the first frame is not competing with network work: the
+/// pull brings in doses taken on other devices before maintenance marks
+/// overdue doses missed. Then maintenance changes dose statuses, reminders
+/// are reconciled from the corrected data, and the update check comes last -
+/// it is the least urgent of the four.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -15,16 +17,24 @@ class AppStartupTasks {
     required this._sync,
     required this._syncDelay,
     required this._minSyncInterval,
+    bool Function()? syncEnabled,
     this._updateCheck,
     this._minUpdateCheckInterval = const Duration(hours: 24),
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : _now = now ?? DateTime.now,
+       _syncEnabled = syncEnabled ?? _always;
+
+  static bool _always() => true;
 
   final Future<void> Function() _maintenance;
   final Future<void> Function() _reminders;
   final Future<void> Function() _sync;
   final Duration _syncDelay;
   final Duration _minSyncInterval;
+
+  /// False when [_sync] would do nothing (local-only mode): the startup then
+  /// neither waits for the sync delay nor runs it.
+  final bool Function() _syncEnabled;
 
   /// Optional: absent on platforms and builds without in-app updates.
   final Future<void> Function()? _updateCheck;
@@ -48,10 +58,9 @@ class AppStartupTasks {
   }
 
   Future<void> _runOnce(bool includeSync) async {
-    await _guard('maintenance', _maintenance);
-    await _guard('reminders', _reminders);
     final shouldSync =
         includeSync &&
+        _syncEnabled() &&
         (_lastSyncAt == null ||
             _now().difference(_lastSyncAt!) >= _minSyncInterval);
     if (shouldSync) {
@@ -59,6 +68,8 @@ class AppStartupTasks {
       await _guard('sync', _sync);
       _lastSyncAt = _now();
     }
+    await _guard('maintenance', _maintenance);
+    await _guard('reminders', _reminders);
     final updateCheck = _updateCheck;
     if (updateCheck != null &&
         (_lastUpdateCheckAt == null ||

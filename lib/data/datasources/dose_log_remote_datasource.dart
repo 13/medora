@@ -2,7 +2,9 @@
 library;
 
 import 'package:medora/core/constants.dart';
+import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DoseLogRemoteDatasource {
@@ -21,18 +23,21 @@ class DoseLogRemoteDatasource {
         .toList();
   }
 
-  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
-  Future<List<DoseLogModel>> getDoseLogsSince(DateTime? since) async {
-    final base = _client
-        .from(AppConstants.doseLogsTable)
-        .select('*, prescriptions(id, medications(name))');
-    final filtered = since == null
-        ? base
-        : base.gt('updated_at', since.toUtc().toIso8601String());
-    final response = await filtered.order('updated_at');
-    return (response as List)
-        .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
-        .toList();
+  /// One page of the rows changed after [since] (UTC; all rows when null),
+  /// tombstones included: the rows after [after] in the pull order, at most
+  /// [pullPageSize] of them. See `pullPage`.
+  Future<List<DoseLogModel>> getDoseLogsSince(
+    DateTime? since, {
+    PullKey? after,
+  }) async {
+    final response = await pullPage(
+      _client
+          .from(AppConstants.doseLogsTable)
+          .select('*, prescriptions(id, medications(name))'),
+      since: since,
+      after: after,
+    );
+    return response.map(DoseLogModel.fromJson).toList();
   }
 
   /// The remote row's `updated_at`, or null when the row is not there.
@@ -77,42 +82,47 @@ class DoseLogRemoteDatasource {
         .toList();
   }
 
-  Future<void> addDoseLog(DoseLogModel model) async {
-    await _client.from(AppConstants.doseLogsTable).insert(model.toJson());
+  /// Upsert a dose log (insert or update). Returns the `updated_at` the
+  /// server gave this write (see `settlePushedRow`). An answer without the
+  /// written row is an error, so the row stays pending.
+  Future<DateTime?> upsertDoseLog(DoseLogModel model) async {
+    final response = await _client
+        .from(AppConstants.doseLogsTable)
+        .upsert(model.toJson())
+        .select('updated_at')
+        .single();
+    return serverStampOf(response);
   }
 
-  Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
+  /// Inserts [models] in one request, leaving every row the server already
+  /// has untouched (`ON CONFLICT (id) DO NOTHING`).
+  ///
+  /// This is how a dose this device created reaches the server: a dose with
+  /// a deterministic id may already be there, taken or skipped on another
+  /// device, and a generated copy must never replace it. The answer carries
+  /// no rows; read them back with [getDoseLogsByIds].
+  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
     if (models.isEmpty) return;
     await _client
         .from(AppConstants.doseLogsTable)
-        .insert(models.map((m) => m.toJson()).toList());
+        .upsert(
+          [for (final m in models) m.toJson()],
+          onConflict: 'id',
+          ignoreDuplicates: true,
+        );
   }
 
-  Future<void> upsertDoseLog(DoseLogModel model) async {
-    await _client.from(AppConstants.doseLogsTable).upsert(model.toJson());
-  }
-
-  /// Update dose log status.
-  Future<void> updateDoseLogStatus(
-    String id,
-    String status, {
-    DateTime? takenTime,
-  }) async {
-    final Map<String, dynamic> updateData = {
-      'status': status,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    };
-
-    if (takenTime != null) {
-      updateData['taken_time'] = takenTime.toUtc().toIso8601String();
-    } else if (status == 'pending') {
-      updateData['taken_time'] = null;
-    }
-
-    await _client
+  /// The server's rows with these [ids], tombstones included. Ids the server
+  /// does not have are simply absent from the list.
+  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final response = await _client
         .from(AppConstants.doseLogsTable)
-        .update(updateData)
-        .eq('id', id);
+        .select()
+        .inFilter('id', ids);
+    return (response as List)
+        .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
+        .toList();
   }
 
   /// Delete a dose log from remote.

@@ -27,6 +27,7 @@ import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/data/repositories/prescription_repository_impl.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/domain/repositories/family_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
@@ -47,6 +48,7 @@ import 'package:medora/services/backup_file_picker.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
+import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/mlkit_scanner_ports.dart';
 import 'package:medora/services/photo_storage.dart';
@@ -134,32 +136,50 @@ final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
 // Repository Providers (offline-first; remote may be null)
 // ============================================================
 
+/// How a repository asks for a sync after a write. The sync cycle is the
+/// only push path for medications, treatments, prescriptions and dose logs:
+/// a write asks for one, and it queues behind a cycle that is already
+/// running. Null in local-only mode ([remote] is null), where nothing is
+/// pushed.
+RequestSync? _requestSyncInCloud(Ref ref, Object? remote) =>
+    remote == null ? null : () => ref.read(syncServiceProvider).syncAll();
+
 final medicationRepositoryProvider = Provider<MedicationRepository>(
   (ref) => MedicationRepositoryImpl(
     localDatasource: ref.watch(medicationLocalDatasourceProvider),
-    remoteDatasource: ref.watch(medicationDatasourceProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(medicationDatasourceProvider),
+    ),
   ),
 );
 
 final treatmentRepositoryProvider = Provider<TreatmentRepository>(
   (ref) => TreatmentRepositoryImpl(
     localDatasource: ref.watch(treatmentLocalDatasourceProvider),
-    remoteDatasource: ref.watch(treatmentDatasourceProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(treatmentDatasourceProvider),
+    ),
+    now: ref.watch(nowProvider),
   ),
 );
 
 final prescriptionRepositoryProvider = Provider<PrescriptionRepository>(
   (ref) => PrescriptionRepositoryImpl(
     localDatasource: ref.watch(prescriptionLocalDatasourceProvider),
-    remoteDatasource: ref.watch(prescriptionDatasourceProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(prescriptionDatasourceProvider),
+    ),
   ),
 );
 
 final doseLogRepositoryProvider = Provider<DoseLogRepository>(
   (ref) => DoseLogRepositoryImpl(
     localDatasource: ref.watch(doseLogLocalDatasourceProvider),
-    remoteDatasource: ref.watch(doseLogDatasourceProvider),
     prescriptionLocal: ref.watch(prescriptionLocalDatasourceProvider),
+    requestSync: _requestSyncInCloud(ref, ref.watch(doseLogDatasourceProvider)),
   ),
 );
 
@@ -304,6 +324,12 @@ final syncServiceProvider = Provider<SyncService>((ref) {
       final marker = ref.read(localUploadMarkerProvider);
       if (marker.ownerUserId == null) await marker.setOwner(userId);
     },
+    // A prescription made or rescheduled on another device: its doses (and
+    // so its reminders) are generated here; the listener in
+    // [syncStateStreamProvider] reconciles the reminders once the cycle ends.
+    onPrescriptionsPulled: (pulled) async {
+      await ref.read(doseScheduleServiceProvider).applyPulled(pulled);
+    },
   );
   if (service.isAvailable) service.startAutoSync();
   ref.onDispose(service.dispose);
@@ -328,11 +354,10 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
       // cycle still applied every row that did not fail.
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
-      ref.read(todaysDoseLogsProvider.notifier).refresh();
+      unawaited(_afterSync(ref));
       // The plain refresh() does not re-plan the stock alerts (only the
       // mutation methods do), so without this a restock on another device
-      // still announces "0 left" here until the next cold start. The dose
-      // side is covered: todaysDoseLogsProvider.refresh() reconciles.
+      // still announces "0 left" here until the next cold start.
       unawaited(ref.read(stockReminderSchedulerProvider).reconcile());
     }
   });
@@ -341,6 +366,20 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
 
   return syncService.stateStream;
 });
+
+/// After a sync: generate what the pulled data still lacks (see
+/// [DoseScheduleService.ensureScheduled]), then refetch every dose view and
+/// re-plan the reminders from the result.
+Future<void> _afterSync(Ref ref) async {
+  try {
+    await ref.read(doseScheduleServiceProvider).ensureScheduled();
+    if (!ref.mounted) return;
+    ref.invalidateDoseData();
+    await ref.read(reminderSchedulerProvider).reconcile();
+  } catch (e) {
+    debugPrint('Sync: refreshing doses after the sync failed: $e');
+  }
+}
 
 /// The report of the most recent sync cycle; re-evaluated on every state change.
 final syncLastReportProvider = Provider<SyncReport?>((ref) {
@@ -356,6 +395,16 @@ final doseMaintenanceProvider = Provider<DoseMaintenanceService>(
   (ref) => DoseMaintenanceService(doses: ref.watch(doseLogRepositoryProvider)),
 );
 
+/// Keeps every prescription's doses in line with its schedule, whichever
+/// device changed it.
+final doseScheduleServiceProvider = Provider<DoseScheduleService>(
+  (ref) => DoseScheduleService(
+    prescriptions: ref.watch(prescriptionRepositoryProvider),
+    doses: ref.watch(doseLogRepositoryProvider),
+    now: ref.watch(nowProvider),
+  ),
+);
+
 /// Delay before the startup sync; tests override this with Duration.zero.
 final syncStartupDelayProvider = Provider<Duration>(
   (_) => const Duration(seconds: 2),
@@ -369,11 +418,16 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
   var sweptScanTemp = false;
   return AppStartupTasks(
     maintenance: () async {
+      // Doses a pull or an older build left out come first, so the sweep
+      // and the reminders below see them.
+      final regenerated = await ref
+          .read(doseScheduleServiceProvider)
+          .ensureScheduled();
       final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
       final changed = await ref
           .read(doseMaintenanceProvider)
           .markOverdueAsMissed(grace: grace);
-      if (changed > 0) {
+      if (changed > 0 || regenerated > 0) {
         await ref.read(todaysDoseLogsProvider.notifier).refresh();
         ref.read(doseDataVersionProvider.notifier).bump();
       }
@@ -392,6 +446,7 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         await ref.read(syncServiceProvider).syncAll();
       }
     },
+    syncEnabled: () => ref.read(appModeProvider) == AppMode.cloud,
     // Least urgent step, so it runs last - and only where an update could
     // actually be installed: Android, with a repo configured at build time.
     updateCheck:

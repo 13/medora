@@ -24,5 +24,12 @@ abstract class TreatmentRepository {
   Future<Result<void>> deleteTreatment(String id);
 
   /// End a treatment (set isActive to false, set endDate).
-  Future<Result<Treatment>> endTreatment(String id);
+  ///
+  /// When [endSickLeave] is true, an open sick leave that has already
+  /// started is closed on the same day (see [Treatment.sickLeaveEndAt]).
+  /// A closed leave, or one that has not started yet, is left as it is.
+  Future<Result<Treatment>> endTreatment(
+    String id, {
+    bool endSickLeave = false,
+  });
 }

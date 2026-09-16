@@ -49,7 +49,12 @@ class Prescription {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
-  /// 'fixed_interval' or 'times_per_day'
+  /// 'fixed_interval', 'times_per_day' or 'as_needed'.
+  ///
+  /// An 'as_needed' prescription ("bei Bedarf") has no schedule at all: it
+  /// generates no doses, so nothing is ever due, overdue or reminded, and
+  /// each intake is recorded when it happens. Its [intervalHours] and
+  /// [durationDays] keep their stored values but mean nothing.
   final String scheduleType;
 
   /// List of time strings like ['08:00', '12:00', '18:00'] for times_per_day
@@ -58,6 +63,157 @@ class Prescription {
   // Optional joined fields for display
   final String? medicationName;
   final String? treatmentName;
+
+  /// How many units of the medication's stock one dose uses, for
+  /// auto-diminish. [medicationUnit] is the unit the stock is counted in.
+  ///
+  /// The dosage says how much of the *substance* is taken, which is not
+  /// always a count of stock units: "400 mg" of ibuprofen is one tablet, not
+  /// 400. The rule never takes more than the dose uses:
+  /// - an amount in the stock's own unit, or with no unit at all, is
+  ///   counted; pieces, pills and tablets count the same things, and a
+  ///   medication without a unit is taken to be counted in such items;
+  /// - drops from a stock in ml count twenty to the millilitre;
+  /// - any other volume (ml, drops) takes nothing: one dose of a syrup kept
+  ///   as bottles is not a whole bottle;
+  /// - any other unit ("400 mg") is one pack unit;
+  /// - a fraction is rounded down, so half a tablet takes nothing (the app
+  ///   keeps no fractional remainder).
+  ///
+  /// Free-text dosages are read as a number ("1,5", "1/2", "½") and a unit,
+  /// with English, German and Italian unit names.
+  int unitsPerDose({String? medicationUnit}) {
+    final stockUnit = _unitKey(medicationUnit);
+    final double amount;
+    final String? unit;
+    final amountValue = dosageAmount;
+    if (amountValue != null) {
+      amount = amountValue;
+      unit = _unitKey(dosageUnit) ?? stockUnit;
+    } else {
+      final match = RegExp(
+        r'^(\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?|[½¼¾])\s*(\S*)',
+      ).firstMatch(dosage.trim());
+      final parsed = match == null ? null : _parseAmount(match.group(1)!);
+      if (parsed == null) return 1;
+      amount = parsed;
+      unit = _unitKey(match!.group(2));
+    }
+    final double units;
+    if (unit == null || _sameStock(unit, stockUnit)) {
+      units = amount;
+    } else if (unit == 'drops' && stockUnit == 'ml') {
+      units = amount / _dropsPerMl;
+    } else if (_volumeUnits.contains(unit)) {
+      return 0;
+    } else {
+      return 1;
+    }
+    final whole = units.floor();
+    return whole < 0 ? 0 : whole;
+  }
+
+  /// Drops in a millilitre, by the usual pharmacopoeia convention.
+  static const _dropsPerMl = 20;
+
+  static const _volumeUnits = {'ml', 'drops'};
+
+  /// Units that name the same kind of item.
+  static const _itemUnits = {'pieces', 'pills', 'tablets'};
+
+  /// True when a dose in [unit] is counted in the stock's [stockUnit]; a
+  /// stock without a unit counts items.
+  static bool _sameStock(String unit, String? stockUnit) {
+    if (stockUnit == null) return _countingUnits.contains(unit);
+    if (unit == stockUnit) return true;
+    return _itemUnits.contains(unit) && _itemUnits.contains(stockUnit);
+  }
+
+  /// "2", "1,5", "1/2" or "½" as a number, or null.
+  static double? _parseAmount(String raw) {
+    switch (raw) {
+      case '½':
+        return 0.5;
+      case '¼':
+        return 0.25;
+      case '¾':
+        return 0.75;
+    }
+    final parts = raw.split('/');
+    final value = double.tryParse(parts.first.trim().replaceAll(',', '.'));
+    if (value == null || parts.length == 1) return value;
+    final divisor = double.tryParse(parts[1].trim());
+    return divisor == null || divisor == 0 ? null : value / divisor;
+  }
+
+  /// The quantity-unit key [raw] names (`tablets` for "Tabletten"), the
+  /// lower-cased word itself when it is no known unit ("mg"), or null when
+  /// there is none.
+  static String? _unitKey(String? raw) {
+    var word = (raw ?? '').trim().toLowerCase();
+    while (word.endsWith('.')) {
+      word = word.substring(0, word.length - 1);
+    }
+    if (word.isEmpty) return null;
+    for (final MapEntry(:key, :value) in _unitNames.entries) {
+      if (key == word || value.contains(word)) return key;
+    }
+    return word;
+  }
+
+  /// Units that count whole items, so a medication without a unit is
+  /// assumed to be counted in them.
+  static const _countingUnits = {
+    'pieces',
+    'pills',
+    'tablets',
+    'capsules',
+    'bustine',
+    'ampoules',
+    'suppositories',
+    'patches',
+  };
+
+  /// The quantity-unit keys and the words a dosage may use for them.
+  static const _unitNames = {
+    'pieces': {'piece', 'pc', 'pcs', 'stück', 'stk', 'pezzo', 'pezzi'},
+    'pills': {'pill', 'pille', 'pillen', 'pillola', 'pillole'},
+    'tablets': {
+      'tablet',
+      'tab',
+      'tabs',
+      'tbl',
+      'tablette',
+      'tabletten',
+      'compressa',
+      'compresse',
+      'cpr',
+      'cp',
+    },
+    'capsules': {
+      'capsule',
+      'cap',
+      'caps',
+      'cps',
+      'kapsel',
+      'kapseln',
+      'capsula',
+    },
+    'ml': {'milliliter', 'millilitre', 'millilitro', 'millilitri'},
+    'drops': {'drop', 'tropfen', 'goccia', 'gocce', 'gtt'},
+    'bustine': {'bustina', 'sachet', 'sachets', 'beutel', 'btl'},
+    'ampoules': {
+      'ampoule',
+      'ampule',
+      'ampules',
+      'ampulle',
+      'ampullen',
+      'fiala',
+      'fiale',
+    },
+    'suppositories': {'suppository', 'zäpfchen', 'supposta', 'supposte'},
+    'patches': {'patch', 'pflaster', 'cerotto', 'cerotti'},
+  };
 
   /// Formatted dosage string: amount + unit if available, otherwise raw dosage text.
   String displayDosage({String? medicationUnit}) {
@@ -76,8 +232,9 @@ class Prescription {
   /// Calculate the end time based on start + duration.
   DateTime get endTime => startTime.add(Duration(days: durationDays));
 
-  /// Number of doses per day.
+  /// Number of doses per day. Zero for an as-needed prescription.
   int get dosesPerDay {
+    if (scheduleType == 'as_needed') return 0;
     if (scheduleType == 'times_per_day' && scheduleTimes != null) {
       return scheduleTimes!.length;
     }
@@ -88,6 +245,9 @@ class Prescription {
   /// Includes a sanity limit of 1000 doses to prevent performance issues
   /// if a user enters an extremely long duration or tiny interval.
   List<DateTime> get scheduledDoseTimes {
+    // No schedule, so no generated doses: nothing pending for the dashboard,
+    // the reminders or the missed-dose sweep to find.
+    if (scheduleType == 'as_needed') return const [];
     final times = <DateTime>[];
     final end = endTime;
     const maxDoses = 1000;

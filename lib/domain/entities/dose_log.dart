@@ -40,6 +40,7 @@ class DoseLog {
     this.patientTags = const [],
     this.treatmentName,
     this.prescriptionNotes,
+    this.asNeeded = false,
   });
 
   final String id;
@@ -69,6 +70,10 @@ class DoseLog {
   final List<String> patientTags;
   final String? treatmentName;
   final String? prescriptionNotes;
+
+  /// True when the dose belongs to an as-needed prescription: a record of an
+  /// intake, not a dose that was scheduled.
+  final bool asNeeded;
 
   /// Formatted dosage: prefers amount+unit, falls back to free-text dosage.
   String? get displayDosage {
@@ -114,6 +119,7 @@ class DoseLog {
     List<String>? patientTags,
     String? treatmentName,
     String? prescriptionNotes,
+    bool? asNeeded,
   }) {
     return DoseLog(
       id: id ?? this.id,
@@ -132,6 +138,7 @@ class DoseLog {
       patientTags: patientTags ?? this.patientTags,
       treatmentName: treatmentName ?? this.treatmentName,
       prescriptionNotes: prescriptionNotes ?? this.prescriptionNotes,
+      asNeeded: asNeeded ?? this.asNeeded,
     );
   }
 }

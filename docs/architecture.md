@@ -56,10 +56,12 @@ widget tests can render a configured build.
 ## Local data: schema, backup and restore
 
 `lib/data/local/migrations.dart` is an append-only ledger of `Migration`
-(version + function); `kSchemaVersion` is **13** and must equal the last entry,
+(version + function); `kSchemaVersion` is **15** and must equal the last entry,
 and existing migrations are never edited: v11 added tombstone columns, v12 bare
 photo filenames, v13 naive-local dose timestamps so string ranges line up with
-local day boundaries. `BackupService` writes the database and photo folder into one versioned JSON
+local day boundaries, v14 the medication EAN, v15 the sick-leave columns
+(`sick_leave_from`, `sick_leave_to`, `sick_leave_ref`, `doctor`) on
+`treatments`, all nullable. `BackupService` writes the database and photo folder into one versioned JSON
 envelope (`format: "medora-backup"`, `version`, `schemaVersion`, `createdAt`,
 `appVersion`, `tables`, base64 `photos`); rows go out exactly as stored, minus
 `sync_status`. `inspect` validates it first, so a backup from a newer build is
@@ -155,18 +157,50 @@ newer, is throttled, or cannot run at all leaves the pending install standing.
 that throws becomes a `SyncFailure` and the batch continues, and a row that keeps
 failing is skipped until `min(2^count minutes, 6 h)` after its last attempt.
 **Pull** is a delta per table: only rows newer than the stored cursor, tombstones
-(`deleted_at`) applied as hard local deletes, and the cursor advanced to the
-newest `updated_at` seen minus **1 second** of overlap, only when the whole table
-applied cleanly. **Conflicts** resolve **last write wins by
-`updated_at`** on both sides: the push reads the remote value first and leaves a
-row it would clobber for the pull to overwrite, while the pull keeps a locally
-pending row at least as new as the remote copy and never resurrects a row a
-local tombstone has deleted. `forcePush` skips that comparison; **force pull**
+(`deleted_at`) applied as hard local deletes. A hosted project answers at most
+**1000** rows per request, so the rows come in pages of 1000, ordered by
+`updated_at` then `id`, each page starting after the last row of the one before
+(keyset paging), until a short page, and at most **50** pages per table per
+cycle. After each page the cursor moves to that page's last `updated_at` minus
+**1 second** of overlap, unless a row of this pull failed to apply; so a failure
+part-way leaves it at the end of the last fully stored page. Once a pull has
+read to the end, the cursor never sits before `1970-01-02`. Builds before the
+paged pull read newest first and so moved their cursors past rows they never
+received; the first cycle that runs after the upgrade (cloud mode, online,
+signed in) therefore clears every table's cursor once and pulls everything
+again with the usual merge rules, without wiping or pushing anything. The
+`sync.pull_repair.reset` and `sync.pull_repair.done` preferences record that
+per repair version; `done` is set only once a cycle fetched every table, and a
+later cycle carries on from the cursors the pages stored. **Conflicts**
+resolve **last write wins by `updated_at`** on both sides: the push reads the
+remote value first and leaves a row it would clobber for the pull to overwrite,
+while the pull keeps a locally pending row at least as new as the remote copy
+and never resurrects a row a local tombstone has deleted. The server stamps
+every update with its own clock, so of two explicit changes the one that
+reaches the server last wins, whenever it was made. An insert keeps the
+client's stamp, so a push whose answer carries the stamp it sent (a row
+created offline) is sent once more to take the server's, and devices that
+synced meanwhile still pull it. `forcePush` skips that comparison; **force pull**
 wipes local rows and re-downloads, aborting if a table cannot be fetched
 afterwards. Families are pulled separately, through the `join_family`
-security-definer RPC. Each cycle fills a `SyncReport` that Settings renders,
+security-definer RPC. **Doses** created on a device (a generated schedule, a
+logged dose) are inserted only where the server lacks their id, **100** per
+request, then read back and stored as synced, so a dose taken elsewhere is never
+replaced; a batch the server refuses is sent again row by row, and the doses of
+a prescription the server refused wait for it. A generated dose is stamped
+`1970-01-01` and no delta pull brings it, so every device generates its own
+copies under the same ids (`dose_slot.dart`, from the prescription's wall-clock
+`start_time`): `DoseScheduleService` regenerates a prescription a pull stored
+as new or rescheduled, and on start, resume and after every sync it
+regenerates any running prescription whose stored doses differ from its
+scheduled times. Marking an overdue dose *missed* is a local conclusion: its
+stamp moves just past the previous one and nothing is queued, so any real
+change pulled later wins; a dose with an unpushed change is left for later. On
+start and resume the sync runs before that marking. Every request has a **30 s** timeout and fails
+like a network error. Each cycle fills a `SyncReport` that Settings renders,
 offering `discardFailedRow` per failed row; auto-sync fires **2 s** after
-connectivity returns, and a mid-cycle `syncAll()` is queued. Schema, RLS and
+connectivity returns, and a mid-cycle `syncAll()` is queued, up to **3**
+re-runs; a sync stopped there retries once **15 s** later. Schema, RLS and
 triggers live in `supabase/migrations/`.
 
 ## Theme and localization rules

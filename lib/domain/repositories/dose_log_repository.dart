@@ -10,6 +10,9 @@ abstract class DoseLogRepository {
     String prescriptionId,
   );
 
+  /// Every dose log under a treatment's prescriptions, oldest first.
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(String treatmentId);
+
   /// One dose log by id.
   Future<Result<DoseLog>> getDoseLogById(String id);
 
@@ -45,6 +48,10 @@ abstract class DoseLogRepository {
 
   /// Mark a dose as pending (undo take/skip/miss).
   Future<Result<DoseLog>> markDosePending(String id);
+
+  /// Delete one dose: a tombstone the sync cycle pushes, then removes.
+  /// Fails when there is no such dose.
+  Future<Result<void>> deleteDoseLog(String id);
 
   /// Generate dose log entries for a prescription.
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(

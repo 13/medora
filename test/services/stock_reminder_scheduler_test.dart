@@ -92,10 +92,8 @@ void main() {
 
   final now = DateTime(2026, 9, 16, 10);
 
-  MedicationRepository repo() => MedicationRepositoryImpl(
-    localDatasource: MedicationLocalDatasource(),
-    remoteDatasource: null,
-  );
+  MedicationRepository repo() =>
+      MedicationRepositoryImpl(localDatasource: MedicationLocalDatasource());
 
   test('disabled: schedules nothing and cancels what it had', () async {
     final db = await AppDatabase.instance.database;

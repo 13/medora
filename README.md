@@ -54,7 +54,7 @@ is needed.
 ## Optional: cloud sync with Supabase
 
 1. Apply the SQL files in `supabase/migrations/` in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
-   - **Fresh project** (nothing applied yet): `supabase db push` applies all three migrations.
+   - **Fresh project** (nothing applied yet): `supabase db push` applies all four migrations.
    - **Existing install** that ran `20260901000000_initial_schema.sql` by hand: the migration history is empty, so `supabase db push` would try to replay the initial schema. Tell Supabase it is already applied first, then push:
 
      ```bash
@@ -62,7 +62,11 @@ is needed.
      supabase db push
      ```
 
-   - Or skip the CLI entirely and paste the newer files in order (`20260914000000_tombstones_and_family.sql`, then `20260916000000_medication_ean.sql`) into the SQL editor. They are written to be re-runnable (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP POLICY IF EXISTS`). `20260916000000_medication_ean.sql` adds the `ean` column that a client on local schema v14 uploads with every medication, so apply it before syncing from an updated app.
+   - Or skip the CLI entirely and paste the newer files in order (`20260914000000_tombstones_and_family.sql`, then `20260916000000_medication_ean.sql`, then `20260917000000_treatment_sick_leave.sql`) into the SQL editor. They are written to be re-runnable (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP POLICY IF EXISTS`).
+
+   **Apply every migration before an updated app syncs.** Each new client version uploads whole rows, and the server rejects a row that carries a column it does not have yet (`PGRST204`), so that table stops syncing until its migration is in:
+   - `20260916000000_medication_ean.sql` adds the `ean` column that a client on local schema v14 uploads with every medication.
+   - `20260917000000_treatment_sick_leave.sql` adds the `sick_leave_from`, `sick_leave_to`, `sick_leave_ref` and `doctor` columns that a client on local schema v15 uploads with every treatment. Without it every treatment push fails, and the prescriptions and dose logs of new treatments fail with it. Do not use "discard" on those failed rows: it replaces the local treatment with the server copy, which has no sick-leave data.
 2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
 3. Run or build with the defines:
 
@@ -92,7 +96,7 @@ credentials and, in cloud mode, first asks what to do with the local data.
 - Offline-first: every change is written to the local database first and works with no network.
 - Each cycle pushes the pending local changes, then pulls only what changed since the last pull (delta by `updated_at`).
 - Deletes are tombstones (`deleted_at`), so a deletion made on one device is applied on every other device.
-- A row edited on two devices resolves **last write wins by `updated_at`** — the newer edit wins, whichever device syncs last. Before uploading an edited row the push reads the server row's `updated_at` and stands down if the server copy is newer, leaving the row for the pull to overwrite (the report counts these as skipped, not failed); the pull side keeps a local edit that is newer than the server copy. Newly created rows and tombstones upload unconditionally, and a tombstone always wins over a live row.
+- A row edited on two devices resolves **last write wins by `updated_at`**, as the server stamps it: the server stamps every update with its own clock, so the edit that reaches the server last wins, whenever it was made. Before uploading an edited row the push reads the server row's `updated_at` and stands down if the server copy is newer, leaving the row for the pull to overwrite (the report counts these as skipped, not failed); the pull side keeps a local edit that is newer than the server copy. Newly created rows and tombstones upload unconditionally, and a tombstone always wins over a live row.
 - Settings shows the last sync report — what was pushed, pulled and deleted, and any rows that failed.
 - A row that keeps failing to upload is retried with an exponential backoff (2 minutes, doubling, up to 6 hours) instead of failing every cycle. Tapping the report lists those rows, and **Discard local change** gives up on one: the device accepts the server's copy on the next pull.
 - **Force pull** wipes the local rows and re-downloads everything from the server. Local changes that have not been uploaded yet are lost. If a table cannot be fetched after the wipe, the cycle reports an error rather than a partial success.

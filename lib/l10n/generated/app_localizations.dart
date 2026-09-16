@@ -685,7 +685,7 @@ abstract class AppLocalizations {
   /// No description provided for @endTreatmentConfirm.
   ///
   /// In en, this message translates to:
-  /// **'End \"{name}\"? This will deactivate all prescriptions.'**
+  /// **'End \"{name}\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.'**
   String endTreatmentConfirm(String name);
 
   /// No description provided for @startDate.
@@ -705,6 +705,132 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Ongoing'**
   String get ongoing;
+
+  /// No description provided for @sickLeave.
+  ///
+  /// In en, this message translates to:
+  /// **'Sick leave'**
+  String get sickLeave;
+
+  /// No description provided for @sickLeaveFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to work from'**
+  String get sickLeaveFrom;
+
+  /// No description provided for @sickLeaveTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to work until'**
+  String get sickLeaveTo;
+
+  /// No description provided for @sickLeaveDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day} other{{days} days}}'**
+  String sickLeaveDays(int days);
+
+  /// No description provided for @sickLeaveDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Day {days}'**
+  String sickLeaveDay(int days);
+
+  /// No description provided for @sickLeaveDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration'**
+  String get sickLeaveDuration;
+
+  /// No description provided for @sickLeaveRef.
+  ///
+  /// In en, this message translates to:
+  /// **'Certificate no.'**
+  String get sickLeaveRef;
+
+  /// No description provided for @sickLeaveRefHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 1234567890'**
+  String get sickLeaveRefHint;
+
+  /// Sick-leave form error. {to} and {from} are the sickLeaveTo and sickLeaveFrom field labels.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{to}\" can\'t be before \"{from}\"'**
+  String sickLeaveToBeforeFrom(String to, String from);
+
+  /// Sick-leave form error when only the end date is set. {from} is the sickLeaveFrom field label.
+  ///
+  /// In en, this message translates to:
+  /// **'Please also enter \"{from}\"'**
+  String sickLeaveFromMissing(String from);
+
+  /// End-treatment dialog checkbox. {date} is the formatted end date that will be stored; today counts as a day of the leave.
+  ///
+  /// In en, this message translates to:
+  /// **'Also end sick leave today (until {date})'**
+  String sickLeaveEndToday(String date);
+
+  /// No description provided for @doctorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Doctor'**
+  String get doctorLabel;
+
+  /// No description provided for @doctorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Dr. Rossi, Bolzano'**
+  String get doctorHint;
+
+  /// No description provided for @illness.
+  ///
+  /// In en, this message translates to:
+  /// **'Illness'**
+  String get illness;
+
+  /// Label of the sick-leave line in a shared episode, next to the illness line. Must read differently from 'illness' (in Italian both would be 'Malattia').
+  ///
+  /// In en, this message translates to:
+  /// **'Sick leave'**
+  String get sickLeavePeriod;
+
+  /// Doses of a scheduled prescription taken, out of the doses that were due up to now.
+  ///
+  /// In en, this message translates to:
+  /// **'{taken} of {total} taken'**
+  String dosesTakenOfPlanned(int taken, int total);
+
+  /// Doses logged for an as-needed prescription.
+  ///
+  /// In en, this message translates to:
+  /// **'{taken, plural, =0{Not taken} =1{1 dose taken} other{{taken} doses taken}}'**
+  String dosesTakenAsNeeded(int taken);
+
+  /// No description provided for @shareEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'Share record'**
+  String get shareEpisode;
+
+  /// Subject of a shared episode (shown in e-mail lists and notifications), so it never names the illness. {period} is the illness period, e.g. 'Mar 2, 2026 – Mar 11, 2026'.
+  ///
+  /// In en, this message translates to:
+  /// **'Illness record: {period}'**
+  String episodeShareSubject(String period);
+
+  /// Label of the line naming who was ill in a shared episode, followed by the patient names.
+  ///
+  /// In en, this message translates to:
+  /// **'Patient'**
+  String get episodePatient;
+
+  /// The unit of one prescribed dose, after its amount ('1 tablet', '2 tablets'). {count} is the amount (it may be a fraction), {unit} the stored unit key; an unknown key is shown as it is.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{{unit, select, pieces{piece} pills{pill} tablets{tablet} capsules{capsule} ml{ml} drops{drop} bustine{sachet} ampoules{ampoule} suppositories{suppository} patches{patch} other{{unit}}}} other{{unit, select, pieces{pieces} pills{pills} tablets{tablets} capsules{capsules} ml{ml} drops{drops} bustine{sachets} ampoules{ampoules} suppositories{suppositories} patches{patches} other{{unit}}}}}'**
+  String dosageUnitName(num count, String unit);
 
   /// No description provided for @prescriptions.
   ///
@@ -1998,6 +2124,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Times per Day'**
   String get timesPerDay;
+
+  /// No description provided for @scheduleAsNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'As Needed'**
+  String get scheduleAsNeeded;
+
+  /// No description provided for @logDoseNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Log dose'**
+  String get logDoseNow;
+
+  /// No description provided for @doseLogged.
+  ///
+  /// In en, this message translates to:
+  /// **'Dose logged'**
+  String get doseLogged;
 
   /// No description provided for @specificTimes.
   ///

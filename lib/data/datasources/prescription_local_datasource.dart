@@ -1,6 +1,7 @@
 /// Medora - Prescription Local Datasource
 library;
 
+import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:sqflite/sqflite.dart';
@@ -27,6 +28,9 @@ class PrescriptionLocalDatasource {
     return rows.map(PrescriptionModel.fromLocalMap).toList();
   }
 
+  /// The prescriptions that are running: active themselves, and not part of
+  /// an ended treatment. Ending a treatment leaves its prescriptions' own
+  /// state alone (nothing to push), so the treatment is checked here.
   Future<List<PrescriptionModel>> getActivePrescriptions() async {
     final db = await _db;
     final rows = await db.rawQuery(
@@ -34,12 +38,34 @@ class PrescriptionLocalDatasource {
       SELECT p.*, m.name AS medication_name
       FROM prescriptions p
       LEFT JOIN medications m ON p.medication_id = m.id
+      LEFT JOIN treatments t ON p.treatment_id = t.id
       WHERE p.is_active = 1 AND p.sync_status != ?
+        AND $_treatmentRunning
       ORDER BY p.start_time ASC
     ''',
       [SyncStatus.pendingDelete],
     );
     return rows.map(PrescriptionModel.fromLocalMap).toList();
+  }
+
+  /// A prescription whose treatment is gone counts as running, as in the
+  /// dose queries.
+  static const _treatmentRunning = '(t.id IS NULL OR t.is_active = 1)';
+
+  /// Whether prescription [id] belongs to a treatment that has ended. Such a
+  /// prescription gets no new doses until the treatment is active again.
+  Future<bool> isInEndedTreatment(String id) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      '''
+      SELECT 1 FROM prescriptions p
+      LEFT JOIN treatments t ON p.treatment_id = t.id
+      WHERE p.id = ? AND NOT $_treatmentRunning
+      LIMIT 1
+    ''',
+      [id],
+    );
+    return rows.isNotEmpty;
   }
 
   Future<PrescriptionModel?> getPrescriptionById(String id) async {
@@ -100,51 +126,38 @@ class PrescriptionLocalDatasource {
     await db.delete('prescriptions', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<void> deactivate(String id) async {
-    final db = await _db;
-    await db.update(
-      'prescriptions',
-      {
-        'is_active': 0,
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
+  Future<void> deactivate(String id) => _setActive(id, active: false);
 
-  Future<void> reactivate(String id) async {
-    final db = await _db;
-    await db.update(
-      'prescriptions',
-      {
-        'is_active': 1,
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
+  Future<void> reactivate(String id) => _setActive(id, active: true);
 
-  Future<List<Map<String, dynamic>>> getPendingChanges() async {
+  /// Stamped with [nextUpdatedAt], so the change looks newer than the row's
+  /// current stamp to last-write-wins even when that stamp came from a
+  /// server whose clock is ahead of this device's.
+  Future<void> _setActive(String id, {required bool active}) async {
     final db = await _db;
-    return db.query(
-      'prescriptions',
-      where: 'sync_status != ?',
-      whereArgs: [SyncStatus.synced],
-    );
-  }
-
-  Future<void> markSynced(String id) async {
-    final db = await _db;
-    await db.update(
-      'prescriptions',
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'prescriptions',
+        columns: ['updated_at'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final raw = rows.isEmpty ? null : rows.first['updated_at'] as String?;
+      final previous = raw == null ? null : DateTime.tryParse(raw);
+      await txn.update(
+        'prescriptions',
+        {
+          'is_active': active ? 1 : 0,
+          'sync_status': SyncStatus.pendingUpdate,
+          'updated_at': nextUpdatedAt(
+            previous,
+            DateTime.now(),
+          ).toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
   }
 
   Future<void> clearAll() async {

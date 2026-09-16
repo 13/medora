@@ -2,29 +2,32 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
-import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/dose_slot.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
-import 'package:medora/services/connectivity_service.dart';
-import 'package:uuid/uuid.dart';
 
+/// Writes go to the local database only: each one stores the rows as
+/// pending and asks for a sync cycle, which is the one place that pushes
+/// (see `TreatmentRepositoryImpl`).
 class DoseLogRepositoryImpl implements DoseLogRepository {
+  /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
+  /// failure only logs. Null in local-only mode, where nothing is pushed.
   DoseLogRepositoryImpl({
     required this.localDatasource,
-    required this.remoteDatasource,
     required this.prescriptionLocal,
+    this._requestSync,
   });
 
   final DoseLogLocalDatasource localDatasource;
-  final DoseLogRemoteDatasource? remoteDatasource;
   final PrescriptionLocalDatasource prescriptionLocal;
-
-  static const _uuid = Uuid();
+  final RequestSync? _requestSync;
 
   @override
   Future<Result<List<DoseLog>>> getDoseLogsByPrescription(
@@ -34,6 +37,18 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final models = await localDatasource.getDoseLogsByPrescription(
         prescriptionId,
       );
+      return Result.success(models.map((m) => m.toDomain()).toList());
+    } catch (e, st) {
+      return Result.failure('Failed to load dose logs: $e', st);
+    }
+  }
+
+  @override
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(
+    String treatmentId,
+  ) async {
+    try {
+      final models = await localDatasource.getDoseLogsByTreatment(treatmentId);
       return Result.success(models.map((m) => m.toDomain()).toList());
     } catch (e, st) {
       return Result.failure('Failed to load dose logs: $e', st);
@@ -79,9 +94,12 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   @override
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
     try {
-      return Result.success(
-        await localDatasource.markOverduePendingAsMissed(cutoff),
-      );
+      final (:changed, :unpushed) = await localDatasource
+          .markOverduePendingAsMissed(cutoff);
+      // A dose the server already has stays `synced`: the change is local
+      // only (see the datasource), so there is nothing to push.
+      if (unpushed > 0) _syncSoon();
+      return Result.success(changed);
     } catch (e, st) {
       return Result.failure('Failed to mark overdue doses: $e', st);
     }
@@ -92,7 +110,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     try {
       final model = DoseLogModel.fromDomain(doseLog);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncRemoteInBackground((r) => r.addDoseLog(model), model.id);
+      _syncSoon();
       return Result.success(doseLog);
     } catch (e, st) {
       return Result.failure('Failed to add dose log: $e', st);
@@ -110,7 +128,8 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     }
   }
 
-  /// Shared status mutation: update locally, sync in background, return the stored row.
+  /// Shared status mutation: update locally, ask for a sync, return the
+  /// stored row.
   Future<Result<DoseLog>> _changeStatus(
     String id,
     String status, {
@@ -128,14 +147,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         clearTakenTime: clearTakenTime,
         syncStatus: SyncStatus.pendingUpdate,
       );
-      _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(
-          id,
-          status,
-          takenTime: clearTakenTime ? null : takenTime,
-        ),
-        id,
-      );
+      _syncSoon();
       final updated = await localDatasource.getDoseLogById(id);
       return Result.success(updated!.toDomain());
     } catch (e, st) {
@@ -160,6 +172,19 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       _changeStatus(id, 'pending', clearTakenTime: true);
 
   @override
+  Future<Result<void>> deleteDoseLog(String id) async {
+    try {
+      final existing = await localDatasource.getDoseLogById(id);
+      if (existing == null) return const Result.failure('Dose log not found');
+      await localDatasource.markDeleted(id);
+      _syncSoon();
+      return const Result.success(null);
+    } catch (e, st) {
+      return Result.failure('Failed to delete dose log: $e', st);
+    }
+  }
+
+  @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
     String prescriptionId,
   ) async {
@@ -174,6 +199,16 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         return const Result.failure('Prescription not found');
       }
 
+      // An ended treatment's prescriptions keep their own state, but get no
+      // new doses (and so no reminders) until the treatment runs again.
+      if (await prescriptionLocal.isInEndedTreatment(prescriptionId)) {
+        debugPrint(
+          'generateDoseLogs: prescription $prescriptionId belongs to an '
+          'ended treatment; nothing to generate',
+        );
+        return const Result.success([]);
+      }
+
       final entity = prescription.toDomain();
       final scheduledTimes = entity.scheduledDoseTimes;
 
@@ -184,36 +219,36 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         return const Result.success([]);
       }
 
-      // Check for existing dose logs to avoid duplicates.
+      // A slot is there when a dose has its time or its id: a row stored
+      // under the id at another time (written by an older build) is kept,
+      // never replaced.
       final existingModels = await localDatasource.getDoseLogsByPrescription(
         prescriptionId,
       );
-      final existingTimes = existingModels
-          .map((m) => _truncateToMinute(m.scheduledTime))
-          .toSet();
+      final existingTimes = {
+        for (final m in existingModels) doseSlotKey(m.scheduledTime),
+      };
+      final existingIds = {for (final m in existingModels) m.id};
 
       final newDoseLogs = <DoseLogModel>[];
       final now = DateTime.now();
+      // A generated dose carries the weakest stamp there is, and the sync
+      // cycle only inserts it where the server does not have it yet: a copy
+      // of the same dose that someone took, skipped or marked on another
+      // device always wins over this one.
       for (final time in scheduledTimes) {
-        final timeString = _truncateToMinute(time);
-        if (!existingTimes.contains(timeString)) {
-          // Use deterministic ID (v5) to avoid duplicates across devices.
-          // Seed with prescriptionId and truncated scheduled time.
-          final deterministicId = _uuid.v5(
-            Namespace.url.value,
-            '$prescriptionId-$timeString',
-          );
-
-          newDoseLogs.add(
-            DoseLogModel(
-              id: deterministicId,
-              prescriptionId: prescriptionId,
-              scheduledTime: time,
-              createdAt: now,
-              updatedAt: now,
-            ),
-          );
-        }
+        if (existingTimes.contains(doseSlotKey(time))) continue;
+        final id = scheduledDoseId(prescriptionId, time);
+        if (existingIds.contains(id)) continue;
+        newDoseLogs.add(
+          DoseLogModel(
+            id: id,
+            prescriptionId: prescriptionId,
+            scheduledTime: time,
+            createdAt: now,
+            updatedAt: generatedUpdatedAt,
+          ),
+        );
       }
 
       if (newDoseLogs.isEmpty) {
@@ -228,13 +263,12 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         '(${existingModels.length} already exist) for prescription $prescriptionId',
       );
 
-      await localDatasource.upsertBatch(
+      await localDatasource.insertBatchIfAbsent(
         newDoseLogs,
         syncStatus: SyncStatus.pendingCreate,
       );
 
-      // Remote sync in background — don't block
-      _syncRemoteBatchInBackground(newDoseLogs);
+      _syncSoon();
 
       final allLogs = [...existingModels, ...newDoseLogs];
       return Result.success(allLogs.map((m) => m.toDomain()).toList());
@@ -245,14 +279,49 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   /// Regenerate dose logs for an updated prescription.
-  /// Deletes old pending doses and creates new ones.
+  ///
+  /// Deletes the pending doses the new schedule no longer has and creates
+  /// the ones it adds. A pending dose whose time is still scheduled is kept
+  /// as it is: its id would come back unchanged, and deleting it would throw
+  /// away a local change still waiting to be pushed.
   @override
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
     String prescriptionId,
   ) async {
     try {
+      final prescription = await prescriptionLocal.getPrescriptionById(
+        prescriptionId,
+      );
+      final times = prescription == null
+          ? const <DateTime>[]
+          : prescription.toDomain().scheduledDoseTimes;
+      final stillScheduled = times.map(doseSlotKey).toSet();
+      final existing = await localDatasource.getDoseLogsByPrescription(
+        prescriptionId,
+      );
+      // A pending dose stored under a slot's id at another time (an older
+      // build wrote some slots hours off) is that slot: generating it again
+      // would only bring the same row back from the server.
+      final storedKeys = {
+        for (final d in existing) doseSlotKey(d.scheduledTime),
+      };
+      final unmatchedIds = {
+        for (final t in times)
+          if (!storedKeys.contains(doseSlotKey(t)))
+            scheduledDoseId(prescriptionId, t),
+      };
+      final keepIds = {
+        for (final dose in existing)
+          if (dose.status == DoseStatus.pending &&
+              (stillScheduled.contains(doseSlotKey(dose.scheduledTime)) ||
+                  unmatchedIds.contains(dose.id)))
+            dose.id,
+      };
       // Delete only pending (not yet taken/skipped/missed) dose logs
-      await localDatasource.deletePendingByPrescription(prescriptionId);
+      await localDatasource.deletePendingByPrescription(
+        prescriptionId,
+        keepIds: keepIds,
+      );
 
       // Generate fresh dose logs
       return await generateDoseLogsForPrescription(prescriptionId);
@@ -262,44 +331,6 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     }
   }
 
-  /// Fire-and-forget remote sync for a single record. No-op in local-only mode.
-  void _syncRemoteInBackground(
-    Future<dynamic> Function(DoseLogRemoteDatasource remote) remoteFn,
-    String id,
-  ) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remoteFn(remote);
-        await localDatasource.markSynced(id);
-      } catch (e) {
-        debugPrint('⚠ Background sync failed for dose log $id: $e');
-      }
-    });
-  }
-
-  /// Fire-and-forget remote sync for batch records. No-op in local-only mode.
-  void _syncRemoteBatchInBackground(List<DoseLogModel> models) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remote.addDoseLogsBatch(models);
-        for (final log in models) {
-          await localDatasource.markSynced(log.id);
-        }
-      } catch (e) {
-        debugPrint('⚠ Background batch sync failed for dose logs: $e');
-      }
-    });
-  }
-
-  /// Truncate a DateTime to minute precision for consistent comparison.
-  static String _truncateToMinute(DateTime dt) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}'
-        'T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
+  /// Asks for a sync cycle without waiting for it.
+  void _syncSoon() => requestSyncSoon(_requestSync, 'dose log');
 }

@@ -15,6 +15,10 @@ class FailingTakeRepo implements DoseLogRepository {
   ) => inner.getDoseLogsByPrescription(prescriptionId);
 
   @override
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(String treatmentId) =>
+      inner.getDoseLogsByTreatment(treatmentId);
+
+  @override
   Future<Result<DoseLog>> getDoseLogById(String id) => inner.getDoseLogById(id);
 
   @override
@@ -55,6 +59,9 @@ class FailingTakeRepo implements DoseLogRepository {
   @override
   Future<Result<DoseLog>> markDosePending(String id) =>
       inner.markDosePending(id);
+
+  @override
+  Future<Result<void>> deleteDoseLog(String id) => inner.deleteDoseLog(id);
 
   @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(

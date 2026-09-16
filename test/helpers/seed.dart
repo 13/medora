@@ -14,13 +14,15 @@ class SeededPrescription {
   final String prescriptionId;
 }
 
-/// Inserts one medication, one treatment and one fixed-interval prescription.
+/// Inserts one medication, one treatment and one prescription, fixed-interval
+/// unless [scheduleType] says otherwise.
 Future<SeededPrescription> seedPrescription(
   Database db, {
   DateTime? startTime,
   int intervalHours = 8,
   int durationDays = 2,
   String medicationName = 'Tachipirina',
+  String scheduleType = 'fixed_interval',
 }) async {
   final medId = _uuid.v4();
   final treatId = _uuid.v4();
@@ -60,7 +62,7 @@ Future<SeededPrescription> seedPrescription(
     'auto_diminish': 0,
     'created_at': now,
     'updated_at': now,
-    'schedule_type': 'fixed_interval',
+    'schedule_type': scheduleType,
     'sync_status': 'synced',
   });
   return SeededPrescription(
