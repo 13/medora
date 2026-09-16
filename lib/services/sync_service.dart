@@ -67,6 +67,7 @@ import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_report.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 export 'package:medora/services/sync_report.dart';
 
@@ -570,11 +571,21 @@ class SyncService {
   /// the same ids. Each local row that is still the copy this cycle read is
   /// replaced by the server's row, marked `synced` (or deleted if the server
   /// has a tombstone). A row changed meanwhile stays pending and the cycle
-  /// runs again.
+  /// runs again. A row missing from the read-back stays pending with backoff.
   ///
-  /// A batch whose insert or read fails or times out leaves all its rows
-  /// pending with backoff. If the insert did land, the next attempt inserts
-  /// nothing and reads the rows back, so the outcome is the same.
+  /// - **The server refuses the batch** ([PostgrestException]): one row can
+  ///   do that to the whole statement (a constraint, the foreign key, the
+  ///   row-level policy), so each row is sent alone and only the rows the
+  ///   server refuses on their own stay pending with backoff.
+  /// - **No answer** (a network error or a timeout): every row of the batch
+  ///   stays pending with backoff. If the insert did land, the next attempt
+  ///   inserts nothing and reads the rows back, so the outcome is the same.
+  /// - **A dose whose prescription is new here and was refused this cycle**
+  ///   is not sent at all (the server would refuse it for the missing
+  ///   prescription); it waits, counted as backing off, without a failure of
+  ///   its own.
+  ///
+  /// A failed batch never stops the batches after it.
   Future<void> _pushNewDoseLogs(SyncReport report) async {
     final db = await AppDatabase.instance.database;
     final rows = await db.query(
@@ -583,10 +594,24 @@ class SyncService {
       whereArgs: [SyncStatus.pendingCreate],
       orderBy: 'scheduled_time',
     );
+    final refused = <String>{};
+    for (final p in await db.query(
+      'prescriptions',
+      columns: ['id'],
+      where: 'sync_status = ?',
+      whereArgs: [SyncStatus.pendingCreate],
+    )) {
+      final id = p['id'] as String;
+      if (await _failures.get('prescriptions', id) != null) refused.add(id);
+    }
     final ready = <Map<String, dynamic>>[];
     final backedOff = <String>{};
     for (final row in rows) {
       final id = row['id'] as String;
+      if (refused.contains(row['prescription_id'])) {
+        report.skippedBackoff++;
+        continue;
+      }
       final failure = await _failures.get('dose_logs', id);
       if (failure != null) {
         if (failure.isBackingOffAt(_now())) {
@@ -602,24 +627,21 @@ class SyncService {
         start,
         (start + doseLogInsertBatchSize).clamp(0, ready.length),
       );
-      final ids = [for (final row in batch) row['id'] as String];
+      final landed = await _insertNewDoseLogs(batch, report);
+      if (landed.isEmpty) continue;
       final List<DoseLogModel> server;
       try {
-        await _remote(
-          doseLogRemote!.insertDoseLogsIfAbsent([
-            for (final row in batch) DoseLogModel.fromLocalMap(row),
+        server = await _remote(
+          doseLogRemote!.getDoseLogsByIds([
+            for (final row in landed) row['id'] as String,
           ]),
         );
-        server = await _remote(doseLogRemote!.getDoseLogsByIds(ids));
       } catch (e) {
-        for (final id in ids) {
-          await _failures.recordFailure('dose_logs', id, _now());
-          report.failures.add(SyncFailure('dose_logs', id, 'push: $e'));
-        }
+        await _failNewDoseLogs(landed, report, e);
         continue;
       }
       final byId = {for (final d in server) d.id: d};
-      for (final row in batch) {
+      for (final row in landed) {
         final id = row['id'] as String;
         final remote = byId[id];
         if (remote == null) {
@@ -650,6 +672,66 @@ class SyncService {
         }
       }
       await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  /// Inserts [batch] where the server lacks its rows and returns the rows
+  /// the server now has (see [_pushNewDoseLogs]); the others are recorded
+  /// as failures.
+  Future<List<Map<String, dynamic>>> _insertNewDoseLogs(
+    List<Map<String, dynamic>> batch,
+    SyncReport report,
+  ) async {
+    try {
+      await _remote(
+        doseLogRemote!.insertDoseLogsIfAbsent([
+          for (final row in batch) DoseLogModel.fromLocalMap(row),
+        ]),
+      );
+      return batch;
+    } on PostgrestException catch (e) {
+      if (batch.length == 1) {
+        await _failNewDoseLogs(batch, report, e);
+        return const [];
+      }
+      debugPrint(
+        'Sync: the server refused a batch of ${batch.length} dose logs '
+        '(${e.code}); sending them one by one',
+      );
+    } catch (e) {
+      await _failNewDoseLogs(batch, report, e);
+      return const [];
+    }
+    final landed = <Map<String, dynamic>>[];
+    for (var i = 0; i < batch.length; i++) {
+      final row = batch[i];
+      try {
+        await _remote(
+          doseLogRemote!.insertDoseLogsIfAbsent([
+            DoseLogModel.fromLocalMap(row),
+          ]),
+        );
+        landed.add(row);
+      } on PostgrestException catch (e) {
+        await _failNewDoseLogs([row], report, e);
+      } catch (e) {
+        // No answer: the rest would most likely time out one by one too.
+        await _failNewDoseLogs(batch.sublist(i), report, e);
+        break;
+      }
+    }
+    return landed;
+  }
+
+  Future<void> _failNewDoseLogs(
+    List<Map<String, dynamic>> rows,
+    SyncReport report,
+    Object error,
+  ) async {
+    for (final row in rows) {
+      final id = row['id'] as String;
+      await _failures.recordFailure('dose_logs', id, _now());
+      report.failures.add(SyncFailure('dose_logs', id, 'push: $error'));
     }
   }
 

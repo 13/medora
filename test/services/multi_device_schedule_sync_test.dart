@@ -462,7 +462,7 @@ void main() {
     });
 
     test('extended on A: B gets the extra days', () async {
-      final p = await h.createOnA(start: today, durationDays: 1);
+      final p = await h.createOnA(start: today);
       await h.b.appSync(ensure: false);
       await h.a.run((db) async {
         await db.update(
@@ -569,7 +569,6 @@ void main() {
         'resume', () async {
       final p = await h.createOnA(
         start: DateTime(today.year, today.month, today.day + 1, 8),
-        durationDays: 1,
       );
       await h.b.appSync(ensure: false);
       // A full pull brought a dose A dropped from an earlier schedule.
@@ -591,7 +590,6 @@ void main() {
         'after every sync', () async {
       final p = await h.createOnA(
         start: DateTime(today.year, today.month, today.day + 1, 8),
-        durationDays: 1,
       );
       final gone = scheduledDoseId(
         p.prescriptionId,

@@ -20,6 +20,7 @@ import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' show Database;
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../helpers/fake_remotes.dart';
 import '../helpers/seed.dart';
@@ -133,6 +134,48 @@ class HangingInsertRemote extends FakeDoseLogRemote {
     final gate = hang;
     if (gate != null) await gate.future;
   }
+}
+
+/// A dose-log server that refuses a whole insert statement, as PostgREST
+/// does, when one of its rows breaks a rule: an id in [rejectIds] (a
+/// constraint), or a prescription the server does not have (the foreign key
+/// and the row-level policy). Its read-back can leave out [hideIds].
+class RejectingDoseRemote extends FakeDoseLogRemote {
+  RejectingDoseRemote(super.clock);
+
+  final Set<String> rejectIds = {};
+  final Set<String> hideIds = {};
+  FakeRemoteTable? prescriptions;
+
+  /// Every insert request, as the ids it carried.
+  final List<List<String>> inserts = [];
+
+  @override
+  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
+    inserts.add([for (final m in models) m.id]);
+    for (final m in models) {
+      if (rejectIds.contains(m.id)) {
+        throw const PostgrestException(
+          message: 'check violation',
+          code: '23514',
+        );
+      }
+      final known = prescriptions;
+      if (known != null && !known.rows.containsKey(m.prescriptionId)) {
+        throw const PostgrestException(
+          message: 'insert or update violates foreign key constraint',
+          code: '23503',
+        );
+      }
+    }
+    return super.insertDoseLogsIfAbsent(models);
+  }
+
+  @override
+  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async => [
+    for (final d in await super.getDoseLogsByIds(ids))
+      if (!hideIds.contains(d.id)) d,
+  ];
 }
 
 /// Seeds a prescription and generates its whole schedule as `pending_create`
@@ -1692,6 +1735,135 @@ void main() {
       for (final id in ids) {
         expect(await h.failures.get('dose_logs', id), isNull);
       }
+    });
+  });
+
+  group('new dose logs the server refuses', () {
+    Harness rejecting() => Harness(doseLogRemote: RejectingDoseRemote.new);
+
+    test('a row the server rejects fails alone; the rest of its batch '
+        'lands', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      remote.rejectIds.add(ids[1]);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => f.id), [ids[1]]);
+      expect(report.pushed, 2);
+      expect(await syncStatuses(ids), [
+        SyncStatus.synced,
+        SyncStatus.pendingCreate,
+        SyncStatus.synced,
+      ]);
+      expect(await h.failures.get('dose_logs', ids[0]), isNull);
+      expect(await h.failures.get('dose_logs', ids[1]), isNotNull);
+      expect(h.doses.table.rows.keys, unorderedEquals([ids[0], ids[2]]));
+      // One batch, then each row alone.
+      expect(remote.inserts, [
+        ids,
+        [ids[0]],
+        [ids[1]],
+        [ids[2]],
+      ]);
+
+      // After its backoff the bad row goes out alone; once the server takes
+      // it, it is synced like the others.
+      remote.rejectIds.clear();
+      h.clock.advance(const Duration(hours: 1));
+      await h.service.syncAll();
+      expect(remote.inserts.last, [ids[1]]);
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+      expect(await h.failures.get('dose_logs', ids[1]), isNull);
+    });
+
+    test('the doses of a prescription the server refused wait for it, '
+        'without a request', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      remote.prescriptions = h.prescriptions.table;
+      final db = await AppDatabase.instance.database;
+      final (goodId, good) = await seedSchedule(durationDays: 1);
+      final (badId, bad) = await seedSchedule(durationDays: 1);
+      await db.update('medications', {'sync_status': SyncStatus.pendingCreate});
+      await db.update('treatments', {'sync_status': SyncStatus.pendingCreate});
+      await db.update('prescriptions', {
+        'sync_status': SyncStatus.pendingCreate,
+      });
+      h.prescriptions.table.failIds.add(badId);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(h.prescriptions.table.rows.keys, [goodId]);
+      expect(await syncStatuses(good), everyElement(SyncStatus.synced));
+      expect(await syncStatuses(bad), everyElement(SyncStatus.pendingCreate));
+      expect(
+        report.failures.map((f) => f.id),
+        [badId],
+        reason: 'the waiting doses are not failures of their own',
+      );
+      expect(remote.inserts, hasLength(1));
+      expect(remote.inserts.single, unorderedEquals(good));
+
+      // Once the prescription reaches the server, its doses follow.
+      h.prescriptions.table.failIds.clear();
+      h.clock.advance(const Duration(hours: 1));
+      await h.service.syncAll();
+      expect(await syncStatuses(bad), everyElement(SyncStatus.synced));
+    });
+
+    test('a row missing from the read-back stays pending with a failure '
+        'record', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      remote.hideIds.add(ids.first);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => f.id), [ids.first]);
+      expect(await syncStatuses(ids), [
+        SyncStatus.pendingCreate,
+        SyncStatus.synced,
+        SyncStatus.synced,
+      ]);
+      expect(await h.failures.get('dose_logs', ids.first), isNotNull);
+    });
+
+    test('a batch that fails does not stop the batches after it', () async {
+      final h = Harness();
+      final (_, ids) = await seedSchedule(durationDays: 84);
+      h.doses.table.failIds.add(ids.first);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(h.doses.table.insertBatches, [100, 52]);
+      expect(report.failures, hasLength(100));
+      expect(report.pushed, 152);
+      expect(
+        await syncStatuses(ids.skip(100).toList()),
+        everyElement(SyncStatus.synced),
+      );
+    });
+
+    test('a network error while rows go out one by one stops there', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      remote.rejectIds.add(ids[0]);
+      // The second row's own request never gets an answer.
+      h.doses.table.failIds.add(ids[1]);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(remote.inserts, [
+        ids,
+        [ids[0]],
+        [ids[1]],
+      ]);
+      expect(report.failures.map((f) => f.id), unorderedEquals(ids));
+      expect(await syncStatuses(ids), everyElement(SyncStatus.pendingCreate));
     });
   });
 
