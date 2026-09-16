@@ -181,6 +181,59 @@ void main() {
       expect(MedicationModel.fromJson(h.meds.table.rows['m-ean']!).ean, isNull);
     });
 
+    test(
+      'a pending treatment pushes its sick-leave columns to the server',
+      () async {
+        final h = Harness();
+        await TreatmentLocalDatasource().upsert(
+          TreatmentModel(
+            id: 't1',
+            name: 'Stirnhöhlenentzündung',
+            startDate: DateTime(2026, 3, 2),
+            sickLeaveFrom: DateTime(2026, 3, 3),
+            sickLeaveTo: DateTime(2026, 3, 9),
+            sickLeaveRef: '1234567890',
+            doctor: 'Dr. Rossi, Bozen',
+          ),
+          syncStatus: SyncStatus.pendingCreate,
+        );
+
+        await h.service.syncAll();
+
+        final remote = h.treatments.table.rows['t1']!;
+        expect(remote['sick_leave_from'], '2026-03-03');
+        expect(remote['sick_leave_to'], '2026-03-09');
+        expect(remote['sick_leave_ref'], '1234567890');
+        expect(remote['doctor'], 'Dr. Rossi, Bozen');
+        expect(
+          (await localRow('treatments', 't1'))?['sync_status'],
+          SyncStatus.synced,
+        );
+      },
+    );
+
+    test('a pulled treatment stores its sick-leave columns locally', () async {
+      final h = Harness();
+      h.treatments.table.seed({
+        'id': 't2',
+        'name': 'Grippe',
+        'start_date': '2026-02-01',
+        'is_active': true,
+        'sick_leave_from': '2026-02-02',
+        'sick_leave_to': '2026-02-05',
+        'sick_leave_ref': 'AB-42',
+        'doctor': 'Dr. Bianchi',
+      });
+
+      await h.service.syncAll();
+
+      final stored = (await TreatmentLocalDatasource().getTreatmentById('t2'))!;
+      expect(stored.sickLeaveFrom, DateTime(2026, 2, 2));
+      expect(stored.sickLeaveTo, DateTime(2026, 2, 5));
+      expect(stored.sickLeaveRef, 'AB-42');
+      expect(stored.doctor, 'Dr. Bianchi');
+    });
+
     test('pulls a remote medication into the local database', () async {
       final h = Harness();
       h.meds.table.seed(

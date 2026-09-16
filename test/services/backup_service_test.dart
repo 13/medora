@@ -186,6 +186,47 @@ void main() {
     expect(restored['barcode'], '107018');
   });
 
+  test('the sick-leave columns survive an export/restore round trip', () async {
+    final db = await AppDatabase.instance.database;
+    await db.insert('treatments', {
+      'id': 't-sick',
+      'name': 'Stirnhöhlenentzündung',
+      'start_date': '2026-03-02',
+      'end_date': '2026-03-11',
+      'is_active': 0,
+      'sick_leave_from': '2026-03-03',
+      'sick_leave_to': '2026-03-09',
+      'sick_leave_ref': '1234567890',
+      'doctor': 'Dr. Rossi, Bozen',
+      'created_at': '2026-03-02T08:00:00.000',
+      'updated_at': '2026-03-11T08:00:00.000',
+      'sync_status': SyncStatus.synced,
+    });
+    final before = await snapshot(db);
+
+    final file = await makeService().exportToFile(outDir);
+    final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
+    final exported =
+        ((json['tables']! as Map)['treatments']! as List).single as Map;
+    expect(exported['sick_leave_from'], '2026-03-03');
+    expect(exported['doctor'], 'Dr. Rossi, Bozen');
+
+    await AppDatabase.instance.clearAllData();
+    expect(await db.query('treatments'), isEmpty);
+    await makeService().restore(file, mode: RestoreMode.replace);
+
+    expect(await snapshot(db), before);
+    final row = (await db.query(
+      'treatments',
+      where: 'id = ?',
+      whereArgs: ['t-sick'],
+    )).single;
+    expect(row['sick_leave_from'], '2026-03-03');
+    expect(row['sick_leave_to'], '2026-03-09');
+    expect(row['sick_leave_ref'], '1234567890');
+    expect(row['doctor'], 'Dr. Rossi, Bozen');
+  });
+
   test('restore replace drops rows that are not in the backup', () async {
     final db = await AppDatabase.instance.database;
     await seedEverything(db);
