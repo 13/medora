@@ -79,6 +79,46 @@ void main() {
     expect(size, const Size(8, 10));
   });
 
+  testWidgets('a second decode waits for the one already running', (
+    tester,
+  ) async {
+    // Review I14: `Future.timeout` does not cancel the decode behind it, so a
+    // region pass that stalled past its timeout kept a full-resolution bitmap
+    // alive while the stripe pass started a second one — two ~50 MB bitmaps
+    // on a 12 MP photo. Decodes take turns, so only one is ever resident.
+    final dir = Directory.systemTemp.createTempSync('scan_decode_gate_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final src = '${dir.path}/marked.png';
+    const photo = Rect.fromLTRB(0, 0, 20, 10);
+    await tester.runAsync(
+      () => writeMarkedPng(
+        src,
+        width: 20,
+        height: 10,
+        mark: const Rect.fromLTRB(2, 1, 6, 4),
+      ),
+    );
+
+    resetPeakImageDecodes();
+    await tester.runAsync(() async {
+      final first = writeImageCropRotations(src, photo, [
+        (quarterTurns: 0, outPath: '${dir.path}/gate_0.png'),
+      ]);
+      final second = writeImageCropRotations(src, photo, [
+        (quarterTurns: 1, outPath: '${dir.path}/gate_1.png'),
+      ]);
+      final third = decodeDownscaledRgba(src, 10);
+      expect(await first, isNotNull);
+      expect(await second, isNotNull);
+      expect(await third, isNotNull);
+    });
+
+    expect(peakImageDecodes, 1);
+    // Queued, not dropped: both crops were written.
+    expect(File('${dir.path}/gate_0.png').existsSync(), isTrue);
+    expect(File('${dir.path}/gate_1.png').existsSync(), isTrue);
+  });
+
   test('cropDecodeScale caps the longer side', () {
     expect(cropDecodeScale(3000, 4000, 4096), 1.0);
     expect(cropDecodeScale(4096, 3000, 4096), 1.0);

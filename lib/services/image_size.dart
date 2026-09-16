@@ -1,10 +1,51 @@
 /// Medora - image dimensions without decoding pixels
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
+
+/// Decodes take turns: only one photo is ever resident as pixels.
+///
+/// A decode is the memory peak of a scan — [regionMaxDecodeSide] caps it at
+/// ~50 MB for a 12 MP photo — and the `Future.timeout` its callers wrap it in
+/// does **not** cancel the work behind it. A region pass that stalls past its
+/// timeout therefore keeps its bitmap alive while the stripe pass starts the
+/// next one, and two (plus ML Kit's own buffers) is a plausible low-memory
+/// kill of the screen holding the user's unsaved photo (review I14). Queueing
+/// costs a stalled caller nothing it has not already lost: its own timeout
+/// still fires.
+Future<void>? _decodeTurn;
+int _decodesInFlight = 0;
+int _peakDecodes = 0;
+
+/// The most decodes that were resident at once since [resetPeakImageDecodes]
+/// — 1 while the queue holds.
+@visibleForTesting
+int get peakImageDecodes => _peakDecodes;
+
+@visibleForTesting
+void resetPeakImageDecodes() => _peakDecodes = 0;
+
+/// Runs [decode] once every decode asked for before it has settled.
+Future<T> _takingTurn<T>(Future<T> Function() decode) async {
+  final ahead = _decodeTurn;
+  final mine = Completer<void>();
+  _decodeTurn = mine.future;
+  if (ahead != null) await ahead;
+  _decodesInFlight++;
+  if (_decodesInFlight > _peakDecodes) _peakDecodes = _decodesInFlight;
+  try {
+    return await decode();
+  } finally {
+    _decodesInFlight--;
+    if (identical(_decodeTurn, mine.future)) _decodeTurn = null;
+    mine.complete();
+  }
+}
 
 /// Reads the pixel size of the encoded image at [path] from its header only
 /// (no full decode), so large gallery photos do not allocate a bitmap.
@@ -27,6 +68,11 @@ Future<ui.Size> readImageSize(String path) async {
 /// pixels, as raw RGBA bytes with the decoded size; null when the image is
 /// not larger than that (nothing to gain) or cannot be read back.
 Future<({Uint8List rgba, int width, int height})?> decodeDownscaledRgba(
+  String path,
+  int maxSide,
+) => _takingTurn(() => _decodeDownscaledRgba(path, maxSide));
+
+Future<({Uint8List rgba, int width, int height})?> _decodeDownscaledRgba(
   String path,
   int maxSide,
 ) async {
@@ -100,6 +146,20 @@ Future<({ui.Rect crop, double scale})?> writeImageCrop(
 /// empty, the crop is empty or the image cannot be read back, in which
 /// case a later entry may be left unwritten.
 Future<({ui.Rect crop, double scale})?> writeImageCropRotations(
+  String path,
+  ui.Rect crop,
+  List<({int quarterTurns, String outPath})> outputs, {
+  int maxDecodeSide = regionMaxDecodeSide,
+}) => _takingTurn(
+  () => _writeImageCropRotations(
+    path,
+    crop,
+    outputs,
+    maxDecodeSide: maxDecodeSide,
+  ),
+);
+
+Future<({ui.Rect crop, double scale})?> _writeImageCropRotations(
   String path,
   ui.Rect crop,
   List<({int quarterTurns, String outPath})> outputs, {
