@@ -236,6 +236,28 @@ void main() {
       await expectTakenEverywhere();
     });
 
+    test('an undo still waiting to be pushed is not marked missed', () async {
+      await a.run((_) => a.doses.markDoseTaken(doseId));
+      a.online = false;
+      await a.run((_) => a.doses.markDosePending(doseId));
+      // Past the grace period, still offline.
+      await a.run((_) => a.startup.run());
+      final offline = await a.dose(doseId);
+      expect(offline['status'], 'pending');
+      expect(offline['sync_status'], SyncStatus.pendingUpdate);
+
+      // The undo reaches the server as what the user did.
+      a.online = true;
+      await a.run((_) => a.startup.run());
+      expect(server.dose(doseId)['status'], 'pending');
+      // Once it is synced, the next start draws the local conclusion.
+      await a.run((_) => a.startup.run());
+      final after = await a.dose(doseId);
+      expect(after['status'], 'missed');
+      expect(after['sync_status'], SyncStatus.synced);
+      expect(server.dose(doseId)['status'], 'pending');
+    });
+
     test('startup marks doses missed only after its sync', () async {
       await a.run((_) => a.doses.markDoseTaken(doseId));
       final calls = <String>[];
@@ -353,7 +375,10 @@ void main() {
     });
   });
 
-  group('an explicit status still wins by time', () {
+  // The server stamps every update with its own clock, so of two explicit
+  // changes the one that reaches the server last wins, whenever it was
+  // made.
+  group('an explicit status wins in the order the devices sync', () {
     test('B skips the dose after A took it', () async {
       await a.run((_) => a.doses.markDoseTaken(doseId));
       await b.sync();

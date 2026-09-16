@@ -328,6 +328,10 @@ class DoseLogLocalDatasource {
   ///   device draws the same conclusion from its own copy, and a later pull
   ///   of a real change replaces it. A row the server does not have yet
   ///   (`pending_create`) is inserted only if still absent there.
+  /// - a row with a change still waiting to be pushed (`pending_update`, for
+  ///   example an undo made offline) is left alone: the push would send the
+  ///   sweep's "missed" as the user's change, and the server would stamp it
+  ///   as the newest write. It is swept once it is synced.
   Future<({int changed, int unpushed})> markOverduePendingAsMissed(
     DateTime cutoff,
   ) async {
@@ -339,7 +343,7 @@ class DoseLogLocalDatasource {
         where:
             '''status = 'pending'
            AND scheduled_time < ?
-           AND sync_status != ?
+           AND sync_status NOT IN (?, ?)
            AND prescription_id IN (
              SELECT p.id FROM prescriptions p
              LEFT JOIN treatments t ON p.treatment_id = t.id
@@ -349,7 +353,11 @@ class DoseLogLocalDatasource {
                AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
                AND $_scheduled
            )''',
-        whereArgs: [cutoff.toIso8601String(), SyncStatus.pendingDelete],
+        whereArgs: [
+          cutoff.toIso8601String(),
+          SyncStatus.pendingDelete,
+          SyncStatus.pendingUpdate,
+        ],
       );
       for (final row in rows) {
         final raw = row['updated_at'] as String?;
