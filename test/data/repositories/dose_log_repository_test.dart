@@ -107,4 +107,29 @@ void main() {
     expect(stored, tombstone);
     expect(stored['sync_status'], SyncStatus.pendingDelete);
   });
+
+  test('getDoseLogsByTreatment returns the treatment\'s doses as entities, '
+      'and reads nothing it may not push', () async {
+    final db = await AppDatabase.instance.database;
+    final seeded = await seedPrescription(db, medicationName: 'Brufen');
+    final id = await seedDoseLog(
+      db,
+      seeded.prescriptionId,
+      DateTime(2026, 3, 1, 8),
+      status: 'taken',
+    );
+    final other = await seedPrescription(db);
+    await seedDoseLog(db, other.prescriptionId, DateTime(2026, 3, 1, 8));
+    final before = await db.query('dose_logs', orderBy: 'id');
+
+    final doses = (await makeRepo().getDoseLogsByTreatment(
+      seeded.treatmentId,
+    )).dataOrNull!;
+
+    expect(doses.map((d) => d.id), [id]);
+    expect(doses.single.status, DoseStatus.taken);
+    expect(doses.single.medicationName, 'Brufen');
+    // A read: no row changes, nothing is marked for sync.
+    expect(await db.query('dose_logs', orderBy: 'id'), before);
+  });
 }

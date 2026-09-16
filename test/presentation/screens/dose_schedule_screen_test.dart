@@ -42,6 +42,10 @@ class _SlowRepo implements DoseLogRepository {
   ) => inner.getDoseLogsByPrescription(prescriptionId);
 
   @override
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(String treatmentId) =>
+      inner.getDoseLogsByTreatment(treatmentId);
+
+  @override
   Future<Result<DoseLog>> getDoseLogById(String id) => inner.getDoseLogById(id);
 
   @override

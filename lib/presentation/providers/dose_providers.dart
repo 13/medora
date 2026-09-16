@@ -401,6 +401,20 @@ class SelectedDoseDay extends Notifier<DateTime> {
   }
 }
 
+/// Every dose logged under a treatment, oldest first: the episode's intake
+/// record. Re-fetches when [doseDataVersionProvider] changes, so logging,
+/// taking or undoing a dose updates the counts without a manual invalidate.
+final doseLogsByTreatmentProvider =
+    FutureProvider.family<List<DoseLog>, String>((ref, treatmentId) async {
+      ref.watch(doseDataVersionProvider);
+      final repo = ref.watch(doseLogRepositoryProvider);
+      final result = await repo.getDoseLogsByTreatment(treatmentId);
+      return result.when(
+        success: (data) => data,
+        failure: (msg) => throw Exception(msg),
+      );
+    });
+
 /// Provider for dose logs by prescription.
 final doseLogsByPrescriptionProvider =
     FutureProvider.family<List<DoseLog>, String>((ref, prescriptionId) async {

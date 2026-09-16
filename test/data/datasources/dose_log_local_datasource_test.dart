@@ -193,4 +193,109 @@ void main() {
     expect(await ds.getDoseLogById(id), isNull);
     expect(await row(), tombstone);
   });
+
+  group('getDoseLogsByTreatment', () {
+    test('returns every dose of every prescription under the treatment, '
+        'oldest first, with the join fields', () async {
+      final db = await AppDatabase.instance.database;
+      final a = await seedPrescription(db, medicationName: 'Brufen');
+      // A second prescription of the same treatment, logged as needed.
+      await db.insert('prescriptions', {
+        'id': 'p-as-needed',
+        'treatment_id': a.treatmentId,
+        'medication_id': a.medicationId,
+        'dosage': '1 tablet',
+        'interval_hours': 8,
+        'duration_days': 0,
+        'start_time': DateTime(2026, 3, 1, 8).toIso8601String(),
+        'is_active': 1,
+        'auto_diminish': 0,
+        'schedule_type': 'as_needed',
+        'created_at': '2026-03-01T08:00:00.000',
+        'updated_at': '2026-03-01T08:00:00.000',
+        'sync_status': 'synced',
+      });
+      await seedDoseLog(
+        db,
+        a.prescriptionId,
+        DateTime(2026, 3, 1, 16),
+        status: 'skipped',
+      );
+      await seedDoseLog(
+        db,
+        'p-as-needed',
+        DateTime(2026, 3, 1, 12),
+        status: 'taken',
+      );
+      await seedDoseLog(
+        db,
+        a.prescriptionId,
+        DateTime(2026, 3, 1, 8),
+        status: 'taken',
+      );
+      // A second, unrelated treatment must not leak in.
+      final b = await seedPrescription(db, medicationName: 'Moment');
+      await seedDoseLog(
+        db,
+        b.prescriptionId,
+        DateTime(2026, 3, 1, 9),
+        status: 'taken',
+      );
+
+      final doses = await DoseLogLocalDatasource().getDoseLogsByTreatment(
+        a.treatmentId,
+      );
+
+      expect(doses.map((d) => d.scheduledTime), [
+        DateTime(2026, 3, 1, 8),
+        DateTime(2026, 3, 1, 12),
+        DateTime(2026, 3, 1, 16),
+      ]);
+      expect(doses.map((d) => d.prescriptionId), [
+        a.prescriptionId,
+        'p-as-needed',
+        a.prescriptionId,
+      ]);
+      expect(doses.map((d) => d.status), [
+        DoseStatus.taken,
+        DoseStatus.taken,
+        DoseStatus.skipped,
+      ]);
+      expect(doses.first.medicationName, 'Brufen');
+      expect(doses.map((d) => d.asNeeded), [false, true, false]);
+    });
+
+    test('leaves out a deleted dose', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      final kept = await seedDoseLog(
+        db,
+        s.prescriptionId,
+        DateTime(2026, 3, 1, 8),
+        status: 'taken',
+      );
+      final deleted = await seedDoseLog(
+        db,
+        s.prescriptionId,
+        DateTime(2026, 3, 1, 12),
+        status: 'taken',
+      );
+      final ds = DoseLogLocalDatasource();
+      await ds.markDeleted(deleted);
+
+      final doses = await ds.getDoseLogsByTreatment(s.treatmentId);
+      expect(doses.map((d) => d.id), [kept]);
+    });
+
+    test('is empty for a treatment with no doses', () async {
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      expect(
+        await DoseLogLocalDatasource().getDoseLogsByTreatment(
+          seeded.treatmentId,
+        ),
+        isEmpty,
+      );
+    });
+  });
 }

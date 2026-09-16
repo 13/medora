@@ -46,6 +46,18 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   @override
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(
+    String treatmentId,
+  ) async {
+    try {
+      final models = await localDatasource.getDoseLogsByTreatment(treatmentId);
+      return Result.success(models.map((m) => m.toDomain()).toList());
+    } catch (e, st) {
+      return Result.failure('Failed to load dose logs: $e', st);
+    }
+  }
+
+  @override
   Future<Result<List<DoseLog>>> getTodaysDoseLogs() async {
     try {
       final models = await localDatasource.getTodaysDoseLogs();

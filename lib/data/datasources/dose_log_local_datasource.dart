@@ -43,6 +43,22 @@ class DoseLogLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
+  /// Every dose logged under [treatmentId]'s prescriptions, oldest first,
+  /// whatever its status or its prescription's state; a deleted dose is left
+  /// out.
+  ///
+  /// This is the episode's real intake record: it is derived from the dose
+  /// history the user already produces day by day, never retyped.
+  Future<List<DoseLogModel>> getDoseLogsByTreatment(String treatmentId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      '$_joinQuery WHERE p.treatment_id = ? AND d.sync_status != ? '
+      'ORDER BY d.scheduled_time ASC',
+      [treatmentId, SyncStatus.pendingDelete],
+    );
+    return _dedupeById(rows).map(_fromRow).toList();
+  }
+
   /// One dose log with its joined display fields, or null. A deleted dose
   /// (a tombstone waiting to be pushed) is not returned, so it can be
   /// neither changed nor deleted again.

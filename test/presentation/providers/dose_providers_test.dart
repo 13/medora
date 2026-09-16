@@ -27,6 +27,22 @@ final invalidateDoseDataProvider = Provider<void Function()>(
   (ref) => ref.invalidateDoseData,
 );
 
+/// A dose repository whose treatment read fails.
+class _FailingTreatmentRead extends FailingTakeRepo {
+  _FailingTreatmentRead()
+    : super(
+        DoseLogRepositoryImpl(
+          localDatasource: DoseLogLocalDatasource(),
+          prescriptionLocal: PrescriptionLocalDatasource(),
+        ),
+      );
+
+  @override
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(
+    String treatmentId,
+  ) async => const Result.failure('db down');
+}
+
 void main() {
   late ProviderContainer c;
   final now = DateTime.now();
@@ -366,6 +382,50 @@ void main() {
       expect(after.any((d) => d.prescriptionId == prescriptionId), isTrue);
     },
   );
+
+  test('doseLogsByTreatmentProvider lists the treatment\'s doses and '
+      'refetches after a dose action', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db, scheduleType: 'as_needed');
+    final first = await seedDoseLog(
+      db,
+      s.prescriptionId,
+      DateTime(2026, 3, 1, 8),
+      status: 'taken',
+    );
+
+    expect(
+      (await c.read(
+        doseLogsByTreatmentProvider(s.treatmentId).future,
+      )).map((d) => d.id),
+      [first],
+    );
+
+    final logged = await c
+        .read(doseActionsProvider)
+        .logAsNeededDose(s.prescriptionId);
+
+    expect(
+      (await c.read(
+        doseLogsByTreatmentProvider(s.treatmentId).future,
+      )).map((d) => d.id),
+      [first, logged],
+    );
+  });
+
+  test('doseLogsByTreatmentProvider reports a failed read', () async {
+    final container = ProviderContainer(
+      overrides: [
+        doseLogRepositoryProvider.overrideWithValue(_FailingTreatmentRead()),
+      ],
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+    await expectLater(
+      container.read(doseLogsByTreatmentProvider('t').future),
+      throwsA(isA<Exception>()),
+    );
+  });
 
   group('logAsNeededDose', () {
     // A clock distinct from the real one, so a dose stamped with

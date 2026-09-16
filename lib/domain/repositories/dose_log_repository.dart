@@ -10,6 +10,9 @@ abstract class DoseLogRepository {
     String prescriptionId,
   );
 
+  /// Every dose log under a treatment's prescriptions, oldest first.
+  Future<Result<List<DoseLog>>> getDoseLogsByTreatment(String treatmentId);
+
   /// One dose log by id.
   Future<Result<DoseLog>> getDoseLogById(String id);
 
