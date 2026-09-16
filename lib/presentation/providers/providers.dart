@@ -310,6 +310,11 @@ final syncStartupDelayProvider = Provider<Duration>(
 );
 
 final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
+  // Once per process: these tasks re-run on every foreground resume, and
+  // returning from the gallery picker resumes the app exactly as a scan
+  // starts writing its crops. The sweep's own age guard is the second line
+  // of defence; leftovers are picked up on the next launch either way.
+  var sweptScanTemp = false;
   return AppStartupTasks(
     maintenance: () async {
       final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
@@ -321,7 +326,10 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         ref.read(doseDataVersionProvider.notifier).bump();
       }
       // Crop folders orphaned by a crash mid-scan (see scan_temp_cleanup).
-      if (!kIsWeb) await cleanScanTempDirs(await getTemporaryDirectory());
+      if (!kIsWeb && !sweptScanTemp) {
+        sweptScanTemp = true;
+        await cleanScanTempDirs(await getTemporaryDirectory());
+      }
     },
     reminders: () =>
         ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
