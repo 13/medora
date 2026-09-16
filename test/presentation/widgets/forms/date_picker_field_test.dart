@@ -30,7 +30,9 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text(date == null ? 'Select date' : 'When'));
+    // The field itself: with a value set, the label floats to the top edge
+    // and a tap on it misses the InkWell.
+    await tester.tap(find.byType(DatePickerField));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('OK'));
@@ -67,6 +69,29 @@ void main() {
       ),
       DateTime(2026, 3, 9),
     );
+  });
+
+  testWidgets('the clear button is labelled and clears the value', (
+    tester,
+  ) async {
+    DateTime? picked = DateTime(2026, 3, 9);
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: DatePickerField(
+          label: 'When',
+          icon: Icons.event,
+          date: picked,
+          now: now,
+          onDateSelected: (d) => picked = d,
+        ),
+      ),
+    );
+    // A tooltip is also the button's accessible name.
+    expect(find.byTooltip('Clear'), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear'));
+    await tester.pumpAndSettle();
+    expect(picked, isNull);
   });
 
   testWidgets('a firstDate later in the same day as now still opens', (

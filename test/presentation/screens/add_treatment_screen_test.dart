@@ -165,6 +165,18 @@ void main() {
   const toBeforeFrom =
       '"Unable to work until" can\'t be before "Unable to work from"';
 
+  test('the doctor hint uses each language\'s title', () {
+    // Italian abbreviates the title as "Dott.", not "Dr.".
+    expect(
+      lookupAppLocalizations(const Locale('it')).doctorHint,
+      'es. Dott. Rossi, Bolzano',
+    );
+    expect(
+      lookupAppLocalizations(const Locale('de')).doctorHint,
+      'z.B. Dr. Rossi, Bozen',
+    );
+  });
+
   testWidgets('the Krankenstand section is collapsed by default', (
     tester,
   ) async {

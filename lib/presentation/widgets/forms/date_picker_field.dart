@@ -64,6 +64,8 @@ class DatePickerField extends StatelessWidget {
           suffixIcon: date != null
               ? IconButton(
                   icon: const Icon(Icons.clear),
+                  // Also the button's name for a screen reader.
+                  tooltip: l10n.clear,
                   onPressed: () => onDateSelected(null),
                 )
               : null,

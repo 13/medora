@@ -402,7 +402,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get doctorLabel => 'Medico';
 
   @override
-  String get doctorHint => 'es. Dr. Rossi, Bolzano';
+  String get doctorHint => 'es. Dott. Rossi, Bolzano';
 
   @override
   String get prescriptions => 'Prescrizioni';
