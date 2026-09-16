@@ -148,6 +148,24 @@ class SettingsScreen extends ConsumerWidget {
                   await ref.read(reminderSchedulerProvider).reconcile();
                 },
               ),
+              if (caps.hasLocalNotifications)
+                SwitchListTile(
+                  secondary: const Icon(Icons.inventory_2_outlined),
+                  title: Text(l10n.stockAndExpiryReminders),
+                  subtitle: Text(l10n.stockAndExpiryRemindersHint),
+                  value: ref.watch(stockRemindersEnabledProvider),
+                  onChanged: (value) async {
+                    if (value) {
+                      await ReminderService.instance.requestPermissions();
+                    }
+                    await ref
+                        .read(stockRemindersEnabledProvider.notifier)
+                        .set(value);
+                    unawaited(
+                      ref.read(stockReminderSchedulerProvider).reconcile(),
+                    );
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.cancel_outlined),
                 title: Text(l10n.cancelAllReminders),

@@ -16,8 +16,8 @@ Medication _med({
   minimumStockLevel: minimumStockLevel,
   expiryDate: expiryDate,
   isArchived: isArchived,
-  createdAt: DateTime(2026, 1, 1),
-  updatedAt: DateTime(2026, 1, 1),
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
 );
 
 void main() {
@@ -25,7 +25,7 @@ void main() {
 
   test('an expiry inside the window fires at the next 09:00', () {
     final alerts = stockAlertsFor([
-      _med(id: 'a', expiryDate: DateTime(2026, 10, 1)),
+      _med(id: 'a', expiryDate: DateTime(2026, 10)),
     ], now);
     expect(alerts, hasLength(1));
     expect(alerts.single.kind, StockAlertKind.expiry);
@@ -35,7 +35,7 @@ void main() {
 
   test('an expiry beyond the window fires when the window opens', () {
     final alerts = stockAlertsFor([
-      _med(id: 'a', expiryDate: DateTime(2026, 12, 1)),
+      _med(id: 'a', expiryDate: DateTime(2026, 12)),
     ], now);
     expect(alerts.single.when, DateTime(2026, 11, 1, 9));
     expect(alerts.single.days, 76);
@@ -57,8 +57,8 @@ void main() {
 
   test('quantity at or below the minimum is low stock', () {
     final alerts = stockAlertsFor([
-      _med(id: 'a', quantity: 2, minimumStockLevel: 2),
-      _med(id: 'b', quantity: 3, minimumStockLevel: 2),
+      _med(id: 'a', quantity: 2),
+      _med(id: 'b', quantity: 3, minimumStockLevel: 1),
     ], now);
     expect(alerts.map((a) => a.medicationId), ['a']);
     expect(alerts.single.kind, StockAlertKind.lowStock);
@@ -91,7 +91,7 @@ void main() {
   test('alerts come earliest first and honour the limit', () {
     final alerts = stockAlertsFor(
       [
-        _med(id: 'a', expiryDate: DateTime(2026, 12, 1)),
+        _med(id: 'a', expiryDate: DateTime(2026, 12)),
         _med(id: 'b', quantity: 0),
       ],
       now,

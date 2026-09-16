@@ -6,6 +6,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:path/path.dart' as p;
@@ -25,6 +26,10 @@ class _Port implements ReminderPort {
     required DoseLog dose,
     required String medicationName,
   }) async {}
+  @override
+  Future<void> scheduleStockAlert(StockAlert alert) async {}
+  @override
+  Future<void> cancelStockAlert(int id) async {}
 }
 
 void main() {

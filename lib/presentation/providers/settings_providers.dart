@@ -24,6 +24,7 @@ const _kLocale = 'locale';
 const _kColorScheme = 'color_scheme';
 const _kBiometricsEnabled = 'biometrics_enabled';
 const _kRemindersEnabled = 'reminders_enabled';
+const _kStockRemindersEnabled = 'stock_reminders_enabled';
 
 // ── SharedPreferences provider ───────────────────────────────
 final sharedPreferencesProvider = Provider<SharedPreferences>(
@@ -161,6 +162,28 @@ class RemindersEnabledNotifier extends Notifier<bool> {
     state = enabled;
     final prefs = ref.read(sharedPreferencesProvider);
     await prefs.setBool(_kRemindersEnabled, enabled);
+  }
+}
+
+// ── Stock & expiry reminders ─────────────────────────────────
+final stockRemindersEnabledProvider =
+    NotifierProvider<StockRemindersEnabledNotifier, bool>(
+      StockRemindersEnabledNotifier.new,
+    );
+
+class StockRemindersEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    final prefs = ref.watch(sharedPreferencesProvider);
+    // Default is ON: these reminders were explicitly asked for. Settings can
+    // turn them off.
+    return prefs.getBool(_kStockRemindersEnabled) ?? true;
+  }
+
+  Future<void> set(bool enabled) async {
+    state = enabled;
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setBool(_kStockRemindersEnabled, enabled);
   }
 }
 

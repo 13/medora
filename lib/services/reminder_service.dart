@@ -14,6 +14,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_text.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -143,6 +144,72 @@ class ReminderService implements ReminderPort {
     return minutesBefore == 0
         ? strings.notificationReminderTimeFor(medicationName)
         : strings.notificationReminderInMinutes(medicationName, minutesBefore);
+  }
+
+  /// Title for a stock or expiry notification.
+  @visibleForTesting
+  static String stockAlertTitle(StockAlertKind kind, {AppLocalizations? l10n}) {
+    final strings = l10n ?? resolveLocalizations();
+    if (strings == null) {
+      return kind == StockAlertKind.expiry ? 'Expiring soon' : 'Running low';
+    }
+    return kind == StockAlertKind.expiry
+        ? strings.notificationExpiryTitle
+        : strings.notificationLowStockTitle;
+  }
+
+  /// Body for a stock or expiry notification. The English fallbacks mirror
+  /// the ARB plural branches, so an unsupported platform locale still reads
+  /// naturally at 0 and 1.
+  @visibleForTesting
+  static String stockAlertBody(StockAlert alert, {AppLocalizations? l10n}) {
+    final strings = l10n ?? resolveLocalizations();
+    final name = alert.medicationName;
+    if (strings == null) {
+      return switch (alert.kind) {
+        StockAlertKind.expiry => switch (alert.days) {
+          0 => '$name expires today',
+          1 => '$name expires tomorrow',
+          _ => '$name expires in ${alert.days} days',
+        },
+        StockAlertKind.lowStock => switch (alert.quantity) {
+          0 => '$name: none left',
+          1 => '$name: 1 left',
+          _ => '$name: ${alert.quantity} left',
+        },
+      };
+    }
+    return alert.kind == StockAlertKind.expiry
+        ? strings.notificationExpiryBody(name, alert.days)
+        : strings.notificationLowStockBody(name, alert.quantity);
+  }
+
+  @override
+  Future<void> scheduleStockAlert(StockAlert alert) async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    // The planner works from an injected clock; by the time the scheduler
+    // gets here the slot may have passed, and a past zonedSchedule either
+    // throws or fires at once.
+    if (!alert.when.isAfter(DateTime.now())) return;
+    final l10n = resolveLocalizations();
+    await _scheduleNotification(
+      id: alert.id,
+      title: stockAlertTitle(alert.kind, l10n: l10n),
+      body: stockAlertBody(alert, l10n: l10n),
+      scheduledTime: alert.when,
+      // Routed like a dose reminder today; the id is carried so a tap can
+      // open the medication itself later.
+      payload: 'medication:${alert.medicationId}',
+      l10n: l10n,
+    );
+  }
+
+  @override
+  Future<void> cancelStockAlert(int id) async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    await _notifications.cancel(id: id);
   }
 
   /// Stable 31-bit notification id base for a dose (FNV-1a over the id,

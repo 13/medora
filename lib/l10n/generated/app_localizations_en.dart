@@ -720,6 +720,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveDoseReminders => 'Receive dose reminders';
 
   @override
+  String get stockAndExpiryReminders => 'Stock and expiry reminders';
+
+  @override
+  String get stockAndExpiryRemindersHint =>
+      'Notify when a medication runs low or expires within 30 days';
+
+  @override
   String get cancelAllReminders => 'Cancel All Reminders';
 
   @override
@@ -1411,6 +1418,36 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String notificationReminderBody(String dosage) {
     return '$dosage — Tap to log your dose';
+  }
+
+  @override
+  String get notificationExpiryTitle => 'Expiring soon';
+
+  @override
+  String notificationExpiryBody(String name, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$name expires in $days days',
+      one: '$name expires tomorrow',
+      zero: '$name expires today',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notificationLowStockTitle => 'Running low';
+
+  @override
+  String notificationLowStockBody(String name, int quantity) {
+    String _temp0 = intl.Intl.pluralLogic(
+      quantity,
+      locale: localeName,
+      other: '$name: $quantity left',
+      one: '$name: 1 left',
+      zero: '$name: none left',
+    );
+    return '$_temp0';
   }
 
   @override

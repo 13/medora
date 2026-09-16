@@ -1,11 +1,14 @@
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
 
 /// Minimal in-memory [ReminderPort] for widget/unit tests.
 class FakePort implements ReminderPort {
   int cancelAllCalls = 0;
   final scheduled = <DoseLog>[];
   final cancelledDoses = <String>[];
+  final stockAlerts = <StockAlert>[];
+  final cancelledStockAlerts = <int>[];
 
   /// When true, [scheduleForDose] throws instead of recording — simulates
   /// the underlying notification plugin failing mid-reconcile.
@@ -27,4 +30,15 @@ class FakePort implements ReminderPort {
     }
     scheduled.add(dose);
   }
+
+  @override
+  Future<void> scheduleStockAlert(StockAlert alert) async {
+    if (throwOnSchedule) {
+      throw StateError('scheduleStockAlert failed');
+    }
+    stockAlerts.add(alert);
+  }
+
+  @override
+  Future<void> cancelStockAlert(int id) async => cancelledStockAlerts.add(id);
 }

@@ -349,6 +349,8 @@
   "notifications": "Notifications",
   "enableNotifications": "Enable Notifications",
   "receiveDoseReminders": "Receive dose reminders",
+  "stockAndExpiryReminders": "Stock and expiry reminders",
+  "stockAndExpiryRemindersHint": "Notify when a medication runs low or expires within 30 days",
   "cancelAllReminders": "Cancel All Reminders",
   "removePendingNotifications": "Remove all pending notifications",
   "cancelAllRemindersConfirm": "Are you sure you want to cancel all pending reminders?",
@@ -636,6 +638,22 @@
   "@notificationReminderBody": {
     "placeholders": {
       "dosage": { "type": "String" }
+    }
+  },
+  "notificationExpiryTitle": "Expiring soon",
+  "notificationExpiryBody": "{days, plural, =0{{name} expires today} =1{{name} expires tomorrow} other{{name} expires in {days} days}}",
+  "@notificationExpiryBody": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "days": { "type": "int" }
+    }
+  },
+  "notificationLowStockTitle": "Running low",
+  "notificationLowStockBody": "{quantity, plural, =0{{name}: none left} =1{{name}: 1 left} other{{name}: {quantity} left}}",
+  "@notificationLowStockBody": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "quantity": { "type": "int" }
     }
   },
   "useOnThisDevice": "Use Medora on this device",

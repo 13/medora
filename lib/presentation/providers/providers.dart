@@ -51,6 +51,7 @@ import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/scan_temp_cleanup.dart';
+import 'package:medora/services/stock_reminder_scheduler.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:path_provider/path_provider.dart';
@@ -199,6 +200,35 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
   return scheduler;
 });
 
+/// Owns the stock and expiry notifications; the dose reminders are
+/// [reminderSchedulerProvider]'s. Separate schedulers, disjoint id slots.
+final stockReminderSchedulerProvider = Provider<StockReminderScheduler>((ref) {
+  // Same guard as the dose scheduler: reconcile() can still be in flight
+  // after the container is disposed, so cache the last-known value rather
+  // than reading a disposed Ref.
+  var lastEnabled = ref.read(stockRemindersEnabledProvider);
+  final scheduler = StockReminderScheduler(
+    port: ref.watch(reminderPortProvider),
+    medications: ref.watch(medicationRepositoryProvider),
+    stockRemindersEnabled: () {
+      if (ref.mounted) lastEnabled = ref.read(stockRemindersEnabledProvider);
+      return lastEnabled;
+    },
+    now: ref.watch(nowProvider),
+  );
+
+  // Notification text is baked in when the alert is scheduled, so a language
+  // change has to rebuild the queued ones. The ids are stable, so this
+  // replaces them in place.
+  ref.listen(localeProvider, (previous, next) {
+    if (previous == next) return;
+    scheduler.reset();
+    unawaited(scheduler.reconcile());
+  });
+
+  return scheduler;
+});
+
 final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
 );
@@ -331,8 +361,10 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         await cleanScanTempDirs(await getTemporaryDirectory());
       }
     },
-    reminders: () =>
-        ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
+    reminders: () async {
+      await ref.read(reminderSchedulerProvider).reconcile();
+      await ref.read(stockReminderSchedulerProvider).reconcile();
+    },
     sync: () async {
       if (ref.read(appModeProvider) == AppMode.cloud) {
         await ref.read(syncServiceProvider).syncAll();

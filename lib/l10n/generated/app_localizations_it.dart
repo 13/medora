@@ -727,6 +727,13 @@ class AppLocalizationsIt extends AppLocalizations {
   String get receiveDoseReminders => 'Ricevi promemoria per le dosi';
 
   @override
+  String get stockAndExpiryReminders => 'Promemoria scorte e scadenza';
+
+  @override
+  String get stockAndExpiryRemindersHint =>
+      'Avvisa quando un farmaco sta finendo o scade entro 30 giorni';
+
+  @override
   String get cancelAllReminders => 'Annulla tutti i promemoria';
 
   @override
@@ -1422,6 +1429,36 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String notificationReminderBody(String dosage) {
     return '$dosage — Tocca per registrare la dose';
+  }
+
+  @override
+  String get notificationExpiryTitle => 'In scadenza';
+
+  @override
+  String notificationExpiryBody(String name, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$name scade tra $days giorni',
+      one: '$name scade domani',
+      zero: '$name scade oggi',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notificationLowStockTitle => 'Scorte in esaurimento';
+
+  @override
+  String notificationLowStockBody(String name, int quantity) {
+    String _temp0 = intl.Intl.pluralLogic(
+      quantity,
+      locale: localeName,
+      other: '$name: ne restano $quantity',
+      one: '$name: ne resta 1',
+      zero: '$name: esaurito',
+    );
+    return '$_temp0';
   }
 
   @override

@@ -1387,6 +1387,18 @@ abstract class AppLocalizations {
   /// **'Receive dose reminders'**
   String get receiveDoseReminders;
 
+  /// No description provided for @stockAndExpiryReminders.
+  ///
+  /// In en, this message translates to:
+  /// **'Stock and expiry reminders'**
+  String get stockAndExpiryReminders;
+
+  /// No description provided for @stockAndExpiryRemindersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Notify when a medication runs low or expires within 30 days'**
+  String get stockAndExpiryRemindersHint;
+
   /// No description provided for @cancelAllReminders.
   ///
   /// In en, this message translates to:
@@ -2688,6 +2700,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{dosage} — Tap to log your dose'**
   String notificationReminderBody(String dosage);
+
+  /// No description provided for @notificationExpiryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Expiring soon'**
+  String get notificationExpiryTitle;
+
+  /// No description provided for @notificationExpiryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{{name} expires today} =1{{name} expires tomorrow} other{{name} expires in {days} days}}'**
+  String notificationExpiryBody(String name, int days);
+
+  /// No description provided for @notificationLowStockTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Running low'**
+  String get notificationLowStockTitle;
+
+  /// No description provided for @notificationLowStockBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{quantity, plural, =0{{name}: none left} =1{{name}: 1 left} other{{name}: {quantity} left}}'**
+  String notificationLowStockBody(String name, int quantity);
 
   /// No description provided for @useOnThisDevice.
   ///

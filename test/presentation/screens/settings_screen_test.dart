@@ -23,6 +23,17 @@ class _RefusingAppMode extends AppModeNotifier {
   Future<void> set(AppMode mode) async => throw StateError('prefs are gone');
 }
 
+/// Only the capability under test, so pumping Settings does not also build
+/// the supplement register or biometrics tiles.
+const _notificationsOnly = PlatformCapabilities(
+  hasCamera: false,
+  hasLocalNotifications: true,
+  hasFileShare: false,
+  hasBiometrics: false,
+  hasInAppUpdates: false,
+  hasSupplementRegister: false,
+);
+
 const _fixedBuildInfo = BuildInfo(
   version: '1.0.0',
   buildNumber: '11',
@@ -316,4 +327,34 @@ void main() {
       expect(container.read(appModeProvider), AppMode.localOnly);
     },
   );
+
+  testWidgets('stock and expiry reminders are on by default and can be '
+      'turned off', (tester) async {
+    final container = await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(
+          await SharedPreferences.getInstance(),
+        ),
+        syncStartupDelayProvider.overrideWithValue(Duration.zero),
+        reminderPortProvider.overrideWithValue(FakePort()),
+        platformCapabilitiesProvider.overrideWithValue(_notificationsOnly),
+        buildInfoProvider.overrideWith((ref) async => _fixedBuildInfo),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Stock and expiry reminders'), findsOneWidget);
+    expect(
+      container.read(stockRemindersEnabledProvider),
+      isTrue,
+      reason: 'the user asked for these reminders, so they default to on',
+    );
+
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(stockRemindersEnabledProvider), isFalse);
+  });
 }
