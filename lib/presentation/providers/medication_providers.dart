@@ -149,25 +149,33 @@ final archivedMedicationsProvider = FutureProvider<List<Medication>>((
 ///
 /// Archived medications and medications with no expiry date are excluded.
 /// Sorted most urgent (longest expired) first, so the card's `.take(3)`
-/// cannot hide an expired box behind three merely expiring ones.
+/// cannot hide an expired box behind three merely expiring ones, with the
+/// name (then the id) as a tiebreak.
 final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
   // Watch the medication list to trigger updates
   final meds = await ref.watch(medicationListProvider.future);
 
   final now = ref.watch(nowProvider)();
 
-  final matches = <Medication>[];
+  // Decorate once: a comparator that called daysUntilExpiry would rebuild
+  // two DateTimes and a Duration for both operands on every comparison.
+  final keyed = <({int days, Medication med})>[];
   for (final m in meds) {
     if (m.isArchived) continue;
     final days = m.daysUntilExpiry(now);
     if (days == null || days > AppConstants.expiryWarningDays) continue;
-    matches.add(m);
+    keyed.add((days: days, med: m));
   }
-  // Safe to force-unwrap: the loop above admits only non-null day counts.
-  matches.sort(
-    (a, b) => a.daysUntilExpiry(now)!.compareTo(b.daysUntilExpiry(now)!),
-  );
-  return matches;
+  // The name/id tiebreak is not cosmetic: List.sort is unstable above 32
+  // elements, so without it two medications sharing an expiry date would
+  // swap rows between rebuilds of a large cabinet.
+  keyed.sort((a, b) {
+    final byDays = a.days.compareTo(b.days);
+    if (byDays != 0) return byDays;
+    final byName = a.med.name.compareTo(b.med.name);
+    return byName != 0 ? byName : a.med.id.compareTo(b.med.id);
+  });
+  return [for (final e in keyed) e.med];
 });
 
 /// Provider for low stock medications.

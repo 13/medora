@@ -47,7 +47,9 @@ void main() {
               name: name,
               quantity: 1,
               isArchived: archived,
-              expiryDate: DateTime(2026, 3, 4).add(Duration(days: days)),
+              // Calendar arithmetic, not absolute time: adding a
+              // Duration shifts the date by one across a DST fall-back.
+              expiryDate: DateTime(2026, 3, 4 + days),
             ),
           );
 
@@ -72,6 +74,42 @@ void main() {
       ]);
     },
   );
+
+  test('medications sharing an expiry date keep a stable order', () async {
+    // Dart's List.sort is only stable up to 32 elements, and the comparator
+    // has one key. A cabinet larger than that would reshuffle rows that share
+    // an expiry date on every rebuild - visible jitter on a dashboard whose
+    // whole job is to be glanced at.
+    final now = DateTime(2026, 3, 4, 15);
+    final c = await make(now: now);
+    final notifier = c.read(medicationListProvider.notifier);
+    await c.read(medicationListProvider.future);
+
+    final names = [
+      for (var i = 0; i < 40; i++) 'Med${i.toString().padLeft(2, '0')}',
+    ];
+    for (final name in names) {
+      await notifier.addMedication(
+        Medication(
+          id: name,
+          name: name,
+          quantity: 1,
+          expiryDate: DateTime(2026, 3, 10),
+        ),
+      );
+    }
+
+    final first = (await c.read(
+      expiringSoonProvider.future,
+    )).map((m) => m.name).toList();
+    expect(first, names, reason: 'equal expiry dates must fall back to name');
+
+    c.invalidate(expiringSoonProvider);
+    final second = (await c.read(
+      expiringSoonProvider.future,
+    )).map((m) => m.name).toList();
+    expect(second, first, reason: 'the order must not move between rebuilds');
+  });
 
   test('one expired medication is not an empty expiry list', () async {
     // The dashboard's "All medications are within date" empty state keys off
