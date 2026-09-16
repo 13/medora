@@ -14,6 +14,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
@@ -130,6 +131,107 @@ void main() {
     );
   }
 
+  /// The first [RenderParagraph] under [element], which is where a `Text`
+  /// finally lays its glyphs out. A semantics label or a selection registrar
+  /// puts another render object in between, so walk down rather than assume
+  /// the paragraph is the element's own render object.
+  RenderParagraph? paragraphOf(Element element) {
+    RenderParagraph? found;
+    void visit(RenderObject node) {
+      if (found != null) return;
+      if (node is RenderParagraph) {
+        found = node;
+        return;
+      }
+      node.visitChildren(visit);
+    }
+
+    final root = element.renderObject;
+    if (root != null) visit(root);
+    return found;
+  }
+
+  /// Every label measured against the box it was actually given.
+  ///
+  /// A paragraph handed too little width does not report a bigger size: it
+  /// breaks mid-word, ellipsizes, or - the default - clips in silence. Both
+  /// `takeException` and the render-box sweep above therefore stay happy
+  /// while the user reads "Moment 2". The number that decides it is the
+  /// widest run of text that cannot be broken - the longest word, at this
+  /// paragraph's own text scale, which is what `TextPainter.minIntrinsicWidth`
+  /// reports. If that does not fit `constraints.maxWidth`, something on
+  /// screen has been truncated. This is the comparison
+  /// home_stat_tile_layout_test.dart makes for the three stat tiles; here it
+  /// runs over every label the dashboard painted.
+  ///
+  /// [knownTruncations] names labels a production layout already truncates
+  /// at this configuration, mapped to why. They do not fail the sweep - this
+  /// file may not change the widgets involved - but they are not ignored
+  /// either: every entry must still be truncating, so an entry that gets
+  /// fixed, or designed away, turns this red and has to go.
+  void expectNoTextIsClipped(
+    WidgetTester tester, {
+    Map<String, String> knownTruncations = const {},
+  }) {
+    final offenders = <String>[];
+    final clipped = <String>{};
+    for (final element in find.byType(Text).evaluate()) {
+      final paragraph = paragraphOf(element);
+      if (paragraph == null || !paragraph.attached || !paragraph.hasSize) {
+        continue;
+      }
+      // An unbounded parent - the shrink-to-fit trailing column, a
+      // horizontal scroll axis - has no box for the text to exceed.
+      final box = paragraph.constraints.maxWidth;
+      if (!box.isFinite) continue;
+      // A WidgetSpan has no intrinsic width of its own, and laying one out
+      // without placeholder dimensions throws rather than measures.
+      var hasPlaceholder = false;
+      paragraph.text.visitChildren((span) {
+        if (span is PlaceholderSpan) hasPlaceholder = true;
+        return !hasPlaceholder;
+      });
+      if (hasPlaceholder) continue;
+
+      final painter = TextPainter(
+        text: paragraph.text,
+        textDirection: paragraph.textDirection,
+        textScaler: paragraph.textScaler,
+        strutStyle: paragraph.strutStyle,
+        textAlign: paragraph.textAlign,
+        locale: paragraph.locale,
+      )..layout();
+      final widestWord = painter.minIntrinsicWidth;
+      painter.dispose();
+      if (widestWord > box + 0.5) {
+        final label = paragraph.text.toPlainText();
+        clipped.add(label);
+        if (knownTruncations.containsKey(label)) continue;
+        offenders.add(
+          '"$label" needs ${widestWord.toStringAsFixed(1)} dp for its longest '
+          'unbreakable run but was given ${box.toStringAsFixed(1)} dp '
+          '(it painted ${paragraph.size.width.toStringAsFixed(1)} dp wide)',
+        );
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          'these labels do not fit the box they were given, so they are '
+          'clipped, ellipsized or broken mid-word:\n${offenders.join('\n')}',
+    );
+    final repaired = knownTruncations.keys.where((l) => !clipped.contains(l));
+    expect(
+      repaired,
+      isEmpty,
+      reason:
+          'these labels are listed as known truncations but now fit their '
+          'box: ${repaired.join(', ')}. Delete them from knownTruncations so '
+          'the sweep guards them again.',
+    );
+  }
+
   const expiredLabel = {'de': 'Abgelaufen', 'it': 'Scaduto'};
   const wellStocked = {
     'de': 'Alle Medikamente sind vorrätig',
@@ -143,6 +245,49 @@ void main() {
     'de': 'Abgelaufen & bald ablaufend',
     'it': 'Scaduti e in scadenza',
   };
+
+  const takeAction = {'de': 'Einnehmen', 'it': 'Assumi', 'en': 'Take'};
+  const skipAction = {'de': 'Überspringen', 'it': 'Salta', 'en': 'Skip'};
+  const leftLabel = {'de': 'Übrig', 'it': 'Rimanenti', 'en': 'Left'};
+
+  /// The two widgets commit 4e405da rebuilt, pinned to the screen.
+  ///
+  /// Neither overflow can reach `takeException` unless the offending widget
+  /// is actually built, and both are conditional: the Now card renders its
+  /// "all done" branch instead of the action pair when no dose is pending,
+  /// and the dose seeds key off the real wall clock (see seedFullDashboard).
+  /// Without these assertions a run crossing midnight, or any change to dose
+  /// generation, would leave all four tests green with nothing under test.
+  void expectTheOverflowingWidgetsAreOnScreen(String lang) {
+    expect(
+      find.text(takeAction[lang]!),
+      findsOneWidget,
+      reason:
+          'the Now card is not offering a next dose, so the action row that '
+          'overflowed by 2.3 dp at 1.0x and 83 dp at 1.6x is not on screen '
+          'to be measured',
+    );
+    expect(find.text(skipAction[lang]!), findsOneWidget);
+
+    final left = find.text(leftLabel[lang]!);
+    expect(
+      left,
+      findsOneWidget,
+      reason:
+          'the Low Stock row is not showing its trailing count column, so '
+          'the column that overflowed by 12 dp is not on screen',
+    );
+    // "Moment 200" is seeded at zero, and the count sits directly above the
+    // label in the trailing column.
+    expect(
+      find.descendant(
+        of: find.ancestor(of: left, matching: find.byType(Column)).first,
+        matching: find.text('0'),
+      ),
+      findsOneWidget,
+      reason: 'the trailing column has lost the quantity above "$left"',
+    );
+  }
 
   for (final lang in const ['de', 'it']) {
     testWidgets('the full dashboard lays out at 360 dp in $lang', (
@@ -177,8 +322,11 @@ void main() {
       expect(find.text('Flu'), findsOneWidget);
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
 
+      expectTheOverflowingWidgetsAreOnScreen(lang);
+
       expect(tester.takeException(), isNull);
       expectNothingPaintsOutsideViewport(tester);
+      expectNoTextIsClipped(tester);
     });
   }
 
@@ -212,8 +360,36 @@ void main() {
     expect(find.text('Bentelan'), findsOneWidget);
     expect(find.text('Flu'), findsOneWidget);
 
+    expectTheOverflowingWidgetsAreOnScreen('de');
+
     expect(tester.takeException(), isNull);
     expectNothingPaintsOutsideViewport(tester);
+    // Four labels are truncated at this scale by widgets this test file may
+    // not change. They are pinned with their reason so the sweep keeps
+    // guarding every other label on the page, and so that fixing one - or
+    // deciding it should ellipsize on purpose - turns this test red. All four
+    // fit at 1.0x; the numbers below are German at 360 dp, 1.6x.
+    expectNoTextIsClipped(
+      tester,
+      knownTruncations: const {
+        'Aktive Behandlungen':
+            'by design: _SectionHeader wraps its title in an Expanded with '
+            'TextOverflow.ellipsis so the See all button keeps its place. '
+            '163.6 dp for a word that needs 180.6 cuts inside '
+            '"Behandlungen", which is the intended degradation, not a bug.',
+        'Bentelan':
+            'a defect, reported: MedicationExpiryTile sets no overflow, so '
+            'once the ExpiryBadge takes its natural width in the ListTile '
+            'trailing slot the title is left 79.8 dp for a word that needs '
+            '89.7 and is broken mid-word across two lines.',
+        'Moment 200':
+            'the same defect at its worst: the wider "Läuft in 16 Tagen ab" '
+            'badge starves that tile\'s title to 0.0 dp, which paints as a '
+            '279 dp column one glyph wide.',
+        '20. März 2026':
+            'that row\'s subtitle, starved to 0.0 dp along with its title.',
+      },
+    );
   });
 
   testWidgets('dark mode renders the same dashboard, legibly', (tester) async {
@@ -231,8 +407,11 @@ void main() {
     expect(find.text('Expired'), findsOneWidget);
     expect(find.text('Bentelan'), findsOneWidget);
     expect(find.text('Flu'), findsOneWidget);
+    expectTheOverflowingWidgetsAreOnScreen('en');
+
     expect(tester.takeException(), isNull);
     expectNothingPaintsOutsideViewport(tester);
+    expectNoTextIsClipped(tester);
 
     // The expired badge has to stay readable in the dark palette, not just
     // exist. Measured off what the badge actually paints — the decoration
