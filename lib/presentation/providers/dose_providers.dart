@@ -157,6 +157,9 @@ class DoseActions {
     await _ref.read(todaysDoseLogsProvider.notifier).refresh(reconcile: false);
     _ref.read(doseDataVersionProvider.notifier).bump();
     unawaited(_ref.read(reminderSchedulerProvider).reconcile());
+    // A taken dose can empty a pack (auto-diminish), which changes what the
+    // stock alerts should say.
+    unawaited(_ref.read(stockReminderSchedulerProvider).reconcile());
   }
 }
 
