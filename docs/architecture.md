@@ -157,9 +157,14 @@ newer, is throttled, or cannot run at all leaves the pending install standing.
 that throws becomes a `SyncFailure` and the batch continues, and a row that keeps
 failing is skipped until `min(2^count minutes, 6 h)` after its last attempt.
 **Pull** is a delta per table: only rows newer than the stored cursor, tombstones
-(`deleted_at`) applied as hard local deletes, and the cursor advanced to the
-newest `updated_at` seen minus **1 second** of overlap, only when the whole table
-applied cleanly; a dose cursor never sits before `1970-01-02`. **Conflicts**
+(`deleted_at`) applied as hard local deletes. A hosted project answers at most
+**1000** rows per request, so the rows come in pages of 1000, ordered by
+`updated_at` then `id`, each page starting after the last row of the one before
+(keyset paging), until a short page, and at most **50** pages per table per
+cycle. After each page the cursor moves to that page's last `updated_at` minus
+**1 second** of overlap, unless a row of this pull failed to apply; so a failure
+part-way leaves it at the end of the last fully stored page. Once a pull has
+read to the end, the cursor never sits before `1970-01-02`. **Conflicts**
 resolve **last write wins by `updated_at`** on both sides: the push reads the
 remote value first and leaves a row it would clobber for the pull to overwrite,
 while the pull keeps a locally pending row at least as new as the remote copy
