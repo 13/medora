@@ -3,6 +3,7 @@ library;
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DoseLogRemoteDatasource {
@@ -88,8 +89,16 @@ class DoseLogRemoteDatasource {
         .insert(models.map((m) => m.toJson()).toList());
   }
 
-  Future<void> upsertDoseLog(DoseLogModel model) async {
-    await _client.from(AppConstants.doseLogsTable).upsert(model.toJson());
+  /// Upsert a dose log (insert or update). Returns the `updated_at` the
+  /// server gave this write (see `settlePushedRow`), or null when the
+  /// response carries none.
+  Future<DateTime?> upsertDoseLog(DoseLogModel model) async {
+    final response = await _client
+        .from(AppConstants.doseLogsTable)
+        .upsert(model.toJson())
+        .select('updated_at')
+        .maybeSingle();
+    return serverStampOf(response);
   }
 
   /// Update dose log status.

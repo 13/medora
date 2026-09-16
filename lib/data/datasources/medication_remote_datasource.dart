@@ -5,6 +5,7 @@ library;
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The migration that adds the `ean` column this datasource sends.
@@ -143,12 +144,17 @@ class MedicationRemoteDatasource {
             .eq('id', model.id);
       });
 
-  /// Upsert a medication (insert or update).
-  Future<void> upsertMedication(MedicationModel model) =>
+  /// Upsert a medication (insert or update). Returns the `updated_at` the
+  /// server gave this write (see `settlePushedRow`), or null when the
+  /// response carries none.
+  Future<DateTime?> upsertMedication(MedicationModel model) =>
       mapMedicationSchemaErrors(() async {
-        await _client
+        final response = await _client
             .from(AppConstants.medicationsTable)
-            .upsert(model.toJson());
+            .upsert(model.toJson())
+            .select('updated_at')
+            .maybeSingle();
+        return serverStampOf(response);
       });
 
   /// Delete a medication.

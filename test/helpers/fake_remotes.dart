@@ -37,8 +37,9 @@ class FakeRemoteTable {
   }
 
   /// Insert keeps the client's `updated_at` (or stamps now); update stamps now
-  /// like the `update_updated_at` trigger.
-  Future<void> upsert(Map<String, dynamic> json) async {
+  /// like the `update_updated_at` trigger. Returns the stored `updated_at`,
+  /// as `upsert(...).select('updated_at')` does.
+  Future<DateTime?> upsert(Map<String, dynamic> json) async {
     await beforeCall?.call();
     final id = json['id'] as String;
     _guard(id);
@@ -47,6 +48,7 @@ class FakeRemoteTable {
     final merged = {...?existing, ...json};
     merged['updated_at'] = existing == null ? (json['updated_at'] ?? now) : now;
     rows[id] = merged;
+    return updatedAt(id);
   }
 
   void tombstone(String id) {
@@ -136,7 +138,7 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   Future<void> updateMedication(MedicationModel model) async =>
       table.upsert(model.toJson());
   @override
-  Future<void> upsertMedication(MedicationModel model) async =>
+  Future<DateTime?> upsertMedication(MedicationModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deleteMedication(String id) async => table.tombstone(id);
@@ -171,18 +173,7 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   }
 
   @override
-  Future<void> addTreatment(TreatmentModel model) async =>
-      table.upsert(model.toJson());
-
-  /// A plain `update().eq('id', …)`: matches nothing, and so writes nothing,
-  /// when the server has no such row. Only [upsertTreatment] creates one.
-  @override
-  Future<void> updateTreatment(TreatmentModel model) async {
-    if (table.rows.containsKey(model.id)) await table.upsert(model.toJson());
-  }
-
-  @override
-  Future<void> upsertTreatment(TreatmentModel model) async =>
+  Future<DateTime?> upsertTreatment(TreatmentModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deleteTreatment(String id) async => table.tombstone(id);
@@ -226,7 +217,7 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   Future<void> updatePrescription(PrescriptionModel model) async =>
       table.upsert(model.toJson());
   @override
-  Future<void> upsertPrescription(PrescriptionModel model) async =>
+  Future<DateTime?> upsertPrescription(PrescriptionModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deletePrescription(String id) async => table.tombstone(id);
@@ -270,7 +261,7 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   }
 
   @override
-  Future<void> upsertDoseLog(DoseLogModel model) async =>
+  Future<DateTime?> upsertDoseLog(DoseLogModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> updateDoseLogStatus(

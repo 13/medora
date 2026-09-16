@@ -18,6 +18,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart' show Database;
 
 import '../helpers/fake_remotes.dart';
 import '../helpers/seed.dart';
@@ -1330,6 +1331,163 @@ void main() {
         expect(await localRow('family_members', 'me'), isNull);
       },
     );
+  });
+
+  group('a row edited while the cycle pushes it', () {
+    /// One pushed table: how to reach its fake, how to seed a pending local
+    /// row plus an older server copy, and which column the edits change.
+    Future<void> runCase(
+      Harness h, {
+      required String table,
+      required FakeRemoteTable remote,
+      required String column,
+      required Future<String> Function(Database db) seed,
+      required Map<String, dynamic> Function(Map<String, dynamic> row) toServer,
+    }) async {
+      final db = await AppDatabase.instance.database;
+      final id = await seed(db);
+      final pushedAt = h.clock.now().subtract(const Duration(minutes: 2));
+      await db.update(
+        table,
+        {
+          column: 'pushed copy',
+          'sync_status': SyncStatus.pendingUpdate,
+          'updated_at': pushedAt.toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      remote.seed({
+        ...toServer((await localRow(table, id))!),
+        column: 'server copy',
+      }, updatedAt: h.clock.now().subtract(const Duration(hours: 1)));
+
+      // Hold the push; edit the row meanwhile. The edit is stamped before the
+      // server stamps the held push, as it is on a device in step with the
+      // server.
+      final release = Completer<void>();
+      var held = false;
+      String? statusAtPull;
+      remote.beforeCall = () async {
+        if (!held) {
+          held = true;
+          await db.update(
+            table,
+            {
+              column: 'edited meanwhile',
+              'updated_at': h.clock
+                  .now()
+                  .subtract(const Duration(minutes: 1))
+                  .toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+          await release.future;
+          return;
+        }
+        // The first cycle's pull, right after the held push landed.
+        statusAtPull ??= (await localRow(table, id))?['sync_status'] as String?;
+      };
+
+      final cycle = h.service.syncAll();
+      await pumpEventQueue();
+      release.complete();
+      await cycle;
+
+      expect(statusAtPull, SyncStatus.pendingUpdate, reason: table);
+      // The cycle ran once more on its own and pushed the edit.
+      expect(remote.sinceCalls.length, 2, reason: table);
+      expect(remote.rows[id]?[column], 'edited meanwhile', reason: table);
+      final stored = (await localRow(table, id))!;
+      expect(stored[column], 'edited meanwhile', reason: table);
+      expect(stored['sync_status'], SyncStatus.synced, reason: table);
+    }
+
+    test('medications: stays pending, is not pulled over, goes out on the '
+        're-run', () async {
+      final h = Harness();
+      await runCase(
+        h,
+        table: 'medications',
+        toServer: (row) => MedicationModel.fromLocalMap(row).toJson(),
+        remote: h.meds.table,
+        column: 'name',
+        seed: (db) async => (await seedPrescription(db)).medicationId,
+      );
+    });
+
+    test('treatments: stays pending, is not pulled over, goes out on the '
+        're-run', () async {
+      final h = Harness();
+      await runCase(
+        h,
+        table: 'treatments',
+        toServer: (row) => TreatmentModel.fromLocalMap(row).toJson(),
+        remote: h.treatments.table,
+        column: 'notes',
+        seed: (db) async => (await seedPrescription(db)).treatmentId,
+      );
+    });
+
+    test('prescriptions: stays pending, is not pulled over, goes out on the '
+        're-run', () async {
+      final h = Harness();
+      await runCase(
+        h,
+        table: 'prescriptions',
+        toServer: (row) => PrescriptionModel.fromLocalMap(row).toJson(),
+        remote: h.prescriptions.table,
+        column: 'notes',
+        seed: (db) async => (await seedPrescription(db)).prescriptionId,
+      );
+    });
+
+    test('dose logs: stay pending, are not pulled over, go out on the '
+        're-run', () async {
+      final h = Harness();
+      await runCase(
+        h,
+        table: 'dose_logs',
+        toServer: (row) => DoseLogModel.fromLocalMap(row).toJson(),
+        remote: h.doses.table,
+        column: 'notes',
+        seed: (db) async => seedDoseLog(
+          db,
+          (await seedPrescription(db)).prescriptionId,
+          DateTime(2026, 3, 1, 8),
+        ),
+      );
+    });
+
+    test('an unchanged pushed row takes the server stamp', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-stamp',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 3)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm-stamp', name: 'Old', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(hours: 1)),
+      );
+      // Pushes and pulls in one cycle; hide the pull so only the push's
+      // bookkeeping can have set the stamp.
+      h.meds.table.throwOnFetch = StateError('pull unavailable');
+
+      await h.service.syncAll();
+
+      final row = (await localRow('medications', 'm-stamp'))!;
+      expect(row['sync_status'], SyncStatus.synced);
+      expect(
+        DateTime.parse(row['updated_at'] as String).toUtc(),
+        h.meds.table.updatedAt('m-stamp'),
+      );
+    });
   });
 
   group('queued cycles', () {

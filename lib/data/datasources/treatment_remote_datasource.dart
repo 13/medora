@@ -3,6 +3,7 @@ library;
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TreatmentRemoteDatasource {
@@ -72,22 +73,16 @@ class TreatmentRemoteDatasource {
     return response == null ? null : TreatmentModel.fromJson(response);
   }
 
-  /// Add a new treatment.
-  Future<void> addTreatment(TreatmentModel model) async {
-    await _client.from(AppConstants.treatmentsTable).insert(model.toJson());
-  }
-
-  /// Update a treatment.
-  Future<void> updateTreatment(TreatmentModel model) async {
-    await _client
+  /// Upsert a treatment (insert or update). Returns the `updated_at` the
+  /// server gave this write (see `settlePushedRow`), or null when the
+  /// response carries none.
+  Future<DateTime?> upsertTreatment(TreatmentModel model) async {
+    final response = await _client
         .from(AppConstants.treatmentsTable)
-        .update(model.toJson())
-        .eq('id', model.id);
-  }
-
-  /// Upsert a treatment (insert or update).
-  Future<void> upsertTreatment(TreatmentModel model) async {
-    await _client.from(AppConstants.treatmentsTable).upsert(model.toJson());
+        .upsert(model.toJson())
+        .select('updated_at')
+        .maybeSingle();
+    return serverStampOf(response);
   }
 
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`

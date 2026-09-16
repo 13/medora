@@ -3,6 +3,7 @@ library;
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/models/prescription_model.dart';
+import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PrescriptionRemoteDatasource {
@@ -102,9 +103,16 @@ class PrescriptionRemoteDatasource {
         .eq('id', model.id);
   }
 
-  /// Upsert a prescription (insert or update).
-  Future<void> upsertPrescription(PrescriptionModel model) async {
-    await _client.from(AppConstants.prescriptionsTable).upsert(model.toJson());
+  /// Upsert a prescription (insert or update). Returns the `updated_at` the
+  /// server gave this write (see `settlePushedRow`), or null when the
+  /// response carries none.
+  Future<DateTime?> upsertPrescription(PrescriptionModel model) async {
+    final response = await _client
+        .from(AppConstants.prescriptionsTable)
+        .upsert(model.toJson())
+        .select('updated_at')
+        .maybeSingle();
+    return serverStampOf(response);
   }
 
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`

@@ -6,7 +6,7 @@
 /// **last write wins by `updated_at`**, on both sides:
 ///
 /// - On the **push** side a `pending_update` is compared against the remote
-///   row's `updated_at` first ([staleAgainstRemote]); a strictly newer
+///   row's `updated_at` first ([_staleAgainstRemote]); a strictly newer
 ///   remote row is left alone and the local row stays pending, so the pull
 ///   phase overwrites it — the pull cursor is rewound far enough to guarantee
 ///   that ([_skipStale]). The skip is counted in [SyncReport.skippedStale],
@@ -15,6 +15,12 @@
 ///   and `forcePush` skips the comparison entirely.
 /// - On the **pull** side [_localPendingIsNewer] keeps a locally pending row
 ///   that is at least as new as the remote copy.
+/// - A pushed row is marked synced only if it is still the copy the push
+///   read ([_settlePushed]); a row edited meanwhile stays pending and the
+///   cycle runs once more.
+///
+/// For treatments this is the only push path: the repository writes locally
+/// and asks for a [syncAll], which queues behind a running cycle.
 ///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
@@ -44,6 +50,7 @@ import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/sync/push_settle.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
@@ -377,7 +384,7 @@ class SyncService {
         await medicationRemote!.deleteMedication(model.id);
         await medicationLocal.hardDelete(model.id);
       } else {
-        final staleAt = await staleAgainstRemote(
+        final staleAt = await _staleAgainstRemote(
           row,
           medicationRemote!.getUpdatedAt,
           force: forceAll,
@@ -386,8 +393,8 @@ class SyncService {
           await _skipStale('medications', report, staleAt);
           return false;
         }
-        await medicationRemote!.upsertMedication(model);
-        await medicationLocal.markSynced(model.id);
+        final serverAt = await medicationRemote!.upsertMedication(model);
+        await _settlePushed('medications', row, serverAt);
       }
       return true;
     });
@@ -398,7 +405,7 @@ class SyncService {
         await treatmentRemote!.deleteTreatment(model.id);
         await treatmentLocal.hardDelete(model.id);
       } else {
-        final staleAt = await staleAgainstRemote(
+        final staleAt = await _staleAgainstRemote(
           row,
           treatmentRemote!.getUpdatedAt,
           force: forceAll,
@@ -407,8 +414,8 @@ class SyncService {
           await _skipStale('treatments', report, staleAt);
           return false;
         }
-        await treatmentRemote!.upsertTreatment(model);
-        await treatmentLocal.markSynced(model.id);
+        final serverAt = await treatmentRemote!.upsertTreatment(model);
+        await _settlePushed('treatments', row, serverAt);
       }
       return true;
     });
@@ -419,7 +426,7 @@ class SyncService {
         await prescriptionRemote!.deletePrescription(model.id);
         await prescriptionLocal.hardDelete(model.id);
       } else {
-        final staleAt = await staleAgainstRemote(
+        final staleAt = await _staleAgainstRemote(
           row,
           prescriptionRemote!.getUpdatedAt,
           force: forceAll,
@@ -428,8 +435,8 @@ class SyncService {
           await _skipStale('prescriptions', report, staleAt);
           return false;
         }
-        await prescriptionRemote!.upsertPrescription(model);
-        await prescriptionLocal.markSynced(model.id);
+        final serverAt = await prescriptionRemote!.upsertPrescription(model);
+        await _settlePushed('prescriptions', row, serverAt);
       }
       return true;
     });
@@ -440,7 +447,7 @@ class SyncService {
         await doseLogRemote!.deleteDoseLog(model.id);
         await doseLogLocal.hardDelete(model.id);
       } else {
-        final staleAt = await staleAgainstRemote(
+        final staleAt = await _staleAgainstRemote(
           row,
           doseLogRemote!.getUpdatedAt,
           force: forceAll,
@@ -449,11 +456,29 @@ class SyncService {
           await _skipStale('dose_logs', report, staleAt);
           return false;
         }
-        await doseLogRemote!.upsertDoseLog(model);
-        await doseLogLocal.markSynced(model.id);
+        final serverAt = await doseLogRemote!.upsertDoseLog(model);
+        await _settlePushed('dose_logs', row, serverAt);
       }
       return true;
     });
+  }
+
+  /// Settles a row this cycle has just pushed (see [settlePushedRow]): synced
+  /// only if nobody changed it since the push read it. A row edited meanwhile
+  /// stays pending, and a plain sync runs once more to send it.
+  Future<void> _settlePushed(
+    String table,
+    Map<String, dynamic> row,
+    DateTime? serverUpdatedAt,
+  ) async {
+    final stillPending = await settlePushedRow(
+      await AppDatabase.instance.database,
+      table,
+      id: row['id'] as String,
+      pushedUpdatedAt: row['updated_at'],
+      serverUpdatedAt: serverUpdatedAt,
+    );
+    if (stillPending) _rerunRequested = true;
   }
 
   /// The remote `updated_at` when the push of [row] must be skipped because
@@ -465,10 +490,7 @@ class SyncService {
   /// push ([forcePush]) is an explicit "my copy is the truth" request. When
   /// either side has no usable `updated_at`, or the remote row is gone, the
   /// push goes ahead.
-  ///
-  /// Static and public so a repository's immediate background push applies
-  /// exactly the same rule as the sync cycle.
-  static Future<DateTime?> staleAgainstRemote(
+  static Future<DateTime?> _staleAgainstRemote(
     Map<String, dynamic> row,
     Future<DateTime?> Function(String id) remoteUpdatedAt, {
     required bool force,

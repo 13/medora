@@ -94,16 +94,6 @@ class TreatmentLocalDatasource {
     );
   }
 
-  Future<void> markSynced(String id) async {
-    final db = await _db;
-    await db.update(
-      'treatments',
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('treatments');
