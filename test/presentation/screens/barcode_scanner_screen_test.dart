@@ -8,6 +8,7 @@
 /// so [_settleWithIo] alternates real time (`runAsync`) with pumps.
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -78,6 +79,26 @@ class _CabinetRepo extends FailingMedicationRepo {
   Future<Result<Medication?>> getMedicationByBarcode(String barcode) async {
     lookups.add(barcode);
     return Result.success(match);
+  }
+}
+
+/// A camera whose shutter stays open until the test lets it close.
+class _GatedCamera extends FakeCamera {
+  _GatedCamera({super.photoPath});
+
+  final gate = Completer<void>();
+  bool _busy = false;
+
+  @override
+  bool get isTakingPicture => _busy;
+
+  @override
+  Future<String?> takePicture() async {
+    takePictureCalls++;
+    _busy = true;
+    await gate.future;
+    _busy = false;
+    return photoPath;
   }
 }
 
@@ -793,5 +814,301 @@ void main() {
     // The indicator has to stay truthful: one reading "off" would make the
     // button ask for the light to come on, with no way left to kill it.
     expect(find.byIcon(Icons.flash_on), findsOneWidget);
+  });
+
+  // ── Camera lifecycle ──────────────────
+
+  testWidgets('a device with no camera disables every way to take one', (
+    tester,
+  ) async {
+    final camera = FakeCamera(opens: false);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+
+    expect(camera.initializeCalls, 1);
+    // Neither a preview nor the spinner that waits for one.
+    expect(find.byKey(const ValueKey('fakeCameraPreview')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithIcon(FilledButton, Icons.camera_alt),
+          )
+          .onPressed,
+      isNull,
+    );
+    // No torch to offer either.
+    expect(find.byIcon(Icons.flash_off), findsNothing);
+  });
+
+  testWidgets('a camera that will not open reports it and does not crash', (
+    tester,
+  ) async {
+    final camera = FakeCamera(failsToOpen: true);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+
+    expect(camera.initializeCalls, 1);
+    expect(find.text('Something went wrong'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the camera is released when the app leaves and reopened on '
+      'resume', (tester) async {
+    final camera = FakeCamera(photoPath: photo);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+    expect(camera.initializeCalls, 1);
+    expect(find.byKey(const ValueKey('fakeCameraPreview')), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    // Not [_settle]: with the camera gone the screen waits on a spinner,
+    // which never settles.
+    await tester.pump();
+    expect(camera.disposeCalls, 1);
+    expect(find.byKey(const ValueKey('fakeCameraPreview')), findsNothing);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+    expect(camera.initializeCalls, 2, reason: 'reopened exactly once');
+    expect(camera.disposeCalls, 1);
+    expect(find.byKey(const ValueKey('fakeCameraPreview')), findsOneWidget);
+  });
+
+  testWidgets('leaving the scanner releases the camera', (tester) async {
+    final camera = FakeCamera(photoPath: photo);
+    await _pumpScanner(
+      tester,
+      returnBarcodeOnly: true,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+    await tester.tap(find.text('open scanner'));
+    await _settle(tester);
+    expect(camera.initializeCalls, 1);
+    expect(camera.disposeCalls, 0);
+
+    await tester.pageBack();
+    await _settle(tester);
+
+    // Nothing else will: the port outlives the screen.
+    expect(camera.disposeCalls, 1);
+  });
+
+  testWidgets('the review freezes the preview and retake starts it again', (
+    tester,
+  ) async {
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final camera = FakeCamera(photoPath: photo);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [_minsan('107018')],
+          const <OcrLine>[],
+        ],
+        camera: camera,
+      ),
+    );
+    await _shoot(tester);
+
+    expect(camera.takePictureCalls, 1);
+    expect(camera.pauseCalls, 1);
+    expect(camera.resumeCalls, 0);
+
+    await tester.tap(find.text('Retake'));
+    await _settleWithIo(tester, rounds: 12);
+    await _settle(tester);
+
+    expect(camera.resumeCalls, 1);
+    // The same camera, not a second one.
+    expect(camera.initializeCalls, 1);
+    expect(camera.disposeCalls, 0);
+    expect(find.byKey(const ValueKey('scanRow1')), findsNothing);
+    expect(find.byKey(const ValueKey('fakeCameraPreview')), findsOneWidget);
+  });
+
+  testWidgets('an open shutter closes every other way into a photo', (
+    tester,
+  ) async {
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final camera = _GatedCamera(photoPath: photo);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [_minsan('107018')],
+          const <OcrLine>[],
+        ],
+        camera: camera,
+      ),
+    );
+
+    await tester.tap(find.widgetWithIcon(FilledButton, Icons.camera_alt));
+    await tester.pump();
+    expect(camera.takePictureCalls, 1);
+
+    final shutter = find.widgetWithIcon(FilledButton, Icons.camera_alt);
+    expect(tester.widget<FilledButton>(shutter).onPressed, isNull);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.photo_library_outlined),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.keyboard))
+          .onPressed,
+      isNull,
+    );
+
+    await tester.tap(shutter, warnIfMissed: false);
+    await tester.pump();
+    expect(camera.takePictureCalls, 1, reason: 'a second photo was refused');
+
+    camera.gate.complete();
+    await _settleWithIo(tester);
+    await _settle(tester);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('scanRow1')),
+        matching: find.text('107018'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a torch the camera refuses leaves the indicator alone', (
+    tester,
+  ) async {
+    final camera = FakeCamera(photoPath: photo)..torchWorks = false;
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+
+    await tester.tap(find.byIcon(Icons.flash_off));
+    await _settle(tester);
+
+    expect(camera.torchOn, isFalse);
+    expect(find.byIcon(Icons.flash_off), findsOneWidget);
+    expect(find.byIcon(Icons.flash_on), findsNothing);
+  });
+
+  testWidgets('tapping the preview focuses where it was tapped', (
+    tester,
+  ) async {
+    final camera = FakeCamera(photoPath: photo);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+
+    final preview = find.byKey(const ValueKey('fakeCameraPreview'));
+    await tester.tapAt(tester.getCenter(preview));
+    await _settle(tester);
+
+    expect(camera.focusPoints, hasLength(1));
+    expect(camera.focusPoints.single.dx, closeTo(0.5, 0.01));
+    expect(camera.focusPoints.single.dy, closeTo(0.5, 0.01));
+  });
+
+  // ── Gallery ───────────────────────
+
+  testWidgets('a gallery pick is recognised like a capture', (tester) async {
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final camera = FakeCamera(photoPath: photo);
+    final gallery = FakeGallery(path: photo);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [_minsan('107018')],
+          const <OcrLine>[],
+        ],
+        camera: camera,
+        gallery: gallery,
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.photo_library_outlined));
+    await _settleWithIo(tester);
+    await _settle(tester);
+
+    expect(gallery.calls, 1);
+    expect(camera.takePictureCalls, 0);
+    expect(camera.pauseCalls, 1);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('scanRow1')),
+        matching: find.text('107018'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a cancelled gallery pick stays on the camera', (tester) async {
+    final gallery = FakeGallery();
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], gallery: gallery),
+    );
+
+    await tester.tap(find.byIcon(Icons.photo_library_outlined));
+    await _settleWithIo(tester, rounds: 6);
+    await _settle(tester);
+
+    expect(gallery.calls, 1);
+    expect(find.text('Something went wrong'), findsNothing);
+    // Still on the capture stage, and able to shoot again.
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithIcon(FilledButton, Icons.camera_alt),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('a gallery that refuses to open reports the error', (
+    tester,
+  ) async {
+    final gallery = FakeGallery(fails: true);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], gallery: gallery),
+    );
+
+    await tester.tap(find.byIcon(Icons.photo_library_outlined));
+    await _settleWithIo(tester, rounds: 6);
+    await _settle(tester);
+
+    expect(gallery.calls, 1);
+    expect(find.text('Something went wrong'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithIcon(FilledButton, Icons.camera_alt),
+          )
+          .onPressed,
+      isNotNull,
+    );
   });
 }

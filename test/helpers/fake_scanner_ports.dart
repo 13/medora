@@ -142,14 +142,18 @@ class FakeCamera implements CameraPort {
 
 /// A gallery picker that returns a fixed path, or null for a cancel.
 class FakeGallery implements GalleryPort {
-  FakeGallery({this.path});
+  FakeGallery({this.path, this.fails = false});
 
   String? path;
+
+  /// Whether picking throws (the picker refused, e.g. no permission).
+  bool fails;
   int calls = 0;
 
   @override
   Future<String?> pickImage() async {
     calls++;
+    if (fails) throw StateError('gallery unavailable');
     return path;
   }
 }
