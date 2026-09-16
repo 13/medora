@@ -365,7 +365,9 @@ void main() {
         find.descendant(
           of: dialog,
           matching: find.text(
-            'End "Sinusitis"? This will deactivate all prescriptions.',
+            'End "Sinusitis"? No new doses or reminders will be created for '
+            'its medicines, and no further doses can be logged. Doses already '
+            'recorded are kept.',
           ),
         ),
         findsOneWidget,
@@ -405,6 +407,36 @@ void main() {
       expect(t.isActive, isFalse);
       expect(t.sickLeaveTo, isNull);
     });
+
+    for (final (locale, label, message) in const [
+      (
+        'de',
+        'Behandlung beenden',
+        '"Sinusitis" beenden? Für die Medikamente dieser Behandlung werden '
+            'keine neuen Dosen und Erinnerungen mehr angelegt, und es lassen '
+            'sich keine weiteren Dosen eintragen. Bereits eingetragene Dosen '
+            'bleiben erhalten.',
+      ),
+      (
+        'it',
+        'Termina trattamento',
+        'Terminare "Sinusitis"? Per i farmaci di questo trattamento non '
+            'verranno più pianificate dosi né inviati promemoria, e non si '
+            'potranno registrare altre dosi. Le dosi già registrate restano '
+            'salvate.',
+      ),
+    ]) {
+      testWidgets('the $locale message says what ending does (review I-3)', (
+        tester,
+      ) async {
+        await seedAndPump(tester, locale: Locale(locale));
+        await openEndDialog(tester, label: label);
+        expect(
+          find.descendant(of: dialog, matching: find.text(message)),
+          findsOneWidget,
+        );
+      });
+    }
 
     testWidgets('German reads "Krankenstand heute ebenfalls beenden (bis '
         '5. März 2026)"', (tester) async {
@@ -745,6 +777,18 @@ void main() {
       );
       expect(find.text('1 tablet · As Needed'), findsOneWidget);
       expect(logButton, findsNothing);
+    });
+
+    testWidgets('an ended episode offers no "Log dose", and its prescription '
+        'stays active (review I-3)', (tester) async {
+      await seedAndPump(tester, active: false, beforePump: seedPrescription);
+      expect(find.text('1 tablet · As Needed'), findsOneWidget);
+      expect(logButton, findsNothing);
+      expect(find.text('Log dose'), findsNothing);
+      final stored = await (await AppDatabase.instance.database).query(
+        'prescriptions',
+      );
+      expect(stored.single['is_active'], 1);
     });
 
     testWidgets('a scheduled one offers no "Log dose"', (tester) async {

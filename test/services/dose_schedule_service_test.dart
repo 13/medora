@@ -141,6 +141,93 @@ void main() {
     expect(doses.regenerations, 1);
   });
 
+  group('an ended treatment (review I-3)', () {
+    Future<void> setTreatmentActive(String id, {required bool active}) async {
+      final db = await AppDatabase.instance.database;
+      await db.update(
+        'treatments',
+        {'is_active': active ? 1 : 0},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+
+    Future<List<Map<String, Object?>>> prescriptionRows() async =>
+        (await AppDatabase.instance.database).query('prescriptions');
+
+    test('its prescriptions get no doses on the schedule check, and stay as '
+        'they were stored', () async {
+      final db = await AppDatabase.instance.database;
+      final p = await seedPrescription(db, startTime: start, durationDays: 1);
+      await setTreatmentActive(p.treatmentId, active: false);
+      final before = await prescriptionRows();
+
+      expect(await service.ensureScheduled(), 0);
+      expect(doses.regenerations, 0);
+      expect(await db.query('dose_logs'), isEmpty);
+      // Ending changes nothing about the prescriptions themselves, so
+      // nothing about them is pushed.
+      expect(await prescriptionRows(), before);
+    });
+
+    test('its prescriptions get no doses when a pull brings them', () async {
+      final db = await AppDatabase.instance.database;
+      final added = await seedPrescription(db, startTime: start);
+      final changed = await seedPrescription(db, startTime: start);
+      await setTreatmentActive(added.treatmentId, active: false);
+      await setTreatmentActive(changed.treatmentId, active: false);
+
+      final handled = await service.applyPulled(
+        PulledPrescriptions(
+          added: {added.prescriptionId},
+          changed: {changed.prescriptionId},
+        ),
+      );
+
+      expect(handled, 0);
+      expect(await db.query('dose_logs'), isEmpty);
+    });
+
+    test('generating its doses directly creates none and keeps what was '
+        'recorded', () async {
+      final db = await AppDatabase.instance.database;
+      final p = await seedPrescription(db, startTime: start, durationDays: 1);
+      final taken = await seedDoseLog(
+        db,
+        p.prescriptionId,
+        start,
+        status: 'taken',
+        takenTime: start,
+      );
+      await setTreatmentActive(p.treatmentId, active: false);
+
+      final generated = await doses.generateDoseLogsForPrescription(
+        p.prescriptionId,
+      );
+      final regenerated = await doses.regenerateDoseLogsForPrescription(
+        p.prescriptionId,
+      );
+
+      expect(generated.isSuccess, isTrue);
+      expect(regenerated.isSuccess, isTrue);
+      final rows = await db.query('dose_logs');
+      expect(rows.map((r) => r['id']), [taken]);
+      expect(rows.single['status'], 'taken');
+    });
+
+    test('made active again, it is generated again', () async {
+      final db = await AppDatabase.instance.database;
+      final p = await seedPrescription(db, startTime: start, durationDays: 1);
+      await setTreatmentActive(p.treatmentId, active: false);
+      expect(await service.ensureScheduled(), 0);
+
+      await setTreatmentActive(p.treatmentId, active: true);
+
+      expect(await service.ensureScheduled(), 1);
+      expect(await db.query('dose_logs'), hasLength(3));
+    });
+  });
+
   test('calls made while a check runs share it', () async {
     final db = await AppDatabase.instance.database;
     final p = await seedPrescription(db, startTime: start, durationDays: 1);

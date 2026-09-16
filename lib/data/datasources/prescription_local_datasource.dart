@@ -28,6 +28,9 @@ class PrescriptionLocalDatasource {
     return rows.map(PrescriptionModel.fromLocalMap).toList();
   }
 
+  /// The prescriptions that are running: active themselves, and not part of
+  /// an ended treatment. Ending a treatment leaves its prescriptions' own
+  /// state alone (nothing to push), so the treatment is checked here.
   Future<List<PrescriptionModel>> getActivePrescriptions() async {
     final db = await _db;
     final rows = await db.rawQuery(
@@ -35,12 +38,34 @@ class PrescriptionLocalDatasource {
       SELECT p.*, m.name AS medication_name
       FROM prescriptions p
       LEFT JOIN medications m ON p.medication_id = m.id
+      LEFT JOIN treatments t ON p.treatment_id = t.id
       WHERE p.is_active = 1 AND p.sync_status != ?
+        AND $_treatmentRunning
       ORDER BY p.start_time ASC
     ''',
       [SyncStatus.pendingDelete],
     );
     return rows.map(PrescriptionModel.fromLocalMap).toList();
+  }
+
+  /// A prescription whose treatment is gone counts as running, as in the
+  /// dose queries.
+  static const _treatmentRunning = '(t.id IS NULL OR t.is_active = 1)';
+
+  /// Whether prescription [id] belongs to a treatment that has ended. Such a
+  /// prescription gets no new doses until the treatment is active again.
+  Future<bool> isInEndedTreatment(String id) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      '''
+      SELECT 1 FROM prescriptions p
+      LEFT JOIN treatments t ON p.treatment_id = t.id
+      WHERE p.id = ? AND NOT $_treatmentRunning
+      LIMIT 1
+    ''',
+      [id],
+    );
+    return rows.isNotEmpty;
   }
 
   Future<PrescriptionModel?> getPrescriptionById(String id) async {

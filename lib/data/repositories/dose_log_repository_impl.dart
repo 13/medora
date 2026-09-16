@@ -199,6 +199,16 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         return const Result.failure('Prescription not found');
       }
 
+      // An ended treatment's prescriptions keep their own state, but get no
+      // new doses (and so no reminders) until the treatment runs again.
+      if (await prescriptionLocal.isInEndedTreatment(prescriptionId)) {
+        debugPrint(
+          'generateDoseLogs: prescription $prescriptionId belongs to an '
+          'ended treatment; nothing to generate',
+        );
+        return const Result.success([]);
+      }
+
       final entity = prescription.toDomain();
       final scheduledTimes = entity.scheduledDoseTimes;
 

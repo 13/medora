@@ -163,7 +163,7 @@
   "treatment": "Treatment",
   "treatmentNotFound": "Treatment not found",
   "endTreatment": "End Treatment",
-  "endTreatmentConfirm": "End \"{name}\"? This will deactivate all prescriptions.",
+  "endTreatmentConfirm": "End \"{name}\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.",
   "@endTreatmentConfirm": {
     "placeholders": {
       "name": { "type": "String" }

@@ -715,8 +715,11 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                               // tick off: each intake is logged here. Below
                               // the tile, not in its subtitle, which is too
                               // narrow at 360 dp to keep "Dosis eintragen"
-                              // on one line.
-                              if (p.scheduleType == 'as_needed' && p.isActive)
+                              // on one line. An ended treatment takes no
+                              // more doses.
+                              if (p.scheduleType == 'as_needed' &&
+                                  p.isActive &&
+                                  treatment.isActive)
                                 Padding(
                                   padding: const EdgeInsetsDirectional.fromSTEB(
                                     8,

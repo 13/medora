@@ -53,15 +53,20 @@ class DoseScheduleService {
   /// Brings the doses of the prescriptions a pull stored in line with them,
   /// as the device that made the change did: a changed schedule is
   /// regenerated (the pending doses it no longer has are dropped here), a
-  /// new prescription is generated. A paused prescription gets nothing.
-  /// Returns how many prescriptions were handled.
+  /// new prescription is generated. A paused prescription, or one of an
+  /// ended treatment, gets nothing. Returns how many prescriptions were
+  /// handled.
   Future<int> applyPulled(PulledPrescriptions pulled) async {
+    if (pulled.isEmpty) return 0;
+    final running = {
+      for (final p
+          in (await _prescriptions.getActivePrescriptions()).dataOrNull ??
+              const <Prescription>[])
+        p.id,
+    };
     var handled = 0;
     for (final id in {...pulled.changed, ...pulled.added}) {
-      final prescription = (await _prescriptions.getPrescriptionById(
-        id,
-      )).dataOrNull;
-      if (prescription == null || !prescription.isActive) continue;
+      if (!running.contains(id)) continue;
       final result = pulled.changed.contains(id)
           ? await _doses.regenerateDoseLogsForPrescription(id)
           : await _doses.generateDoseLogsForPrescription(id);
@@ -70,7 +75,8 @@ class DoseScheduleService {
     return handled;
   }
 
-  /// Regenerates every active prescription that has not ended and whose
+  /// Regenerates every running prescription (active, in a treatment that
+  /// has not ended) whose schedule has not run out and whose
   /// stored doses differ from its schedule: a scheduled time with no dose,
   /// or a pending dose at a time the schedule does not have. Compares times,
   /// not counts, so a schedule moved to other times of day is caught too.

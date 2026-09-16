@@ -339,7 +339,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String endTreatmentConfirm(String name) {
-    return 'Terminare \"$name\"? Tutte le prescrizioni saranno disattivate.';
+    return 'Terminare \"$name\"? Per i farmaci di questo trattamento non verranno più pianificate dosi né inviati promemoria, e non si potranno registrare altre dosi. Le dosi già registrate restano salvate.';
   }
 
   @override

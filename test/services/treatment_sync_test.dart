@@ -223,6 +223,65 @@ void main() {
     expect(r.remote.table.rows, isEmpty);
   });
 
+  test('End leaves the prescriptions and their doses as they were, and '
+      'pushes nothing for them (review I-3)', () async {
+    final r = _Rig();
+    await seedInSync(r);
+    final db = await AppDatabase.instance.database;
+    const stamp = '2026-03-02T08:00:00.000Z';
+    await db.insert('medications', {
+      'id': 'm1',
+      'name': 'Ibuprofen',
+      'quantity': 10,
+      'quantity_unit': 'tablets',
+      'minimum_stock_level': 0,
+      'created_at': stamp,
+      'updated_at': stamp,
+      'sync_status': SyncStatus.synced,
+    });
+    await db.insert('prescriptions', {
+      'id': 'p1',
+      'treatment_id': 't1',
+      'medication_id': 'm1',
+      'dosage': '1 tablet',
+      'dosage_amount': 1.0,
+      'interval_hours': 8,
+      'duration_days': 7,
+      'start_time': '2026-03-02T08:00:00.000',
+      'is_active': 1,
+      'auto_diminish': 0,
+      'schedule_type': 'fixed_interval',
+      'created_at': stamp,
+      'updated_at': stamp,
+      'sync_status': SyncStatus.synced,
+    });
+    for (final (id, status) in [('d1', 'taken'), ('d2', 'pending')]) {
+      await db.insert('dose_logs', {
+        'id': id,
+        'prescription_id': 'p1',
+        'scheduled_time': '2026-03-02T${id == 'd1' ? '08' : '16'}:00:00.000',
+        'status': status,
+        'created_at': stamp,
+        'updated_at': stamp,
+        'sync_status': SyncStatus.synced,
+      });
+    }
+    Future<List<Map<String, Object?>>> rows(String table) =>
+        db.query(table, orderBy: 'id');
+    final medicationsBefore = await rows('medications');
+    final prescriptionsBefore = await rows('prescriptions');
+    final dosesBefore = await rows('dose_logs');
+
+    await r.repo.endTreatment('t1');
+    await r.idle();
+
+    expect(r.remote.table.rows['t1']!['is_active'], isFalse);
+    expect(await rows('medications'), medicationsBefore);
+    expect(await rows('prescriptions'), prescriptionsBefore);
+    expect(await rows('dose_logs'), dosesBefore);
+    expect(r.service.lastReport?.pushed, 1);
+  });
+
   test('End creates the server row when the server has none', () async {
     final r = _Rig();
     await r.local.upsert(episode, syncStatus: SyncStatus.pendingCreate);

@@ -112,7 +112,7 @@
   "treatment": "Behandlung",
   "treatmentNotFound": "Behandlung nicht gefunden",
   "endTreatment": "Behandlung beenden",
-  "endTreatmentConfirm": "\"{name}\" beenden? Alle Verschreibungen werden deaktiviert.",
+  "endTreatmentConfirm": "\"{name}\" beenden? Für die Medikamente dieser Behandlung werden keine neuen Dosen und Erinnerungen mehr angelegt, und es lassen sich keine weiteren Dosen eintragen. Bereits eingetragene Dosen bleiben erhalten.",
   "startDate": "Startdatum",
   "endDate": "Enddatum",
   "ongoing": "Laufend",

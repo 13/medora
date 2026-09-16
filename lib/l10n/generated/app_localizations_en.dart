@@ -336,7 +336,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String endTreatmentConfirm(String name) {
-    return 'End \"$name\"? This will deactivate all prescriptions.';
+    return 'End \"$name\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.';
   }
 
   @override

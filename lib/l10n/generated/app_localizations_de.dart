@@ -341,7 +341,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String endTreatmentConfirm(String name) {
-    return '\"$name\" beenden? Alle Verschreibungen werden deaktiviert.';
+    return '\"$name\" beenden? Für die Medikamente dieser Behandlung werden keine neuen Dosen und Erinnerungen mehr angelegt, und es lassen sich keine weiteren Dosen eintragen. Bereits eingetragene Dosen bleiben erhalten.';
   }
 
   @override

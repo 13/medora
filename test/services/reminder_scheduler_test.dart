@@ -246,6 +246,35 @@ void main() {
     },
   );
 
+  test('an ended treatment raises no reminders for its prescriptions, which '
+      'stay active (review I-3)', () async {
+    final db = await AppDatabase.instance.database;
+    final running = await seedPrescription(db);
+    final ended = await seedPrescription(db);
+    await db.update(
+      'treatments',
+      {'is_active': 0},
+      where: 'id = ?',
+      whereArgs: [ended.treatmentId],
+    );
+    final due = await seedDoseLog(
+      db,
+      running.prescriptionId,
+      now.add(const Duration(hours: 1)),
+    );
+    await seedDoseLog(
+      db,
+      ended.prescriptionId,
+      now.add(const Duration(hours: 2)),
+    );
+
+    final port = FakePort();
+    final count = await make(port).reconcile();
+
+    expect(count, 1);
+    expect(port.scheduled.map((d) => d.id), [due]);
+  });
+
   test(
     'second reconcile only cancels removed and schedules added doses',
     () async {

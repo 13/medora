@@ -685,7 +685,7 @@ abstract class AppLocalizations {
   /// No description provided for @endTreatmentConfirm.
   ///
   /// In en, this message translates to:
-  /// **'End \"{name}\"? This will deactivate all prescriptions.'**
+  /// **'End \"{name}\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.'**
   String endTreatmentConfirm(String name);
 
   /// No description provided for @startDate.
