@@ -16,19 +16,19 @@
 /// copy inside the app's temporary directory (Android copies picks into the
 /// app cache); a path outside it could be the user's original and is never
 /// touched.
+///
+/// The camera, the gallery picker and both ML Kit detectors are reached
+/// through the ports in `scanner_ports.dart`, read from providers, so this
+/// screen can be pumped in a widget test with fakes in their place.
 library;
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
@@ -40,14 +40,12 @@ import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
 import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
 import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
-import 'package:medora/services/aifa_cache_service.dart';
-import 'package:medora/services/barcode_adapter.dart';
 import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/image_size.dart';
-import 'package:medora/services/ocr_adapter.dart';
 import 'package:medora/services/register_freshness.dart';
 import 'package:medora/services/scan_debug.dart';
 import 'package:medora/services/scan_region.dart';
+import 'package:medora/services/scanner_ports.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/supplement_resolution.dart';
 import 'package:path/path.dart' as p;
@@ -99,11 +97,25 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     with WidgetsBindingObserver {
   static const Color _onScrim = Color(0xFFFFFFFF); // on scrim
 
-  CameraController? _cameraController;
-  final TextRecognizer _textRecognizer = TextRecognizer();
-  final BarcodeScanner _barcodeScanner = BarcodeScanner(
-    formats: scanBarcodeFormats,
+  /// The plugin seams, read once. The providers own them (see
+  /// `scanner_ports.dart`); overriding those is what lets a widget test pump
+  /// this screen at all.
+  late final TextRecognitionPort _textPort = ref.read(
+    textRecognitionPortProvider,
   );
+  late final BarcodeScanPort _barcodePort = ref.read(barcodeScanPortProvider);
+  late final CameraPort _cameraPort = ref.read(cameraPortProvider);
+  late final GalleryPort _galleryPort = ref.read(galleryPortProvider);
+  late final Future<List<AifaSearchResult>> Function(String code) _aifaSearch =
+      ref.read(aifaSearchProvider);
+
+  /// Whether the camera is ours to drive: what a non-null controller used to
+  /// say, before a lifecycle pause released it.
+  bool _cameraLive = false;
+
+  /// Bumped by every initialisation and every release, so an initialisation
+  /// overtaken by a newer one (or by a pause) drops its result.
+  int _cameraGeneration = 0;
 
   _ScanStage _stage = _ScanStage.capture;
   bool _isSearching = false;
@@ -172,17 +184,17 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _cameraController;
     if (state == AppLifecycleState.inactive) {
-      if (controller == null) return;
-      _cameraController = null;
+      if (!_cameraLive) return;
+      _cameraLive = false;
+      _cameraGeneration++;
       _torchOn = false;
       if (mounted) setState(() => _isCameraReady = false);
-      controller.dispose();
+      unawaited(_cameraPort.dispose());
     } else if (state == AppLifecycleState.resumed) {
       // Review keeps the photo; the camera comes back on retake.
-      if (_stage == _ScanStage.capture && controller == null) {
-        _initializeCamera();
+      if (_stage == _ScanStage.capture && !_cameraLive) {
+        unawaited(_initializeCamera());
       }
     }
   }
@@ -190,9 +202,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _cameraController?.dispose();
-    _textRecognizer.close();
-    _barcodeScanner.close();
+    // The detectors belong to the providers, which close them; the camera is
+    // released here so the next screen can open it.
+    unawaited(_cameraPort.dispose());
     _discardPhoto();
     super.dispose();
   }
@@ -200,35 +212,18 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   // ── Camera ─────────────────────────────────────────────────
 
   Future<void> _initializeCamera() async {
-    CameraController? controller;
+    final generation = ++_cameraGeneration;
+    _cameraLive = true;
     try {
-      final cameras = await availableCameras();
-      if (!mounted) return;
-      if (cameras.isEmpty) {
+      final ready = await _cameraPort.initialize();
+      // A newer initialisation (or a lifecycle pause) replaced this one.
+      if (!mounted || generation != _cameraGeneration) return;
+      if (!ready) {
+        // No camera on this device: nothing to come back to on resume.
+        _cameraLive = false;
         setState(() => _cameraFailed = true);
         return;
       }
-
-      final backCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-
-      controller = CameraController(
-        backCamera,
-        ResolutionPreset.veryHigh,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      _cameraController = controller;
-      await controller.initialize();
-      if (!mounted || _cameraController != controller) return;
-      try {
-        await controller.setFocusMode(FocusMode.auto);
-      } on CameraException catch (e) {
-        debugPrint('Camera focus mode unsupported: $e');
-      }
-      if (!mounted || _cameraController != controller) return;
       setState(() {
         _isCameraReady = true;
         _cameraFailed = false;
@@ -238,8 +233,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       if (_stage != _ScanStage.capture) await _pausePreview();
     } catch (e) {
       debugPrint('Camera init error: $e');
-      // A newer initialisation (or a lifecycle pause) replaced this one.
-      if (!mounted || _cameraController != controller) return;
+      if (!mounted || generation != _cameraGeneration) return;
       setState(() {
         _isCameraReady = false;
         _cameraFailed = true;
@@ -254,81 +248,66 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     Size viewport,
     Orientation orientation,
   ) async {
-    final controller = _cameraController;
-    final previewSize = controller?.value.previewSize;
-    if (controller == null || !_isCameraReady || previewSize == null) return;
-    final point = BarcodeScannerScreen.focusPointFor(
-      tap: local,
-      viewport: viewport,
-      previewSize: previewSize,
-      orientation: orientation,
+    final previewSize = _cameraPort.previewSize;
+    if (!_isCameraReady || previewSize == null) return;
+    await _cameraPort.setFocusPoint(
+      BarcodeScannerScreen.focusPointFor(
+        tap: local,
+        viewport: viewport,
+        previewSize: previewSize,
+        orientation: orientation,
+      ),
     );
-    try {
-      await controller.setFocusPoint(point);
-    } on CameraException catch (e) {
-      debugPrint('Camera focus point unsupported: $e');
-    }
   }
 
   Future<void> _toggleTorch() async {
-    final controller = _cameraController;
-    if (controller == null) return;
-    try {
-      await controller.setFlashMode(_torchOn ? FlashMode.off : FlashMode.torch);
-      if (mounted) setState(() => _torchOn = !_torchOn);
-    } on CameraException catch (e) {
-      debugPrint('Torch error: $e');
-    }
+    if (!_cameraLive) return;
+    // The indicator only follows a torch that actually switched.
+    if (!await _cameraPort.setTorch(!_torchOn)) return;
+    if (mounted) setState(() => _torchOn = !_torchOn);
   }
 
   Future<void> _pausePreview() async {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    try {
-      if (_torchOn) {
-        await controller.setFlashMode(FlashMode.off);
-        _torchOn = false;
-      }
-      await controller.pausePreview();
-    } on CameraException catch (e) {
-      debugPrint('Camera pause error: $e');
+    if (!_cameraPort.isReady) return;
+    if (_torchOn) {
+      await _cameraPort.setTorch(false);
+      _torchOn = false;
     }
+    await _cameraPort.pausePreview();
   }
 
   Future<void> _resumePreview() async {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
-      _cameraController = null;
+    if (!_cameraLive || !_cameraPort.isReady) {
+      _cameraLive = false;
       await _initializeCamera();
       return;
     }
-    try {
-      await controller.resumePreview();
-    } on CameraException catch (e) {
-      debugPrint('Camera resume error: $e');
-    }
+    await _cameraPort.resumePreview();
   }
 
   // ── Capture → recognize ────────────────────────────────────
 
   Future<void> _takePhoto() async {
-    final controller = _cameraController;
-    if (controller == null ||
-        !_isCameraReady ||
+    if (!_isCameraReady ||
         _stage != _ScanStage.capture ||
-        controller.value.isTakingPicture) {
+        _cameraPort.isTakingPicture) {
       return;
     }
     try {
-      final capture = controller.takePicture();
+      final capture = _cameraPort.takePicture();
       // isTakingPicture is now true: disable gallery and manual entry.
       setState(() {});
-      final file = await capture;
-      if (!mounted) {
-        unawaited(_deleteFile(file.path));
+      final path = await capture;
+      if (path == null) {
+        // No photo was written; nothing to recognise or to report.
+        if (mounted) setState(() {});
         return;
       }
-      await _recognize(file.path, isTemp: true);
+      if (!mounted) {
+        unawaited(_deleteFile(path));
+        return;
+      }
+      await _recognize(path, isTemp: true);
     } catch (e) {
       debugPrint('Take picture error: $e');
       if (mounted) {
@@ -338,21 +317,20 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
-  bool get _isTakingPicture =>
-      _cameraController?.value.isTakingPicture ?? false;
+  bool get _isTakingPicture => _cameraPort.isTakingPicture;
 
   Future<void> _pickFromGallery() async {
     if (_stage != _ScanStage.capture || _picking || _isTakingPicture) return;
     setState(() => _picking = true);
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await _galleryPort.pickImage();
       if (picked == null || !mounted) return;
-      final isCacheCopy = await _isInTemporaryDirectory(picked.path);
+      final isCacheCopy = await _isInTemporaryDirectory(picked);
       if (!mounted) {
-        if (isCacheCopy) unawaited(_deleteFile(picked.path));
+        if (isCacheCopy) unawaited(_deleteFile(picked));
         return;
       }
-      await _recognize(picked.path, isTemp: isCacheCopy);
+      await _recognize(picked, isTemp: isCacheCopy);
     } catch (e) {
       debugPrint('Gallery pick error: $e');
       if (mounted) _showError();
@@ -391,7 +369,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     await _pausePreview();
     if (!mounted) return;
     try {
-      final input = InputImage.fromFilePath(path);
+      final input = ScanImageFile(path);
       final (lines, photoBarcodes, size) = await (
         _recognizeText(input),
         _scanBarcodes(input, pass: 'photo'),
@@ -470,14 +448,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// crop's position in the photo) and [scale] (see [offsetOcrLines]); null (logged) when text recognition fails, so decoded
   /// barcodes can still be offered.
   Future<List<OcrLine>?> _recognizeText(
-    InputImage input, {
+    ScanImage image, {
     Offset offset = Offset.zero,
     double scale = 1.0,
     String? pass,
   }) async {
     try {
       final lines = offsetOcrLines(
-        ocrLinesFrom(await _textRecognizer.processImage(input)),
+        await _textPort.linesIn(image),
         offset,
         scale: scale,
       );
@@ -495,16 +473,15 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// Barcode candidates of [input]; null (logged) when scanning fails, so
   /// OCR results are still offered.
   Future<List<CodeCandidate>?> _scanBarcodes(
-    InputImage input, {
+    ScanImage image, {
     required String pass,
   }) async {
     try {
-      final barcodes = await _barcodeScanner.processImage(input);
-      scanLog([
-        '[scan] barcodes ($pass): ${barcodes.length}',
-        ...describeBarcodes(barcodes),
-      ]);
-      return barcodeCandidatesFrom(barcodes);
+      // The port logs each decoded value, including those that map to no
+      // candidate; the pass is only known here.
+      final candidates = await _barcodePort.candidatesIn(image);
+      scanLog(['[scan] barcodes ($pass): ${candidates.length}']);
+      return candidates;
     } catch (e, stack) {
       debugPrint('[scan] barcode scanning failed ($pass): $e\n$stack');
       return null;
@@ -537,7 +514,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         '[scan] region pass ${region.width.round()}x${region.height.round()} '
             '@ ${region.left.round()},${region.top.round()} scale $scale',
       ]);
-      final input = InputImage.fromFilePath(out);
+      final input = ScanImageFile(out);
       final (lines, found) = await (
         _recognizeText(
           input,
@@ -605,7 +582,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         for (final rotation in rotations) {
           if (stop()) break;
           final decoded = await _scanBarcodes(
-            InputImage.fromFilePath(rotation.outPath),
+            ScanImageFile(rotation.outPath),
             pass: 'stripe ${rotation.quarterTurns * 90}°',
           );
           if (decoded == null || decoded.isEmpty) continue;
@@ -664,7 +641,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
             '${written.crop.height.round()} @ ${written.crop.left.round()},'
             '${written.crop.top.round()} scale ${written.scale}',
       ]);
-      final input = InputImage.fromFilePath(out);
+      final input = ScanImageFile(out);
       final (lines, found) = await (
         _recognizeText(
           input,
@@ -736,8 +713,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       final small = await decodeDownscaledRgba(path, _barcodeRetryMaxSide);
       if (small == null) return const [];
       final found = await _scanBarcodes(
-        InputImage.fromBitmap(
-          bitmap: small.rgba,
+        ScanImageBitmap(
+          rgba: small.rgba,
           width: small.width,
           height: small.height,
         ),
@@ -1125,10 +1102,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   }
 
   Widget _buildCapture(AppLocalizations l10n) {
-    final controller = _cameraController;
-    final previewSize = controller?.value.previewSize;
+    final previewSize = _cameraPort.previewSize;
     final busy = _isSearching || _picking || _isTakingPicture;
-    final canShoot = _isCameraReady && controller != null && !busy;
+    final canShoot = _isCameraReady && !busy;
     return ColoredBox(
       color: Colors.black, // scrim
       child: Column(
@@ -1136,7 +1112,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           Expanded(
             child: Stack(
               children: [
-                if (_isCameraReady && controller != null && previewSize != null)
+                if (_isCameraReady && previewSize != null)
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final orientation = MediaQuery.orientationOf(context);
@@ -1158,7 +1134,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                               child: SizedBox(
                                 width: child.width,
                                 height: child.height,
-                                child: CameraPreview(controller),
+                                child: _cameraPort.buildPreview(context),
                               ),
                             ),
                           ),
@@ -1323,11 +1299,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
     final l10n = AppLocalizations.of(context);
     try {
-      final found = await findByCodes(
-        AifaCacheService.instance.search,
-        rawCode,
-        alternatives,
-      );
+      final found = await findByCodes(_aifaSearch, rawCode, alternatives);
       final results = found.matches;
       if (!mounted) return;
       setState(() => _isSearching = false);

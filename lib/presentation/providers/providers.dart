@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -40,17 +41,20 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/backup_file_picker.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
 import 'package:medora/services/local_data_wiper.dart';
+import 'package:medora/services/mlkit_scanner_ports.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/scan_temp_cleanup.dart';
+import 'package:medora/services/scanner_ports.dart';
 import 'package:medora/services/stock_reminder_scheduler.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_service.dart';
@@ -394,3 +398,40 @@ final supplementRegistryServiceProvider = Provider<SupplementRegistryService>((
   ref.onDispose(service.close);
   return service;
 });
+
+// ============================================================
+// Scanner ports (camera, gallery, ML Kit)
+// ============================================================
+// The scanner screen reads these instead of constructing the plugins, so a
+// widget test can pump it with fakes (see `scanner_ports.dart`). The
+// detectors are closed with the container, which is what the screen used to
+// do in `dispose`.
+
+final textRecognitionPortProvider = Provider<TextRecognitionPort>((ref) {
+  final port = MlKitTextRecognitionPort();
+  ref.onDispose(port.close);
+  return port;
+});
+
+final barcodeScanPortProvider = Provider<BarcodeScanPort>((ref) {
+  final port = MlKitBarcodeScanPort();
+  ref.onDispose(port.close);
+  return port;
+});
+
+final cameraPortProvider = Provider<CameraPort>((ref) {
+  final port = CameraControllerPort();
+  ref.onDispose(port.dispose);
+  return port;
+});
+
+final galleryPortProvider = Provider<GalleryPort>(
+  (ref) => ImagePickerGalleryPort(),
+);
+
+/// AIFA lookup by code, behind a function so widget tests can answer it
+/// without the on-device cache (a singleton over `sqflite`) or the network.
+final aifaSearchProvider =
+    Provider<Future<List<AifaSearchResult>> Function(String code)>(
+      (ref) => AifaCacheService.instance.search,
+    );
