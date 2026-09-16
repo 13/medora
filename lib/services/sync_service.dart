@@ -1139,10 +1139,12 @@ class SyncService {
       if (u != null && (newest == null || u.isAfter(newest))) newest = u;
     }
     if (newest != null && !anyFailure) {
-      await _cursors.setLastPullAt(
-        table,
-        newest.subtract(const Duration(seconds: 1)),
-      );
+      // Rows stamped by the app itself (1970) are never meant to come with a
+      // delta pull; a cursor left before them would fetch all of them again
+      // on every cycle while no real change has been seen.
+      var cursor = newest.subtract(const Duration(seconds: 1));
+      if (cursor.isBefore(_weakStampCeiling)) cursor = _weakStampCeiling;
+      await _cursors.setLastPullAt(table, cursor);
     }
   }
 

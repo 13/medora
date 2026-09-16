@@ -978,6 +978,30 @@ void main() {
       },
     );
 
+    test('generated doses are pulled once, not on every cycle', () async {
+      final h = Harness();
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      // Another device's generated copies: on the server, not here.
+      for (final id in ids) {
+        final row = (await localRow('dose_logs', id))!;
+        h.doses.table.seed(
+          DoseLogModel.fromLocalMap(row).toJson(),
+          updatedAt: DateTime.utc(1970),
+        );
+      }
+      final db = await AppDatabase.instance.database;
+      await db.delete('dose_logs');
+
+      final first = (await h.service.syncAll())!;
+      expect(first.pulled, ids.length);
+      expect(await h.cursors.lastPullAt('dose_logs'), DateTime.utc(1970, 1, 2));
+
+      h.clock.advance(const Duration(minutes: 5));
+      final second = (await h.service.syncAll())!;
+      expect(second.pulled, 0);
+      expect(h.doses.table.sinceCalls.last, DateTime.utc(1970, 1, 2));
+    });
+
     test('force pull clears cursors and pulls everything again', () async {
       final h = Harness();
       h.meds.table.seed(
