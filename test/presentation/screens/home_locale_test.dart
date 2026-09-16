@@ -364,11 +364,15 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expectNothingPaintsOutsideViewport(tester);
-    // Four labels are truncated at this scale by widgets this test file may
-    // not change. They are pinned with their reason so the sweep keeps
-    // guarding every other label on the page, and so that fixing one - or
-    // deciding it should ellipsize on purpose - turns this test red. All four
-    // fit at 1.0x; the numbers below are German at 360 dp, 1.6x.
+    // One label is truncated at this scale, and on purpose. The three that
+    // were pinned here beside it were a real defect in MedicationExpiryTile
+    // - a badge taking the row and starving the medication name to 0 dp -
+    // and they are gone because that tile now caps its badge, not because
+    // the sweep stopped looking. The entry below is pinned with its reason
+    // so the sweep keeps guarding every other label on the page, and so
+    // that repairing it - or deciding it should ellipsize on purpose -
+    // turns this test red. It fits at 1.0x; the numbers are German at
+    // 360 dp, 1.6x.
     expectNoTextIsClipped(
       tester,
       knownTruncations: const {
@@ -377,17 +381,6 @@ void main() {
             'TextOverflow.ellipsis so the See all button keeps its place. '
             '163.6 dp for a word that needs 180.6 cuts inside '
             '"Behandlungen", which is the intended degradation, not a bug.',
-        'Bentelan':
-            'a defect, reported: MedicationExpiryTile sets no overflow, so '
-            'once the ExpiryBadge takes its natural width in the ListTile '
-            'trailing slot the title is left 79.8 dp for a word that needs '
-            '89.7 and is broken mid-word across two lines.',
-        'Moment 200':
-            'the same defect at its worst: the wider "Läuft in 16 Tagen ab" '
-            'badge starves that tile\'s title to 0.0 dp, which paints as a '
-            '279 dp column one glyph wide.',
-        '20. März 2026':
-            'that row\'s subtitle, starved to 0.0 dp along with its title.',
       },
     );
   });
