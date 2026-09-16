@@ -200,11 +200,17 @@ void main() {
         2,
       );
       expect(dose('5 ml', amount: 5).unitsPerDose(medicationUnit: 'ml'), 5);
-      expect(dose('', amount: 1.5).unitsPerDose(medicationUnit: 'tablets'), 2);
+      expect(dose('', amount: 1.5).unitsPerDose(medicationUnit: 'tablets'), 1);
       expect(dose('', amount: 0.25).unitsPerDose(medicationUnit: 'tablets'), 0);
     });
 
     test('an amount in another unit is one pack unit', () {
+      expect(dose('2 capsules').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('2 x 500 mg').unitsPerDose(medicationUnit: 'tablets'), 1);
+    });
+
+    test('drops from a stock in ml count twenty to the millilitre, rounded '
+        'down', () {
       expect(
         dose(
           '20 drops',
@@ -213,7 +219,50 @@ void main() {
         ).unitsPerDose(medicationUnit: 'ml'),
         1,
       );
-      expect(dose('2 capsules').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('40 gocce').unitsPerDose(medicationUnit: 'ml'), 2);
+      expect(dose('5 gocce').unitsPerDose(medicationUnit: 'ml'), 0);
+      expect(dose('30 Tropfen').unitsPerDose(medicationUnit: 'ml'), 1);
+    });
+
+    test('a volume never takes a counted pack unit', () {
+      // A syrup or drops kept as bottles, pieces or without a unit: one dose
+      // is not a whole bottle.
+      for (final stock in [null, '', 'pieces', 'tablets', 'bustine']) {
+        expect(
+          dose(
+            '5 ml',
+            amount: 5,
+            unit: 'ml',
+          ).unitsPerDose(medicationUnit: stock),
+          0,
+          reason: '$stock',
+        );
+        expect(dose('10 ml').unitsPerDose(medicationUnit: stock), 0);
+        expect(dose('20 Tropfen').unitsPerDose(medicationUnit: stock), 0);
+      }
+      expect(dose('5 ml').unitsPerDose(medicationUnit: 'drops'), 0);
+    });
+
+    test('a fraction is rounded down, never up', () {
+      expect(dose('0,5 compresse').unitsPerDose(), 0);
+      expect(dose('1,5 cpr').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('', amount: 0.5).unitsPerDose(medicationUnit: 'tablets'), 0);
+      expect(dose('½ compressa').unitsPerDose(medicationUnit: 'tablets'), 0);
+      expect(dose('1/2 Tablette').unitsPerDose(medicationUnit: 'tablets'), 0);
+      expect(dose('3/2 Tabletten').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('2,75 ml').unitsPerDose(medicationUnit: 'ml'), 2);
+    });
+
+    test('pieces, pills and tablets count the same things', () {
+      expect(dose('2 Tabletten').unitsPerDose(medicationUnit: 'pieces'), 2);
+      expect(dose('2 pills').unitsPerDose(medicationUnit: 'tablets'), 2);
+      expect(dose('3 Stück').unitsPerDose(medicationUnit: 'pills'), 3);
+      expect(dose('2 capsules').unitsPerDose(medicationUnit: 'pieces'), 1);
+    });
+
+    test('the Italian abbreviations cp and cps are counted', () {
+      expect(dose('2 cp').unitsPerDose(medicationUnit: 'tablets'), 2);
+      expect(dose('2 cps').unitsPerDose(medicationUnit: 'capsules'), 2);
     });
 
     test('an amount with no unit anywhere is a count', () {
@@ -238,15 +287,14 @@ void main() {
       expect(dose('1 tablet').unitsPerDose(medicationUnit: 'tablets'), 1);
       expect(dose('3 Kapseln').unitsPerDose(medicationUnit: 'capsules'), 3);
       expect(dose('2 Stück').unitsPerDose(), 2);
-      expect(dose('1,5 ml').unitsPerDose(medicationUnit: 'ml'), 2);
+      expect(dose('2,0 ml').unitsPerDose(medicationUnit: 'ml'), 2);
     });
 
     test('free text without a count, or in a unit that is not counted, is '
         'one pack unit', () {
       expect(dose('one tablet').unitsPerDose(), 1);
       expect(dose('').unitsPerDose(), 1);
-      expect(dose('20 Tropfen').unitsPerDose(), 1);
-      expect(dose('10 ml').unitsPerDose(), 1);
+      expect(dose('400 mg').unitsPerDose(medicationUnit: 'ml'), 1);
       expect(dose('20 Tropfen').unitsPerDose(medicationUnit: 'drops'), 20);
     });
   });

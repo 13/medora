@@ -69,12 +69,19 @@ class Prescription {
   ///
   /// The dosage says how much of the *substance* is taken, which is not
   /// always a count of stock units: "400 mg" of ibuprofen is one tablet, not
-  /// 400. So an amount is only counted when it is expressed in the stock's
-  /// own unit (or in a counting unit such as tablets or capsules when the
-  /// medication has no unit), or when it has no unit at all; any other dose
-  /// is one pack unit. Free-text dosages are read as a number and a unit, with
-  /// English, German and Italian unit names. The amount is rounded, so a
-  /// quarter tablet takes nothing.
+  /// 400. The rule never takes more than the dose uses:
+  /// - an amount in the stock's own unit, or with no unit at all, is
+  ///   counted; pieces, pills and tablets count the same things, and a
+  ///   medication without a unit is taken to be counted in such items;
+  /// - drops from a stock in ml count twenty to the millilitre;
+  /// - any other volume (ml, drops) takes nothing: one dose of a syrup kept
+  ///   as bottles is not a whole bottle;
+  /// - any other unit ("400 mg") is one pack unit;
+  /// - a fraction is rounded down, so half a tablet takes nothing (the app
+  ///   keeps no fractional remainder).
+  ///
+  /// Free-text dosages are read as a number ("1,5", "1/2", "½") and a unit,
+  /// with English, German and Italian unit names.
   int unitsPerDose({String? medicationUnit}) {
     final stockUnit = _unitKey(medicationUnit);
     final double amount;
@@ -85,21 +92,58 @@ class Prescription {
       unit = _unitKey(dosageUnit) ?? stockUnit;
     } else {
       final match = RegExp(
-        r'^(\d+(?:[.,]\d+)?)\s*(\S*)',
+        r'^(\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?|[½¼¾])\s*(\S*)',
       ).firstMatch(dosage.trim());
-      final parsed = match == null
-          ? null
-          : double.tryParse(match.group(1)!.replaceAll(',', '.'));
+      final parsed = match == null ? null : _parseAmount(match.group(1)!);
       if (parsed == null) return 1;
       amount = parsed;
       unit = _unitKey(match!.group(2));
     }
-    final counted =
-        unit == null ||
-        (stockUnit != null ? unit == stockUnit : _countingUnits.contains(unit));
-    if (!counted) return 1;
-    final units = amount.round();
-    return units < 0 ? 0 : units;
+    final double units;
+    if (unit == null || _sameStock(unit, stockUnit)) {
+      units = amount;
+    } else if (unit == 'drops' && stockUnit == 'ml') {
+      units = amount / _dropsPerMl;
+    } else if (_volumeUnits.contains(unit)) {
+      return 0;
+    } else {
+      return 1;
+    }
+    final whole = units.floor();
+    return whole < 0 ? 0 : whole;
+  }
+
+  /// Drops in a millilitre, by the usual pharmacopoeia convention.
+  static const _dropsPerMl = 20;
+
+  static const _volumeUnits = {'ml', 'drops'};
+
+  /// Units that name the same kind of item.
+  static const _itemUnits = {'pieces', 'pills', 'tablets'};
+
+  /// True when a dose in [unit] is counted in the stock's [stockUnit]; a
+  /// stock without a unit counts items.
+  static bool _sameStock(String unit, String? stockUnit) {
+    if (stockUnit == null) return _countingUnits.contains(unit);
+    if (unit == stockUnit) return true;
+    return _itemUnits.contains(unit) && _itemUnits.contains(stockUnit);
+  }
+
+  /// "2", "1,5", "1/2" or "½" as a number, or null.
+  static double? _parseAmount(String raw) {
+    switch (raw) {
+      case '½':
+        return 0.5;
+      case '¼':
+        return 0.25;
+      case '¾':
+        return 0.75;
+    }
+    final parts = raw.split('/');
+    final value = double.tryParse(parts.first.trim().replaceAll(',', '.'));
+    if (value == null || parts.length == 1) return value;
+    final divisor = double.tryParse(parts[1].trim());
+    return divisor == null || divisor == 0 ? null : value / divisor;
   }
 
   /// The quantity-unit key [raw] names (`tablets` for "Tabletten"), the
@@ -144,8 +188,17 @@ class Prescription {
       'compressa',
       'compresse',
       'cpr',
+      'cp',
     },
-    'capsules': {'capsule', 'cap', 'caps', 'kapsel', 'kapseln', 'capsula'},
+    'capsules': {
+      'capsule',
+      'cap',
+      'caps',
+      'cps',
+      'kapsel',
+      'kapseln',
+      'capsula',
+    },
     'ml': {'milliliter', 'millilitre', 'millilitro', 'millilitri'},
     'drops': {'drop', 'tropfen', 'goccia', 'gocce', 'gtt'},
     'bustine': {'bustina', 'sachet', 'sachets', 'beutel', 'btl'},
