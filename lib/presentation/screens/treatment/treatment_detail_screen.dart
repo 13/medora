@@ -33,6 +33,10 @@ class TreatmentDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
+  /// Prescriptions whose "Log dose" is being saved. A second tap meanwhile
+  /// would record a second intake and take the stock down twice.
+  final Set<String> _logging = {};
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -655,7 +659,9 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                                     alignment: AlignmentDirectional.centerEnd,
                                     child: TextButton.icon(
                                       key: Key('logDose_${p.id}'),
-                                      onPressed: () => _logAsNeededDose(p),
+                                      onPressed: _logging.contains(p.id)
+                                          ? null
+                                          : () => _logAsNeededDose(p),
                                       icon: const Icon(
                                         Icons.add_circle_outline,
                                         size: 18,
@@ -680,9 +686,19 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
   }
 
   Future<void> _logAsNeededDose(Prescription p) async {
+    // Checked here too: a second tap can arrive before the disabled button
+    // has been built.
+    if (!_logging.add(p.id)) return;
+    setState(() {});
     final l10n = AppLocalizations.of(context);
     final actions = ref.read(doseActionsProvider);
-    final id = await actions.logAsNeededDose(p.id);
+    String? logged;
+    try {
+      logged = await actions.logAsNeededDose(p.id);
+    } finally {
+      if (mounted) setState(() => _logging.remove(p.id));
+    }
+    final id = logged;
     if (!mounted || id == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

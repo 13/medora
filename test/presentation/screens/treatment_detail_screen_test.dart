@@ -2,15 +2,22 @@
 /// treatment with its sick leave.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/result.dart';
+import 'package:medora/data/datasources/dose_log_local_datasource.dart';
+import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/repositories/dose_log_repository_impl.dart';
+import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
@@ -19,11 +26,28 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/treatment/treatment_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../helpers/failing_dose_repo.dart';
 import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/fonts.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/test_database.dart';
 import '../../helpers/text_fit.dart';
+
+/// A dose repository whose inserts wait for [release]: a save in flight.
+class _HeldAddRepo extends FailingTakeRepo {
+  _HeldAddRepo(super.inner, this.release);
+
+  final Future<void> release;
+
+  @override
+  Future<Result<DoseLog>> markDoseTaken(String id) => inner.markDoseTaken(id);
+
+  @override
+  Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) async {
+    await release;
+    return inner.addDoseLog(doseLog);
+  }
+}
 
 void main() {
   final now = DateTime(2026, 3, 5, 12);
@@ -55,6 +79,7 @@ void main() {
     Locale locale = const Locale('en'),
     double scale = 1.0,
     Future<void> Function()? beforePump,
+    List<Override> extraOverrides = const [],
   }) async {
     await TreatmentLocalDatasource().upsert(
       TreatmentModel(
@@ -72,7 +97,7 @@ void main() {
     await pumpMedoraApp(
       tester,
       withTextScale(scale, const TreatmentDetailScreen(treatmentId: 't1')),
-      overrides: await overrides(),
+      overrides: [...await overrides(), ...extraOverrides],
       locale: locale,
     );
     await tester.pumpAndSettle();
@@ -602,6 +627,45 @@ void main() {
       await tester.tap(logButton);
       await tester.pumpAndSettle();
       expect(await doses(), hasLength(2));
+    });
+
+    testWidgets('a double tap logs one dose, and the button waits for it', (
+      tester,
+    ) async {
+      final release = Completer<void>();
+      await seedAndPump(
+        tester,
+        beforePump: () => seedPrescription(autoDiminish: true),
+        extraOverrides: [
+          doseLogRepositoryProvider.overrideWithValue(
+            _HeldAddRepo(
+              DoseLogRepositoryImpl(
+                localDatasource: DoseLogLocalDatasource(),
+                prescriptionLocal: PrescriptionLocalDatasource(),
+              ),
+              release.future,
+            ),
+          ),
+        ],
+      );
+
+      // Two taps before the first one has been saved.
+      await tester.tap(logButton);
+      await tester.tap(logButton);
+      await tester.pump();
+      expect(tester.widget<TextButton>(logButton).onPressed, isNull);
+      release.complete();
+      await tester.pumpAndSettle();
+
+      expect(await doses(), hasLength(1));
+      final med = await (await AppDatabase.instance.database).query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: ['m1'],
+      );
+      expect(med.single['quantity'], 9);
+      expect(find.text('Dose logged'), findsOneWidget);
+      expect(tester.widget<TextButton>(logButton).onPressed, isNotNull);
     });
 
     testWidgets('"Undo" on the snackbar removes the dose and gives the '
