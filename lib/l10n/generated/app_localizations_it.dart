@@ -230,7 +230,14 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String expiresInDaysShort(int days) {
-    return 'Scade tra $days giorni';
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Scade tra $days giorni',
+      one: 'Scade tra 1 giorno',
+      zero: 'Scade oggi',
+    );
+    return '$_temp0';
   }
 
   @override

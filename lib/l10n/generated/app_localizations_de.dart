@@ -231,7 +231,14 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String expiresInDaysShort(int days) {
-    return 'Läuft in $days Tagen ab';
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Läuft in $days Tagen ab',
+      one: 'Läuft in 1 Tag ab',
+      zero: 'Läuft heute ab',
+    );
+    return '$_temp0';
   }
 
   @override

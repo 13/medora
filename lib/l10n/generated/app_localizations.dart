@@ -511,7 +511,7 @@ abstract class AppLocalizations {
   /// No description provided for @expiresInDaysShort.
   ///
   /// In en, this message translates to:
-  /// **'Expires in {days} days'**
+  /// **'{days, plural, =0{Expires today} =1{Expires in 1 day} other{Expires in {days} days}}'**
   String expiresInDaysShort(int days);
 
   /// No description provided for @valid.

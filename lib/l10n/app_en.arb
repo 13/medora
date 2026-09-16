@@ -111,7 +111,7 @@
   "minimumStock": "Minimum Stock",
 
   "expired": "Expired",
-  "expiresInDaysShort": "Expires in {days} days",
+  "expiresInDaysShort": "{days, plural, =0{Expires today} =1{Expires in 1 day} other{Expires in {days} days}}",
   "@expiresInDaysShort": {
     "placeholders": {
       "days": { "type": "int" }

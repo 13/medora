@@ -124,4 +124,64 @@ void main() {
     );
     expect(source, contains('AppConstants.expiryWarningDays'));
   });
+
+  // The provider now admits the two boundaries the old window excluded, so
+  // the badge is the dashboard's expiry voice at zero and one day. A plain
+  // placeholder reads "Expires in 0 days" for a medication that is good for
+  // the whole of today, and "Scade tra 1 giorni" in Italian.
+  testWidgets('a medication expiring today says so', (tester) async {
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ExpiryBadge(
+          expiryDate: DateTime(2026, 3, 4),
+          now: DateTime(2026, 3, 4, 15),
+        ),
+      ),
+    );
+
+    expect(find.text('Expires today'), findsOneWidget);
+  });
+
+  testWidgets('one remaining day is singular', (tester) async {
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ExpiryBadge(
+          expiryDate: DateTime(2026, 3, 5),
+          now: DateTime(2026, 3, 4),
+        ),
+      ),
+    );
+
+    expect(find.text('Expires in 1 day'), findsOneWidget);
+  });
+
+  testWidgets('German and Italian have their own boundary wording', (
+    tester,
+  ) async {
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ExpiryBadge(
+          expiryDate: DateTime(2026, 3, 4),
+          now: DateTime(2026, 3, 4, 15),
+        ),
+      ),
+      locale: const Locale('de'),
+    );
+    expect(find.text('Läuft heute ab'), findsOneWidget);
+
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ExpiryBadge(
+          expiryDate: DateTime(2026, 3, 5),
+          now: DateTime(2026, 3, 4),
+        ),
+      ),
+      locale: const Locale('it'),
+    );
+    expect(find.text('Scade tra 1 giorno'), findsOneWidget);
+  });
 }

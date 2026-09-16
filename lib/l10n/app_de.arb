@@ -80,7 +80,7 @@
   "minimumStock": "Mindestbestand",
 
   "expired": "Abgelaufen",
-  "expiresInDaysShort": "Läuft in {days} Tagen ab",
+  "expiresInDaysShort": "{days, plural, =0{Läuft heute ab} =1{Läuft in 1 Tag ab} other{Läuft in {days} Tagen ab}}",
   "valid": "Gültig",
   "quantityLeft": "{quantity} übrig",
 

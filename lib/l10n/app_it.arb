@@ -80,7 +80,7 @@
   "minimumStock": "Scorta minima",
 
   "expired": "Scaduto",
-  "expiresInDaysShort": "Scade tra {days} giorni",
+  "expiresInDaysShort": "{days, plural, =0{Scade oggi} =1{Scade tra 1 giorno} other{Scade tra {days} giorni}}",
   "valid": "Valido",
   "quantityLeft": "{quantity} rimanenti",
 
