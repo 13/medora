@@ -200,6 +200,14 @@ void main() {
 
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.text('Settings'), findsWidgets);
+    // Not the AppBar title alone: 'Settings' survives a body emptied down to
+    // nothing, and a settings page rendering an empty scroll view under a
+    // correct title is precisely the breakage this layer exists to notice.
+    // These three come from the body — the first group's header and two of
+    // the tiles inside it.
+    expect(find.text('Appearance'), findsOneWidget);
+    expect(find.text('Dark Mode'), findsOneWidget);
+    expect(find.text('Language'), findsOneWidget);
   });
 
   testWidgets('the return-only scanner route builds a return-only scanner', (
@@ -223,6 +231,29 @@ void main() {
     );
     expect(screen.returnBarcodeOnly, isTrue);
 
+    // ...and it painted something. FakeCamera(opens: false) is the no-camera
+    // state the brief asked this test to prove: the capture stage renders,
+    // the hint and the manual way in are both offered, and the shutter is
+    // disabled rather than promising a photo no camera can take. A scanner
+    // reduced to a bare Scaffold satisfies the type check above and fails
+    // every line below.
+    expect(
+      find.text('Photograph the pack so the AIC code is sharp'),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.keyboard), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithIcon(FilledButton, Icons.camera_alt),
+          )
+          .onPressed,
+      isNull,
+      reason: 'the shutter offered a photo a dead camera cannot take',
+    );
+    // Nor is anything still waiting for a preview that will never arrive.
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
     // And the plain scanner route is not return-only.
     container.read(appRouterProvider).pop();
     await tester.pumpAndSettle();
@@ -233,6 +264,25 @@ void main() {
           .widget<BarcodeScannerScreen>(find.byType(BarcodeScannerScreen))
           .returnBarcodeOnly,
       isFalse,
+    );
+  });
+
+  testWidgets('a device with no camera gets the unavailable screen', (
+    tester,
+  ) async {
+    // The other side of the gate the test above walks through. Three of
+    // these tests already pump desktop caps, and the scanner route's
+    // `!caps.hasCamera` branch (app_router.dart) guards two routes without
+    // anything ever reaching it.
+    final container = await pumpApp(tester);
+
+    unawaited(container.read(appRouterProvider).push(AppRoutes.scanner));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BarcodeScannerScreen), findsNothing);
+    expect(
+      find.text('This feature is not available on this device.'),
+      findsOneWidget,
     );
   });
 }
