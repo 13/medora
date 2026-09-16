@@ -13,6 +13,7 @@ import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -34,6 +35,7 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final now = ref.watch(nowProvider)();
     final treatmentsAsync = ref.watch(treatmentListProvider);
     final prescriptionsAsync = ref.watch(
       prescriptionsByTreatmentProvider(widget.treatmentId),
@@ -289,11 +291,18 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                   ),
                 ),
               ),
+              if (treatment.hasSickLeave || treatment.doctor != null) ...[
+                const SizedBox(height: 12),
+                _SickLeaveBlock(treatment: treatment, now: now),
+              ],
               const SizedBox(height: 20),
 
-              // Prescriptions section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Prescriptions section. A Wrap, not a Row: in German at a
+              // 1.6x text scale "Verschreibungen" and "Hinzufügen" overflow
+              // 328 dp by 52 dp, so the button moves to its own line.
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
                     l10n.prescriptions,
@@ -667,6 +676,128 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
       dosageText,
       p.intervalHours,
       p.durationDays,
+    );
+  }
+}
+
+/// The Krankenstand card: the leave's range, its length, the certificate
+/// number and the doctor, each row only when it has a value.
+///
+/// The rows are [_SickLeaveRow]s, not the shared `DetailRow`: that one puts
+/// "label: value" on one line with only the value flexible, so at 360 dp and
+/// a 1.6x text scale the value was left 23 dp ("1234567890" one digit per
+/// line) and Italian "In malattia fino al: " overflowed the card by 52 dp.
+class _SickLeaveBlock extends StatelessWidget {
+  const _SickLeaveBlock({required this.treatment, required this.now});
+
+  final Treatment treatment;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final from = treatment.sickLeaveFrom;
+    // Null for a leave that has not started or ends before it starts: the
+    // row is left out rather than showing a count that is not true.
+    final days = treatment.sickLeaveDaysAt(now);
+    return Card(
+      key: const Key('sickLeaveBlock'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.work_off, color: context.colors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    l10n.sickLeave,
+                    style: context.text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (from != null) ...[
+              _SickLeaveRow(
+                icon: Icons.event_busy,
+                label: l10n.sickLeaveFrom,
+                value: from.formatted,
+              ),
+              _SickLeaveRow(
+                icon: Icons.event_available,
+                label: l10n.sickLeaveTo,
+                value: treatment.sickLeaveTo.formattedOr(l10n.ongoing),
+              ),
+              if (days != null)
+                _SickLeaveRow(
+                  icon: Icons.today,
+                  label: l10n.sickLeaveDuration,
+                  value: l10n.sickLeaveDays(days),
+                ),
+            ],
+            if (treatment.sickLeaveRef != null)
+              _SickLeaveRow(
+                icon: Icons.confirmation_number,
+                label: l10n.sickLeaveRef,
+                value: treatment.sickLeaveRef!,
+              ),
+            if (treatment.doctor != null)
+              _SickLeaveRow(
+                icon: Icons.medical_services,
+                label: l10n.doctorLabel,
+                value: treatment.doctor!,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// An icon beside a small label with its value underneath. Stacked rather
+/// than side by side, so a long label never squeezes the value.
+class _SickLeaveRow extends StatelessWidget {
+  const _SickLeaveRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: context.colors.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: context.colors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                Text(value),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

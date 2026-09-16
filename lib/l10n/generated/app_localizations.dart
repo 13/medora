@@ -706,6 +706,72 @@ abstract class AppLocalizations {
   /// **'Ongoing'**
   String get ongoing;
 
+  /// No description provided for @sickLeave.
+  ///
+  /// In en, this message translates to:
+  /// **'Sick leave'**
+  String get sickLeave;
+
+  /// No description provided for @sickLeaveFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to work from'**
+  String get sickLeaveFrom;
+
+  /// No description provided for @sickLeaveTo.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to work until'**
+  String get sickLeaveTo;
+
+  /// No description provided for @sickLeaveDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{1 day} other{{days} days}}'**
+  String sickLeaveDays(int days);
+
+  /// No description provided for @sickLeaveDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Day {days}'**
+  String sickLeaveDay(int days);
+
+  /// No description provided for @sickLeaveDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration'**
+  String get sickLeaveDuration;
+
+  /// No description provided for @sickLeaveRef.
+  ///
+  /// In en, this message translates to:
+  /// **'Certificate no.'**
+  String get sickLeaveRef;
+
+  /// No description provided for @sickLeaveRefHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 1234567890'**
+  String get sickLeaveRefHint;
+
+  /// No description provided for @sickLeaveToBeforeFrom.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a start date on or before the end date'**
+  String get sickLeaveToBeforeFrom;
+
+  /// No description provided for @doctorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Doctor'**
+  String get doctorLabel;
+
+  /// No description provided for @doctorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Dr. Rossi, Bolzano'**
+  String get doctorHint;
+
   /// No description provided for @prescriptions.
   ///
   /// In en, this message translates to:

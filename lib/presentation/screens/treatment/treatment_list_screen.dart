@@ -9,11 +9,13 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
+import 'package:medora/presentation/widgets/sick_leave_badge.dart';
 
 /// Filter options for treatment list.
 enum TreatmentFilter { active, ended, all }
@@ -47,7 +49,8 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
         return t.name.toLowerCase().contains(query) ||
             t.symptomTags.any((s) => s.toLowerCase().contains(query)) ||
             t.patientTags.any((p) => p.toLowerCase().contains(query)) ||
-            (t.notes ?? '').toLowerCase().contains(query);
+            (t.notes ?? '').toLowerCase().contains(query) ||
+            (t.doctor ?? '').toLowerCase().contains(query);
       }).toList();
     }
 
@@ -249,6 +252,7 @@ class _TreatmentTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    final now = ref.watch(nowProvider)();
     final prescriptionsAsync = ref.watch(
       prescriptionsByTreatmentProvider(treatment.id),
     );
@@ -285,10 +289,14 @@ class _TreatmentTile extends ConsumerWidget {
               ),
             ),
 
-          // Status and Started on
+          // Status, started on and sick leave. A Wrap, not a Row: at
+          // 360 dp and a large text scale the three do not fit one line.
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Row(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -312,7 +320,6 @@ class _TreatmentTile extends ConsumerWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
                 Text(
                   l10n.startedOn(treatment.startDate.shortFormatted),
                   style: TextStyle(
@@ -320,32 +327,58 @@ class _TreatmentTile extends ConsumerWidget {
                     fontSize: 12,
                   ),
                 ),
+                if (treatment.hasSickLeave)
+                  SickLeaveBadge(
+                    key: const Key('sickLeaveBadge'),
+                    treatment: treatment,
+                    now: now,
+                  ),
               ],
             ),
           ),
         ],
       ),
+      // Cap the count, do not let it take the row. A ListTile hands its
+      // trailing slot loose constraints (320 dp wide at 360 dp), so at a
+      // 1.6x text scale German "Verschreibungen" claimed 138 dp and left the
+      // name 110 dp: "Sinusitis" broke mid-word, the tag chips overflowed and
+      // the column overflowed the tile's height as well.
+      //
+      // 0.28 of the slot is 89.6 dp at 360 dp. That is above the 86.5 dp
+      // "Verschreibungen" needs at 1.0x, so an ordinary text scale paints
+      // exactly what it painted before, and it leaves the name and the
+      // sick-leave badge 158 dp at 1.6x, above the 154 dp the badge's
+      // longest word needs. BoxFit.scaleDown only ever shrinks.
       trailing: prescriptionsAsync.maybeWhen(
-        data: (prescriptions) => Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              '${prescriptions.length}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: context.colors.primary,
+        data: (prescriptions) => LayoutBuilder(
+          builder: (context, constraints) => ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.28),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${prescriptions.length}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: context.colors.primary,
+                    ),
+                  ),
+                  Text(
+                    l10n.prescriptions,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
-            Text(
-              l10n.prescriptions,
-              style: TextStyle(
-                fontSize: 10,
-                color: context.colors.onSurfaceVariant,
-              ),
-            ),
-          ],
+          ),
         ),
         loading: () => const SizedBox(
           width: 14,

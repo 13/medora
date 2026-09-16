@@ -349,6 +349,50 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ongoing => 'Ongoing';
 
   @override
+  String get sickLeave => 'Sick leave';
+
+  @override
+  String get sickLeaveFrom => 'Unable to work from';
+
+  @override
+  String get sickLeaveTo => 'Unable to work until';
+
+  @override
+  String sickLeaveDays(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days days',
+      one: '1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sickLeaveDay(int days) {
+    return 'Day $days';
+  }
+
+  @override
+  String get sickLeaveDuration => 'Duration';
+
+  @override
+  String get sickLeaveRef => 'Certificate no.';
+
+  @override
+  String get sickLeaveRefHint => 'e.g. 1234567890';
+
+  @override
+  String get sickLeaveToBeforeFrom =>
+      'Pick a start date on or before the end date';
+
+  @override
+  String get doctorLabel => 'Doctor';
+
+  @override
+  String get doctorHint => 'e.g. Dr. Rossi, Bolzano';
+
+  @override
   String get prescriptions => 'Prescriptions';
 
   @override

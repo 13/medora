@@ -352,6 +352,50 @@ class AppLocalizationsIt extends AppLocalizations {
   String get ongoing => 'In corso';
 
   @override
+  String get sickLeave => 'Malattia';
+
+  @override
+  String get sickLeaveFrom => 'In malattia dal';
+
+  @override
+  String get sickLeaveTo => 'In malattia fino al';
+
+  @override
+  String sickLeaveDays(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$days giorni',
+      one: '1 giorno',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String sickLeaveDay(int days) {
+    return 'Giorno $days';
+  }
+
+  @override
+  String get sickLeaveDuration => 'Durata';
+
+  @override
+  String get sickLeaveRef => 'Numero di protocollo';
+
+  @override
+  String get sickLeaveRefHint => 'es. 1234567890';
+
+  @override
+  String get sickLeaveToBeforeFrom =>
+      'Indica una data di inizio uguale o precedente alla data di fine';
+
+  @override
+  String get doctorLabel => 'Medico';
+
+  @override
+  String get doctorHint => 'es. Dr. Rossi, Bolzano';
+
+  @override
   String get prescriptions => 'Prescrizioni';
 
   @override

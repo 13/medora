@@ -22,6 +22,7 @@ import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/medication_expiry_tile.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
+import 'package:medora/presentation/widgets/sick_leave_badge.dart';
 import 'package:medora/presentation/widgets/sync_status_chip.dart';
 import 'package:medora/presentation/widgets/update_banner.dart';
 
@@ -728,6 +729,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final treatmentsAsync = ref.watch(activeTreatmentsProvider);
+    final now = ref.watch(nowProvider)();
 
     return AsyncValueView<List<Treatment>>(
       value: treatmentsAsync,
@@ -746,7 +748,7 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
         return Card(
           child: Column(
             children: treatments.take(3).map((t) {
-              return _ActiveTreatmentTile(treatment: t);
+              return _ActiveTreatmentTile(treatment: t, now: now);
             }).toList(),
           ),
         );
@@ -756,8 +758,11 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
 }
 
 class _ActiveTreatmentTile extends StatelessWidget {
-  const _ActiveTreatmentTile({required this.treatment});
+  const _ActiveTreatmentTile({required this.treatment, required this.now});
   final Treatment treatment;
+
+  /// "Now" from the card's `nowProvider`, for the sick-leave day count.
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
@@ -776,6 +781,15 @@ class _ActiveTreatmentTile extends StatelessWidget {
             l10n.startedOn(treatment.startDate.formatted),
             style: const TextStyle(fontSize: 12),
           ),
+          if (treatment.isSickLeaveOpen) ...[
+            const SizedBox(height: 4),
+            SickLeaveBadge(
+              key: const Key('sickLeaveBadge'),
+              treatment: treatment,
+              now: now,
+              fontSize: 10,
+            ),
+          ],
           if (treatment.patientTags.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(

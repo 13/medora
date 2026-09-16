@@ -172,6 +172,27 @@
   "startDate": "Start Date",
   "endDate": "End Date",
   "ongoing": "Ongoing",
+  "sickLeave": "Sick leave",
+  "sickLeaveFrom": "Unable to work from",
+  "sickLeaveTo": "Unable to work until",
+  "sickLeaveDays": "{days, plural, =1{1 day} other{{days} days}}",
+  "@sickLeaveDays": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "sickLeaveDay": "Day {days}",
+  "@sickLeaveDay": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "sickLeaveDuration": "Duration",
+  "sickLeaveRef": "Certificate no.",
+  "sickLeaveRefHint": "e.g. 1234567890",
+  "sickLeaveToBeforeFrom": "Pick a start date on or before the end date",
+  "doctorLabel": "Doctor",
+  "doctorHint": "e.g. Dr. Rossi, Bolzano",
   "prescriptions": "Prescriptions",
   "numPrescriptions": "{count, plural, =0{No prescriptions} =1{1 prescription} other{{count} prescriptions}}",
   "@numPrescriptions": {
