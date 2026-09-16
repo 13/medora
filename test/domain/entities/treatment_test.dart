@@ -81,6 +81,49 @@ void main() {
       expect(t.sickLeaveDaysAt(DateTime(2026, 4, 2)), 3);
     });
 
+    test('a start later in the day than now still counts that day', () {
+      // Unlike the midnight cases above, a plain Duration count gets this
+      // wrong in every time zone (1 day 14 hours floors to 1, so 2 days).
+      final t = _t(sickLeaveFrom: DateTime(2026, 3, 3, 18));
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 5, 8)), 3);
+    });
+
+    test('a closed leave ending earlier in the day than it began', () {
+      final t = _t(
+        sickLeaveFrom: DateTime(2026, 3, 3, 18),
+        sickLeaveTo: DateTime(2026, 3, 9, 8),
+      );
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 20)), 7);
+    });
+
+    test('a leave that ends before it starts has no count', () {
+      final t = _t(
+        sickLeaveFrom: DateTime(2026, 3, 9),
+        sickLeaveTo: DateTime(2026, 3, 3),
+      );
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 20)), isNull);
+    });
+
+    test('a leave ending the day before it starts has no count', () {
+      final t = _t(
+        sickLeaveFrom: DateTime(2026, 3, 3),
+        sickLeaveTo: DateTime(2026, 3, 2, 23, 59),
+      );
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 20)), isNull);
+    });
+
+    test('an open leave that has not started yet has no count', () {
+      final t = _t(sickLeaveFrom: DateTime(2026, 3, 10));
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 5)), isNull);
+      // The day before, even late in the evening, is still "not yet".
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 9, 23, 59)), isNull);
+    });
+
+    test('an open leave starting today is day one', () {
+      final t = _t(sickLeaveFrom: DateTime(2026, 3, 10, 9));
+      expect(t.sickLeaveDaysAt(DateTime(2026, 3, 10, 7)), 1);
+    });
+
     test('a closed leave ignores now entirely', () {
       final t = _t(
         sickLeaveFrom: DateTime(2026, 3, 3),
@@ -91,20 +134,35 @@ void main() {
     });
   });
 
-  test('copyWith carries the sick-leave fields through', () {
-    final t = _t(
+  group('copyWith', () {
+    final base = _t(
       sickLeaveFrom: DateTime(2026, 3, 3),
       sickLeaveRef: '1234567890',
       doctor: 'Dr. Rossi, Bozen',
     );
-    final ended = t.copyWith(
-      isActive: false,
-      sickLeaveTo: DateTime(2026, 3, 9),
-    );
-    expect(ended.sickLeaveFrom, DateTime(2026, 3, 3));
-    expect(ended.sickLeaveTo, DateTime(2026, 3, 9));
-    expect(ended.sickLeaveRef, '1234567890');
-    expect(ended.doctor, 'Dr. Rossi, Bozen');
-    expect(ended.isActive, isFalse);
+
+    test('keeps the sick-leave fields it is not given', () {
+      final ended = base.copyWith(isActive: false);
+      expect(ended.sickLeaveFrom, DateTime(2026, 3, 3));
+      expect(ended.sickLeaveTo, isNull);
+      expect(ended.sickLeaveRef, '1234567890');
+      expect(ended.doctor, 'Dr. Rossi, Bozen');
+      expect(ended.isActive, isFalse);
+    });
+
+    test('replaces every sick-leave field it is given', () {
+      final edited = base.copyWith(
+        sickLeaveFrom: DateTime(2026, 3, 4),
+        sickLeaveTo: DateTime(2026, 3, 9),
+        sickLeaveRef: '0987654321',
+        doctor: 'Dr. Bianchi, Meran',
+      );
+      expect(edited.sickLeaveFrom, DateTime(2026, 3, 4));
+      expect(edited.sickLeaveTo, DateTime(2026, 3, 9));
+      expect(edited.sickLeaveRef, '0987654321');
+      expect(edited.doctor, 'Dr. Bianchi, Meran');
+      expect(edited.name, base.name);
+      expect(edited.startDate, base.startDate);
+    });
   });
 }

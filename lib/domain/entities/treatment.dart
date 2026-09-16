@@ -65,14 +65,31 @@ class Treatment {
 
   bool get isSickLeaveOpen => sickLeaveFrom != null && sickLeaveTo == null;
 
-  /// Inclusive calendar days of sick leave; null when none is recorded.
+  /// Inclusive calendar days of sick leave, always 1 or more, or null.
   ///
-  /// An open leave counts up to [now]. Inclusive (+1) because a sick note
-  /// "from Monday to Friday" means five days, not four.
-  int? sickLeaveDaysAt(DateTime now) => sickLeaveFrom == null
-      ? null
-      : calendarDaysBetween(sickLeaveFrom!, sickLeaveTo ?? now) + 1;
+  /// An open leave counts up to [now]; a closed leave ignores [now]. Only
+  /// the calendar date of each value matters, never the time of day.
+  /// Inclusive (+1) because a sick note "from Monday to Friday" means five
+  /// days, not four, and a leave starting today is day 1.
+  ///
+  /// Null means "show no count". That is the case when:
+  /// - no leave is recorded ([hasSickLeave] is false);
+  /// - the leave ends on a day before it starts (an invalid range, e.g.
+  ///   from a synced or restored row the form never validated);
+  /// - an open leave starts after [now] (it has not begun yet).
+  ///
+  /// A null count can therefore occur while [hasSickLeave] is true, so
+  /// callers must not force-unwrap it.
+  int? sickLeaveDaysAt(DateTime now) {
+    final from = sickLeaveFrom;
+    if (from == null) return null;
+    final span = calendarDaysBetween(from, sickLeaveTo ?? now);
+    return span < 0 ? null : span + 1;
+  }
 
+  /// A copy with the given fields replaced. A null argument keeps the
+  /// current value, so a field cannot be cleared here; build a new
+  /// [Treatment] for that.
   Treatment copyWith({
     String? id,
     String? userId,
