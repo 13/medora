@@ -13,6 +13,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sick_leave_badge.dart';
@@ -175,11 +176,11 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
                           children: [
                             if (t.isActive)
                               SlidableAction(
-                                onPressed: (_) {
-                                  ref
-                                      .read(treatmentListProvider.notifier)
-                                      .endTreatment(t.id);
-                                },
+                                // Asks first, like the detail screen: it
+                                // is the same write, and the dialog is where
+                                // an open sick leave can be ended too.
+                                onPressed: (_) =>
+                                    confirmAndEndTreatment(context, ref, t),
                                 backgroundColor: context.medora.warning,
                                 foregroundColor: context.medora.onWarning,
                                 icon: Icons.stop_circle,

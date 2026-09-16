@@ -191,6 +191,7 @@
   "sickLeaveRef": "Certificate no.",
   "sickLeaveRefHint": "e.g. 1234567890",
   "sickLeaveToBeforeFrom": "Pick a start date on or before the end date",
+  "sickLeaveEndToday": "Also end sick leave today",
   "doctorLabel": "Doctor",
   "doctorHint": "e.g. Dr. Rossi, Bolzano",
   "prescriptions": "Prescriptions",

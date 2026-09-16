@@ -125,6 +125,7 @@
   "sickLeaveRef": "Protokollnummer",
   "sickLeaveRefHint": "z.B. 1234567890",
   "sickLeaveToBeforeFrom": "Bitte ein Anfangsdatum am oder vor dem Enddatum wählen",
+  "sickLeaveEndToday": "Krankenstand ebenfalls heute beenden",
   "doctorLabel": "Ärztin/Arzt",
   "doctorHint": "z.B. Dr. Rossi, Bozen",
   "prescriptions": "Verschreibungen",

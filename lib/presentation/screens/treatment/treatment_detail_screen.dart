@@ -17,6 +17,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/screens/treatment/prescription_sheet.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
@@ -60,30 +61,7 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                   onSelected: (value) async {
                     switch (value) {
                       case 'end':
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (ctx) => AlertDialog(
-                            title: Text(l10n.endTreatment),
-                            content: Text(
-                              l10n.endTreatmentConfirm(treatment.name),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: Text(l10n.cancel),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(ctx, true),
-                                child: Text(l10n.endTreatment),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          await ref
-                              .read(treatmentListProvider.notifier)
-                              .endTreatment(treatment.id);
-                        }
+                        await confirmAndEndTreatment(context, ref, treatment);
                       case 'delete':
                         final confirm = await showDialog<bool>(
                           context: context,

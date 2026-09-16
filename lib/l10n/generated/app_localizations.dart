@@ -760,6 +760,12 @@ abstract class AppLocalizations {
   /// **'Pick a start date on or before the end date'**
   String get sickLeaveToBeforeFrom;
 
+  /// No description provided for @sickLeaveEndToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Also end sick leave today'**
+  String get sickLeaveEndToday;
+
   /// No description provided for @doctorLabel.
   ///
   /// In en, this message translates to:

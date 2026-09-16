@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
@@ -148,6 +149,91 @@ void main() {
 
     expect(find.text('Sinusitis'), findsOneWidget);
     expect(find.text('Influenza'), findsNothing);
+  });
+
+  group('the End slide action', () {
+    Future<void> slideAndTapEnd(WidgetTester tester, String name) async {
+      await tester.drag(find.text(name), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(SlidableAction, 'End'));
+      await tester.pumpAndSettle();
+    }
+
+    final dialog = find.byType(AlertDialog);
+    final checkbox = find.byKey(const Key('endSickLeaveCheckbox'));
+
+    testWidgets('asks first, then ends the treatment and its open leave', (
+      tester,
+    ) async {
+      await seed('t1', 'Sinusitis', from: DateTime(2026, 3, 3));
+      await pump(tester);
+      await slideAndTapEnd(tester, 'Sinusitis');
+
+      expect(dialog, findsOneWidget);
+      expect(
+        (await TreatmentLocalDatasource().getTreatmentById('t1'))!.isActive,
+        isTrue,
+        reason: 'nothing may be ended before the user confirms',
+      );
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.text('Also end sick leave today'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(
+          of: dialog,
+          matching: find.widgetWithText(TextButton, 'End Treatment'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final t = (await TreatmentLocalDatasource().getTreatmentById('t1'))!;
+      expect(t.isActive, isFalse);
+      expect(t.sickLeaveTo, DateTime(2026, 3, 5));
+      // The list refreshed: the row left the Active filter.
+      expect(find.text('Sinusitis'), findsNothing);
+    });
+
+    testWidgets('cancelling leaves the treatment running', (tester) async {
+      await seed('t1', 'Sinusitis', from: DateTime(2026, 3, 3));
+      await pump(tester);
+      await slideAndTapEnd(tester, 'Sinusitis');
+      await tester.tap(
+        find.descendant(
+          of: dialog,
+          matching: find.widgetWithText(TextButton, 'Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final t = (await TreatmentLocalDatasource().getTreatmentById('t1'))!;
+      expect(t.isActive, isTrue);
+      expect(t.sickLeaveTo, isNull);
+    });
+
+    testWidgets('a treatment without a leave gets no box', (tester) async {
+      await seed('t1', 'Influenza');
+      await pump(tester);
+      await slideAndTapEnd(tester, 'Influenza');
+      expect(dialog, findsOneWidget);
+      expect(checkbox, findsNothing);
+
+      await tester.tap(
+        find.descendant(
+          of: dialog,
+          matching: find.widgetWithText(TextButton, 'End Treatment'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        (await TreatmentLocalDatasource().getTreatmentById('t1'))!.isActive,
+        isFalse,
+      );
+    });
   });
 
   group('layout at 360 dp', () {

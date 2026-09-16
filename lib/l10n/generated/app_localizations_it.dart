@@ -390,6 +390,9 @@ class AppLocalizationsIt extends AppLocalizations {
       'Indica una data di inizio uguale o precedente alla data di fine';
 
   @override
+  String get sickLeaveEndToday => 'Termina oggi anche il periodo di malattia';
+
+  @override
   String get doctorLabel => 'Medico';
 
   @override

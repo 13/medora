@@ -392,6 +392,9 @@ class AppLocalizationsDe extends AppLocalizations {
       'Bitte ein Anfangsdatum am oder vor dem Enddatum wählen';
 
   @override
+  String get sickLeaveEndToday => 'Krankenstand ebenfalls heute beenden';
+
+  @override
   String get doctorLabel => 'Ärztin/Arzt';
 
   @override

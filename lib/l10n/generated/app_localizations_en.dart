@@ -387,6 +387,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Pick a start date on or before the end date';
 
   @override
+  String get sickLeaveEndToday => 'Also end sick leave today';
+
+  @override
   String get doctorLabel => 'Doctor';
 
   @override
