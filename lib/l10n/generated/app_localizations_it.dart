@@ -1433,9 +1433,6 @@ class AppLocalizationsIt extends AppLocalizations {
   String get continueLabel => 'Continua';
 
   @override
-  String get daysLabel => 'Giorni';
-
-  @override
   String get leftLabel => 'Rimanenti';
 
   @override

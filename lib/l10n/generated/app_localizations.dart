@@ -2671,12 +2671,6 @@ abstract class AppLocalizations {
   /// **'Continue'**
   String get continueLabel;
 
-  /// No description provided for @daysLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Days'**
-  String get daysLabel;
-
   /// No description provided for @leftLabel.
   ///
   /// In en, this message translates to:

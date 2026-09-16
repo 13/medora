@@ -1422,9 +1422,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continueLabel => 'Continue';
 
   @override
-  String get daysLabel => 'Days';
-
-  @override
   String get leftLabel => 'Left';
 
   @override
