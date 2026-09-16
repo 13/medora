@@ -6,6 +6,8 @@
 /// test can swap in fakes without a plugin in sight.
 library;
 
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
@@ -55,11 +57,36 @@ class MlKitBarcodeScanPort implements BarcodeScanPort {
 
 /// [CameraPort] on a `camera` [CameraController] for the back camera.
 class CameraControllerPort implements CameraPort {
+  /// [listCameras] and [createController] are seams for
+  /// `test/services/mlkit_camera_port_test.dart`; production uses
+  /// `availableCameras()` and a real [CameraController].
+  CameraControllerPort({
+    Future<List<CameraDescription>> Function()? listCameras,
+    CameraController Function(CameraDescription camera)? createController,
+  }) : _listCameras = listCameras ?? availableCameras,
+       _createController = createController ?? _openCamera;
+
+  static CameraController _openCamera(CameraDescription camera) =>
+      CameraController(
+        camera,
+        ResolutionPreset.veryHigh,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+
+  final Future<List<CameraDescription>> Function() _listCameras;
+  final CameraController Function(CameraDescription camera) _createController;
+
   CameraController? _controller;
 
   /// Set the moment a capture starts, so the shutter can be disabled before
   /// the plugin's own flag comes back.
   bool _takingPicture = false;
+
+  /// Bumped by every [initialize] and every [dispose], so an opening the
+  /// caller has walked away from (or a newer one has overtaken) can tell,
+  /// and release the camera it opened instead of leaving it lit.
+  int _generation = 0;
 
   @override
   bool get isReady => _controller?.value.isInitialized ?? false;
@@ -73,28 +100,47 @@ class CameraControllerPort implements CameraPort {
 
   @override
   Future<bool> initialize() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return false;
+    final generation = ++_generation;
+    final cameras = await _listCameras();
+    // Abandoned (the screen was left) or overtaken while the cameras were
+    // listed: opening one now would light a camera nobody releases.
+    if (generation != _generation || cameras.isEmpty) return false;
     final backCamera = cameras.firstWhere(
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => cameras.first,
     );
-    final controller = CameraController(
-      backCamera,
-      ResolutionPreset.veryHigh,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
+    // Held locally until it is open: [dispose] can only release what it
+    // knows about, so an opening camera releases itself below instead.
+    final controller = _createController(backCamera);
+    try {
+      await controller.initialize();
+    } catch (_) {
+      await _releaseQuietly(controller);
+      rethrow;
+    }
+    if (generation != _generation) {
+      await _releaseQuietly(controller);
+      return false;
+    }
+    final previous = _controller;
     _controller = controller;
-    await controller.initialize();
-    // A newer initialisation (or a dispose) replaced this one.
-    if (_controller != controller) return false;
+    if (previous != null) unawaited(_releaseQuietly(previous));
     try {
       await controller.setFocusMode(FocusMode.auto);
     } on CameraException catch (e) {
       debugPrint('Camera focus mode unsupported: $e');
     }
-    return _controller == controller;
+    return true;
+  }
+
+  /// Releases [controller], reporting rather than throwing: this runs while
+  /// another failure is already on its way out, or nobody is listening.
+  Future<void> _releaseQuietly(CameraController controller) async {
+    try {
+      await controller.dispose();
+    } catch (e) {
+      debugPrint('Camera dispose error: $e');
+    }
   }
 
   @override
@@ -166,6 +212,8 @@ class CameraControllerPort implements CameraPort {
 
   @override
   Future<void> dispose() async {
+    // Cancels an opening in flight; it releases its own camera.
+    _generation++;
     final controller = _controller;
     _controller = null;
     _takingPicture = false;
