@@ -159,7 +159,7 @@ void main() {
         '- Ibuprofen 400: 1 Tablette · 3 mal täglich · 5 Tage\n'
         '  14 von 15 eingenommen\n'
         '- Tachipirina 1000: 1 Tablette · Bei Bedarf\n'
-        '  3 eingenommen (4. März 2026 – 6. März 2026)\n'
+        '  3 Dosen eingenommen (4. März 2026 – 6. März 2026)\n'
         'Notizen: ging langsam weg',
       );
     });
@@ -198,7 +198,7 @@ void main() {
         '- Ibuprofen 400: 1 tablet · 3 times daily · 5 days\n'
         '  14 of 15 taken\n'
         '- Tachipirina 1000: 1 tablet · As Needed\n'
-        '  3 taken (Mar 4, 2026 – Mar 6, 2026)\n'
+        '  3 doses taken (Mar 4, 2026 – Mar 6, 2026)\n'
         'Notes: ging langsam weg',
       );
     });
@@ -435,7 +435,7 @@ void main() {
         '  1 von 2 eingenommen\n'
         '- Später: 3 mal täglich · 1 Tag\n'
         '- Tachipirina 1000: Bei Bedarf\n'
-        '  2 eingenommen (4. März 2026)\n'
+        '  2 Dosen eingenommen (4. März 2026)\n'
         '- Nie: Bei Bedarf\n'
         '  Nicht eingenommen',
       );

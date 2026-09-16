@@ -805,7 +805,7 @@ abstract class AppLocalizations {
   /// Doses logged for an as-needed prescription.
   ///
   /// In en, this message translates to:
-  /// **'{taken, plural, =0{Not taken} other{{taken} taken}}'**
+  /// **'{taken, plural, =0{Not taken} =1{1 dose taken} other{{taken} doses taken}}'**
   String dosesTakenAsNeeded(int taken);
 
   /// No description provided for @shareEpisode.

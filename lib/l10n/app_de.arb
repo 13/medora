@@ -132,7 +132,7 @@
   "illness": "Krankheit",
   "sickLeavePeriod": "Krankenstand",
   "dosesTakenOfPlanned": "{taken} von {total} eingenommen",
-  "dosesTakenAsNeeded": "{taken, plural, =0{Nicht eingenommen} other{{taken} eingenommen}}",
+  "dosesTakenAsNeeded": "{taken, plural, =0{Nicht eingenommen} =1{1 Dosis eingenommen} other{{taken} Dosen eingenommen}}",
   "shareEpisode": "Verlauf teilen",
   "episodeShareSubject": "Krankheitsverlauf: {period}",
   "episodePatient": "Patient/in",

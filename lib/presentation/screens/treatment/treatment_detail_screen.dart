@@ -929,8 +929,10 @@ class _SickLeaveBlock extends StatelessWidget {
                   Icon(Icons.work_off, color: context.colors.primary),
                   const SizedBox(width: 8),
                   Expanded(
+                    // "Assenza per malattia" in Italian, where "Malattia"
+                    // alone names the illness.
                     child: Text(
-                      l10n.sickLeave,
+                      l10n.sickLeavePeriod,
                       style: context.text.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),

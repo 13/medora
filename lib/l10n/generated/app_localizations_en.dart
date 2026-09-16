@@ -419,7 +419,8 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       taken,
       locale: localeName,
-      other: '$taken taken',
+      other: '$taken doses taken',
+      one: '1 dose taken',
       zero: 'Not taken',
     );
     return '$_temp0';

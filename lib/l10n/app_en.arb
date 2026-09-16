@@ -227,7 +227,7 @@
       "total": { "type": "int" }
     }
   },
-  "dosesTakenAsNeeded": "{taken, plural, =0{Not taken} other{{taken} taken}}",
+  "dosesTakenAsNeeded": "{taken, plural, =0{Not taken} =1{1 dose taken} other{{taken} doses taken}}",
   "@dosesTakenAsNeeded": {
     "description": "Doses logged for an as-needed prescription.",
     "placeholders": {

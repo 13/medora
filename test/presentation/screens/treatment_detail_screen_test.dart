@@ -251,6 +251,17 @@ void main() {
     expect(inBlock(find.text('Duration')), findsNothing);
   });
 
+  testWidgets('the Italian heading reads "Assenza per malattia", so '
+      '"Malattia" names only the illness', (tester) async {
+    await seedAndPump(
+      tester,
+      from: DateTime(2026, 3, 3),
+      locale: const Locale('it'),
+    );
+    expect(inBlock(find.text('Assenza per malattia')), findsOneWidget);
+    expect(inBlock(find.text('Malattia')), findsNothing);
+  });
+
   testWidgets('a treatment without sick leave or doctor has no block', (
     tester,
   ) async {
@@ -1057,7 +1068,7 @@ void main() {
       // On screen each date keeps together (no-break spaces).
       expect(
         find.text(
-          '3 taken (Mar\u00A03,\u00A02026\u00A0– Mar\u00A04,\u00A02026)',
+          '3 doses taken (Mar\u00A03,\u00A02026\u00A0– Mar\u00A04,\u00A02026)',
         ),
         findsOneWidget,
       );
@@ -1072,7 +1083,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Not taken'), findsNothing);
-      expect(find.text('1 taken (Mar\u00A05,\u00A02026)'), findsOneWidget);
+      expect(find.text('1 dose taken (Mar\u00A05,\u00A02026)'), findsOneWidget);
     });
 
     testWidgets('German reads "5 von 7 eingenommen"', (tester) async {
@@ -1114,7 +1125,7 @@ void main() {
             '- Ibuprofen: 1 tablet · Every 8 hours · 7 days\n'
             '  5 of 7 taken\n'
             '- Tachipirina: 1 tablet · As Needed\n'
-            '  3 taken (Mar 3, 2026 – Mar 4, 2026)',
+            '  3 doses taken (Mar 3, 2026 – Mar 4, 2026)',
       ]);
       // Nobody was named, so there is no patient line.
       expect(shared.single, isNot(contains('Patient')));
@@ -1147,7 +1158,7 @@ void main() {
             'Krankenstand: 3. März 2026 – 4. März 2026 (2 Tage)\n'
             'Medikamente:\n'
             '- Tachipirina: 1 Tablette · Bei Bedarf\n'
-            '  3 eingenommen (3. März 2026 – 4. März 2026)',
+            '  3 Dosen eingenommen (3. März 2026 – 4. März 2026)',
       ]);
       expect(subjects, ['Krankheitsverlauf: 3. März 2026 – Laufend']);
     });
