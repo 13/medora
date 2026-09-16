@@ -265,13 +265,35 @@ publish when the download is not a PDF (the site blocked the request) or when
 fewer than `--min-rows` (default 50,000) rows were parsed (layout change). Do
 not commit the generated files.
 
-### Monthly refresh on a developer machine
+### Periodic refresh on a developer machine
 
 `tools/refresh_supplements_data.sh` runs `tools/build_supplements_data.py
---publish`, appends to `~/.local/state/medora/refresh-supplements.log` and
-exits non-zero when `pdftotext`, `gh`, the download or the row guard fails.
-`tools/systemd/` holds a **user** service and timer for it (4th of each month,
-06:00, `Persistent=true` so a machine that was off catches up):
+--publish --out <tmp dir>/integratori.csv.gz` (the generated files are
+written to a temp dir that is removed on exit, never to the repo root), logs
+to both `~/.local/state/medora/refresh-supplements.log` **and** stderr (so
+`journalctl`, below, shows the real failure reason and not just an exit
+code), and exits non-zero when `pdftotext`, `gh`, `curl`, connectivity, a
+dirty working tree, the download or the row guard fails. The log is
+truncated to its last 1000 lines once it passes 2000, and a `flock` on
+`~/.local/state/medora/.refresh.lock` stops two refreshes from racing (the
+timer and a manual `systemctl --user start`, below).
+
+`tools/systemd/` holds a **user** service and timer for it. The timer fires
+three times a month — the 4th, 11th and 18th at 06:00, `Persistent=true` so
+a machine that was off catches up — instead of once: `gh release upload
+--clobber` is idempotent, so an extra run only re-uploads identical or newer
+data, and this bounds a transient failure (network blip, Ministry site down
+for maintenance) to about a week of staleness instead of a whole month
+before the in-app 45-day warning would otherwise have time to fire from a
+pipeline problem rather than a genuinely stale register. No `OnFailure=`
+notification unit is set up (nothing in this repo's tooling sends
+notifications yet); the wider schedule was judged sufficient on its own,
+and the log file plus `journalctl` are still there for whoever installs the
+timer to check in on it. The service unit does not use
+`After=network-online.target` — that target does not exist for the per-user
+systemd manager, so it would be inert — the script instead waits for
+`https://www.salute.gov.it/` to answer, up to 10 attempts 30 seconds apart,
+before downloading anything:
 
 ```bash
 mkdir -p ~/.config/systemd/user
