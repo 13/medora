@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/provider_retry.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -74,6 +75,10 @@ void main() {
     });
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(
+      // The policy main.dart installs on its own ProviderScope: one quick
+      // retry, then the error shell. These tests pump the real router, so
+      // they pump the real scope configuration too.
+      retry: medoraRetry,
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
         syncStartupDelayProvider.overrideWithValue(Duration.zero),
