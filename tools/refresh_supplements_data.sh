@@ -1,33 +1,81 @@
 #!/usr/bin/env bash
 # tools/refresh_supplements_data.sh
 # Rebuilds and publishes the food-supplement register data (see
-# docs/release.md). Run monthly from a machine in Italy; the systemd user
-# timer in tools/systemd/ does exactly that. Logs to
-# ~/.local/state/medora/refresh-supplements.log and exits non-zero on failure.
+# docs/release.md). Run periodically from a machine in Italy; the systemd
+# user timer in tools/systemd/ does exactly that. Logs to
+# ~/.local/state/medora/refresh-supplements.log *and* to stderr (so
+# `journalctl --user -u medora-supplements.service` shows the real failure
+# reason, not just the unit's exit code), and exits non-zero on failure.
+# Generated data files are written to a temp dir and never touch the working
+# tree or the repo root.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/medora"
 LOG="$LOG_DIR/refresh-supplements.log"
 mkdir -p "$LOG_DIR"
 
-log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"; }
+# Keep the log from growing without bound: once it passes ~2000 lines, keep
+# only the most recent 1000.
+if [ -f "$LOG" ] && [ "$(wc -l < "$LOG")" -gt 2000 ]; then
+  tail -n 1000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG" >&2; }
+
+# Refuse to run two refreshes at once — the timer and a manual
+# `systemctl --user start medora-supplements.service` (docs/release.md) can
+# otherwise race and upload the same release from two processes at once.
+exec 9>"$LOG_DIR/.refresh.lock"
+if ! flock -n 9; then
+  log "FAIL: another refresh is already running"
+  exit 1
+fi
 
 log "refresh starting (repo $ROOT)"
-if ! command -v pdftotext > /dev/null; then
-  log "FAIL: pdftotext (poppler-utils) is not installed"
-  exit 1
-fi
-if ! command -v gh > /dev/null; then
-  log "FAIL: gh is not installed"
-  exit 1
-fi
-if ! gh auth status >> "$LOG" 2>&1; then
+
+for tool in pdftotext gh curl flock; do
+  if ! command -v "$tool" > /dev/null; then
+    log "FAIL: $tool is not installed"
+    exit 1
+  fi
+done
+if ! gh auth status 2>&1 | tee -a "$LOG" >&2; then
   log "FAIL: gh is not authenticated"
   exit 1
 fi
 
 cd "$ROOT"
-if "$ROOT/tools/build_supplements_data.py" --publish >> "$LOG" 2>&1; then
+
+# Never publish from a dirty or non-default checkout: this runs unattended
+# with the operator's gh credentials, and a half-finished parser edit could
+# still produce a structurally valid, semantically wrong CSV.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  log "FAIL: working tree is dirty, refusing to publish"
+  exit 1
+fi
+
+# `After=network-online.target` in the service unit does nothing (that
+# target does not exist for the per-user systemd manager), so wait for
+# connectivity to the Ministry site ourselves, bounded so a real outage
+# still fails the run instead of hanging past TimeoutStartSec.
+host=www.salute.gov.it
+attempt=0
+max_attempts=10
+until curl -sfI --max-time 10 "https://$host/" > /dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge "$max_attempts" ]; then
+    log "FAIL: $host unreachable after $attempt attempts"
+    exit 1
+  fi
+  log "waiting for network ($host unreachable, attempt $attempt/$max_attempts)"
+  sleep 30
+done
+
+out_dir="$(mktemp -d)"
+trap 'rm -rf "$out_dir"' EXIT
+
+if "$ROOT/tools/build_supplements_data.py" --publish \
+    --out "$out_dir/integratori.csv.gz" 2>&1 | tee -a "$LOG" >&2; then
   log "refresh finished OK"
 else
   status=$?

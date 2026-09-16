@@ -133,3 +133,9 @@ untranslated.txt
 
 # tools/phone_check output — per-run screenshots and logs, never committed
 tools/phone_check/out/
+
+# tools/refresh_supplements_data.sh writes these to a temp dir, so they
+# should never land here — ignored as a belt-and-braces measure in case
+# tools/build_supplements_data.py is ever run by hand from the repo root.
+/integratori.csv.gz
+/integratori.meta.json
