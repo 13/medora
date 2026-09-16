@@ -29,6 +29,7 @@ import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/services/code_candidates.dart';
+import 'package:medora/services/scanner_ports.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 
 import '../../helpers/failing_medication_repo.dart';
@@ -249,12 +250,15 @@ void main() {
     required List<List<OcrLine>?> lines,
     List<List<CodeCandidate>?> barcodes = const [<CodeCandidate>[]],
     SupplementRegistryService? registry,
+    CameraPort? camera,
+    GalleryPort? gallery,
     List<Override> extra = const [],
   }) => [
     ...scannerOverrides(
       text: FakeTextRecognition(lines),
       barcodes: FakeBarcodeScan(barcodes),
-      camera: FakeCamera(photoPath: photo),
+      camera: camera ?? FakeCamera(photoPath: photo),
+      gallery: gallery,
     ),
     supplementRegistryServiceProvider.overrideWithValue(
       registry ?? FakeSupplementRegistry(),
@@ -752,5 +756,42 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('scanRegisterDismiss')));
     await _settle(tester);
     expect(find.text('Last updated 258 days ago'), findsNothing);
+  });
+
+  testWidgets('a torch that refuses to switch off keeps saying it is on', (
+    tester,
+  ) async {
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final camera = FakeCamera(photoPath: photo);
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [_minsan('107018')],
+          const <OcrLine>[],
+        ],
+        camera: camera,
+      ),
+    );
+
+    await tester.tap(find.byIcon(Icons.flash_off));
+    await _settle(tester);
+    expect(camera.torchOn, isTrue);
+    expect(find.byIcon(Icons.flash_on), findsOneWidget);
+
+    // From here the device refuses to switch the light off, which is what
+    // pausing the preview for the review asks it to do.
+    camera.torchWorks = false;
+    await _shoot(tester);
+    expect(camera.torchOn, isTrue, reason: 'the light never went off');
+
+    await tester.tap(find.text('Retake'));
+    await _settleWithIo(tester, rounds: 12);
+    await _settle(tester);
+    // The indicator has to stay truthful: one reading "off" would make the
+    // button ask for the light to come on, with no way left to kill it.
+    expect(find.byIcon(Icons.flash_on), findsOneWidget);
   });
 }

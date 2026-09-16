@@ -269,10 +269,12 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   Future<void> _pausePreview() async {
     if (!_cameraPort.isReady) return;
-    if (_torchOn) {
-      await _cameraPort.setTorch(false);
-      _torchOn = false;
-    }
+    // The indicator only follows a torch that actually switched, exactly as
+    // [_toggleTorch] does: a refused flash-off leaves the light on, and a
+    // flag saying otherwise would make the button ask for it to come on.
+    if (_torchOn && await _cameraPort.setTorch(false)) _torchOn = false;
+    // The preview freezes either way; a light that would not go out is no
+    // reason to keep a live preview under the photo being reviewed.
     await _cameraPort.pausePreview();
   }
 
