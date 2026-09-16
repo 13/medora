@@ -73,9 +73,9 @@ void main() {
     expect(find.text('Next dose'), findsOneWidget);
     expect(find.text('Tachipirina'), findsOneWidget);
     expect(find.text('Overdue'), findsOneWidget);
-    // Expiring stat tile shows 1
+    // Expiry stat tile shows 1
     final expiringTile = find
-        .ancestor(of: find.text('Expiring'), matching: find.byType(InkWell))
+        .ancestor(of: find.text('Expiry'), matching: find.byType(InkWell))
         .first;
     expect(
       find.descendant(of: expiringTile, matching: find.text('1')),

@@ -21,9 +21,10 @@
   "newTreatment": "Neue\nBehandlung",
 
   "expiringSoon": "Bald ablaufend",
+  "expiringOrExpired": "Abgelaufen & bald ablaufend",
   "lowStock": "Niedriger Bestand",
   "activeTreatments": "Aktive Behandlungen",
-  "statExpiring": "Läuft ab",
+  "statExpiring": "Ablauf",
   "statLowStock": "Wenig Vorrat",
   "statTreatments": "Behandlungen",
   "allMedicationsWithinDate": "Alle Medikamente sind haltbar",

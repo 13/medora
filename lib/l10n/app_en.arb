@@ -28,9 +28,10 @@
   "newTreatment": "New\nTreatment",
 
   "expiringSoon": "Expiring Soon",
+  "expiringOrExpired": "Expired & Expiring",
   "lowStock": "Low Stock",
   "activeTreatments": "Active Treatments",
-  "statExpiring": "Expiring",
+  "statExpiring": "Expiry",
   "statLowStock": "Low stock",
   "statTreatments": "Treatments",
   "allMedicationsWithinDate": "All medications are within date",

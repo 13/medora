@@ -56,13 +56,16 @@ class AppLocalizationsDe extends AppLocalizations {
   String get expiringSoon => 'Bald ablaufend';
 
   @override
+  String get expiringOrExpired => 'Abgelaufen & bald ablaufend';
+
+  @override
   String get lowStock => 'Niedriger Bestand';
 
   @override
   String get activeTreatments => 'Aktive Behandlungen';
 
   @override
-  String get statExpiring => 'Läuft ab';
+  String get statExpiring => 'Ablauf';
 
   @override
   String get statLowStock => 'Wenig Vorrat';

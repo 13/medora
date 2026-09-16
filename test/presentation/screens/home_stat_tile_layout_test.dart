@@ -73,9 +73,8 @@ void main() {
     );
   }
 
-  /// The stat labels live inside the tiles' [InkWell]s; some of them ("In
-  /// scadenza") are also section headers further down the page, so every
-  /// lookup is scoped to the tile row.
+  /// The stat labels live inside the tiles' [InkWell]s, so every lookup is
+  /// scoped to the tile row rather than the whole dashboard.
   Finder statLabel(String label) => find
       .descendant(of: find.byType(InkWell), matching: find.text(label))
       .first;
@@ -88,9 +87,9 @@ void main() {
   }
 
   const labels = <String, List<String>>{
-    'en': ['Expiring', 'Low stock', 'Treatments'],
-    'de': ['Läuft ab', 'Wenig Vorrat', 'Behandlungen'],
-    'it': ['In scadenza', 'Scorte basse', 'Trattamenti'],
+    'en': ['Expiry', 'Low stock', 'Treatments'],
+    'de': ['Ablauf', 'Wenig Vorrat', 'Behandlungen'],
+    'it': ['Scadenza', 'Scorte basse', 'Trattamenti'],
   };
 
   for (final entry in labels.entries) {

@@ -87,9 +87,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const _ActiveTreatmentsCard(),
             const SizedBox(height: 16),
 
-            // Expiring Soon
+            // Expired & expiring: one card, expired rows first.
             _SectionHeader(
-              title: l10n.expiringSoon,
+              // Not `expiringSoon`: the rows underneath say "Expired", and
+              // "Bald ablaufend" / "In scadenza" mean *about to* expire.
+              title: l10n.expiringOrExpired,
               onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
             ),
             const _ExpiringSoonCard(),
@@ -355,16 +357,22 @@ class _StatTiles extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final expiring = ref.watch(expiringSoonProvider).value?.length ?? 0;
+    final expiringMeds = ref.watch(expiringSoonProvider).value ?? const [];
+    final expiring = expiringMeds.length;
     final lowStock = ref.watch(lowStockProvider).value?.length ?? 0;
     final treatments = ref.watch(activeTreatmentsProvider).value?.length ?? 0;
+    // The count covers both states, so an amber number over a red "Expired"
+    // row would understate what the card below it is saying.
+    final anyExpired = expiringMeds.any(
+      (m) => m.expiredAt(ref.watch(nowProvider)()),
+    );
 
     return Row(
       children: [
         _StatTile(
           label: l10n.statExpiring,
           value: expiring,
-          color: context.medora.warning,
+          color: anyExpired ? context.medora.danger : context.medora.warning,
           onTap: () => MainShellScope.of(context)?.switchTab(1),
         ),
         const SizedBox(width: 12),

@@ -57,13 +57,16 @@ class AppLocalizationsIt extends AppLocalizations {
   String get expiringSoon => 'In scadenza';
 
   @override
+  String get expiringOrExpired => 'Scaduti e in scadenza';
+
+  @override
   String get lowStock => 'Scorte basse';
 
   @override
   String get activeTreatments => 'Trattamenti attivi';
 
   @override
-  String get statExpiring => 'In scadenza';
+  String get statExpiring => 'Scadenza';
 
   @override
   String get statLowStock => 'Scorte basse';

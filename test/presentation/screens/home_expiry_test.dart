@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -97,7 +98,7 @@ void main() {
 
     // And the stat tile counts both.
     final tile = find
-        .ancestor(of: find.text('Expiring'), matching: find.byType(InkWell))
+        .ancestor(of: find.text('Expiry'), matching: find.byType(InkWell))
         .first;
     expect(find.descendant(of: tile, matching: find.text('2')), findsOneWidget);
   });
@@ -124,8 +125,112 @@ void main() {
     expect(find.text('All medications are within date'), findsOneWidget);
     expect(find.text('Expired'), findsNothing);
     final tile = find
-        .ancestor(of: find.text('Expiring'), matching: find.byType(InkWell))
+        .ancestor(of: find.text('Expiry'), matching: find.byType(InkWell))
         .first;
     expect(find.descendant(of: tile, matching: find.text('0')), findsOneWidget);
+  });
+
+  /// Seeds one medication that expired months ago and one expiring inside
+  /// the warning window, the mix the card now renders.
+  Future<void> seedExpiredAndExpiring() async {
+    final db = await AppDatabase.instance.database;
+    await db.insert('medications', {
+      'id': 'exp',
+      'name': 'Bentelan',
+      'quantity': 8,
+      'expiry_date': '2025-12-01',
+    });
+    await db.insert('medications', {
+      'id': 'soon',
+      'name': 'Moment 200',
+      'quantity': 5,
+      'expiry_date': '2026-03-20',
+    });
+  }
+
+  // The card's rows say "Expired" / "Abgelaufen" / "Scaduto". A header
+  // reading "Expiring Soon" - and, more sharply, "Bald ablaufend", which
+  // means *about to* expire - contradicts the rows directly underneath it.
+  const sectionAndTile = <String, (String, String)>{
+    'en': ('Expired & Expiring', 'Expiry'),
+    'de': ('Abgelaufen & bald ablaufend', 'Ablauf'),
+    'it': ('Scaduti e in scadenza', 'Scadenza'),
+  };
+
+  for (final entry in sectionAndTile.entries) {
+    testWidgets('the expiry section covers both states in ${entry.key}', (
+      tester,
+    ) async {
+      useTallPhone(tester);
+      await seedExpiredAndExpiring();
+
+      await pumpMedoraApp(
+        tester,
+        const HomeScreen(),
+        overrides: await overrides(),
+        locale: Locale(entry.key),
+      );
+      await tester.pumpAndSettle();
+
+      final (header, tileLabel) = entry.value;
+      expect(find.text(header), findsOneWidget);
+      expect(find.text(tileLabel), findsOneWidget);
+    });
+  }
+
+  testWidgets('the expiry tile is red once something has already expired', (
+    tester,
+  ) async {
+    useTallPhone(tester);
+    await seedExpiredAndExpiring();
+
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+
+    final medora = tester.element(find.byType(HomeScreen)).medora;
+    final tile = find
+        .ancestor(of: find.text('Expiry'), matching: find.byType(InkWell))
+        .first;
+    final count = tester.widget<Text>(
+      find.descendant(of: tile, matching: find.text('2')),
+    );
+    expect(
+      count.style?.color,
+      medora.danger,
+      reason: 'an amber count above a red "Expired" row understates it',
+    );
+  });
+
+  testWidgets('the expiry tile stays amber when nothing has expired yet', (
+    tester,
+  ) async {
+    useTallPhone(tester);
+    final db = await AppDatabase.instance.database;
+    await db.insert('medications', {
+      'id': 'soon',
+      'name': 'Moment 200',
+      'quantity': 5,
+      'expiry_date': '2026-03-20',
+    });
+
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+
+    final medora = tester.element(find.byType(HomeScreen)).medora;
+    final tile = find
+        .ancestor(of: find.text('Expiry'), matching: find.byType(InkWell))
+        .first;
+    final count = tester.widget<Text>(
+      find.descendant(of: tile, matching: find.text('1')),
+    );
+    expect(count.style?.color, medora.warning);
   });
 }

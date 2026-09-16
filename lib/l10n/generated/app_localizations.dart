@@ -190,6 +190,12 @@ abstract class AppLocalizations {
   /// **'Expiring Soon'**
   String get expiringSoon;
 
+  /// No description provided for @expiringOrExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'Expired & Expiring'**
+  String get expiringOrExpired;
+
   /// No description provided for @lowStock.
   ///
   /// In en, this message translates to:
@@ -205,7 +211,7 @@ abstract class AppLocalizations {
   /// No description provided for @statExpiring.
   ///
   /// In en, this message translates to:
-  /// **'Expiring'**
+  /// **'Expiry'**
   String get statExpiring;
 
   /// No description provided for @statLowStock.
