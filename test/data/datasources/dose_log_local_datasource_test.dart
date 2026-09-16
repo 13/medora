@@ -170,4 +170,27 @@ void main() {
       1,
     );
   });
+
+  test('a deleted dose is neither found, changed nor deleted again', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    final id = await seedDoseLog(
+      db,
+      s.prescriptionId,
+      DateTime(2026, 3, 1, 8),
+      status: 'taken',
+    );
+    final ds = DoseLogLocalDatasource();
+    await ds.markDeleted(id);
+    Future<Map<String, Object?>> row() async =>
+        (await db.query('dose_logs', where: 'id = ?', whereArgs: [id])).single;
+    final tombstone = await row();
+
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    await ds.updateStatus(id, 'pending', syncStatus: SyncStatus.pendingUpdate);
+    await ds.markDeleted(id);
+
+    expect(await ds.getDoseLogById(id), isNull);
+    expect(await row(), tombstone);
+  });
 }
