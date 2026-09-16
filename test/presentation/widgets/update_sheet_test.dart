@@ -197,4 +197,28 @@ void main() {
     expect(find.text('Fixed the thing.'), findsOneWidget);
     expect(find.text('Show more'), findsNothing);
   });
+
+  testWidgets('a bracket-heavy body stalls neither the sheet nor the toggle', (
+    tester,
+  ) async {
+    // A body that pastes in a log line or a JSON dump: thousands of unmatched
+    // '['. Rendering it must not backtrack, and expanding it must not render
+    // it a second time.
+    await pumpSheet(tester, notes: '[' * 30000);
+
+    expect(find.text("What's new"), findsOneWidget);
+    expect(find.text('Show more'), findsOneWidget);
+
+    final watch = Stopwatch()..start();
+    await tester.tap(find.text('Show more'));
+    await tester.pumpAndSettle();
+    watch.stop();
+
+    expect(
+      watch.elapsedMilliseconds,
+      lessThan(1500),
+      reason: 'expanding re-rendered the body: ${watch.elapsedMilliseconds} ms',
+    );
+    expect(find.text('Show less'), findsOneWidget);
+  });
 }

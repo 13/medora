@@ -12,9 +12,20 @@ const int releaseNotesCollapsedChars = 400;
 /// The most it ever shows, expanded.
 const int releaseNotesMaxChars = 4000;
 
+/// The most input it ever looks at.
+///
+/// A GitHub body can run to six figures of characters, and the output is
+/// capped at [releaseNotesMaxChars] anyway, so nothing past this bound could
+/// ever be shown - cutting here keeps a pasted build log from costing the UI
+/// isolate a frame.
+const int releaseNotesMaxInputChars = 64 * 1024;
+
 final _comment = RegExp(r'<!--.*?-->', dotAll: true);
-final _image = RegExp(r'!\[[^\]]*\]\([^)]*\)');
-final _link = RegExp(r'\[([^\]]*)\]\([^)]*\)');
+// The inner classes exclude their own opening bracket: without that, an
+// unmatched '[' makes [^\]]* consume the rest of the body before failing, so
+// a run of them costs O(n^2). Excluding '[' fails each attempt at once.
+final _image = RegExp(r'!\[[^\[\]]*\]\([^()]*\)');
+final _link = RegExp(r'\[([^\[\]]*)\]\([^()]*\)');
 final _heading = RegExp(r'^\s{0,3}#{1,6}\s*');
 final _bullet = RegExp(r'^\s*(?:[-*+]|\d+[.)])\s+');
 final _rule = RegExp(r'^\s*(?:[-*_]\s*){3,}$');
@@ -32,9 +43,14 @@ final _blockQuote = RegExp(r'^\s*>\s?');
 /// `<!-- -->` comments, images and the auto-generated "**Full Changelog**"
 /// trailer are removed, and runs of blank lines collapse to one. Never
 /// longer than [releaseNotesMaxChars] (cut at a line boundary, with a
-/// trailing `…`).
+/// trailing `…`), and never reads more than [releaseNotesMaxInputChars].
 String releaseNotesToPlainText(String markdown) {
-  var text = markdown.replaceAll(_comment, '').replaceAll(_image, '');
+  // Bound the input first: every pass below is linear in its length, so the
+  // cut has to come before the work, not after it.
+  final source = markdown.length > releaseNotesMaxInputChars
+      ? markdown.substring(0, releaseNotesMaxInputChars)
+      : markdown;
+  var text = source.replaceAll(_comment, '').replaceAll(_image, '');
   text = text.replaceAllMapped(_link, (m) => m[1] ?? '');
   final lines = <String>[];
   for (final raw in text.split('\n')) {

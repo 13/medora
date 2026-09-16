@@ -144,10 +144,31 @@ class _WhatsNew extends StatefulWidget {
 class _WhatsNewState extends State<_WhatsNew> {
   bool _expanded = false;
 
+  /// The body, rendered once.
+  ///
+  /// This runs on the UI isolate, and the sheet rebuilds for every toggle
+  /// tap, theme change and metrics change - rendering in `build` would pay
+  /// for the whole body again each time.
+  late String _text;
+
+  @override
+  void initState() {
+    super.initState();
+    _text = releaseNotesToPlainText(widget.notes);
+  }
+
+  @override
+  void didUpdateWidget(_WhatsNew oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.notes != oldWidget.notes) {
+      _text = releaseNotesToPlainText(widget.notes);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final text = releaseNotesToPlainText(widget.notes);
+    final text = _text;
     // A release with no body (or one that was nothing but markup) says
     // nothing worth a heading.
     if (text.isEmpty) return const SizedBox.shrink();
