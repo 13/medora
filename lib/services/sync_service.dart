@@ -261,6 +261,7 @@ class SyncService {
     bool queueable = false,
     bool retryAfterCap = false,
   }) async {
+    if (_disposed) return null;
     if (!isAvailable) {
       debugPrint('Sync: $label skipped (local-only mode)');
       return null;
@@ -292,6 +293,9 @@ class SyncService {
       final report = SyncReport(startedAt: _now());
       first ??= report;
       await _cycle(label, report, body);
+      // A disposed service has been replaced: its cycle ends here, and it
+      // arms nothing that would run later next to its successor.
+      if (_disposed) break;
       if (!queueable || !_rerunRequested) break;
       // A queued re-run answers to the same guards as a fresh request: if
       // the device went offline or the user signed out while the cycle ran,
@@ -315,7 +319,7 @@ class SyncService {
         reruns++;
       }
     } while (_rerunRequested);
-    final requestedDuringForce = !queueable && _rerunRequested;
+    final requestedDuringForce = !queueable && _rerunRequested && !_disposed;
     _rerunRequested = false;
     // A force operation does not re-run itself, but a sync asked for while
     // it ran (a write, or a row edited while the force push sent it) still
@@ -373,6 +377,7 @@ class SyncService {
   /// would fire mid-flight and lie about the current one.
   void _returnToIdleLater() {
     _idleTimer?.cancel();
+    if (_disposed) return;
     _idleTimer = Timer(const Duration(seconds: 2), () {
       _idleTimer = null;
       if (_currentState == SyncState.success ||
@@ -1302,7 +1307,11 @@ class SyncService {
     _capRetryTimer = null;
   }
 
+  /// Set by [dispose]; a disposed service starts no cycle.
+  bool _disposed = false;
+
   void dispose() {
+    _disposed = true;
     stopAutoSync();
     _cancelCapRetry();
     _idleTimer?.cancel();

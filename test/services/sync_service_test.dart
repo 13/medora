@@ -2271,6 +2271,45 @@ void main() {
       expect(remote.upserts, 1 + SyncService.maxAutomaticReruns);
     });
 
+    test('a cycle still running when the service is disposed stops there '
+        'and arms no retry', () async {
+      late EditOnEveryPushRemote remote;
+      final h = Harness(
+        medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        capRetryDelay: const Duration(milliseconds: 40),
+      );
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-busy',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      seedBusyRemote(h);
+      final gate = Completer<void>();
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        await gate.future;
+      };
+
+      final cycle = h.service.syncAll();
+      await pumpEventQueue();
+      h.service.dispose();
+      gate.complete();
+      await cycle;
+
+      expect(remote.upserts, 1, reason: 'no re-run after dispose');
+      expect(h.service.hasCapRetryScheduled, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(remote.upserts, 1);
+      expect(await h.service.syncAll(), isNull);
+      expect(remote.upserts, 1);
+    });
+
     test('a sync asked for during a force push runs once it ends', () async {
       final h = Harness();
       await MedicationLocalDatasource().upsert(
