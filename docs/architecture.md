@@ -164,7 +164,14 @@ failing is skipped until `min(2^count minutes, 6 h)` after its last attempt.
 cycle. After each page the cursor moves to that page's last `updated_at` minus
 **1 second** of overlap, unless a row of this pull failed to apply; so a failure
 part-way leaves it at the end of the last fully stored page. Once a pull has
-read to the end, the cursor never sits before `1970-01-02`. **Conflicts**
+read to the end, the cursor never sits before `1970-01-02`. Builds before the
+paged pull read newest first and so moved their cursors past rows they never
+received; the first cycle that runs after the upgrade (cloud mode, online,
+signed in) therefore clears every table's cursor once and pulls everything
+again with the usual merge rules, without wiping or pushing anything. The
+`sync.pull_repair.reset` and `sync.pull_repair.done` preferences record that
+per repair version; `done` is set only once a cycle fetched every table, and a
+later cycle carries on from the cursors the pages stored. **Conflicts**
 resolve **last write wins by `updated_at`** on both sides: the push reads the
 remote value first and leaves a row it would clobber for the pull to overwrite,
 while the pull keeps a locally pending row at least as new as the remote copy
