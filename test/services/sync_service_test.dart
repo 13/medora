@@ -33,6 +33,7 @@ class Harness {
     FakeMedicationRemote Function(DateTime Function() clock)? medicationRemote,
     FakeDoseLogRemote Function(DateTime Function() clock)? doseLogRemote,
     Duration requestTimeout = const Duration(seconds: 30),
+    Duration capRetryDelay = const Duration(seconds: 15),
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
@@ -59,7 +60,10 @@ class Harness {
       onlineStream: online?.stream ?? const Stream<bool>.empty(),
       now: clock.now,
       requestTimeout: requestTimeout,
+      capRetryDelay: capRetryDelay,
     );
+    // A retry armed at the re-run cap must not fire into a later test.
+    addTearDown(service.dispose);
   }
 
   final TestClock clock;
@@ -163,6 +167,8 @@ Future<Map<String, dynamic>?> localRow(String table, String id) async {
   final rows = await db.query(table, where: 'id = ?', whereArgs: [id]);
   return rows.isEmpty ? null : rows.first;
 }
+
+int cycles() => 1 + SyncService.maxAutomaticReruns;
 
 void main() {
   setUp(setUpTestDatabase);
@@ -1868,6 +1874,91 @@ void main() {
         expect(remote.upserts, 2 * cycles);
       },
     );
+
+    test('a sync stopped at the cap retries once after a delay', () async {
+      late EditOnEveryPushRemote remote;
+      final h = Harness(
+        medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        capRetryDelay: const Duration(milliseconds: 40),
+      );
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-busy',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      const cycles = 1 + SyncService.maxAutomaticReruns;
+
+      await h.service.syncAll();
+      expect(remote.upserts, cycles);
+      expect(h.service.hasCapRetryScheduled, isTrue);
+
+      // The retry runs on its own and stops at the cap too...
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(remote.upserts, 2 * cycles);
+      expect(h.service.currentState, isNot(SyncState.syncing));
+      // ...without arming another one: no loop.
+      expect(h.service.hasCapRetryScheduled, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(remote.upserts, 2 * cycles);
+    });
+
+    test('a sync that finishes cancels a pending cap retry', () async {
+      late EditOnEveryPushRemote remote;
+      final h = Harness(
+        medicationRemote: (clock) =>
+            remote = EditOnEveryPushRemote(clock, limit: cycles()),
+        capRetryDelay: const Duration(milliseconds: 40),
+      );
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-busy',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      await h.service.syncAll();
+      expect(h.service.hasCapRetryScheduled, isTrue);
+
+      // The edits have stopped: the next sync settles the row and leaves
+      // nothing for the retry to do.
+      await h.service.syncAll();
+      expect(h.service.hasCapRetryScheduled, isFalse);
+      final upserts = remote.upserts;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(remote.upserts, upserts);
+      expect(
+        (await localRow('medications', 'm-busy'))!['sync_status'],
+        SyncStatus.synced,
+      );
+    });
+
+    test('dispose cancels a pending cap retry', () async {
+      late EditOnEveryPushRemote remote;
+      final h = Harness(
+        medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        capRetryDelay: const Duration(milliseconds: 40),
+      );
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-busy',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      await h.service.syncAll();
+      h.service.dispose();
+      expect(h.service.hasCapRetryScheduled, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(remote.upserts, 1 + SyncService.maxAutomaticReruns);
+    });
 
     test('a sync asked for during a force push runs once it ends', () async {
       final h = Harness();

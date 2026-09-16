@@ -29,7 +29,8 @@
 /// For medications, treatments, prescriptions and dose logs this is the only
 /// push path: the repositories write locally and ask for a [syncAll], which
 /// queues behind a running cycle. One [syncAll] re-runs itself at most
-/// [SyncService.maxAutomaticReruns] times. Every request to the server has a timeout
+/// [SyncService.maxAutomaticReruns] times, then retries once after
+/// [SyncService.capRetryDelay]. Every request to the server has a timeout
 /// ([SyncService.requestTimeout]) and fails like a network error.
 ///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
@@ -91,6 +92,7 @@ class SyncService {
     DateTime Function()? now,
     this.onFirstSuccessfulSync,
     this.requestTimeout = const Duration(seconds: 30),
+    this.capRetryDelay = const Duration(seconds: 15),
   }) : _cursors = cursors ?? SyncCursorStore.inMemory(),
        _failures = failures ?? SyncFailureStore.inMemory(),
        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
@@ -122,6 +124,10 @@ class SyncService {
   /// pending (with backoff) and a table whose fetch timed out keeps its
   /// cursor. The request itself may still land; see [_remote].
   final Duration requestTimeout;
+
+  /// How long after a [syncAll] stopped at [maxAutomaticReruns] the one
+  /// delayed retry runs.
+  final Duration capRetryDelay;
 
   final SyncCursorStore _cursors;
   final SyncFailureStore _failures;
@@ -179,10 +185,17 @@ class SyncService {
   /// Push pending local changes, then pull remote changes. Returns the report,
   /// or null when the cycle was skipped (local-only, offline, signed out, or
   /// already syncing).
-  Future<SyncReport?> syncAll() => _run('sync', (report) async {
-    await _pushPendingChanges(report);
-    await _pullAll(report, force: false);
-  }, queueable: true);
+  Future<SyncReport?> syncAll() => _syncAll(retryAfterCap: true);
+
+  Future<SyncReport?> _syncAll({required bool retryAfterCap}) => _run(
+    'sync',
+    (report) async {
+      await _pushPendingChanges(report);
+      await _pullAll(report, force: false);
+    },
+    queueable: true,
+    retryAfterCap: retryAfterCap,
+  );
 
   /// Push ALL local rows regardless of sync_status.
   Future<SyncReport?> forcePush() => _run(
@@ -210,6 +223,14 @@ class SyncService {
   /// running cycle then runs one more before it returns.
   bool _rerunRequested = false;
 
+  /// The one delayed [syncAll] armed when a sync stopped at the re-run cap
+  /// with work left, so that work is not stranded until the next trigger.
+  /// The retry itself never arms another, so this cannot become a loop.
+  Timer? _capRetryTimer;
+
+  @visibleForTesting
+  bool get hasCapRetryScheduled => _capRetryTimer != null;
+
   /// Runs one cycle. [queueable] marks a request that must not simply be
   /// dropped when a cycle is already running: it is remembered and re-run once
   /// the current cycle finishes, so a change made mid-cycle is not left
@@ -225,6 +246,7 @@ class SyncService {
     String label,
     Future<void> Function(SyncReport) body, {
     bool queueable = false,
+    bool retryAfterCap = false,
   }) async {
     if (!isAvailable) {
       debugPrint('Sync: $label skipped (local-only mode)');
@@ -247,6 +269,8 @@ class SyncService {
     }
 
     _rerunRequested = false;
+    // This cycle covers whatever a pending retry was going to send.
+    if (retryAfterCap) _cancelCapRetry();
     SyncReport? first;
     var reruns = 0;
     do {
@@ -265,9 +289,15 @@ class SyncService {
       } else if (reruns == maxAutomaticReruns) {
         debugPrint(
           'Sync: $label stopped after $reruns re-runs; '
-          'rows still pending wait for the next sync',
+          '${retryAfterCap ? 'retrying in $capRetryDelay' : 'rows still pending wait for the next sync'}',
         );
         _rerunRequested = false;
+        if (retryAfterCap) {
+          _capRetryTimer ??= Timer(capRetryDelay, () {
+            _capRetryTimer = null;
+            unawaited(_syncAll(retryAfterCap: false));
+          });
+        }
       } else {
         reruns++;
       }
@@ -1063,8 +1093,14 @@ class SyncService {
     _stateController.add(state);
   }
 
+  void _cancelCapRetry() {
+    _capRetryTimer?.cancel();
+    _capRetryTimer = null;
+  }
+
   void dispose() {
     stopAutoSync();
+    _cancelCapRetry();
     _idleTimer?.cancel();
     _idleTimer = null;
     if (!_stateController.isClosed) _stateController.close();

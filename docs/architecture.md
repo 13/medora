@@ -176,7 +176,7 @@ sync runs before that marking. Every request has a **30 s** timeout and fails
 like a network error. Each cycle fills a `SyncReport` that Settings renders,
 offering `discardFailedRow` per failed row; auto-sync fires **2 s** after
 connectivity returns, and a mid-cycle `syncAll()` is queued, up to **3**
-re-runs. Schema, RLS and
+re-runs; a sync stopped there retries once **15 s** later. Schema, RLS and
 triggers live in `supabase/migrations/`.
 
 ## Theme and localization rules
