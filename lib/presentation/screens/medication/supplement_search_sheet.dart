@@ -19,7 +19,12 @@ Future<SupplementEntry?> showSupplementSearchSheet(
   return showModalBottomSheet<SupplementEntry>(
     context: context,
     isScrollControlled: true,
-    builder: (ctx) => _SupplementSearchSheet(service: service),
+    // showModalBottomSheet does not pad for the keyboard, and the field
+    // autofocuses: without this the keyboard covers the lower results.
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+      child: _SupplementSearchSheet(service: service),
+    ),
   );
 }
 
@@ -48,6 +53,10 @@ class _SupplementSearchSheetState extends State<_SupplementSearchSheet> {
   /// empty [_results] a "no results" answer rather than "not asked yet".
   bool _searched = false;
 
+  /// Whether that search threw (a corrupt or unopenable register), which is
+  /// an error to report rather than an empty result to believe.
+  bool _failed = false;
+
   /// Guards against an earlier, slower search overwriting a later one.
   int _requestId = 0;
 
@@ -67,6 +76,7 @@ class _SupplementSearchSheetState extends State<_SupplementSearchSheet> {
         _results = const [];
         _searching = false;
         _searched = false;
+        _failed = false;
       });
       return;
     }
@@ -76,16 +86,17 @@ class _SupplementSearchSheetState extends State<_SupplementSearchSheet> {
 
   Future<void> _search(String query) async {
     final id = ++_requestId;
-    List<SupplementEntry> found;
+    // Null means the search threw — told apart from an empty answer below.
+    List<SupplementEntry>? found;
     try {
       found = await widget.service.searchByName(query);
     } catch (e) {
       debugPrint('Supplement register search failed: $e');
-      found = const [];
     }
     if (!mounted || id != _requestId) return;
     setState(() {
-      _results = found;
+      _failed = found == null;
+      _results = found ?? const [];
       _searching = false;
       _searched = true;
     });
@@ -141,7 +152,11 @@ class _SupplementSearchSheetState extends State<_SupplementSearchSheet> {
             ),
           ),
           const SizedBox(height: 8),
-          const Divider(height: 1),
+          // A slim bar, so a pending query never tears the list down.
+          if (_searching)
+            const LinearProgressIndicator(minHeight: 1)
+          else
+            const Divider(height: 1),
           Expanded(child: _body(ctx, l10n, scrollController)),
         ],
       ),
@@ -153,17 +168,16 @@ class _SupplementSearchSheetState extends State<_SupplementSearchSheet> {
     AppLocalizations l10n,
     ScrollController scrollController,
   ) {
-    if (_searching) {
+    if (_searching && _results.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_results.isEmpty) {
+      if (!_searched) return const SizedBox.shrink();
       return Center(
-        child: _searched
-            ? Text(
-                l10n.noResults,
-                style: TextStyle(color: context.colors.outline),
-              )
-            : const SizedBox.shrink(),
+        child: Text(
+          _failed ? l10n.genericError : l10n.noResults,
+          style: TextStyle(color: context.colors.outline),
+        ),
       );
     }
     return ListView.separated(
