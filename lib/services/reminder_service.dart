@@ -386,6 +386,22 @@ class ReminderService implements ReminderPort {
     if (androidPlugin != null) {
       return await androidPlugin.requestNotificationsPermission() ?? false;
     }
+    // iOS answers from its stored decision after the first prompt, so this
+    // is safe to call on every reconcile. Without it the app would report
+    // "permitted" on the one platform where the answer is most likely to be
+    // no — and the whole pending-notification budget exists for iOS's cap.
+    final iosPlugin = _notifications
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (iosPlugin != null) {
+      return await iosPlugin.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+    }
     return true;
   }
 
