@@ -43,10 +43,15 @@ class DoseLogLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
-  /// One dose log with its joined display fields, or null.
+  /// One dose log with its joined display fields, or null. A deleted dose
+  /// (a tombstone waiting to be pushed) is not returned, so it can be
+  /// neither changed nor deleted again.
   Future<DoseLogModel?> getDoseLogById(String id) async {
     final db = await _db;
-    final rows = await db.rawQuery('$_joinQuery WHERE d.id = ? LIMIT 1', [id]);
+    final rows = await db.rawQuery(
+      '$_joinQuery WHERE d.id = ? AND d.sync_status != ? LIMIT 1',
+      [id, SyncStatus.pendingDelete],
+    );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
   }
@@ -234,7 +239,12 @@ class DoseLogLocalDatasource {
     } else if (takenTime != null) {
       updates['taken_time'] = takenTime.toIso8601String();
     }
-    await db.update('dose_logs', updates, where: 'id = ?', whereArgs: [id]);
+    await db.update(
+      'dose_logs',
+      updates,
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.pendingDelete],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
@@ -256,8 +266,8 @@ class DoseLogLocalDatasource {
         'sync_status': SyncStatus.pendingDelete,
         'deleted_at': DateTime.now().toIso8601String(),
       },
-      where: 'id = ?',
-      whereArgs: [id],
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.pendingDelete],
     );
   }
 

@@ -68,4 +68,43 @@ void main() {
     final result = await makeRepo().markDoseTaken('missing');
     expect(result.isFailure, isTrue);
   });
+
+  test('a deleted dose can be neither deleted again nor changed', () async {
+    final db = await AppDatabase.instance.database;
+    final seeded = await seedPrescription(db);
+    final id = await seedDoseLog(
+      db,
+      seeded.prescriptionId,
+      DateTime(2026, 3, 1, 8),
+      status: 'taken',
+    );
+    var requests = 0;
+    final repo = DoseLogRepositoryImpl(
+      localDatasource: DoseLogLocalDatasource(),
+      prescriptionLocal: PrescriptionLocalDatasource(),
+      requestSync: () async => requests++,
+    );
+    expect((await repo.deleteDoseLog(id)).isSuccess, isTrue);
+    await pumpEventQueue();
+    final tombstone = (await db.query(
+      'dose_logs',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+
+    expect((await repo.deleteDoseLog(id)).isFailure, isTrue);
+    expect((await repo.markDosePending(id)).isFailure, isTrue);
+    expect((await repo.markDoseTaken(id)).isFailure, isTrue);
+    expect((await repo.getDoseLogById(id)).isFailure, isTrue);
+    await pumpEventQueue();
+
+    expect(requests, 1);
+    final stored = (await db.query(
+      'dose_logs',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(stored, tombstone);
+    expect(stored['sync_status'], SyncStatus.pendingDelete);
+  });
 }

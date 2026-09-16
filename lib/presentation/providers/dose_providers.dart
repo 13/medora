@@ -113,15 +113,19 @@ class DoseActions {
   /// A dose of an as-needed prescription was only ever a record of an
   /// intake, so undoing it deletes it instead: back to pending it would be
   /// a dose nobody is due to take.
+  ///
+  /// Only a dose that is still taken can be undone. Two undo buttons can
+  /// hold the same dose (the dose sheet and the snackbar); the second one
+  /// returns false and gives no stock back.
   Future<bool> undoTake(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
     final dose = (await repo.getDoseLogById(id)).dataOrNull;
-    final prescription = dose == null
-        ? null
-        : (await _ref
-                  .read(prescriptionRepositoryProvider)
-                  .getPrescriptionById(dose.prescriptionId))
-              .dataOrNull;
+    if (dose == null || dose.status != DoseStatus.taken) return false;
+    final prescription =
+        (await _ref
+                .read(prescriptionRepositoryProvider)
+                .getPrescriptionById(dose.prescriptionId))
+            .dataOrNull;
     final bool ok;
     if (prescription?.scheduleType == 'as_needed') {
       ok = (await repo.deleteDoseLog(id)).isSuccess;

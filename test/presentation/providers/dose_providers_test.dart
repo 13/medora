@@ -242,6 +242,37 @@ void main() {
     },
   );
 
+  test('undoing a scheduled dose twice restores its stock once', () async {
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await db.update(
+      'prescriptions',
+      {'auto_diminish': 1},
+      where: 'id = ?',
+      whereArgs: [s.prescriptionId],
+    );
+    final id = await seedDoseLog(db, s.prescriptionId, recentToday(now));
+    Future<int?> stock() async =>
+        (await db.query(
+              'medications',
+              where: 'id = ?',
+              whereArgs: [s.medicationId],
+            )).single['quantity']
+            as int?;
+    final actions = c.read(doseActionsProvider);
+
+    await actions.take(id);
+    expect(await stock(), 9);
+    expect(await actions.undoTake(id), isTrue);
+    expect(await stock(), 10);
+    expect(await actions.undoTake(id), isFalse);
+    expect(await stock(), 10);
+    // Undoing a dose that was never taken gives nothing back either.
+    final pending = await seedDoseLog(db, s.prescriptionId, laterToday(now));
+    expect(await actions.undoTake(pending), isFalse);
+    expect(await stock(), 10);
+  });
+
   test('undoTake restores pending and clears takenTime', () async {
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
@@ -555,6 +586,26 @@ void main() {
       expect(todays.map((d) => d.id), [kept]);
       final day = await container.read(dosesForDayProvider(pinned).future);
       expect(day.map((d) => d.id), [kept]);
+    });
+
+    test('a second undo gives nothing back', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final actions = (await pinnedContainer()).read(doseActionsProvider);
+      final id = await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 9);
+
+      expect(await actions.undoTake(id!), isTrue);
+      expect(await quantity(db, s.medicationId), 10);
+      // The snackbar's Undo after the dose sheet's, for example.
+      expect(await actions.undoTake(id), isFalse);
+      expect(await quantity(db, s.medicationId), 10);
     });
 
     test('a failed removal keeps the dose and the stock', () async {
