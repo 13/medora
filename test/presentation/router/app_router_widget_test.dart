@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/provider_retry.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -36,6 +37,7 @@ void main() {
     });
     final prefs = await SharedPreferences.getInstance();
     final container = ProviderContainer(
+      retry: medoraRetry,
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
         syncStartupDelayProvider.overrideWithValue(Duration.zero),
