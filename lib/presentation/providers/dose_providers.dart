@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -107,12 +108,31 @@ class DoseActions {
     return result.isSuccess;
   }
 
+  /// Undo a take: the dose is pending again and its stock comes back.
+  ///
+  /// A dose of an as-needed prescription was only ever a record of an
+  /// intake, so undoing it deletes it instead: back to pending it would be
+  /// a dose nobody is due to take.
   Future<bool> undoTake(String id) async {
     final repo = _ref.read(doseLogRepositoryProvider);
-    final result = await repo.markDosePending(id);
-    if (result.isSuccess) await _autoDiminish(_ref, id, reverse: true);
+    final dose = (await repo.getDoseLogById(id)).dataOrNull;
+    final prescription = dose == null
+        ? null
+        : (await _ref
+                  .read(prescriptionRepositoryProvider)
+                  .getPrescriptionById(dose.prescriptionId))
+              .dataOrNull;
+    final bool ok;
+    if (prescription?.scheduleType == 'as_needed') {
+      ok = (await repo.deleteDoseLog(id)).isSuccess;
+      // By the prescription already loaded, not by the deleted dose's id.
+      if (ok) await _diminishFor(_ref, prescription!, reverse: true);
+    } else {
+      ok = (await repo.markDosePending(id)).isSuccess;
+      if (ok) await _autoDiminish(_ref, id, reverse: true);
+    }
     await _refresh();
-    return result.isSuccess;
+    return ok;
   }
 
   Future<bool> skip(String id) async {
@@ -206,7 +226,21 @@ Future<void> _autoDiminish(
       dose.prescriptionId,
     );
     final prescription = prescResult.dataOrNull;
-    if (prescription == null || !prescription.autoDiminish) return;
+    if (prescription == null) return;
+    await _diminishFor(ref, prescription, reverse: reverse);
+  } catch (_) {
+    // Non-critical: don't fail the dose marking
+  }
+}
+
+/// Moves [prescription]'s medication stock by one dose, if it auto-diminishes.
+Future<void> _diminishFor(
+  Ref ref,
+  Prescription prescription, {
+  bool reverse = false,
+}) async {
+  try {
+    if (!prescription.autoDiminish) return;
 
     // Parse numeric amount from dosageAmount or dosage text
     final amount =

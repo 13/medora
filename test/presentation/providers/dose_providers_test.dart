@@ -465,6 +465,64 @@ void main() {
       expect(await quantity(db, s.medicationId), 10);
     });
 
+    test('undoing it removes the dose and gives the stock back', () async {
+      // Back to pending would leave a dose nobody is due to take; the
+      // sync cycle deletes the tombstone on the server as well.
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer();
+      final actions = container.read(doseActionsProvider);
+      final kept = await actions.logAsNeededDose(s.prescriptionId);
+      final id = await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 8);
+
+      expect(await actions.undoTake(id!), isTrue);
+
+      expect(await quantity(db, s.medicationId), 9);
+      final row = await db.query('dose_logs', where: 'id = ?', whereArgs: [id]);
+      expect(row.single['sync_status'], SyncStatus.pendingDelete);
+      expect(row.single['status'], 'taken');
+      final todays = await container.read(todaysDoseLogsProvider.future);
+      expect(todays.map((d) => d.id), [kept]);
+      final day = await container.read(dosesForDayProvider(pinned).future);
+      expect(day.map((d) => d.id), [kept]);
+    });
+
+    test('a failed removal keeps the dose and the stock', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final id = await (await pinnedContainer())
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+      final failing = await pinnedContainer(
+        doseRepo: _FailingDeleteRepo(
+          DoseLogRepositoryImpl(
+            localDatasource: DoseLogLocalDatasource(),
+            prescriptionLocal: PrescriptionLocalDatasource(),
+          ),
+        ),
+      );
+
+      expect(await failing.read(doseActionsProvider).undoTake(id!), isFalse);
+
+      expect(await quantity(db, s.medicationId), 9);
+      final row = await db.query('dose_logs', where: 'id = ?', whereArgs: [id]);
+      expect(row.single['sync_status'], SyncStatus.pendingCreate);
+      expect(row.single['status'], 'taken');
+    });
+
     test('a failed write returns null and leaves stock alone', () async {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db, scheduleType: 'as_needed');
@@ -500,6 +558,18 @@ class _FailingAddRepo extends FailingTakeRepo {
 
   @override
   Future<Result<DoseLog>> addDoseLog(DoseLog doseLog) async =>
+      const Result.failure('db down');
+
+  @override
+  Future<Result<DoseLog>> markDoseTaken(String id) => inner.markDoseTaken(id);
+}
+
+/// Fails every [deleteDoseLog]; everything else reaches the real repository.
+class _FailingDeleteRepo extends FailingTakeRepo {
+  _FailingDeleteRepo(super.inner);
+
+  @override
+  Future<Result<void>> deleteDoseLog(String id) async =>
       const Result.failure('db down');
 
   @override

@@ -604,6 +604,27 @@ void main() {
       expect(await doses(), hasLength(2));
     });
 
+    testWidgets('"Undo" on the snackbar removes the dose and gives the '
+        'stock back', (tester) async {
+      await seedAndPump(
+        tester,
+        beforePump: () => seedPrescription(autoDiminish: true),
+      );
+      await tester.tap(logButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+      await tester.pumpAndSettle();
+
+      final rows = await doses();
+      expect(rows.single['sync_status'], 'pending_delete');
+      final med = await (await AppDatabase.instance.database).query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: ['m1'],
+      );
+      expect(med.single['quantity'], 10);
+    });
+
     testWidgets('German reads "Bei Bedarf" and "Dosis eintragen"', (
       tester,
     ) async {
@@ -706,6 +727,13 @@ void main() {
           final snack = find.text(l10n.doseLogged);
           expect(snack, findsOneWidget);
           expectWhole(snack, screen);
+          expectWhole(
+            find.descendant(
+              of: find.byType(SnackBarAction),
+              matching: find.text(l10n.undo),
+            ),
+            screen,
+          );
           expect(tester.takeException(), isNull);
         });
       }

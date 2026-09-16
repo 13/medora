@@ -57,6 +57,9 @@ class FailingTakeRepo implements DoseLogRepository {
       inner.markDosePending(id);
 
   @override
+  Future<Result<void>> deleteDoseLog(String id) => inner.deleteDoseLog(id);
+
+  @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
     String prescriptionId,
   ) => inner.generateDoseLogsForPrescription(prescriptionId);

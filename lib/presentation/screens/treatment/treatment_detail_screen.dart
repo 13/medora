@@ -652,11 +652,19 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
 
   Future<void> _logAsNeededDose(Prescription p) async {
     final l10n = AppLocalizations.of(context);
-    final id = await ref.read(doseActionsProvider).logAsNeededDose(p.id);
+    final actions = ref.read(doseActionsProvider);
+    final id = await actions.logAsNeededDose(p.id);
     if (!mounted || id == null) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.doseLogged)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l10n.doseLogged),
+        // A tap by mistake has already moved the stock; this takes both back.
+        action: SnackBarAction(
+          label: l10n.undo,
+          onPressed: () => unawaited(actions.undoTake(id)),
+        ),
+      ),
+    );
   }
 
   String _prescriptionSummary(AppLocalizations l10n, Prescription p) {

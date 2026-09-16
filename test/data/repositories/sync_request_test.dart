@@ -287,6 +287,36 @@ void main() {
       },
     );
 
+    test('deleting asks for one sync after the tombstone, and a missing '
+        'dose asks for none', () async {
+      final db = await AppDatabase.instance.database;
+      final prescriptionId = (await seedPrescription(db)).prescriptionId;
+      final id = await seedDoseLog(
+        db,
+        prescriptionId,
+        DateTime(2026, 3, 1, 8),
+        status: 'taken',
+      );
+      final requests = _Requests('dose_logs')..id = id;
+      final repo = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        requestSync: requests.call,
+      );
+
+      expect((await repo.deleteDoseLog('missing')).isSuccess, isFalse);
+      await pumpEventQueue();
+      expect(requests.statuses, isEmpty);
+
+      expect((await repo.deleteDoseLog(id)).isSuccess, isTrue);
+      await pumpEventQueue();
+      expect(requests.statuses, [pendingDelete]);
+      expect(
+        (await repo.getDoseLogsByPrescription(prescriptionId)).dataOrNull,
+        isEmpty,
+      );
+    });
+
     test('a failed status change asks for none', () async {
       final requests = _Requests('dose_logs');
       final repo = DoseLogRepositoryImpl(

@@ -158,6 +158,19 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       _changeStatus(id, 'pending', clearTakenTime: true);
 
   @override
+  Future<Result<void>> deleteDoseLog(String id) async {
+    try {
+      final existing = await localDatasource.getDoseLogById(id);
+      if (existing == null) return const Result.failure('Dose log not found');
+      await localDatasource.markDeleted(id);
+      _syncSoon();
+      return const Result.success(null);
+    } catch (e, st) {
+      return Result.failure('Failed to delete dose log: $e', st);
+    }
+  }
+
+  @override
   Future<Result<List<DoseLog>>> generateDoseLogsForPrescription(
     String prescriptionId,
   ) async {
