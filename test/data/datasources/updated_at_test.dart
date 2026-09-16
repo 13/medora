@@ -85,4 +85,55 @@ void main() {
     final bumped = (await repo.getMedicationById('m2')).dataOrNull!;
     expect(bumped.updatedAt!.isAfter(added.updatedAt!), isTrue);
   });
+
+  group('a flag change is stamped after the row\'s current stamp', () {
+    // The row took a server stamp that is ahead of this device's clock (the
+    // sync cycle adopts it). A later local change must still look newer to
+    // last-write-wins.
+    final ahead = DateTime.now().toUtc().add(const Duration(minutes: 2));
+
+    Future<void> stampAhead(String table, String id) async {
+      final db = await AppDatabase.instance.database;
+      await db.update(
+        table,
+        {'updated_at': ahead.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+
+    Future<DateTime> stampOf(String table, String id) async {
+      final db = await AppDatabase.instance.database;
+      final rows = await db.query(table, where: 'id = ?', whereArgs: [id]);
+      return DateTime.parse(rows.single['updated_at'] as String).toUtc();
+    }
+
+    test('prescription deactivate and reactivate', () async {
+      final db = await AppDatabase.instance.database;
+      final id = (await seedPrescription(db)).prescriptionId;
+      final ds = PrescriptionLocalDatasource();
+
+      await stampAhead('prescriptions', id);
+      await ds.deactivate(id);
+      final deactivated = await stampOf('prescriptions', id);
+      expect(deactivated.isAfter(ahead), isTrue);
+
+      await ds.reactivate(id);
+      expect((await stampOf('prescriptions', id)).isAfter(deactivated), isTrue);
+    });
+
+    test('medication archive and unarchive', () async {
+      final db = await AppDatabase.instance.database;
+      final id = (await seedPrescription(db)).medicationId;
+      final ds = MedicationLocalDatasource();
+
+      await stampAhead('medications', id);
+      await ds.archiveMedication(id);
+      final archived = await stampOf('medications', id);
+      expect(archived.isAfter(ahead), isTrue);
+
+      await ds.unarchiveMedication(id);
+      expect((await stampOf('medications', id)).isAfter(archived), isTrue);
+    });
+  });
 }

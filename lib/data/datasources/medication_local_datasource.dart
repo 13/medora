@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:sqflite/sqflite.dart';
@@ -37,33 +38,40 @@ class MedicationLocalDatasource {
   }
 
   /// Archive a medication.
-  Future<void> archiveMedication(String id) async {
-    final db = await _db;
-    await db.update(
-      'medications',
-      {
-        'is_archived': 1,
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
+  Future<void> archiveMedication(String id) => _setArchived(id, archived: true);
 
   /// Unarchive a medication.
-  Future<void> unarchiveMedication(String id) async {
+  Future<void> unarchiveMedication(String id) =>
+      _setArchived(id, archived: false);
+
+  /// Stamped with [nextUpdatedAt], so the change looks newer than the row's
+  /// current stamp to last-write-wins even when that stamp came from a
+  /// server whose clock is ahead of this device's.
+  Future<void> _setArchived(String id, {required bool archived}) async {
     final db = await _db;
-    await db.update(
-      'medications',
-      {
-        'is_archived': 0,
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'medications',
+        columns: ['updated_at'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final raw = rows.isEmpty ? null : rows.first['updated_at'] as String?;
+      final previous = raw == null ? null : DateTime.tryParse(raw);
+      await txn.update(
+        'medications',
+        {
+          'is_archived': archived ? 1 : 0,
+          'sync_status': SyncStatus.pendingUpdate,
+          'updated_at': nextUpdatedAt(
+            previous,
+            DateTime.now(),
+          ).toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
   }
 
   Future<MedicationModel?> getMedicationById(String id) async {

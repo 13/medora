@@ -1,6 +1,7 @@
 /// Medora - Prescription Local Datasource
 library;
 
+import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:sqflite/sqflite.dart';
@@ -100,32 +101,38 @@ class PrescriptionLocalDatasource {
     await db.delete('prescriptions', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<void> deactivate(String id) async {
-    final db = await _db;
-    await db.update(
-      'prescriptions',
-      {
-        'is_active': 0,
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
+  Future<void> deactivate(String id) => _setActive(id, active: false);
 
-  Future<void> reactivate(String id) async {
+  Future<void> reactivate(String id) => _setActive(id, active: true);
+
+  /// Stamped with [nextUpdatedAt], so the change looks newer than the row's
+  /// current stamp to last-write-wins even when that stamp came from a
+  /// server whose clock is ahead of this device's.
+  Future<void> _setActive(String id, {required bool active}) async {
     final db = await _db;
-    await db.update(
-      'prescriptions',
-      {
-        'is_active': 1,
-        'sync_status': SyncStatus.pendingUpdate,
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'prescriptions',
+        columns: ['updated_at'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final raw = rows.isEmpty ? null : rows.first['updated_at'] as String?;
+      final previous = raw == null ? null : DateTime.tryParse(raw);
+      await txn.update(
+        'prescriptions',
+        {
+          'is_active': active ? 1 : 0,
+          'sync_status': SyncStatus.pendingUpdate,
+          'updated_at': nextUpdatedAt(
+            previous,
+            DateTime.now(),
+          ).toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
   }
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
