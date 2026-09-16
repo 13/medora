@@ -7,7 +7,7 @@ Everything here assumes Flutter through FVM (`fvm flutter ...`, pinned in
 ## Versioning
 
 The version lives in one place — `version:` in `pubspec.yaml`
-(`0.0.9+9` at the time of writing). `flutter build` feeds the part before `+`
+(`0.2.3+15` at the time of writing). `flutter build` feeds the part before `+`
 to `versionName` and the part after it to `versionCode`
 (`android/app/build.gradle.kts`).
 
@@ -101,7 +101,9 @@ irrelevant to the Play upload and `build appbundle` stays the way to ship.
 The ML Kit plugins bundle their models instead of downloading them on first
 use: `google_mlkit_barcode_scanning` adds roughly 2–3 MB per ABI on top of text
 recognition. Measured `arm64-v8a` release APK: **48.8 MB for 0.2.3** (text
-recognition plus barcode scanning), up from 42.9 MB for 0.2.2.
+recognition plus barcode scanning), up from 42.9 MB for 0.2.2. Both figures
+are snapshots of the version they name, not a current measurement — re-run
+the command above at each release rather than trusting the number here.
 
 To see where the bytes go:
 
@@ -172,6 +174,37 @@ tags `v0.1.0+10` and pushes both to `origin main`. It refuses to run off
 `main`, with a dirty working tree, or with a `+build` that does not increase
 over the current `pubspec.yaml` version.
 
+### If a release run fails
+
+`tools/release.sh` commits, tags and only then pushes, so between the tag and
+the push the release exists **only locally** — and the `tag v<version> exists`
+guard at the top of the script then refuses to re-run. The script undoes both
+itself if the notes step or the push fails (the push is `--atomic`, so a
+partial push is not a possible outcome), and prints
+`rolled back the local release commit and tag`. If it is interrupted some
+other way — Ctrl-C, a closed terminal — undo the same two things by hand
+before re-running:
+
+```bash
+git tag -d v<version>        # e.g. git tag -d v0.2.4+16
+git reset --hard HEAD~1      # drops the chore(release) commit
+```
+
+Check first that neither was pushed (`git ls-remote --tags origin 'v*'`); if
+the tag *is* on origin the workflow has already run, and the fix is a new
+build number, not a rewrite.
+
+### Checking the changelog generator
+
+`tools/release_notes.sh` turns the conventional-commit subjects since the
+previous `v*` tag into the release body. `tools/test_release_notes.sh` checks
+it against a throwaway repository in a temp dir — it never touches this
+repository, its tags or its remote — and pins the cases that used to be
+mangled silently: a subject carrying a second `): `, and subjects carrying
+markdown characters (`user_id`, `*.dart`). Its in-app counterpart is
+`test/services/release_notes_test.dart`, which renders those same subjects the
+way the update sheet does; change one side and run both.
+
 The pushed tag triggers the `Release` workflow, which:
 
 1. Checks the tag matches `version:` in `pubspec.yaml` (`tools/release.sh`
@@ -193,8 +226,11 @@ The pushed tag triggers the `Release` workflow, which:
    - `SHA256SUMS.txt`
 
 4. Publishes a GitHub release on the tag (`gh release create`, title
-   `Medora <version> (<build>)`, auto-generated notes) with those files
-   attached.
+   `Medora <version> (<build>)`) with those files attached. The body is
+   **not** GitHub's auto-generated one: the workflow runs
+   `tools/release_notes.sh` on the pushed tag, which is the same command
+   `tools/release.sh` ran locally, so the published changelog is exactly the
+   text that was reviewable before the push.
 
 Download the assets from the repository's **Releases** page. The in-app
 update check reads the `releases/latest` API endpoint, which GitHub only
@@ -272,11 +308,22 @@ not commit the generated files.
 written to a temp dir that is removed on exit, never to the repo root), logs
 to both `~/.local/state/medora/refresh-supplements.log` **and** stderr (so
 `journalctl`, below, shows the real failure reason and not just an exit
-code), and exits non-zero when `pdftotext`, `gh`, `curl`, connectivity, a
-dirty working tree, the download or the row guard fails. The log is
-truncated to its last 1000 lines once it passes 2000, and a `flock` on
-`~/.local/state/medora/.refresh.lock` stops two refreshes from racing (the
-timer and a manual `systemctl --user start`, below).
+code), and exits non-zero when `pdftotext`, `gh`, `curl` or connectivity is
+missing, when the download or the row guard fails, or when the checkout it
+would publish from is not the released one.
+
+That last guard is three checks, because the register it uploads overwrites
+the data every installed app downloads: the working tree must be clean, the
+checkout must be on `main`, and after `git fetch origin main`, `HEAD` must be
+neither ahead of nor behind `origin/main`. A clean tree alone is not enough —
+a committed work-in-progress parser on a feature branch is not "dirty", and
+the timer fires unattended on whatever happens to be checked out.
+
+A `flock` on `~/.local/state/medora/.refresh.lock` stops two refreshes from
+racing (the timer and a manual `systemctl --user start`, below). The log is
+truncated to its last 1000 lines once it passes 2000, and that rotation runs
+*under* the lock — done before it, a second invocation truncated the log of
+the run already in progress.
 
 `tools/systemd/` holds a **user** service and timer for it. The timer fires
 three times a month — the 4th, 11th and 18th at 06:00, `Persistent=true` so
@@ -297,14 +344,18 @@ before downloading anything:
 
 ```bash
 mkdir -p ~/.config/systemd/user
-ln -sf ~/repo/medora/tools/systemd/medora-supplements.service ~/.config/systemd/user/
-ln -sf ~/repo/medora/tools/systemd/medora-supplements.timer   ~/.config/systemd/user/
+install -m 0644 ~/repo/medora/tools/systemd/medora-supplements.service ~/.config/systemd/user/
+install -m 0644 ~/repo/medora/tools/systemd/medora-supplements.timer   ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now medora-supplements.timer
 systemctl --user list-timers medora-supplements.timer   # check the next run
 systemctl --user start medora-supplements.service       # run it once now
 journalctl --user -u medora-supplements.service -n 50   # or the log file above
 ```
+
+Copies, not symlinks: a symlink into the working tree means checking out a
+branch silently changes the installed unit. Re-run the two `install` commands
+(and `systemctl --user daemon-reload`) after editing either file.
 
 The units assume the repository is at `~/repo/medora`; edit `ExecStart` if it
 is elsewhere. Uninstall:
