@@ -1617,12 +1617,16 @@ void main() {
     test('a server tombstone deletes the local copy', () async {
       final h = Harness();
       final (_, ids) = await seedSchedule(durationDays: 1);
+      final deletedAt = h.clock.now().subtract(const Duration(days: 1));
       h.doses.table.seed({
         ...DoseLogModel.fromLocalMap(
           (await localRow('dose_logs', ids.first))!,
         ).toJson(),
-        'deleted_at': h.clock.now().toIso8601String(),
-      });
+        'deleted_at': deletedAt.toIso8601String(),
+      }, updatedAt: deletedAt);
+      // The pull has already seen that tombstone go by, so only the push
+      // can act on it.
+      await h.cursors.setLastPullAt('dose_logs', h.clock.now());
 
       await h.service.syncAll();
 
