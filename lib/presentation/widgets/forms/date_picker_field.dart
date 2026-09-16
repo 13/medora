@@ -37,11 +37,21 @@ class DatePickerField extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return InkWell(
       onTap: () async {
+        final first = firstDate ?? DateTime(2000);
+        final last = lastDate ?? DateTime(2100);
+        // showDatePicker asserts first <= initial <= last. The initial date
+        // (the current value, else today) can fall outside a range another
+        // field sets, e.g. an end date whose firstDate is a start date after
+        // today, so it is clamped rather than passed through. The picker
+        // itself drops the time of day from all three.
+        var initial = date ?? now;
+        if (initial.isBefore(first)) initial = first;
+        if (initial.isAfter(last)) initial = last;
         final picked = await showDatePicker(
           context: context,
-          initialDate: date ?? now,
-          firstDate: firstDate ?? DateTime(2000),
-          lastDate: lastDate ?? DateTime(2100),
+          initialDate: initial,
+          firstDate: first,
+          lastDate: last,
         );
         if (picked != null) {
           onDateSelected(picked);
