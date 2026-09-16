@@ -36,6 +36,8 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/scanner/capture_view.dart';
+import 'package:medora/presentation/screens/scanner/recognizing_view.dart';
 import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
 import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
@@ -95,8 +97,6 @@ enum _ScanStage { capture, recognizing, review }
 
 class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     with WidgetsBindingObserver {
-  static const Color _onScrim = Color(0xFFFFFFFF); // on scrim
-
   /// The plugin seams, read once. The providers own them (see
   /// `scanner_ports.dart`); overriding those is what lets a widget test pump
   /// this screen at all.
@@ -1038,6 +1038,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final busy = _isSearching || _picking || _isTakingPicture;
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.scanBarcodeTitle),
@@ -1050,8 +1051,21 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         ],
       ),
       body: switch (_stage) {
-        _ScanStage.capture => _buildCapture(l10n),
-        _ScanStage.recognizing => _buildRecognizing(l10n),
+        _ScanStage.capture => CaptureView(
+          camera: _cameraPort,
+          cameraReady: _isCameraReady,
+          cameraFailed: _cameraFailed,
+          busy: busy,
+          canShoot: _isCameraReady && !busy,
+          searching: _isSearching,
+          onShutter: _takePhoto,
+          onGallery: _pickFromGallery,
+          onManualEntry: () => _showManualEntryDialog(context),
+          onFocus: _focusAt,
+        ),
+        _ScanStage.recognizing => RecognizingView(
+          photo: _photoPath == null ? null : _photoImage(_photoPath!),
+        ),
         _ScanStage.review => SafeArea(
           top: false,
           child: ScanReviewView(
@@ -1106,175 +1120,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           onPressed: () => setState(() => _registerWarningDismissed = true),
         ),
       ],
-    );
-  }
-
-  Widget _buildCapture(AppLocalizations l10n) {
-    final previewSize = _cameraPort.previewSize;
-    final busy = _isSearching || _picking || _isTakingPicture;
-    final canShoot = _isCameraReady && !busy;
-    return ColoredBox(
-      color: Colors.black, // scrim
-      child: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                if (_isCameraReady && previewSize != null)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final orientation = MediaQuery.orientationOf(context);
-                      final child = BarcodeScannerScreen.previewChildSize(
-                        previewSize,
-                        orientation,
-                      );
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapUp: (details) => _focusAt(
-                          details.localPosition,
-                          constraints.biggest,
-                          orientation,
-                        ),
-                        child: SizedBox.expand(
-                          child: ClipRect(
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              child: SizedBox(
-                                width: child.width,
-                                height: child.height,
-                                child: _cameraPort.buildPreview(context),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  )
-                else if (!_cameraFailed)
-                  const Center(
-                    child: CircularProgressIndicator(color: _onScrim),
-                  ),
-                Positioned(
-                  bottom: 12,
-                  left: 16,
-                  right: 16,
-                  child: Center(
-                    child: _ScrimLabel(
-                      child: _isSearching
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: _onScrim,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  l10n.lookingUpBarcode,
-                                  style: const TextStyle(
-                                    color: _onScrim,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Text(
-                              l10n.scanCaptureHint,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: _onScrim,
-                                fontSize: 13,
-                              ),
-                            ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    iconSize: 28,
-                    color: _onScrim,
-                    tooltip: l10n.scanFromGallery,
-                    onPressed: busy ? null : _pickFromGallery,
-                    icon: const Icon(Icons.photo_library_outlined),
-                  ),
-                  Tooltip(
-                    message: l10n.scanTakePhoto,
-                    child: FilledButton(
-                      onPressed: canShoot ? _takePhoto : null,
-                      style: FilledButton.styleFrom(
-                        shape: const CircleBorder(),
-                        fixedSize: const Size(72, 72),
-                        padding: EdgeInsets.zero,
-                        disabledBackgroundColor: context.colors.onSurface
-                            .withValues(alpha: 0.38),
-                      ),
-                      child: Icon(
-                        Icons.camera_alt,
-                        size: 32,
-                        semanticLabel: l10n.scanTakePhoto,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    iconSize: 28,
-                    color: _onScrim,
-                    tooltip: l10n.enterBarcodeManually,
-                    onPressed: busy
-                        ? null
-                        : () => _showManualEntryDialog(context),
-                    icon: const Icon(Icons.keyboard),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecognizing(AppLocalizations l10n) {
-    final path = _photoPath;
-    return ColoredBox(
-      color: Colors.black, // scrim
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (path != null)
-            Image(
-              image: _photoImage(path),
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ColoredBox(color: Colors.black.withValues(alpha: 0.54)), // scrim
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(color: _onScrim),
-                const SizedBox(height: 16),
-                Text(
-                  l10n.scanRecognizing,
-                  style: const TextStyle(color: _onScrim, fontSize: 15),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1525,24 +1370,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ScrimLabel extends StatelessWidget {
-  const _ScrimLabel({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.54), // scrim
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: child,
     );
   }
 }
