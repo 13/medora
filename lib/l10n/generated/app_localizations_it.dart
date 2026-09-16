@@ -566,6 +566,18 @@ class AppLocalizationsIt extends AppLocalizations {
   String get supplementRegisterDownload => 'Scarica';
 
   @override
+  String registerStale(int days) {
+    return 'Aggiornato $days giorni fa';
+  }
+
+  @override
+  String get registerStaleUnknown =>
+      'Età sconosciuta — aggiornamento consigliato';
+
+  @override
+  String get registerUpdateNow => 'Aggiorna ora';
+
+  @override
   String get supplementRegisterDownloading => 'Download registro in corso…';
 
   @override

@@ -272,6 +272,13 @@
   },
   "supplementRegisterUpdate": "Update register",
   "supplementRegisterDownload": "Download",
+  "registerStale": "Last updated {days} days ago",
+  "@registerStale": {
+    "description": "Warns that a cached register (supplements or AIFA) is at least 45 days old",
+    "placeholders": { "days": { "type": "int" } }
+  },
+  "registerStaleUnknown": "Age unknown — update recommended",
+  "registerUpdateNow": "Update now",
   "supplementRegisterDownloading": "Downloading register…",
   "supplementRegisterSyncSuccess": "Register updated ({count} products)",
   "@supplementRegisterSyncSuccess": {

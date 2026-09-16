@@ -187,6 +187,12 @@
   "supplementRegisterUpdated": "Stand: {date}",
   "supplementRegisterUpdate": "Register aktualisieren",
   "supplementRegisterDownload": "Herunterladen",
+  "registerStale": "Zuletzt vor {days} Tagen aktualisiert",
+  "@registerStale": {
+    "placeholders": { "days": { "type": "int" } }
+  },
+  "registerStaleUnknown": "Alter unbekannt – Aktualisierung empfohlen",
+  "registerUpdateNow": "Jetzt aktualisieren",
   "supplementRegisterDownloading": "Register wird heruntergeladen…",
   "supplementRegisterSyncSuccess": "Register aktualisiert ({count} Produkte)",
   "supplementRegisterDownloadPrompt": "Codes von Nahrungsergänzungsmitteln werden im Register des Gesundheitsministeriums nachgeschlagen. Jetzt herunterladen (ca. 2 MB)? Dafür ist eine Internetverbindung nötig.",

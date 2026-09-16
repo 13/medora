@@ -1108,6 +1108,24 @@ abstract class AppLocalizations {
   /// **'Download'**
   String get supplementRegisterDownload;
 
+  /// Warns that a cached register (supplements or AIFA) is at least 45 days old
+  ///
+  /// In en, this message translates to:
+  /// **'Last updated {days} days ago'**
+  String registerStale(int days);
+
+  /// No description provided for @registerStaleUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Age unknown — update recommended'**
+  String get registerStaleUnknown;
+
+  /// No description provided for @registerUpdateNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Update now'**
+  String get registerUpdateNow;
+
   /// No description provided for @supplementRegisterDownloading.
   ///
   /// In en, this message translates to:

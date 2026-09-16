@@ -187,6 +187,12 @@
   "supplementRegisterUpdated": "Aggiornato al {date}",
   "supplementRegisterUpdate": "Aggiorna registro",
   "supplementRegisterDownload": "Scarica",
+  "registerStale": "Aggiornato {days} giorni fa",
+  "@registerStale": {
+    "placeholders": { "days": { "type": "int" } }
+  },
+  "registerStaleUnknown": "Età sconosciuta — aggiornamento consigliato",
+  "registerUpdateNow": "Aggiorna ora",
   "supplementRegisterDownloading": "Download registro in corso…",
   "supplementRegisterSyncSuccess": "Registro aggiornato ({count} prodotti)",
   "supplementRegisterDownloadPrompt": "I codici degli integratori vengono cercati nel registro del Ministero della Salute. Scaricarlo ora (circa 2 MB)? Serve una connessione a internet.",

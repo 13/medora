@@ -561,6 +561,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get supplementRegisterDownload => 'Download';
 
   @override
+  String registerStale(int days) {
+    return 'Last updated $days days ago';
+  }
+
+  @override
+  String get registerStaleUnknown => 'Age unknown — update recommended';
+
+  @override
+  String get registerUpdateNow => 'Update now';
+
+  @override
   String get supplementRegisterDownloading => 'Downloading register…';
 
   @override

@@ -33,6 +33,7 @@ import 'package:medora/presentation/widgets/update_tile.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/register_freshness.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_failure_store.dart';
@@ -1382,6 +1383,12 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
+    // The AIFA cache carries no source date, so its download date stands in.
+    final freshness = registerFreshness(
+      now: ref.read(nowProvider)(),
+      lastSync: _lastSync,
+      count: _count,
+    );
     final status = _isSyncing
         ? _statusMessage ?? l10n.aifaSyncing
         : _lastSync != null
@@ -1396,7 +1403,12 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
           title: Text(l10n.aifaDatabase),
           subtitle: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [Text(l10n.aifaDatabaseHint), Text(status)],
+            children: [
+              Text(l10n.aifaDatabaseHint),
+              Text(status),
+              if (!_isSyncing && freshness.isStale)
+                _RegisterStaleWarning(freshness),
+            ],
           ),
           isThreeLine: true,
         ),
@@ -1413,7 +1425,11 @@ class _AifaDatabaseTileState extends ConsumerState<_AifaDatabaseTile> {
                 : TextButton.icon(
                     onPressed: _syncDatabase,
                     icon: const Icon(Icons.download_outlined),
-                    label: Text(l10n.syncAifaDatabase),
+                    label: Text(
+                      freshness.isStale
+                          ? l10n.registerUpdateNow
+                          : l10n.syncAifaDatabase,
+                    ),
                   ),
           ),
         ),
@@ -1496,6 +1512,14 @@ class _SupplementRegisterTileState
     final l10n = AppLocalizations.of(context);
     final lastSync = _lastSync;
     final sourceUpdated = _sourceUpdated;
+    // The Ministry's "as of" date is what ages the register; the download
+    // date only stands in when the meta file carried no date.
+    final freshness = registerFreshness(
+      now: ref.read(nowProvider)(),
+      sourceUpdated: sourceUpdated,
+      lastSync: lastSync,
+      count: _count,
+    );
     final status = _isSyncing
         ? l10n.supplementRegisterDownloading
         : lastSync != null && _count > 0
@@ -1516,6 +1540,8 @@ class _SupplementRegisterTileState
               Text(status),
               if (!_isSyncing && _count > 0 && sourceUpdated != null)
                 Text(l10n.supplementRegisterUpdated(sourceUpdated.formatted)),
+              if (!_isSyncing && freshness.isStale)
+                _RegisterStaleWarning(freshness),
             ],
           ),
           isThreeLine: true,
@@ -1530,14 +1556,52 @@ class _SupplementRegisterTileState
                     onPressed: _sync,
                     icon: const Icon(Icons.download_outlined),
                     label: Text(
-                      _count > 0
-                          ? l10n.supplementRegisterUpdate
-                          : l10n.supplementRegisterDownload,
+                      _count <= 0
+                          ? l10n.supplementRegisterDownload
+                          : freshness.isStale
+                          ? l10n.registerUpdateNow
+                          : l10n.supplementRegisterUpdate,
                     ),
                   ),
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// "Last updated N days ago" under a register tile's status line, shown
+/// once the register is [registerStaleDays] old or older.
+class _RegisterStaleWarning extends StatelessWidget {
+  const _RegisterStaleWarning(this.freshness);
+
+  final RegisterFreshness freshness;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final days = freshness.days;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: context.colors.error,
+            size: 18,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              days == null
+                  ? l10n.registerStaleUnknown
+                  : l10n.registerStale(days),
+              style: TextStyle(color: context.colors.error),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
