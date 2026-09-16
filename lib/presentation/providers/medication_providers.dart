@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
@@ -136,18 +137,37 @@ final archivedMedicationsProvider = FutureProvider<List<Medication>>((
   );
 });
 
-/// Provider for medications expiring soon.
+/// Medications that need attention on the expiry axis: everything already
+/// expired, plus everything expiring within [AppConstants.expiryWarningDays].
+///
+/// Expired items are deliberately kept. The old window started at *today*
+/// (`isExpiringSoon` floors at `remaining >= 0`, and the filter then asked
+/// `!expiredAt(now)` a second time), so a medication that expired yesterday
+/// was invisible on the dashboard while the card's empty state claimed every
+/// medication was within date — in a medicine cabinet, the most urgent row
+/// there is.
+///
+/// Archived medications and medications with no expiry date are excluded.
+/// Sorted most urgent (longest expired) first, so the card's `.take(3)`
+/// cannot hide an expired box behind three merely expiring ones.
 final expiringSoonProvider = FutureProvider<List<Medication>>((ref) async {
   // Watch the medication list to trigger updates
   final meds = await ref.watch(medicationListProvider.future);
 
   final now = ref.watch(nowProvider)();
 
-  return meds
-      .where(
-        (m) => !m.isArchived && m.isExpiringSoon(now: now) && !m.expiredAt(now),
-      )
-      .toList();
+  final matches = <Medication>[];
+  for (final m in meds) {
+    if (m.isArchived) continue;
+    final days = m.daysUntilExpiry(now);
+    if (days == null || days > AppConstants.expiryWarningDays) continue;
+    matches.add(m);
+  }
+  // Safe to force-unwrap: the loop above admits only non-null day counts.
+  matches.sort(
+    (a, b) => a.daysUntilExpiry(now)!.compareTo(b.daysUntilExpiry(now)!),
+  );
+  return matches;
 });
 
 /// Provider for low stock medications.
