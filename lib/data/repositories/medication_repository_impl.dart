@@ -155,6 +155,9 @@ class MedicationRepositoryImpl implements MedicationRepository {
         minimumStockLevel: existing.minimumStockLevel,
         storageLocation: existing.storageLocation,
         barcode: existing.barcode,
+        // Rebuilt field by field: a column left out here is written as null
+        // and, since `ean` is always pushed, erased on the server too.
+        ean: existing.ean,
         imagePath: existing.imagePath,
         notes: existing.notes,
         isArchived: existing.isArchived,
