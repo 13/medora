@@ -269,7 +269,7 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                   ),
                 ),
               ),
-              if (treatment.hasSickLeave || treatment.doctor != null) ...[
+              if (_SickLeaveBlock.hasContent(treatment)) ...[
                 const SizedBox(height: 12),
                 _SickLeaveBlock(treatment: treatment, now: now),
               ],
@@ -659,7 +659,9 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
 }
 
 /// The Krankenstand card: the leave's range, its length, the certificate
-/// number and the doctor, each row only when it has a value.
+/// number and the doctor, each row only when it has a value. It shows when
+/// any of the four fields is set, since the form saves each one on its own
+/// (a certificate number often arrives before the dates are known).
 ///
 /// The rows are [_SickLeaveRow]s, not the shared `DetailRow`: that one puts
 /// "label: value" on one line with only the value flexible, so at 360 dp and
@@ -671,10 +673,19 @@ class _SickLeaveBlock extends StatelessWidget {
   final Treatment treatment;
   final DateTime now;
 
+  static bool hasContent(Treatment t) => _hasLeaveData(t) || t.doctor != null;
+
+  /// Anything that belongs to the leave itself, as opposed to the doctor.
+  static bool _hasLeaveData(Treatment t) =>
+      t.sickLeaveFrom != null ||
+      t.sickLeaveTo != null ||
+      t.sickLeaveRef != null;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final from = treatment.sickLeaveFrom;
+    final to = treatment.sickLeaveTo;
     // Null for a leave that has not started or ends before it starts: the
     // row is left out rather than showing a count that is not true.
     final days = treatment.sickLeaveDaysAt(now);
@@ -685,39 +696,45 @@ class _SickLeaveBlock extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(Icons.work_off, color: context.colors.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    l10n.sickLeave,
-                    style: context.text.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+            // A doctor alone is not a sick leave, so the card does not claim
+            // one with the heading.
+            if (_hasLeaveData(treatment)) ...[
+              Row(
+                children: [
+                  Icon(Icons.work_off, color: context.colors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.sickLeave,
+                      style: context.text.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (from != null) ...[
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (from != null)
               _SickLeaveRow(
                 icon: Icons.event_busy,
                 label: l10n.sickLeaveFrom,
                 value: from.formatted,
               ),
+            // An open leave reads "Ongoing"; an end date with no start (only
+            // from a synced or restored row) still shows its date.
+            if (from != null || to != null)
               _SickLeaveRow(
                 icon: Icons.event_available,
                 label: l10n.sickLeaveTo,
-                value: treatment.sickLeaveTo.formattedOr(l10n.ongoing),
+                value: to.formattedOr(l10n.ongoing),
               ),
-              if (days != null)
-                _SickLeaveRow(
-                  icon: Icons.today,
-                  label: l10n.sickLeaveDuration,
-                  value: l10n.sickLeaveDays(days),
-                ),
-            ],
+            if (days != null)
+              _SickLeaveRow(
+                icon: Icons.today,
+                label: l10n.sickLeaveDuration,
+                value: l10n.sickLeaveDays(days),
+              ),
             if (treatment.sickLeaveRef != null)
               _SickLeaveRow(
                 icon: Icons.confirmation_number,

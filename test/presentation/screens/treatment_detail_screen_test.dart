@@ -152,7 +152,40 @@ void main() {
   ) async {
     await seedAndPump(tester, doctor: 'Dr. Rossi');
     expect(inBlock(find.text('Dr. Rossi')), findsOneWidget);
+    expect(inBlock(find.text('Doctor')), findsOneWidget);
     expect(inBlock(find.text('Unable to work from')), findsNothing);
+    // No leave was recorded, so the card does not claim one.
+    expect(inBlock(find.text('Sick leave')), findsNothing);
+  });
+
+  testWidgets('a certificate number alone shows the block with that row', (
+    tester,
+  ) async {
+    // The certificate can arrive before the dates are known; the form saves
+    // the number on its own, so the detail screen has to show it.
+    await seedAndPump(tester, ref: '9999');
+    expect(find.byKey(const Key('sickLeaveBlock')), findsOneWidget);
+    expect(inBlock(find.text('Sick leave')), findsOneWidget);
+    expect(inBlock(find.text('Certificate no.')), findsOneWidget);
+    expect(inBlock(find.text('9999')), findsOneWidget);
+    expect(inBlock(find.text('Unable to work from')), findsNothing);
+    expect(inBlock(find.text('Unable to work until')), findsNothing);
+    expect(inBlock(find.text('Ongoing')), findsNothing);
+    expect(inBlock(find.text('Duration')), findsNothing);
+    expect(inBlock(find.text('Doctor')), findsNothing);
+  });
+
+  testWidgets('an end date alone shows the block with only that date', (
+    tester,
+  ) async {
+    // Not reachable from the form, but a synced or restored row can carry
+    // it, and a stored value should never be invisible.
+    await seedAndPump(tester, to: DateTime(2026, 3, 9));
+    expect(inBlock(find.text('Sick leave')), findsOneWidget);
+    expect(inBlock(find.text('Unable to work until')), findsOneWidget);
+    expect(inBlock(find.text('Mar 9, 2026')), findsOneWidget);
+    expect(inBlock(find.text('Unable to work from')), findsNothing);
+    expect(inBlock(find.text('Duration')), findsNothing);
   });
 
   testWidgets('a treatment without sick leave or doctor has no block', (
