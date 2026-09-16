@@ -136,7 +136,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// How long decoding and rendering the region crop may take.
   static const Duration _regionCropTimeout = Duration(seconds: 15);
 
-  /// How long one rotation of a stripe crop may take to render.
+  /// How long the whole stripe pass may take, across every target and
+  /// every rotation of it.
   static const Duration _stripeTimeout = Duration(seconds: 15);
 
   /// How long the crop of a user-selected area may take to render.
@@ -540,40 +541,54 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   /// A barcode pass on the bars above the digits OCR read: for each target
   /// (see [barcodeStripeTargets]) the crop is written as a PNG under the
-  /// [regionMaxDecodeSide] cap and scanned at 0°, 90°, 180° and 270°,
-  /// stopping at the first rotation that decodes. Boxes come back in photo
-  /// pixels. Empty when nothing decodes, the crop times out or the pass
-  /// fails (logged); the photo's own passes stand.
+  /// [regionMaxDecodeSide] cap at 0°, 90°, 180° and 270° — all four from a
+  /// single decode of the photo (see [writeImageCropRotations]) — and
+  /// scanned in that order, stopping at the first rotation that decodes.
+  /// Boxes come back in photo pixels. The whole pass, targets included,
+  /// gets [_stripeTimeout]; it also stops when the screen or the photo is
+  /// gone. Empty when nothing decodes, the crop times out or the pass fails
+  /// (logged); the photo's own passes stand.
   Future<List<CodeCandidate>> _scanBarcodeStripes(
     String path,
     Size size,
     List<CodeCandidate> candidates,
   ) async {
     final found = <CodeCandidate>[];
+    final elapsed = Stopwatch()..start();
+    Duration left() => _stripeTimeout - elapsed.elapsed;
+    bool stop() => !mounted || _photoPath != path || left() <= Duration.zero;
     for (final target in barcodeStripeTargets(candidates)) {
+      if (stop()) break;
       final crop = barcodeStripeCrop(target, size);
       if (crop == null) continue;
       Directory? dir;
       try {
         dir = await (await getTemporaryDirectory()).createTemp('scan_stripe_');
-        for (var turns = 0; turns < 4; turns++) {
-          final out = p.join(dir.path, 'stripe_$turns.png');
-          final written = await writeImageCrop(
-            path,
-            crop,
-            out,
-            quarterTurns: turns,
-          ).timeout(_stripeTimeout);
-          if (written == null) break;
+        final rotations = [
+          for (var turns = 0; turns < 4; turns++)
+            (
+              quarterTurns: turns,
+              outPath: p.join(dir.path, 'stripe_$turns.png'),
+            ),
+        ];
+        if (stop()) break;
+        final written = await writeImageCropRotations(
+          path,
+          crop,
+          rotations,
+        ).timeout(left());
+        if (written == null) break;
+        for (final rotation in rotations) {
+          if (stop()) break;
           final decoded = await _scanBarcodes(
-            InputImage.fromFilePath(out),
-            pass: 'stripe ${turns * 90}°',
+            InputImage.fromFilePath(rotation.outPath),
+            pass: 'stripe ${rotation.quarterTurns * 90}°',
           );
           if (decoded == null || decoded.isEmpty) continue;
           found.addAll(
             unrotateCandidates(
               decoded,
-              quarterTurns: turns,
+              quarterTurns: rotation.quarterTurns,
               crop: written.crop,
               scale: written.scale,
             ),

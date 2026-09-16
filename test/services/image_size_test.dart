@@ -131,6 +131,92 @@ void main() {
     expect(size, const Size(20, 10));
   });
 
+  testWidgets('one decode writes every rotation asked for', (tester) async {
+    // Review I1: the stripe pass wrote one rotation per call, so the whole
+    // photo was decoded once per rotation. All the rotations come out of a
+    // single decode now, and land on the same pixels as a single write.
+    final dir = Directory.systemTemp.createTempSync('scan_rot_batch_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final src = '${dir.path}/marked.png';
+    const mark = Rect.fromLTRB(2, 1, 6, 4);
+    const photo = Rect.fromLTRB(0, 0, 20, 10);
+    await tester.runAsync(
+      () => writeMarkedPng(src, width: 20, height: 10, mark: mark),
+    );
+    final outputs = [
+      for (var turns = 0; turns < 4; turns++)
+        (quarterTurns: turns, outPath: '${dir.path}/batch_$turns.png'),
+    ];
+
+    final written = await tester.runAsync(
+      () => writeImageCropRotations(src, photo, outputs),
+    );
+    expect(written?.crop, photo);
+    expect(written?.scale, 1.0);
+    for (final output in outputs) {
+      final turns = output.quarterTurns;
+      final size = await tester.runAsync(() => readImageSize(output.outPath));
+      expect(
+        size,
+        turns.isEven ? const Size(20, 10) : const Size(10, 20),
+        reason: 'turns $turns',
+      );
+      final box = await tester.runAsync(() => markBoxIn(output.outPath));
+      expect(
+        unrotateBox(
+          box!,
+          quarterTurns: turns,
+          crop: written!.crop,
+          scale: written.scale,
+        ),
+        mark,
+        reason: 'turns $turns',
+      );
+    }
+  });
+
+  testWidgets('a batch of rotations obeys the decode cap, and an empty crop '
+      'writes nothing', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('scan_rot_batch_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final src = '${dir.path}/marked.png';
+    const photo = Rect.fromLTRB(0, 0, 20, 10);
+    await tester.runAsync(
+      () => writeMarkedPng(
+        src,
+        width: 20,
+        height: 10,
+        mark: const Rect.fromLTRB(2, 1, 6, 4),
+      ),
+    );
+
+    final capped = await tester.runAsync(
+      () => writeImageCropRotations(src, photo, [
+        (quarterTurns: 0, outPath: '${dir.path}/cap_0.png'),
+        (quarterTurns: 1, outPath: '${dir.path}/cap_1.png'),
+      ], maxDecodeSide: 10),
+    );
+    expect(capped?.crop, photo);
+    expect(capped?.scale, 0.5);
+    expect(
+      await tester.runAsync(() => readImageSize('${dir.path}/cap_0.png')),
+      const Size(10, 5),
+    );
+    expect(
+      await tester.runAsync(() => readImageSize('${dir.path}/cap_1.png')),
+      const Size(5, 10),
+    );
+
+    final outside = '${dir.path}/outside.png';
+    final empty = await tester.runAsync(
+      () => writeImageCropRotations(src, const Rect.fromLTRB(25, 0, 30, 10), [
+        (quarterTurns: 0, outPath: outside),
+      ]),
+    );
+    expect(empty, isNull);
+    expect(File(outside).existsSync(), isFalse);
+  });
+
   testWidgets('every rotation maps back to the same pixels', (tester) async {
     // Review I2: the dimension tests above would also pass if the crop were
     // drawn unrotated, mirrored or turned the wrong way. This one reads the
