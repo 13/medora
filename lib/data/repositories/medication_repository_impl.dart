@@ -103,13 +103,23 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> updateMedication(Medication medication) async {
     try {
+      final status = await localDatasource.syncStatusOf(medication.id);
+      // An edit of a deleted medication would bring it back.
+      if (status == SyncStatus.pendingDelete) {
+        return const Result.failure('Medication was deleted');
+      }
       final previous = await localDatasource.getMedicationById(medication.id);
       final model = MedicationModel.fromDomain(
         medication.copyWith(
           updatedAt: nextUpdatedAt(previous?.updatedAt, DateTime.now()),
         ),
       );
-      await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
+      await localDatasource.upsert(
+        model,
+        syncStatus: status == null
+            ? SyncStatus.pendingCreate
+            : MedicationLocalDatasource.editedSyncStatus(status),
+      );
       _syncSoon();
       return Result.success(medication);
     } catch (e, st) {
@@ -131,43 +141,12 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> updateQuantity(String id, int delta) async {
     try {
-      final existing = await localDatasource.getMedicationById(id);
-      if (existing == null) {
+      // Only the quantity is written: a stock change neither drops another
+      // column nor brings a deleted medication back.
+      final updated = await localDatasource.adjustQuantity(id, delta);
+      if (updated == null) {
         return const Result.failure('Medication not found');
       }
-      final newQty = (existing.quantity + delta).clamp(0, 999999);
-      final updated = MedicationModel(
-        id: existing.id,
-        userId: existing.userId,
-        name: existing.name,
-        description: existing.description,
-        activeIngredients: existing.activeIngredients,
-        category: existing.category,
-        manufacturer: existing.manufacturer,
-        form: existing.form,
-        atcCode: existing.atcCode,
-        symptoms: existing.symptoms,
-        patientTags: existing.patientTags,
-        purchaseDate: existing.purchaseDate,
-        expiryDate: existing.expiryDate,
-        quantity: newQty,
-        quantityUnit: existing.quantityUnit,
-        minimumStockLevel: existing.minimumStockLevel,
-        storageLocation: existing.storageLocation,
-        barcode: existing.barcode,
-        // Rebuilt field by field: a column left out here is written as null
-        // and, since `ean` is always pushed, erased on the server too.
-        ean: existing.ean,
-        imagePath: existing.imagePath,
-        notes: existing.notes,
-        isArchived: existing.isArchived,
-        createdAt: existing.createdAt,
-        updatedAt: nextUpdatedAt(existing.updatedAt, DateTime.now()),
-      );
-      await localDatasource.upsert(
-        updated,
-        syncStatus: SyncStatus.pendingUpdate,
-      );
       _syncSoon();
       return Result.success(updated.toDomain());
     } catch (e, st) {
@@ -178,7 +157,9 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<void>> archiveMedication(String id) async {
     try {
-      await localDatasource.archiveMedication(id);
+      if (!await localDatasource.archiveMedication(id)) {
+        return const Result.failure('Medication not found');
+      }
       _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
@@ -189,7 +170,9 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<void>> unarchiveMedication(String id) async {
     try {
-      await localDatasource.unarchiveMedication(id);
+      if (!await localDatasource.unarchiveMedication(id)) {
+        return const Result.failure('Medication not found');
+      }
       _syncSoon();
       return const Result.success(null);
     } catch (e, st) {

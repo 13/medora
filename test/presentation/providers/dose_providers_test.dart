@@ -547,6 +547,38 @@ void main() {
       },
     );
 
+    test('logging a dose does not bring a deleted medication back', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      final container = await pinnedContainer();
+      await container
+          .read(medicationRepositoryProvider)
+          .deleteMedication(s.medicationId);
+
+      await container
+          .read(doseActionsProvider)
+          .logAsNeededDose(s.prescriptionId);
+
+      final med = (await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      )).single;
+      expect(med['sync_status'], SyncStatus.pendingDelete);
+      expect(med['deleted_at'], isNotNull);
+      expect(med['quantity'], 10);
+      final list = await container
+          .read(medicationRepositoryProvider)
+          .getMedications();
+      expect(list.dataOrNull, isEmpty);
+    });
+
     test('leaves stock alone without auto-diminish', () async {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db, scheduleType: 'as_needed');

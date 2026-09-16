@@ -37,32 +37,80 @@ class MedicationLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
-  /// Archive a medication.
-  Future<void> archiveMedication(String id) => _setArchived(id, archived: true);
+  /// Archive a medication. False when it is missing or deleted.
+  Future<bool> archiveMedication(String id) => _setArchived(id, archived: true);
 
-  /// Unarchive a medication.
-  Future<void> unarchiveMedication(String id) =>
+  /// Unarchive a medication. False when it is missing or deleted.
+  Future<bool> unarchiveMedication(String id) =>
       _setArchived(id, archived: false);
 
-  /// Stamped with [nextUpdatedAt], so the change looks newer than the row's
-  /// current stamp to last-write-wins even when that stamp came from a
-  /// server whose clock is ahead of this device's.
-  Future<void> _setArchived(String id, {required bool archived}) async {
+  /// Returns false, and changes nothing, when the medication is missing or
+  /// deleted (see [_editRow]).
+  Future<bool> _setArchived(String id, {required bool archived}) =>
+      _editRow(id, (_) => {'is_archived': archived ? 1 : 0});
+
+  /// Adds [delta] to the stock, never going below zero. Returns the stored
+  /// row, or null (and changes nothing) when the medication is missing or
+  /// deleted. Only the quantity and the bookkeeping columns are written, so
+  /// no other column can be lost on the way.
+  Future<MedicationModel?> adjustQuantity(String id, int delta) async {
+    final changed = await _editRow(id, (row) {
+      final current = row['quantity'] as int? ?? 0;
+      return {'quantity': (current + delta).clamp(0, 999999)};
+    });
+    return changed ? getMedicationById(id) : null;
+  }
+
+  /// The row's `sync_status`, or null when there is no such row.
+  Future<String?> syncStatusOf(String id) async {
     final db = await _db;
-    await db.transaction((txn) async {
+    final rows = await db.query(
+      'medications',
+      columns: ['sync_status'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return rows.isEmpty ? null : rows.first['sync_status'] as String?;
+  }
+
+  /// The `sync_status` a local edit leaves on a row whose status is
+  /// [current]: a row the server has never seen stays a create.
+  static String editedSyncStatus(String? current) =>
+      current == SyncStatus.pendingCreate
+      ? SyncStatus.pendingCreate
+      : SyncStatus.pendingUpdate;
+
+  /// Writes the columns [changes] computes from the current row, plus the
+  /// bookkeeping every local edit needs, in one transaction:
+  /// - `updated_at` is stamped with [nextUpdatedAt], so the change looks
+  ///   newer than the row's current stamp to last-write-wins even when that
+  ///   stamp came from a server whose clock is ahead of this device's;
+  /// - `sync_status` follows [editedSyncStatus].
+  ///
+  /// A missing or deleted (`pending_delete`) row is left alone and false is
+  /// returned: an edit must never bring a deleted medication back.
+  Future<bool> _editRow(
+    String id,
+    Map<String, Object?> Function(Map<String, Object?> row) changes,
+  ) async {
+    final db = await _db;
+    return db.transaction((txn) async {
       final rows = await txn.query(
         'medications',
-        columns: ['updated_at'],
         where: 'id = ?',
         whereArgs: [id],
       );
-      final raw = rows.isEmpty ? null : rows.first['updated_at'] as String?;
+      if (rows.isEmpty) return false;
+      final row = rows.first;
+      final status = row['sync_status'] as String?;
+      if (status == SyncStatus.pendingDelete) return false;
+      final raw = row['updated_at'] as String?;
       final previous = raw == null ? null : DateTime.tryParse(raw);
       await txn.update(
         'medications',
         {
-          'is_archived': archived ? 1 : 0,
-          'sync_status': SyncStatus.pendingUpdate,
+          ...changes(row),
+          'sync_status': editedSyncStatus(status),
           'updated_at': nextUpdatedAt(
             previous,
             DateTime.now(),
@@ -71,6 +119,7 @@ class MedicationLocalDatasource {
         where: 'id = ?',
         whereArgs: [id],
       );
+      return true;
     });
   }
 
@@ -249,6 +298,9 @@ class MedicationLocalDatasource {
           : null,
       updatedAt: row['updated_at'] != null
           ? DateTime.tryParse(row['updated_at'] as String)
+          : null,
+      deletedAt: row['deleted_at'] != null
+          ? DateTime.tryParse(row['deleted_at'] as String)
           : null,
     );
   }

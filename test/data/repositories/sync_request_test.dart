@@ -64,19 +64,27 @@ void main() {
         requestSync: requests.call,
       );
 
+      // Each write after the first starts from a synced row, so the status
+      // the request sees can only come from that write.
+      Future<void> pushed() async {
+        await pumpEventQueue();
+        final db = await AppDatabase.instance.database;
+        await db.update('medications', {'sync_status': SyncStatus.synced});
+      }
+
       await repo.addMedication(
         const Medication(id: 'm1', name: 'Moment', quantity: 3),
       );
-      await pumpEventQueue();
+      await pushed();
       final added = (await repo.getMedicationById('m1')).dataOrNull!;
       await repo.updateMedication(added.copyWith(name: 'Moment Act'));
-      await pumpEventQueue();
+      await pushed();
       await repo.updateQuantity('m1', -1);
-      await pumpEventQueue();
+      await pushed();
       await repo.archiveMedication('m1');
-      await pumpEventQueue();
+      await pushed();
       await repo.unarchiveMedication('m1');
-      await pumpEventQueue();
+      await pushed();
       await repo.deleteMedication('m1');
       await pumpEventQueue();
 
