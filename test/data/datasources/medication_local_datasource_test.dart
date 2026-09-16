@@ -45,6 +45,55 @@ void main() {
     },
   );
 
+  test('an exact label-code match wins over an EAN match', () async {
+    // Review I3: the app itself creates the collision — a plain EAN scan
+    // saves `barcode=<EAN>`, a label-code scan of the same pack saves
+    // `barcode=107018, ean=<EAN>`. Without an ORDER BY, `LIMIT 1` returned
+    // whichever row SQLite's plan happened to reach first.
+    await insert(
+      const MedicationModel(
+        id: 'm-ean',
+        name: 'Scanned as an EAN',
+        quantity: 1,
+        ean: '8057737141836',
+      ),
+    );
+    await insert(
+      const MedicationModel(
+        id: 'm-code',
+        name: 'Scanned by its label code',
+        quantity: 1,
+        barcode: '8057737141836',
+      ),
+    );
+
+    expect(
+      (await datasource.getMedicationByBarcode('8057737141836'))?.id,
+      'm-code',
+    );
+  });
+
+  test('two EAN matches resolve to the same row every time', () async {
+    for (final id in ['m-b', 'm-a']) {
+      await insert(
+        MedicationModel(
+          id: id,
+          name: 'Zinco-C',
+          quantity: 1,
+          ean: '8057737141836',
+        ),
+      );
+    }
+
+    for (var i = 0; i < 3; i++) {
+      expect(
+        (await datasource.getMedicationByBarcode('8057737141836'))?.id,
+        'm-a',
+        reason: 'lookup $i',
+      );
+    }
+  });
+
   test('the pack EAN survives a local write and read back', () async {
     await insert(
       const MedicationModel(

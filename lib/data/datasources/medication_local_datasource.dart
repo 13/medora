@@ -128,13 +128,20 @@ class MedicationLocalDatasource {
 
   /// The medication whose label code or EAN is [barcode] (a pack carries
   /// both; a scan may produce either).
+  ///
+  /// Two rows can match one code — the app writes `barcode=<EAN>` for a plain
+  /// EAN scan and `barcode=<label code>, ean=<EAN>` for a label scan of the
+  /// same pack — so the order is explicit rather than left to the query plan
+  /// (review I3): an exact `barcode` match first, then the EAN match, and
+  /// `id` to break any remaining tie the same way on every device.
   Future<MedicationModel?> getMedicationByBarcode(String barcode) async {
     final db = await _db;
-    final rows = await db.query(
-      'medications',
-      where: '(barcode = ? OR ean = ?) AND sync_status != ?',
-      whereArgs: [barcode, barcode, SyncStatus.pendingDelete],
-      limit: 1,
+    final rows = await db.rawQuery(
+      'SELECT * FROM medications '
+      'WHERE (barcode = ? OR ean = ?) AND sync_status != ? '
+      'ORDER BY CASE WHEN barcode = ? THEN 0 ELSE 1 END, id '
+      'LIMIT 1',
+      [barcode, barcode, SyncStatus.pendingDelete, barcode],
     );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
