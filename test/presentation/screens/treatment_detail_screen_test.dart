@@ -713,12 +713,17 @@ void main() {
           }
 
           expectWhole(find.text('1 tablet · ${l10n.scheduleAsNeeded}'), card);
-          expectWhole(
-            find.descendant(
-              of: logButton,
-              matching: find.text(l10n.logDoseNow),
-            ),
-            card,
+          final buttonLabel = find.descendant(
+            of: logButton,
+            matching: find.text(l10n.logDoseNow),
+          );
+          expectWhole(buttonLabel, card);
+          // A button label wrapped onto two lines reads as two buttons.
+          final fit = measureText(tester, buttonLabel);
+          expect(
+            fit.maxIntrinsic,
+            lessThanOrEqualTo(fit.maxWidth + 0.5),
+            reason: '"${l10n.logDoseNow}" wraps: $fit',
           );
 
           await tester.tap(logButton);

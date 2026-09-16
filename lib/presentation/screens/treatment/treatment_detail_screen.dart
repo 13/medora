@@ -394,30 +394,265 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                           }
                         },
                         child: Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: context.colors.primary,
-                              child: Icon(
-                                Icons.medication,
-                                color: context.colors.onPrimary,
-                                size: 20,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: context.colors.primary,
+                                  child: Icon(
+                                    Icons.medication,
+                                    color: context.colors.onPrimary,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Text(
+                                  p.medicationName ?? l10n.unknownMedication,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(_prescriptionSummary(l10n, p)),
+                                    if (!p.isActive)
+                                      Container(
+                                        margin: const EdgeInsets.only(top: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: context
+                                              .colors
+                                              .surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          l10n.done,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color:
+                                                context.colors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    if (p.notes != null && p.notes!.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          p.notes!,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color:
+                                                context.colors.onSurfaceVariant,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: PopupMenuButton<String>(
+                                  itemBuilder: (ctx) => [
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: ListTile(
+                                        leading: const Icon(
+                                          Icons.edit,
+                                          size: 20,
+                                        ),
+                                        title: Text(l10n.edit),
+                                        dense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                    if (p.isActive)
+                                      PopupMenuItem(
+                                        value: 'deactivate',
+                                        child: ListTile(
+                                          leading: const Icon(
+                                            Icons.pause_circle_outline,
+                                            size: 20,
+                                          ),
+                                          title: Text(
+                                            l10n.deactivatePrescription,
+                                          ),
+                                          dense: true,
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    if (!p.isActive)
+                                      PopupMenuItem(
+                                        value: 'reactivate',
+                                        child: ListTile(
+                                          leading: Icon(
+                                            Icons.play_circle_outline,
+                                            size: 20,
+                                            color: context.medora.success,
+                                          ),
+                                          title: Text(
+                                            l10n.reactivatePrescription,
+                                            style: TextStyle(
+                                              color: context.medora.success,
+                                            ),
+                                          ),
+                                          dense: true,
+                                          contentPadding: EdgeInsets.zero,
+                                        ),
+                                      ),
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: ListTile(
+                                        leading: Icon(
+                                          Icons.delete,
+                                          size: 20,
+                                          color: context.colors.error,
+                                        ),
+                                        title: Text(
+                                          l10n.delete,
+                                          style: TextStyle(
+                                            color: context.colors.error,
+                                          ),
+                                        ),
+                                        dense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ],
+                                  onSelected: (action) async {
+                                    if (action == 'edit') {
+                                      await showPrescriptionSheet(
+                                        context,
+                                        ref,
+                                        treatmentId: widget.treatmentId,
+                                        existing: p,
+                                      );
+                                    } else if (action == 'deactivate') {
+                                      final repo = ref.read(
+                                        prescriptionRepositoryProvider,
+                                      );
+                                      await repo.deactivatePrescription(p.id);
+                                      ref.invalidate(
+                                        prescriptionsByTreatmentProvider(
+                                          widget.treatmentId,
+                                        ),
+                                      );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              l10n.prescriptionDeactivated,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } else if (action == 'reactivate') {
+                                      final repo = ref.read(
+                                        prescriptionRepositoryProvider,
+                                      );
+                                      await repo.reactivatePrescription(p.id);
+                                      ref.invalidate(
+                                        prescriptionsByTreatmentProvider(
+                                          widget.treatmentId,
+                                        ),
+                                      );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              l10n.prescriptionReactivated,
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } else if (action == 'delete') {
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          title: Text(l10n.deletePrescription),
+                                          content: Text(
+                                            l10n.deletePrescriptionConfirm,
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, false),
+                                              child: Text(l10n.cancel),
+                                            ),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pop(ctx, true),
+                                              child: Text(
+                                                l10n.delete,
+                                                style: TextStyle(
+                                                  color: context.colors.error,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirm == true) {
+                                        final repo = ref.read(
+                                          prescriptionRepositoryProvider,
+                                        );
+                                        await repo.deletePrescription(p.id);
+                                        ref.invalidate(
+                                          prescriptionsByTreatmentProvider(
+                                            widget.treatmentId,
+                                          ),
+                                        );
+                                        ref.invalidateDoseData();
+                                        unawaited(
+                                          ref
+                                              .read(reminderSchedulerProvider)
+                                              .reconcile(),
+                                        );
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                l10n.prescriptionDeleted,
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  },
+                                ),
+                                onTap: () => showPrescriptionSheet(
+                                  context,
+                                  ref,
+                                  treatmentId: widget.treatmentId,
+                                  existing: p,
+                                ),
                               ),
-                            ),
-                            title: Text(
-                              p.medicationName ?? l10n.unknownMedication,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_prescriptionSummary(l10n, p)),
-                                // Nothing is scheduled, so there is nothing to
-                                // tick off: each intake is logged here.
-                                if (p.scheduleType == 'as_needed' && p.isActive)
-                                  Align(
-                                    alignment: AlignmentDirectional.centerStart,
+                              // Nothing is scheduled, so there is nothing to
+                              // tick off: each intake is logged here. Below
+                              // the tile, not in its subtitle, which is too
+                              // narrow at 360 dp to keep "Dosis eintragen"
+                              // on one line.
+                              if (p.scheduleType == 'as_needed' && p.isActive)
+                                Padding(
+                                  padding: const EdgeInsetsDirectional.fromSTEB(
+                                    8,
+                                    0,
+                                    8,
+                                    8,
+                                  ),
+                                  child: Align(
+                                    alignment: AlignmentDirectional.centerEnd,
                                     child: TextButton.icon(
                                       key: Key('logDose_${p.id}'),
                                       onPressed: () => _logAsNeededDose(p),
@@ -428,214 +663,8 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                                       label: Text(l10n.logDoseNow),
                                     ),
                                   ),
-                                if (!p.isActive)
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 4),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: context
-                                          .colors
-                                          .surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      l10n.done,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: context.colors.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                if (p.notes != null && p.notes!.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      p.notes!,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: context.colors.onSurfaceVariant,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            trailing: PopupMenuButton<String>(
-                              itemBuilder: (ctx) => [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: ListTile(
-                                    leading: const Icon(Icons.edit, size: 20),
-                                    title: Text(l10n.edit),
-                                    dense: true,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
                                 ),
-                                if (p.isActive)
-                                  PopupMenuItem(
-                                    value: 'deactivate',
-                                    child: ListTile(
-                                      leading: const Icon(
-                                        Icons.pause_circle_outline,
-                                        size: 20,
-                                      ),
-                                      title: Text(l10n.deactivatePrescription),
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                  ),
-                                if (!p.isActive)
-                                  PopupMenuItem(
-                                    value: 'reactivate',
-                                    child: ListTile(
-                                      leading: Icon(
-                                        Icons.play_circle_outline,
-                                        size: 20,
-                                        color: context.medora.success,
-                                      ),
-                                      title: Text(
-                                        l10n.reactivatePrescription,
-                                        style: TextStyle(
-                                          color: context.medora.success,
-                                        ),
-                                      ),
-                                      dense: true,
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                  ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: ListTile(
-                                    leading: Icon(
-                                      Icons.delete,
-                                      size: 20,
-                                      color: context.colors.error,
-                                    ),
-                                    title: Text(
-                                      l10n.delete,
-                                      style: TextStyle(
-                                        color: context.colors.error,
-                                      ),
-                                    ),
-                                    dense: true,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                ),
-                              ],
-                              onSelected: (action) async {
-                                if (action == 'edit') {
-                                  await showPrescriptionSheet(
-                                    context,
-                                    ref,
-                                    treatmentId: widget.treatmentId,
-                                    existing: p,
-                                  );
-                                } else if (action == 'deactivate') {
-                                  final repo = ref.read(
-                                    prescriptionRepositoryProvider,
-                                  );
-                                  await repo.deactivatePrescription(p.id);
-                                  ref.invalidate(
-                                    prescriptionsByTreatmentProvider(
-                                      widget.treatmentId,
-                                    ),
-                                  );
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          l10n.prescriptionDeactivated,
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                } else if (action == 'reactivate') {
-                                  final repo = ref.read(
-                                    prescriptionRepositoryProvider,
-                                  );
-                                  await repo.reactivatePrescription(p.id);
-                                  ref.invalidate(
-                                    prescriptionsByTreatmentProvider(
-                                      widget.treatmentId,
-                                    ),
-                                  );
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          l10n.prescriptionReactivated,
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                } else if (action == 'delete') {
-                                  final confirm = await showDialog<bool>(
-                                    context: context,
-                                    builder: (ctx) => AlertDialog(
-                                      title: Text(l10n.deletePrescription),
-                                      content: Text(
-                                        l10n.deletePrescriptionConfirm,
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(ctx, false),
-                                          child: Text(l10n.cancel),
-                                        ),
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(ctx, true),
-                                          child: Text(
-                                            l10n.delete,
-                                            style: TextStyle(
-                                              color: context.colors.error,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                  if (confirm == true) {
-                                    final repo = ref.read(
-                                      prescriptionRepositoryProvider,
-                                    );
-                                    await repo.deletePrescription(p.id);
-                                    ref.invalidate(
-                                      prescriptionsByTreatmentProvider(
-                                        widget.treatmentId,
-                                      ),
-                                    );
-                                    ref.invalidateDoseData();
-                                    unawaited(
-                                      ref
-                                          .read(reminderSchedulerProvider)
-                                          .reconcile(),
-                                    );
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            l10n.prescriptionDeleted,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                }
-                              },
-                            ),
-                            onTap: () => showPrescriptionSheet(
-                              context,
-                              ref,
-                              treatmentId: widget.treatmentId,
-                              existing: p,
-                            ),
+                            ],
                           ),
                         ),
                       );

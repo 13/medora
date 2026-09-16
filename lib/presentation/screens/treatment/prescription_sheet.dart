@@ -469,6 +469,14 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
         // text size, and a segment breaks its label mid-word.
         SegmentedButton<String>(
           direction: Axis.vertical,
+          // The default stadium outline turns into an oval when stacked.
+          style: const ButtonStyle(
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
+            ),
+          ),
           segments: [
             ButtonSegment(
               value: 'fixed_interval',
