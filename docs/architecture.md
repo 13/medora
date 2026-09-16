@@ -172,7 +172,8 @@ request, then read back and stored as synced, so a dose taken elsewhere is never
 replaced. A generated dose is stamped `1970-01-01`, and marking an overdue dose
 *missed* is a local conclusion: its stamp moves just past the previous one and
 nothing is queued, so any real change pulled later wins. On start and resume the
-sync runs before that marking. Each cycle fills a `SyncReport` that Settings renders,
+sync runs before that marking. Every request has a **30 s** timeout and fails
+like a network error. Each cycle fills a `SyncReport` that Settings renders,
 offering `discardFailedRow` per failed row; auto-sync fires **2 s** after
 connectivity returns, and a mid-cycle `syncAll()` is queued, up to **3**
 re-runs. Schema, RLS and

@@ -29,7 +29,8 @@
 /// For medications, treatments, prescriptions and dose logs this is the only
 /// push path: the repositories write locally and ask for a [syncAll], which
 /// queues behind a running cycle. One [syncAll] re-runs itself at most
-/// [SyncService.maxAutomaticReruns] times.
+/// [SyncService.maxAutomaticReruns] times. Every request to the server has a timeout
+/// ([SyncService.requestTimeout]) and fails like a network error.
 ///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
@@ -89,6 +90,7 @@ class SyncService {
     Stream<bool>? onlineStream,
     DateTime Function()? now,
     this.onFirstSuccessfulSync,
+    this.requestTimeout = const Duration(seconds: 30),
   }) : _cursors = cursors ?? SyncCursorStore.inMemory(),
        _failures = failures ?? SyncFailureStore.inMemory(),
        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
@@ -114,6 +116,12 @@ class SyncService {
   /// clean sync records it. The callback itself decides whether an owner is
   /// already stored.
   final Future<void> Function(String userId)? onFirstSuccessfulSync;
+
+  /// How long one request to the server may take before the cycle gives up
+  /// on it. A timed-out request counts as a network failure: the row stays
+  /// pending (with backoff) and a table whose fetch timed out keeps its
+  /// cursor. The request itself may still land; see [_remote].
+  final Duration requestTimeout;
 
   final SyncCursorStore _cursors;
   final SyncFailureStore _failures;
@@ -363,7 +371,7 @@ class SyncService {
       row,
     ) async {
       final model = FamilyModel.fromJson(row);
-      await familyRemote!.upsertFamily(model);
+      await _remote(familyRemote!.upsertFamily(model));
       await db.update(
         'families',
         {'sync_status': SyncStatus.synced},
@@ -376,10 +384,10 @@ class SyncService {
     await _pushBatch('family_members', report, where, whereArgs, (row) async {
       final model = FamilyMemberModel.fromJson(row);
       if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await familyRemote!.removeMember(model.id);
+        await _remote(familyRemote!.removeMember(model.id));
         await familyLocal.hardDeleteMember(model.id);
       } else {
-        await familyRemote!.upsertMember(model);
+        await _remote(familyRemote!.upsertMember(model));
         await db.update(
           'family_members',
           {'sync_status': SyncStatus.synced},
@@ -413,19 +421,21 @@ class SyncService {
     await _pushBatch('medications', report, where, whereArgs, (row) async {
       final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
       if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await medicationRemote!.deleteMedication(model.id);
+        await _remote(medicationRemote!.deleteMedication(model.id));
         await medicationLocal.hardDelete(model.id);
       } else {
         final staleAt = await _staleAgainstRemote(
           row,
-          medicationRemote!.getUpdatedAt,
+          (id) => _remote(medicationRemote!.getUpdatedAt(id)),
           force: forceAll,
         );
         if (staleAt != null) {
           await _skipStale('medications', report, staleAt);
           return false;
         }
-        final serverAt = await medicationRemote!.upsertMedication(model);
+        final serverAt = await _remote(
+          medicationRemote!.upsertMedication(model),
+        );
         await _settlePushed('medications', row, serverAt);
       }
       return true;
@@ -434,19 +444,19 @@ class SyncService {
     await _pushBatch('treatments', report, where, whereArgs, (row) async {
       final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
       if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await treatmentRemote!.deleteTreatment(model.id);
+        await _remote(treatmentRemote!.deleteTreatment(model.id));
         await treatmentLocal.hardDelete(model.id);
       } else {
         final staleAt = await _staleAgainstRemote(
           row,
-          treatmentRemote!.getUpdatedAt,
+          (id) => _remote(treatmentRemote!.getUpdatedAt(id)),
           force: forceAll,
         );
         if (staleAt != null) {
           await _skipStale('treatments', report, staleAt);
           return false;
         }
-        final serverAt = await treatmentRemote!.upsertTreatment(model);
+        final serverAt = await _remote(treatmentRemote!.upsertTreatment(model));
         await _settlePushed('treatments', row, serverAt);
       }
       return true;
@@ -455,19 +465,21 @@ class SyncService {
     await _pushBatch('prescriptions', report, where, whereArgs, (row) async {
       final model = PrescriptionModel.fromLocalMap(row);
       if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await prescriptionRemote!.deletePrescription(model.id);
+        await _remote(prescriptionRemote!.deletePrescription(model.id));
         await prescriptionLocal.hardDelete(model.id);
       } else {
         final staleAt = await _staleAgainstRemote(
           row,
-          prescriptionRemote!.getUpdatedAt,
+          (id) => _remote(prescriptionRemote!.getUpdatedAt(id)),
           force: forceAll,
         );
         if (staleAt != null) {
           await _skipStale('prescriptions', report, staleAt);
           return false;
         }
-        final serverAt = await prescriptionRemote!.upsertPrescription(model);
+        final serverAt = await _remote(
+          prescriptionRemote!.upsertPrescription(model),
+        );
         await _settlePushed('prescriptions', row, serverAt);
       }
       return true;
@@ -485,19 +497,19 @@ class SyncService {
       (row) async {
         final model = DoseLogModel.fromLocalMap(row);
         if (row['sync_status'] == SyncStatus.pendingDelete) {
-          await doseLogRemote!.deleteDoseLog(model.id);
+          await _remote(doseLogRemote!.deleteDoseLog(model.id));
           await doseLogLocal.hardDelete(model.id);
         } else {
           final staleAt = await _staleAgainstRemote(
             row,
-            doseLogRemote!.getUpdatedAt,
+            (id) => _remote(doseLogRemote!.getUpdatedAt(id)),
             force: forceAll,
           );
           if (staleAt != null) {
             await _skipStale('dose_logs', report, staleAt);
             return false;
           }
-          final serverAt = await doseLogRemote!.upsertDoseLog(model);
+          final serverAt = await _remote(doseLogRemote!.upsertDoseLog(model));
           await _settlePushed('dose_logs', row, serverAt);
         }
         return true;
@@ -519,7 +531,7 @@ class SyncService {
   /// has a tombstone). A row changed meanwhile stays pending and the cycle
   /// runs again.
   ///
-  /// A batch whose insert or read fails leaves all its rows
+  /// A batch whose insert or read fails or times out leaves all its rows
   /// pending with backoff. If the insert did land, the next attempt inserts
   /// nothing and reads the rows back, so the outcome is the same.
   Future<void> _pushNewDoseLogs(SyncReport report) async {
@@ -552,10 +564,12 @@ class SyncService {
       final ids = [for (final row in batch) row['id'] as String];
       final List<DoseLogModel> server;
       try {
-        await doseLogRemote!.insertDoseLogsIfAbsent([
-          for (final row in batch) DoseLogModel.fromLocalMap(row),
-        ]);
-        server = await doseLogRemote!.getDoseLogsByIds(ids);
+        await _remote(
+          doseLogRemote!.insertDoseLogsIfAbsent([
+            for (final row in batch) DoseLogModel.fromLocalMap(row),
+          ]),
+        );
+        server = await _remote(doseLogRemote!.getDoseLogsByIds(ids));
       } catch (e) {
         for (final id in ids) {
           await _failures.recordFailure('dose_logs', id, _now());
@@ -597,6 +611,11 @@ class SyncService {
       await Future<void>.delayed(Duration.zero);
     }
   }
+
+  /// [call] with the cycle's [requestTimeout]. A request that times out
+  /// throws [TimeoutException] and is handled like any network error; its
+  /// result, if it ever arrives, is ignored, so it never settles a row.
+  Future<T> _remote<T>(Future<T> call) => call.timeout(requestTimeout);
 
   /// Settles a row this cycle has just pushed (see [settlePushedRow]): synced
   /// only if nobody changed it since the push read it. A row edited meanwhile
@@ -818,7 +837,7 @@ class SyncService {
         table: 'medications',
         report: report,
         force: force,
-        fetch: (since) => medicationRemote!.getMedicationsSince(since),
+        fetch: (since) => _remote(medicationRemote!.getMedicationsSince(since)),
         idOf: (m) => m.id,
         updatedAtOf: (m) => m.updatedAt,
         deletedAtOf: (m) => m.deletedAt,
@@ -829,7 +848,7 @@ class SyncService {
         table: 'treatments',
         report: report,
         force: force,
-        fetch: (since) => treatmentRemote!.getTreatmentsSince(since),
+        fetch: (since) => _remote(treatmentRemote!.getTreatmentsSince(since)),
         idOf: (t) => t.id,
         updatedAtOf: (t) => t.updatedAt,
         deletedAtOf: (t) => t.deletedAt,
@@ -841,7 +860,8 @@ class SyncService {
       table: 'prescriptions',
       report: report,
       force: force,
-      fetch: (since) => prescriptionRemote!.getPrescriptionsSince(since),
+      fetch: (since) =>
+          _remote(prescriptionRemote!.getPrescriptionsSince(since)),
       idOf: (p) => p.id,
       updatedAtOf: (p) => p.updatedAt,
       deletedAtOf: (p) => p.deletedAt,
@@ -852,7 +872,7 @@ class SyncService {
       table: 'dose_logs',
       report: report,
       force: force,
-      fetch: (since) => doseLogRemote!.getDoseLogsSince(since),
+      fetch: (since) => _remote(doseLogRemote!.getDoseLogsSince(since)),
       idOf: (d) => d.id,
       updatedAtOf: (d) => d.updatedAt,
       deletedAtOf: (d) => d.deletedAt,
@@ -917,9 +937,11 @@ class SyncService {
 
   Future<void> _pullFamilies(SyncReport report, {bool failFast = false}) async {
     try {
-      final membership = await familyRemote!.getCurrentMembership();
+      final membership = await _remote(familyRemote!.getCurrentMembership());
       if (membership == null) return;
-      final family = await familyRemote!.getFamilyById(membership.familyId);
+      final family = await _remote(
+        familyRemote!.getFamilyById(membership.familyId),
+      );
       if (family == null) return;
       // A row with unpushed local changes (in particular a pending_delete
       // from "leave family" / "remove member") must not be stamped back to
@@ -929,7 +951,7 @@ class SyncService {
         await familyLocal.upsertFamily(family, syncStatus: SyncStatus.synced);
         report.pulled++;
       }
-      final members = await familyRemote!.getMembers(family.id);
+      final members = await _remote(familyRemote!.getMembers(family.id));
       for (final m in members) {
         if (await _isLocallyPending('family_members', m.id)) continue;
         await familyLocal.upsertMember(m, syncStatus: SyncStatus.synced);

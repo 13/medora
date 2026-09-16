@@ -32,6 +32,7 @@ class Harness {
     FamilyLocalDatasource? familyLocal,
     FakeMedicationRemote Function(DateTime Function() clock)? medicationRemote,
     FakeDoseLogRemote Function(DateTime Function() clock)? doseLogRemote,
+    Duration requestTimeout = const Duration(seconds: 30),
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
@@ -57,6 +58,7 @@ class Harness {
       currentUserId: () => userId,
       onlineStream: online?.stream ?? const Stream<bool>.empty(),
       now: clock.now,
+      requestTimeout: requestTimeout,
     );
   }
 
@@ -111,6 +113,21 @@ class EditOnEveryPushRemote extends FakeMedicationRemote {
       );
     }
     return super.upsertMedication(model);
+  }
+}
+
+/// A dose-log server whose batch insert lands and whose answer then never
+/// comes while [hang] is set — a response lost to a timeout.
+class HangingInsertRemote extends FakeDoseLogRemote {
+  HangingInsertRemote(super.clock);
+
+  Completer<void>? hang;
+
+  @override
+  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
+    await super.insertDoseLogsIfAbsent(models);
+    final gate = hang;
+    if (gate != null) await gate.future;
   }
 }
 
@@ -1665,6 +1682,89 @@ void main() {
       for (final id in ids) {
         expect(await h.failures.get('dose_logs', id), isNull);
       }
+    });
+  });
+
+  group('request timeout', () {
+    test('a batch that lands but whose answer times out converges on the '
+        'next attempt', () async {
+      late HangingInsertRemote remote;
+      final h = Harness(
+        requestTimeout: const Duration(milliseconds: 50),
+        doseLogRemote: (clock) => remote = HangingInsertRemote(clock),
+      );
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      remote.hang = Completer<void>();
+
+      final report = (await h.service.syncAll().timeout(
+        const Duration(seconds: 5),
+      ))!;
+
+      expect(report.failures, hasLength(ids.length));
+      expect(report.failures.first.error, contains('TimeoutException'));
+      expect(await syncStatuses(ids), everyElement(SyncStatus.pendingCreate));
+      // The insert did land; another device then took the first dose.
+      expect(remote.table.rows, hasLength(ids.length));
+      remote.table.rows[ids.first] = {
+        ...remote.table.rows[ids.first]!,
+        'status': 'taken',
+        'updated_at': h.clock.now().toIso8601String(),
+      };
+
+      remote.hang!.complete();
+      remote.hang = null;
+      h.clock.advance(const Duration(hours: 1));
+      final retry = (await h.service.syncAll())!;
+
+      expect(retry.failures, isEmpty);
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+      expect((await localRow('dose_logs', ids.first))!['status'], 'taken');
+      expect(remote.table.rows[ids.first]!['status'], 'taken');
+    });
+
+    test('an upsert that times out keeps the row pending', () async {
+      final h = Harness(requestTimeout: const Duration(milliseconds: 50));
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-slow',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      final never = Completer<void>();
+      h.meds.table.beforeCall = () => never.future;
+
+      final report = (await h.service.syncAll().timeout(
+        const Duration(seconds: 5),
+      ))!;
+
+      expect(report.failures.map((f) => f.table), contains('medications'));
+      expect(
+        (await localRow('medications', 'm-slow'))!['sync_status'],
+        SyncStatus.pendingCreate,
+      );
+      expect(await h.failures.get('medications', 'm-slow'), isNotNull);
+      expect(h.service.currentState, SyncState.partial);
+    });
+
+    test('a pull that times out keeps its cursor', () async {
+      final h = Harness(requestTimeout: const Duration(milliseconds: 50));
+      final cursor = DateTime.utc(2026, 3, 2);
+      await h.cursors.setLastPullAt('dose_logs', cursor);
+      final never = Completer<void>();
+      h.doses.table.beforeCall = () => never.future;
+
+      final report = (await h.service.syncAll().timeout(
+        const Duration(seconds: 5),
+      ))!;
+
+      expect(
+        report.failures.where((f) => f.table == 'dose_logs' && f.id == '*'),
+        hasLength(1),
+      );
+      expect(await h.cursors.lastPullAt('dose_logs'), cursor);
     });
   });
 
