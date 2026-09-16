@@ -132,21 +132,10 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   Future<List<MedicationModel>> searchMedications(String query) async =>
       (await getMedications()).where((m) => m.name.contains(query)).toList();
   @override
-  Future<void> addMedication(MedicationModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> updateMedication(MedicationModel model) async =>
-      table.upsert(model.toJson());
-  @override
   Future<DateTime?> upsertMedication(MedicationModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deleteMedication(String id) async => table.tombstone(id);
-  @override
-  Future<void> updateQuantity(String id, int delta) async {
-    final row = table.rows[id]!;
-    await table.upsert({...row, 'quantity': (row['quantity'] as int) + delta});
-  }
 }
 
 class FakeTreatmentRemote implements TreatmentRemoteDatasource {
@@ -211,22 +200,10 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   }
 
   @override
-  Future<void> addPrescription(PrescriptionModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> updatePrescription(PrescriptionModel model) async =>
-      table.upsert(model.toJson());
-  @override
   Future<DateTime?> upsertPrescription(PrescriptionModel model) async =>
       table.upsert(model.toJson());
   @override
   Future<void> deletePrescription(String id) async => table.tombstone(id);
-  @override
-  Future<void> deactivatePrescription(String id) async =>
-      table.upsert({...table.rows[id]!, 'is_active': false});
-  @override
-  Future<void> reactivatePrescription(String id) async =>
-      table.upsert({...table.rows[id]!, 'is_active': true});
 }
 
 class FakeDoseLogRemote implements DoseLogRemoteDatasource {
@@ -251,28 +228,8 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   @override
   Future<List<DoseLogModel>> getTodaysDoseLogs() async => getDoseLogs();
   @override
-  Future<void> addDoseLog(DoseLogModel model) async =>
-      table.upsert(model.toJson());
-  @override
-  Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
-    for (final m in models) {
-      await table.upsert(m.toJson());
-    }
-  }
-
-  @override
   Future<DateTime?> upsertDoseLog(DoseLogModel model) async =>
       table.upsert(model.toJson());
-  @override
-  Future<void> updateDoseLogStatus(
-    String id,
-    String status, {
-    DateTime? takenTime,
-  }) async => table.upsert({
-    ...table.rows[id]!,
-    'status': status,
-    'taken_time': takenTime?.toUtc().toIso8601String(),
-  });
   @override
   Future<void> deleteDoseLog(String id) async => table.tombstone(id);
 }

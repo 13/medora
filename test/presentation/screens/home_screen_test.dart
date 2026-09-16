@@ -105,7 +105,6 @@ void main() {
 
       final inner = DoseLogRepositoryImpl(
         localDatasource: DoseLogLocalDatasource(),
-        remoteDatasource: null,
         prescriptionLocal: PrescriptionLocalDatasource(),
       );
       final failingOverrides = [

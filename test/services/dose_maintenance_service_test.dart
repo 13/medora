@@ -44,7 +44,6 @@ void main() {
 
       final repo = DoseLogRepositoryImpl(
         localDatasource: DoseLogLocalDatasource(),
-        remoteDatasource: null,
         prescriptionLocal: PrescriptionLocalDatasource(),
       );
       final service = DoseMaintenanceService(doses: repo, now: () => now);
@@ -94,7 +93,6 @@ void main() {
 
       final repo = DoseLogRepositoryImpl(
         localDatasource: DoseLogLocalDatasource(),
-        remoteDatasource: null,
         prescriptionLocal: PrescriptionLocalDatasource(),
       );
       final service = DoseMaintenanceService(doses: repo, now: () => now);

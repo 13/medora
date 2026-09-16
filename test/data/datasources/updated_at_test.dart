@@ -71,7 +71,6 @@ void main() {
   test('repository add/update stamps updatedAt with now', () async {
     final repo = MedicationRepositoryImpl(
       localDatasource: MedicationLocalDatasource(),
-      remoteDatasource: null,
     );
     final before = DateTime.now().subtract(const Duration(seconds: 1));
     await repo.addMedication(

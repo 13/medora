@@ -1,19 +1,14 @@
 /// Medora - Treatment Repository Implementation (Offline-First)
 library;
 
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
-
-/// Asks for a sync cycle; see [TreatmentRepositoryImpl.new].
-typedef RequestSync = Future<void> Function();
 
 /// Writes go to the local database only. Every add, update, End and delete
 /// stores the row as pending and then asks for a sync cycle, which is the
@@ -150,13 +145,5 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   }
 
   /// Asks for a sync cycle without waiting for it.
-  void _syncSoon() {
-    final request = _requestSync;
-    if (request == null) return;
-    unawaited(
-      Future.sync(request).catchError((Object e) {
-        debugPrint('⚠ Sync request after a treatment write failed: $e');
-      }),
-    );
-  }
+  void _syncSoon() => requestSyncSoon(_requestSync, 'treatment');
 }

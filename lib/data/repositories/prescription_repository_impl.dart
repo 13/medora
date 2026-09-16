@@ -1,25 +1,28 @@
 /// Medora - Prescription Repository Implementation (Offline-First)
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
-import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/prescription_model.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
-import 'package:medora/services/connectivity_service.dart';
 
+/// Writes go to the local database only: each one stores the row as pending
+/// and asks for a sync cycle, which is the one place that pushes (see
+/// `TreatmentRepositoryImpl`).
 class PrescriptionRepositoryImpl implements PrescriptionRepository {
+  /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
+  /// failure only logs. Null in local-only mode, where nothing is pushed.
   PrescriptionRepositoryImpl({
     required this.localDatasource,
-    required this.remoteDatasource,
+    this._requestSync,
   });
 
   final PrescriptionLocalDatasource localDatasource;
-  final PrescriptionRemoteDatasource? remoteDatasource;
+  final RequestSync? _requestSync;
 
   @override
   Future<Result<List<Prescription>>> getPrescriptionsByTreatment(
@@ -65,7 +68,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
       final updated = prescription.copyWith(createdAt: now, updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncInBackground((r) => r.addPrescription(model), model.id);
+      _syncSoon();
       return Result.success(updated);
     } catch (e, st) {
       return Result.failure('Failed to add prescription: $e', st);
@@ -84,7 +87,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
       final updated = prescription.copyWith(updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground((r) => r.updatePrescription(model), model.id);
+      _syncSoon();
       return Result.success(updated);
     } catch (e, st) {
       return Result.failure('Failed to update prescription: $e', st);
@@ -95,10 +98,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> deletePrescription(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      _syncInBackground((r) async {
-        await r.deletePrescription(id);
-        await localDatasource.hardDelete(id);
-      }, id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete prescription: $e', st);
@@ -109,7 +109,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> deactivatePrescription(String id) async {
     try {
       await localDatasource.deactivate(id);
-      _syncInBackground((r) => r.deactivatePrescription(id), id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to deactivate prescription: $e', st);
@@ -120,28 +120,13 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   Future<Result<void>> reactivatePrescription(String id) async {
     try {
       await localDatasource.reactivate(id);
-      _syncInBackground((r) => r.reactivatePrescription(id), id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to reactivate prescription: $e', st);
     }
   }
 
-  /// Fire-and-forget remote sync. No-op in local-only mode.
-  void _syncInBackground(
-    Future<dynamic> Function(PrescriptionRemoteDatasource remote) remoteFn,
-    String id,
-  ) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remoteFn(remote);
-        await localDatasource.markSynced(id);
-      } catch (e) {
-        debugPrint('⚠ Background sync failed for prescription $id: $e');
-      }
-    });
-  }
+  /// Asks for a sync cycle without waiting for it.
+  void _syncSoon() => requestSyncSoon(_requestSync, 'prescription');
 }

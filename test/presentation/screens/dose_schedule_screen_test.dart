@@ -263,7 +263,6 @@ void main() {
             (ref) => _SlowRepo(
               DoseLogRepositoryImpl(
                 localDatasource: ref.watch(doseLogLocalDatasourceProvider),
-                remoteDatasource: ref.watch(doseLogDatasourceProvider),
                 prescriptionLocal: ref.watch(
                   prescriptionLocalDatasourceProvider,
                 ),

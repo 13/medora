@@ -4,25 +4,29 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
-import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
-import 'package:medora/services/connectivity_service.dart';
 import 'package:uuid/uuid.dart';
 
+/// Writes go to the local database only: each one stores the rows as
+/// pending and asks for a sync cycle, which is the one place that pushes
+/// (see `TreatmentRepositoryImpl`).
 class DoseLogRepositoryImpl implements DoseLogRepository {
+  /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
+  /// failure only logs. Null in local-only mode, where nothing is pushed.
   DoseLogRepositoryImpl({
     required this.localDatasource,
-    required this.remoteDatasource,
     required this.prescriptionLocal,
+    this._requestSync,
   });
 
   final DoseLogLocalDatasource localDatasource;
-  final DoseLogRemoteDatasource? remoteDatasource;
   final PrescriptionLocalDatasource prescriptionLocal;
+  final RequestSync? _requestSync;
 
   static const _uuid = Uuid();
 
@@ -79,9 +83,9 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   @override
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
     try {
-      return Result.success(
-        await localDatasource.markOverduePendingAsMissed(cutoff),
-      );
+      final changed = await localDatasource.markOverduePendingAsMissed(cutoff);
+      if (changed > 0) _syncSoon();
+      return Result.success(changed);
     } catch (e, st) {
       return Result.failure('Failed to mark overdue doses: $e', st);
     }
@@ -92,7 +96,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     try {
       final model = DoseLogModel.fromDomain(doseLog);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncRemoteInBackground((r) => r.addDoseLog(model), model.id);
+      _syncSoon();
       return Result.success(doseLog);
     } catch (e, st) {
       return Result.failure('Failed to add dose log: $e', st);
@@ -110,7 +114,8 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     }
   }
 
-  /// Shared status mutation: update locally, sync in background, return the stored row.
+  /// Shared status mutation: update locally, ask for a sync, return the
+  /// stored row.
   Future<Result<DoseLog>> _changeStatus(
     String id,
     String status, {
@@ -128,14 +133,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         clearTakenTime: clearTakenTime,
         syncStatus: SyncStatus.pendingUpdate,
       );
-      _syncRemoteInBackground(
-        (r) => r.updateDoseLogStatus(
-          id,
-          status,
-          takenTime: clearTakenTime ? null : takenTime,
-        ),
-        id,
-      );
+      _syncSoon();
       final updated = await localDatasource.getDoseLogById(id);
       return Result.success(updated!.toDomain());
     } catch (e, st) {
@@ -233,8 +231,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         syncStatus: SyncStatus.pendingCreate,
       );
 
-      // Remote sync in background — don't block
-      _syncRemoteBatchInBackground(newDoseLogs);
+      _syncSoon();
 
       final allLogs = [...existingModels, ...newDoseLogs];
       return Result.success(allLogs.map((m) => m.toDomain()).toList());
@@ -262,40 +259,8 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
     }
   }
 
-  /// Fire-and-forget remote sync for a single record. No-op in local-only mode.
-  void _syncRemoteInBackground(
-    Future<dynamic> Function(DoseLogRemoteDatasource remote) remoteFn,
-    String id,
-  ) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remoteFn(remote);
-        await localDatasource.markSynced(id);
-      } catch (e) {
-        debugPrint('⚠ Background sync failed for dose log $id: $e');
-      }
-    });
-  }
-
-  /// Fire-and-forget remote sync for batch records. No-op in local-only mode.
-  void _syncRemoteBatchInBackground(List<DoseLogModel> models) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remote.addDoseLogsBatch(models);
-        for (final log in models) {
-          await localDatasource.markSynced(log.id);
-        }
-      } catch (e) {
-        debugPrint('⚠ Background batch sync failed for dose logs: $e');
-      }
-    });
-  }
+  /// Asks for a sync cycle without waiting for it.
+  void _syncSoon() => requestSyncSoon(_requestSync, 'dose log');
 
   /// Truncate a DateTime to minute precision for consistent comparison.
   static String _truncateToMinute(DateTime dt) {

@@ -137,16 +137,6 @@ class PrescriptionLocalDatasource {
     );
   }
 
-  Future<void> markSynced(String id) async {
-    final db = await _db;
-    await db.update(
-      'prescriptions',
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('prescriptions');

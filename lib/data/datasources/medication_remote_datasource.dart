@@ -127,23 +127,6 @@ class MedicationRemoteDatasource {
         .toList();
   }
 
-  /// Add a new medication.
-  Future<void> addMedication(MedicationModel model) =>
-      mapMedicationSchemaErrors(() async {
-        await _client
-            .from(AppConstants.medicationsTable)
-            .insert(model.toJson());
-      });
-
-  /// Update a medication.
-  Future<void> updateMedication(MedicationModel model) =>
-      mapMedicationSchemaErrors(() async {
-        await _client
-            .from(AppConstants.medicationsTable)
-            .update(model.toJson())
-            .eq('id', model.id);
-      });
-
   /// Upsert a medication (insert or update). Returns the `updated_at` the
   /// server gave this write (see `settlePushedRow`), or null when the
   /// response carries none.
@@ -165,18 +148,6 @@ class MedicationRemoteDatasource {
     await _client
         .from(AppConstants.medicationsTable)
         .update({'deleted_at': now, 'updated_at': now})
-        .eq('id', id);
-  }
-
-  /// Update medication quantity by delta.
-  Future<void> updateQuantity(String id, int delta) async {
-    final current = await getMedicationById(id);
-    if (current == null) return;
-    final newQuantity = (current.quantity + delta).clamp(0, 999999);
-
-    await _client
-        .from(AppConstants.medicationsTable)
-        .update({'quantity': newQuantity})
         .eq('id', id);
   }
 }

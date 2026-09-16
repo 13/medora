@@ -14,7 +14,6 @@ void main() {
 
   DoseLogRepositoryImpl makeRepo() => DoseLogRepositoryImpl(
     localDatasource: DoseLogLocalDatasource(),
-    remoteDatasource: null,
     prescriptionLocal: PrescriptionLocalDatasource(),
   );
 

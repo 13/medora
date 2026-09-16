@@ -27,6 +27,7 @@ import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/data/repositories/prescription_repository_impl.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/domain/repositories/family_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
@@ -134,36 +135,50 @@ final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
 // Repository Providers (offline-first; remote may be null)
 // ============================================================
 
+/// How a repository asks for a sync after a write. The sync cycle is the
+/// only push path for medications, treatments, prescriptions and dose logs:
+/// a write asks for one, and it queues behind a cycle that is already
+/// running. Null in local-only mode ([remote] is null), where nothing is
+/// pushed.
+RequestSync? _requestSyncInCloud(Ref ref, Object? remote) =>
+    remote == null ? null : () => ref.read(syncServiceProvider).syncAll();
+
 final medicationRepositoryProvider = Provider<MedicationRepository>(
   (ref) => MedicationRepositoryImpl(
     localDatasource: ref.watch(medicationLocalDatasourceProvider),
-    remoteDatasource: ref.watch(medicationDatasourceProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(medicationDatasourceProvider),
+    ),
   ),
 );
 
-final treatmentRepositoryProvider = Provider<TreatmentRepository>((ref) {
-  final cloud = ref.watch(treatmentDatasourceProvider) != null;
-  return TreatmentRepositoryImpl(
+final treatmentRepositoryProvider = Provider<TreatmentRepository>(
+  (ref) => TreatmentRepositoryImpl(
     localDatasource: ref.watch(treatmentLocalDatasourceProvider),
-    // The sync cycle is the only push path: a write asks for one, and it
-    // queues behind a cycle that is already running.
-    requestSync: cloud ? () => ref.read(syncServiceProvider).syncAll() : null,
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(treatmentDatasourceProvider),
+    ),
     now: ref.watch(nowProvider),
-  );
-});
+  ),
+);
 
 final prescriptionRepositoryProvider = Provider<PrescriptionRepository>(
   (ref) => PrescriptionRepositoryImpl(
     localDatasource: ref.watch(prescriptionLocalDatasourceProvider),
-    remoteDatasource: ref.watch(prescriptionDatasourceProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(prescriptionDatasourceProvider),
+    ),
   ),
 );
 
 final doseLogRepositoryProvider = Provider<DoseLogRepository>(
   (ref) => DoseLogRepositoryImpl(
     localDatasource: ref.watch(doseLogLocalDatasourceProvider),
-    remoteDatasource: ref.watch(doseLogDatasourceProvider),
     prescriptionLocal: ref.watch(prescriptionLocalDatasourceProvider),
+    requestSync: _requestSyncInCloud(ref, ref.watch(doseLogDatasourceProvider)),
   ),
 );
 

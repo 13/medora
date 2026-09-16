@@ -234,16 +234,6 @@ class DoseLogLocalDatasource {
     );
   }
 
-  Future<void> markSynced(String id) async {
-    final db = await _db;
-    await db.update(
-      'dose_logs',
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-  }
-
   /// Marks the row for deletion: pending push plus a local tombstone stamp
   /// (spec §4.6).
   Future<void> markDeleted(String id) async {

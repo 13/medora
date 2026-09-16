@@ -14,7 +14,6 @@ void main() {
     () async {
       final repo = MedicationRepositoryImpl(
         localDatasource: MedicationLocalDatasource(),
-        remoteDatasource: null,
       );
 
       final added = await repo.addMedication(

@@ -90,19 +90,6 @@ class PrescriptionRemoteDatasource {
     return response == null ? null : PrescriptionModel.fromJson(response);
   }
 
-  /// Add a new prescription.
-  Future<void> addPrescription(PrescriptionModel model) async {
-    await _client.from(AppConstants.prescriptionsTable).insert(model.toJson());
-  }
-
-  /// Update a prescription.
-  Future<void> updatePrescription(PrescriptionModel model) async {
-    await _client
-        .from(AppConstants.prescriptionsTable)
-        .update(model.toJson())
-        .eq('id', model.id);
-  }
-
   /// Upsert a prescription (insert or update). Returns the `updated_at` the
   /// server gave this write (see `settlePushedRow`), or null when the
   /// response carries none.
@@ -122,20 +109,6 @@ class PrescriptionRemoteDatasource {
     await _client
         .from(AppConstants.prescriptionsTable)
         .update({'deleted_at': now, 'updated_at': now})
-        .eq('id', id);
-  }
-
-  Future<void> deactivatePrescription(String id) async {
-    await _client
-        .from(AppConstants.prescriptionsTable)
-        .update({'is_active': false})
-        .eq('id', id);
-  }
-
-  Future<void> reactivatePrescription(String id) async {
-    await _client
-        .from(AppConstants.prescriptionsTable)
-        .update({'is_active': true})
         .eq('id', id);
   }
 }

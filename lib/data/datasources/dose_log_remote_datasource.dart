@@ -78,17 +78,6 @@ class DoseLogRemoteDatasource {
         .toList();
   }
 
-  Future<void> addDoseLog(DoseLogModel model) async {
-    await _client.from(AppConstants.doseLogsTable).insert(model.toJson());
-  }
-
-  Future<void> addDoseLogsBatch(List<DoseLogModel> models) async {
-    if (models.isEmpty) return;
-    await _client
-        .from(AppConstants.doseLogsTable)
-        .insert(models.map((m) => m.toJson()).toList());
-  }
-
   /// Upsert a dose log (insert or update). Returns the `updated_at` the
   /// server gave this write (see `settlePushedRow`), or null when the
   /// response carries none.
@@ -99,29 +88,6 @@ class DoseLogRemoteDatasource {
         .select('updated_at')
         .maybeSingle();
     return serverStampOf(response);
-  }
-
-  /// Update dose log status.
-  Future<void> updateDoseLogStatus(
-    String id,
-    String status, {
-    DateTime? takenTime,
-  }) async {
-    final Map<String, dynamic> updateData = {
-      'status': status,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    };
-
-    if (takenTime != null) {
-      updateData['taken_time'] = takenTime.toUtc().toIso8601String();
-    } else if (status == 'pending') {
-      updateData['taken_time'] = null;
-    }
-
-    await _client
-        .from(AppConstants.doseLogsTable)
-        .update(updateData)
-        .eq('id', id);
   }
 
   /// Delete a dose log from remote.

@@ -71,7 +71,6 @@ void main() {
         port: port,
         doses: DoseLogRepositoryImpl(
           localDatasource: DoseLogLocalDatasource(),
-          remoteDatasource: null,
           prescriptionLocal: PrescriptionLocalDatasource(),
         ),
         remindersEnabled: () => enabled,

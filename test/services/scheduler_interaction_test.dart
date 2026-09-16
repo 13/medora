@@ -52,7 +52,6 @@ void main() {
         port: port,
         doses: DoseLogRepositoryImpl(
           localDatasource: DoseLogLocalDatasource(),
-          remoteDatasource: null,
           prescriptionLocal: PrescriptionLocalDatasource(),
         ),
         remindersEnabled: () => enabled,
@@ -67,7 +66,6 @@ void main() {
     port: port,
     medications: MedicationRepositoryImpl(
       localDatasource: MedicationLocalDatasource(),
-      remoteDatasource: null,
     ),
     stockRemindersEnabled: () => enabled,
     now: () => now,

@@ -1,25 +1,26 @@
 /// Medora - Medication Repository Implementation (Offline-First)
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
-import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
-import 'package:medora/services/connectivity_service.dart';
 
+/// Writes go to the local database only: each one stores the row as pending
+/// and asks for a sync cycle, which is the one place that pushes (see
+/// `TreatmentRepositoryImpl`). A stock change is pushed as the new quantity,
+/// under last-write-wins, like every other column.
 class MedicationRepositoryImpl implements MedicationRepository {
-  MedicationRepositoryImpl({
-    required this.localDatasource,
-    required this.remoteDatasource,
-  });
+  /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
+  /// failure only logs. Null in local-only mode, where nothing is pushed.
+  MedicationRepositoryImpl({required this.localDatasource, this._requestSync});
 
   final MedicationLocalDatasource localDatasource;
-  final MedicationRemoteDatasource? remoteDatasource;
+  final RequestSync? _requestSync;
 
   @override
   Future<Result<List<Medication>>> getMedications() async {
@@ -92,7 +93,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncInBackground((r) => r.addMedication(model), model.id);
+      _syncSoon();
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to add medication: $e', st);
@@ -109,7 +110,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground((r) => r.updateMedication(model), model.id);
+      _syncSoon();
       return Result.success(medication);
     } catch (e, st) {
       return Result.failure('Failed to update medication: $e', st);
@@ -120,10 +121,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<void>> deleteMedication(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      _syncInBackground((r) async {
-        await r.deleteMedication(id);
-        await localDatasource.hardDelete(id);
-      }, id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete medication: $e', st);
@@ -167,7 +165,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
         updated,
         syncStatus: SyncStatus.pendingUpdate,
       );
-      _syncInBackground((r) => r.updateQuantity(id, delta), id);
+      _syncSoon();
       return Result.success(updated.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to update quantity: $e', st);
@@ -178,6 +176,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<void>> archiveMedication(String id) async {
     try {
       await localDatasource.archiveMedication(id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to archive medication: $e', st);
@@ -188,6 +187,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
   Future<Result<void>> unarchiveMedication(String id) async {
     try {
       await localDatasource.unarchiveMedication(id);
+      _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to unarchive medication: $e', st);
@@ -204,21 +204,6 @@ class MedicationRepositoryImpl implements MedicationRepository {
     }
   }
 
-  /// Fire-and-forget remote sync. No-op in local-only mode.
-  void _syncInBackground(
-    Future<dynamic> Function(MedicationRemoteDatasource remote) remoteFn,
-    String id,
-  ) {
-    final remote = remoteDatasource;
-    if (remote == null) return;
-    if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remoteFn(remote);
-        await localDatasource.markSynced(id);
-      } catch (e) {
-        debugPrint('⚠ Background sync failed for medication $id: $e');
-      }
-    });
-  }
+  /// Asks for a sync cycle without waiting for it.
+  void _syncSoon() => requestSyncSoon(_requestSync, 'medication');
 }

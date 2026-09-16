@@ -240,7 +240,6 @@ void main() {
           FailingTakeRepo(
             DoseLogRepositoryImpl(
               localDatasource: DoseLogLocalDatasource(),
-              remoteDatasource: null,
               prescriptionLocal: PrescriptionLocalDatasource(),
             ),
           ),
