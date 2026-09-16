@@ -160,11 +160,14 @@ List<CodeCandidate> findCodeCandidates(
     // else the first number on the line paired with a label line without
     // one (same row to its right, or right below; see [_labelPartners]).
     final label = _supplementLabel.firstMatch(text);
-    var supplement = label == null
+    final labelled = label == null
         ? null
         : _labelledCode(text, label.end, claimed, prefixes: prefixes);
-    if (supplement == null && labelPartners.contains(lineIndex)) {
-      supplement = _labelledCode(text, 0, claimed, prefixes: prefixes);
+    var supplement = labelled?.span;
+    if (supplement == null &&
+        labelled?.refused != true &&
+        labelPartners.contains(lineIndex)) {
+      supplement = _labelledCode(text, 0, claimed, prefixes: prefixes).span;
     }
     if (supplement != null) {
       claimed.add(supplement);
@@ -513,24 +516,76 @@ final _afterLabel = RegExp(
   caseSensitive: false,
 );
 
+/// One complete quantity group that may stand between a label and its code:
+/// a number with its unit, as packs print it (`COD MINSAN: 500 mg 107018`,
+/// `30 cpr 25601`). Only measures and abbreviated dose forms count: a
+/// spelled-out word is no unit, so in `COD MINSAN: 30 compresse 450` the
+/// `450` is still just a number on the line and not the label's code.
+final _quantityGroup = RegExp(
+  r'[0-9]{1,9}(?:[.,][0-9]+)?\s*'
+  r'(?:%|(?:mg|mcg|kcal|ml|g|ui|cpr|cps|cf|pz|bust)\.?(?![A-Za-z]))',
+  caseSensitive: false,
+);
+
+/// The outcome of looking for a labelled code on one line: the [span] of
+/// the code, and — when there is none — whether a code-shaped run stood
+/// where the code belongs but was [refused] (a quantity, a date, or a run
+/// an EAN already claimed). A refused line has had its attempt: it must not
+/// adopt a neighbouring line's number instead (see [_labelPartners]).
+typedef _LabelledCode = ({_Span? span, bool refused});
+
+/// Where a code may start after [from]: past [_afterLabel]'s separators and
+/// past a prefix letter recorded by [_repairCodeTokens].
+int _codeEdge(String text, int from, Map<int, String> prefixes) {
+  final start = _afterLabel.matchAsPrefix(text, from)?.end ?? from;
+  return prefixes.containsKey(start) ? start + 1 : start;
+}
+
+/// The [_labelledDigitRun] standing exactly at [start], and whether one
+/// stood there but was refused for being [claimed] or a quantity or date
+/// ([_quantitySuffix]).
+_LabelledCode _codeAt(String text, int start, List<_Span> claimed) {
+  final m = _labelledDigitRun.matchAsPrefix(text, start);
+  if (m == null) return (span: null, refused: false);
+  final span = _Span(m.start, m.end);
+  if (claimed.any((c) => c.overlaps(span))) return (span: null, refused: true);
+  if (_quantitySuffix.matchAsPrefix(text, m.end) != null) {
+    return (span: null, refused: true);
+  }
+  return (span: span, refused: false);
+}
+
 /// The supplement code directly after [from] in [text]: only [_afterLabel]
 /// separators (and a prefix letter recorded by [_repairCodeTokens]) may
-/// stand in front of it. Null when the run there is no [_labelledDigitRun],
-/// is [claimed], or is a quantity or date ([_quantitySuffix]).
-_Span? _labelledCode(
+/// stand in front of it, or — stepped over exactly once — one complete
+/// [_quantityGroup] or one [claimed] span, which is how a pack prints
+/// `COD MINSAN: 500 mg 107018` and `COD MINSAN: 8057737141836 107018`.
+/// A second number further along the line is never the code.
+_LabelledCode _labelledCode(
   String text,
   int from,
   List<_Span> claimed, {
   Map<int, String> prefixes = const {},
 }) {
-  var start = _afterLabel.matchAsPrefix(text, from)?.end ?? from;
-  if (prefixes.containsKey(start)) start += 1;
-  final m = _labelledDigitRun.matchAsPrefix(text, start);
-  if (m == null) return null;
-  final span = _Span(m.start, m.end);
-  if (claimed.any((c) => c.overlaps(span))) return null;
-  if (_quantitySuffix.matchAsPrefix(text, m.end) != null) return null;
-  return span;
+  final start = _codeEdge(text, from, prefixes);
+  final atEdge = _codeAt(text, start, claimed);
+  if (atEdge.span != null) return atEdge;
+  final skipped = _skipOneGroup(text, start, claimed);
+  if (skipped == null) return atEdge;
+  final next = _codeAt(text, _codeEdge(text, skipped, prefixes), claimed);
+  return (span: next.span, refused: atEdge.refused || next.refused);
+}
+
+/// The end of the one [_quantityGroup] or [claimed] span (an EAN printed
+/// between the label and the code) standing at [start]; null when neither
+/// does, so nothing may be stepped over.
+int? _skipOneGroup(String text, int start, List<_Span> claimed) {
+  final quantity = _quantityGroup.matchAsPrefix(text, start);
+  if (quantity != null) return quantity.end;
+  for (final span in claimed) {
+    if (span.start <= start && start < span.end) return span.end;
+  }
+  return null;
 }
 
 /// Indexes of the lines that hold the code of a supplement label printed
@@ -548,15 +603,16 @@ Set<int> _labelPartners(List<OcrLine> lines) {
     final match = _supplementLabel.firstMatch(labelText);
     if (match == null) continue;
     final eanSpans = [for (final e in _findEans(labelText)) e.span];
-    if (_labelledCode(
-          labelText,
-          match.end,
-          eanSpans,
-          prefixes: repairedLabel.prefixes,
-        ) !=
-        null) {
-      continue;
-    }
+    final labelled = _labelledCode(
+      labelText,
+      match.end,
+      eanSpans,
+      prefixes: repairedLabel.prefixes,
+    );
+    // A label that found its own code needs no partner; so does one whose
+    // own code was refused — it has had its attempt, and adopting another
+    // line's number would show an unrelated number as the code (review C1).
+    if (labelled.span != null || labelled.refused) continue;
 
     int? sameRow;
     for (var j = 0; j < lines.length; j++) {
@@ -565,7 +621,12 @@ Set<int> _labelPartners(List<OcrLine> lines) {
       if (!_onSameRowRightOf(label, other)) continue;
       final repaired = _repairCodeTokens(other.text);
       final spans = [for (final e in _findEans(repaired.text)) e.span];
-      if (_labelledCode(repaired.text, 0, spans, prefixes: repaired.prefixes) ==
+      if (_labelledCode(
+            repaired.text,
+            0,
+            spans,
+            prefixes: repaired.prefixes,
+          ).span ==
           null) {
         continue;
       }

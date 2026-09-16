@@ -304,6 +304,85 @@ void main() {
         ], reason: text);
       }
     });
+
+    test('the code after its own pack quantity is still the code', () {
+      // Review I1: the edge-only rule lost a code printed after a quantity.
+      for (final (text, code) in [
+        ('COD MINSAN: 500 mg 107018', '107018'),
+        ('COD MINSAN: 30 cpr 25601', '25601'),
+        ('COD MINSAN: 20 bust. 107018', '107018'),
+        ('COD MINSAN: 1,5 g 107018', '107018'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+          code,
+        ], reason: text);
+      }
+    });
+
+    test('a spelled-out dose form still ends the search', () {
+      // The other side of the same rule: only a unit is stepped over, so a
+      // bare number followed by a plain word keeps the next number a number.
+      for (final text in [
+        'COD MINSAN: 30 compresse 450',
+        'COD MINSAN: 30 compresse 107018',
+        'COD MINSAN: 30 bustine 107018',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement), isEmpty, reason: text);
+      }
+    });
+
+    test('only one quantity group is stepped over', () {
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 500 mg 30 cpr 107018', 0),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('the code after an EAN on the label line is still the code', () {
+      // Review I1: the EAN claims the run at the label's edge.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 8057737141836 107018', 0),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+        '107018',
+      ]);
+      expect(_ofKind(result, CodeKind.ean).map((c) => c.code), [
+        '8057737141836',
+      ]);
+    });
+
+    test('a label that holds its own code adopts no neighbour', () {
+      // Review C1: `500 mg 107018` answered "no code", so the number on the
+      // line below was adopted — a lot number shown as the supplement code.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 500 mg 107018', 100),
+        _line('654321', 145),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+        '107018',
+      ]);
+      expect(_ofKind(result, CodeKind.other).map((c) => c.code), ['654321']);
+    });
+
+    test('a label whose own code was refused adopts no neighbour', () {
+      // Review C1: the label line has had its attempt; the quantity is not a
+      // code and the line below is not the label's code either.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 500 mg', 100),
+        _line('654321', 145),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('a refused code blocks a same-row partner too', () {
+      final result = findCodeCandidates([
+        const OcrLine('COD MINSAN: 500 mg', Rect.fromLTWH(0, 100, 240, 40)),
+        const OcrLine('654321', Rect.fromLTWH(260, 100, 120, 40)),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
   });
 
   group('findCodeCandidates: review fixes', () {
