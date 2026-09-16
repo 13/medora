@@ -1625,6 +1625,87 @@ void main() {
       },
     );
 
+    test('a sync asked for during a force push runs once it ends', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-force',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      final gate = Completer<void>();
+      gateFirstCall(h, gate); // force push's upsert
+
+      final force = h.service.forcePush();
+      await pumpEventQueue();
+      // A write made meanwhile asks for a sync; it cannot run yet.
+      expect(await h.service.syncAll(), isNull);
+      expect(h.meds.table.sinceCalls, isEmpty);
+
+      gate.complete();
+      await force;
+
+      // A force push does not pull; the pull is the requested sync's.
+      expect(h.meds.table.sinceCalls.length, 1);
+    });
+
+    test('a sync asked for during a force pull runs once it ends', () async {
+      final h = Harness();
+      final gate = Completer<void>();
+      gateFirstCall(h, gate); // force pull's fetch
+
+      final force = h.service.forcePull();
+      await pumpEventQueue();
+      expect(await h.service.syncAll(), isNull);
+
+      gate.complete();
+      await force;
+
+      expect(h.meds.table.sinceCalls.length, 2);
+    });
+
+    test('a force push that leaves an edited row pending syncs it', () async {
+      final h = Harness();
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-edit',
+          name: 'Pushed',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      final db = await AppDatabase.instance.database;
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        // Edited while the force push sends the older copy.
+        await db.update(
+          'medications',
+          {
+            'name': 'Edited',
+            'sync_status': SyncStatus.pendingUpdate,
+            'updated_at': h.clock
+                .now()
+                .add(const Duration(seconds: 1))
+                .toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: ['m-edit'],
+        );
+      };
+
+      await h.service.forcePush();
+
+      expect(h.meds.table.rows['m-edit']?['name'], 'Edited');
+      final row = (await localRow('medications', 'm-edit'))!;
+      expect(row['sync_status'], SyncStatus.synced);
+    });
+
     test('force operations asked for during a cycle are not queued', () async {
       final h = Harness();
       final gate = Completer<void>();

@@ -199,6 +199,9 @@ class SyncService {
   /// unsynced until the next trigger. Force operations are explicit user
   /// actions and are never queued.
   ///
+  /// A sync asked for during a force operation runs as a plain [syncAll]
+  /// right after it, before the force operation's future completes.
+  ///
   /// Returns the report of *this* call's own first cycle; a queued re-run is
   /// what [lastReport] ends up holding.
   Future<SyncReport?> _run(
@@ -252,7 +255,12 @@ class SyncService {
         reruns++;
       }
     } while (_rerunRequested);
+    final requestedDuringForce = !queueable && _rerunRequested;
     _rerunRequested = false;
+    // A force operation does not re-run itself, but a sync asked for while
+    // it ran (a write, or a row edited while the force push sent it) still
+    // has to happen: without this it would wait for the next trigger.
+    if (requestedDuringForce) await syncAll();
     return first;
   }
 
