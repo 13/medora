@@ -91,4 +91,49 @@ void main() {
       'real  tail',
     );
   });
+
+  test('paired emphasis goes, unpaired markers stay', () {
+    // release_notes.sh publishes raw commit subjects, so snake_case
+    // identifiers and globs reach the sheet routinely. Stripping every '*'
+    // and '_' on sight rendered the first of these as
+    // 'rename userid to userId and star'.
+    expect(
+      releaseNotesToPlainText('rename user_id to userId and *star*'),
+      'rename user_id to userId and star',
+    );
+    expect(
+      releaseNotesToPlainText('- ignore *.dart and **/*.g.dart'),
+      '\u2022 ignore *.dart and **/*.g.dart',
+    );
+    expect(
+      releaseNotesToPlainText('keep _private_var and a lone * here'),
+      'keep _private_var and a lone * here',
+    );
+    expect(
+      releaseNotesToPlainText('nested **bold _it_** reads once'),
+      'nested bold it reads once',
+    );
+  });
+
+  test('code fences lose their markers and keep their lines', () {
+    expect(
+      releaseNotesToPlainText('before\n```dart\nvar x = 1;\n```\nafter'),
+      'before\nvar x = 1;\nafter',
+    );
+  });
+
+  test('an unpaired-marker storm renders promptly', () {
+    // Every '*' opens a candidate emphasis run that never closes. Without a
+    // bound on what the run may span this is quadratic.
+    final storm = List.filled(5000, '*.dart').join(' ');
+    final watch = Stopwatch()..start();
+    final text = releaseNotesToPlainText(storm);
+    watch.stop();
+    expect(
+      watch.elapsedMilliseconds,
+      lessThan(500),
+      reason: 'rendering backtracked: took ${watch.elapsedMilliseconds} ms',
+    );
+    expect(text, startsWith('*.dart *.dart'));
+  });
 }

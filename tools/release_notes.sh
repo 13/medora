@@ -20,7 +20,10 @@ RANGE="${PREV:+$PREV..}$TAG"
 BODY=""
 for group in "feat:Features" "fix:Fixes"; do
   prefix="${group%%:*}"; title="${group##*:}"
-  subjects="$(git log --no-merges --pretty=%s "$RANGE" | grep -E "^$prefix(\(.+\))?: " | sed -E "s/^$prefix(\(.+\))?: //" || true)"
+  # \([^)]*\), not \(.+\): a greedy scope swallows everything up to the last
+  # "): " in the subject, so `feat(a): weird (b): scope` published as
+  # "scope" — the words in between silently deleted from the changelog.
+  subjects="$(git log --no-merges --pretty=%s "$RANGE" | grep -E "^$prefix(\([^)]*\))?: " | sed -E "s/^$prefix(\([^)]*\))?: //" || true)"
   [ -n "$subjects" ] || continue
   BODY+="### $title"$'\n'
   while IFS= read -r subject; do BODY+="- $subject"$'\n'; done <<< "$subjects"

@@ -33,13 +33,42 @@ final _trailer = RegExp(
   r'^\*{0,2}Full Changelog\*{0,2}\s*:',
   caseSensitive: false,
 );
-final _emphasis = RegExp(r'(\*{1,3}|_{1,3}|~~|`+)');
+// Paired emphasis and inline code only.
+//
+// release_notes.sh publishes raw commit subjects, so snake_case identifiers
+// and globs reach the sheet routinely; stripping every '*', '_', '~~' and
+// '`' on sight turned "rename user_id to userId" into "rename userid to
+// userId" and "**/*.g.dart" into "*/.g.dart". Each branch below therefore
+// needs a closer of its own kind, and:
+//   - the opener may not follow a word character or another marker, which is
+//     what stops intra-word '_' (user_id) and the second '*' of a '**/' glob
+//     from opening a run;
+//   - a run may not contain its own marker, so an unpaired '*' cannot reach
+//     across the next one to find a partner;
+//   - a run may not begin or end on whitespace, nor end mid-word;
+//   - a run is capped at 200 characters, so a line of unpaired markers costs
+//     O(n) attempts of bounded width rather than O(n^2).
+// Inline code is exempt from the word-boundary rules - `fixed` mid-word is
+// still code - but its delimiter run is capped at 3 for the same reason.
+final _emphasis = RegExp(
+  r'(?<![A-Za-z0-9*_~`])(?:'
+  r'(\*{1,3})(?![\s*])([^*]{1,200}?)(?<!\s)\1'
+  r'|(_{1,3})(?![\s_])([^_]{1,200}?)(?<!\s)\3'
+  r'|(~~)(?![\s~])([^~]{1,200}?)(?<!\s)\5'
+  r')(?![A-Za-z0-9])'
+  r'|(`{1,3})([^`]{1,200}?)\7',
+);
+// A fenced code block's opening or closing line: the fence and its optional
+// info string carry no words worth showing, but the lines between them do.
+final _fence = RegExp(r'^\s*(?:`{3,}|~{3,})\s*[A-Za-z0-9_+#-]*\s*$');
 final _blockQuote = RegExp(r'^\s*>\s?');
 
 /// GitHub release markdown as plain text.
 ///
 /// Headings lose their `#` and keep their words, list items become `• `,
-/// links become their text, inline code/emphasis markers are dropped,
+/// links become their text, paired inline-code and emphasis markers are
+/// dropped while unpaired ones (`user_id`, `*.dart`) are left alone, code
+/// fence lines are removed,
 /// `<!-- -->` comments, images and the auto-generated "**Full Changelog**"
 /// trailer are removed, and runs of blank lines collapse to one. Never
 /// longer than [releaseNotesMaxChars] (cut at a line boundary, with a
@@ -56,11 +85,12 @@ String releaseNotesToPlainText(String markdown) {
   for (final raw in text.split('\n')) {
     var line = raw.replaceAll('\r', '');
     if (_rule.hasMatch(line)) continue;
+    if (_fence.hasMatch(line)) continue;
     if (_trailer.hasMatch(line.trim())) continue;
     line = line.replaceFirst(_blockQuote, '');
     final isBullet = _bullet.hasMatch(line);
     line = line.replaceFirst(_heading, '').replaceFirst(_bullet, '');
-    line = line.replaceAll(_emphasis, '').trimRight();
+    line = _stripEmphasis(line).trimRight();
     if (isBullet && line.trim().isNotEmpty) line = '• ${line.trim()}';
     lines.add(line.trimLeft());
   }
@@ -77,4 +107,23 @@ String releaseNotesToPlainText(String markdown) {
   if (joined.length <= releaseNotesMaxChars) return joined;
   final cut = joined.lastIndexOf('\n', releaseNotesMaxChars);
   return '${joined.substring(0, cut > 0 ? cut : releaseNotesMaxChars).trimRight()}…';
+}
+
+/// [line] with paired emphasis removed, repeatedly, so nesting such as
+/// `**bold _it_**` loses both pairs.
+///
+/// Each pass is a fresh linear scan and three levels of nesting is already
+/// more than a commit subject ever carries, so the loop is bounded rather
+/// than run to a fixed point.
+String _stripEmphasis(String line) {
+  var text = line;
+  for (var pass = 0; pass < 3; pass++) {
+    final next = text.replaceAllMapped(
+      _emphasis,
+      (m) => m[2] ?? m[4] ?? m[6] ?? m[8] ?? '',
+    );
+    if (next == text) break;
+    text = next;
+  }
+  return text;
 }
