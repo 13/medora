@@ -16,7 +16,6 @@ import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
-import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -31,15 +30,6 @@ import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
 
 void main() {
-  // The REAL clock, deliberately. getTodaysDoseLogs and
-  // DoseMaintenanceService key off the wall clock by design, not off
-  // nowProvider, so a dose seeded relative to the real now has to be judged
-  // against the real now too: with a fixed 2026 clock in nowProvider the Now
-  // card compares today's dose against a date months in the past and never
-  // reaches its overdue state. Nothing here asserts a formatted date, so a
-  // fixed clock buys this file nothing.
-  final now = DateTime.now();
-
   setUp(() async {
     SupabaseConfig.resetForTest();
     await setUpTestDatabase();
@@ -84,7 +74,17 @@ void main() {
         syncStartupDelayProvider.overrideWithValue(Duration.zero),
         reminderPortProvider.overrideWithValue(FakePort()),
         platformCapabilitiesProvider.overrideWithValue(caps),
-        nowProvider.overrideWithValue(() => now),
+        // No nowProvider override: the REAL clock, deliberately, which is
+        // also exactly what production installs (`systemNow`, clock.dart).
+        // getTodaysDoseLogs and DoseMaintenanceService read the wall clock
+        // directly by design, so a dose seeded against the real now has to
+        // be judged against the real now too — against a fixed 2026 clock
+        // the Now card compares today's dose to a date months in the past
+        // and never reaches its overdue state. Freezing the real now here
+        // would reintroduce that same split in miniature: an instant
+        // captured before the pump, judged against a wall clock that may
+        // since have crossed midnight. Nothing here asserts a formatted
+        // date, so a fixed clock buys this file nothing.
         ...extra,
       ],
     );
@@ -149,6 +149,11 @@ void main() {
   });
 
   testWidgets('mark a dose taken from Home and undo it', (tester) async {
+    // Captured here rather than at library load: the gap between this line
+    // and the assertions below is microseconds, so it cannot straddle
+    // midnight and seed the dose on yesterday, which a file-scope capture
+    // can once the suite ahead of it runs long enough.
+    final now = DateTime.now();
     final db = await AppDatabase.instance.database;
     final s = await seedPrescription(db);
     final doseId = await seedDoseLog(
