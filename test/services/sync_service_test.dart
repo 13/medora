@@ -142,6 +142,45 @@ void main() {
       expect(h.service.currentState, SyncState.success);
     });
 
+    test('clearing the pack EAN clears it on the server too', () async {
+      // Review I1: an omitted `ean` key means "leave it alone" to PostgREST,
+      // so the cleared EAN would survive on the server and be pulled back —
+      // and then match a pack that is no longer this medication.
+      final h = Harness();
+      final local = MedicationLocalDatasource();
+      await local.upsert(
+        MedicationModel(
+          id: 'm-ean',
+          name: 'Zinco-C',
+          quantity: 1,
+          barcode: '107018',
+          ean: '8057737141836',
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      await h.service.syncAll();
+      expect(h.meds.table.rows['m-ean']?['ean'], '8057737141836');
+
+      h.clock.advance(const Duration(minutes: 5));
+      await local.upsert(
+        MedicationModel(
+          id: 'm-ean',
+          name: 'Zinco-C',
+          quantity: 1,
+          barcode: '107019',
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      await h.service.syncAll();
+
+      expect(h.meds.table.rows['m-ean']?['barcode'], '107019');
+      expect(h.meds.table.rows['m-ean']?['ean'], isNull);
+      // And a device pulling that row ends with no EAN either.
+      expect(MedicationModel.fromJson(h.meds.table.rows['m-ean']!).ean, isNull);
+    });
+
     test('pulls a remote medication into the local database', () async {
       final h = Harness();
       h.meds.table.seed(

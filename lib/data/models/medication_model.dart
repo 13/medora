@@ -117,7 +117,9 @@ class MedicationModel {
       minimumStockLevel: json['minimum_stock_level'] as int? ?? 0,
       storageLocation: json['storage_location'] as String?,
       barcode: json['barcode'] as String?,
-      ean: json['ean'] as String?,
+      // Not a hard cast: a column provisioned by hand as `bigint` would
+      // otherwise throw for every row and stall the pull cursor for good.
+      ean: json['ean']?.toString(),
       imagePath: json['image_path'] != null
           ? PhotoStorage.toStoredName(json['image_path'] as String)
           : null,
@@ -199,11 +201,13 @@ class MedicationModel {
       'minimum_stock_level': minimumStockLevel,
       'storage_location': storageLocation,
       'barcode': barcode,
-      // Only sent when set, like `deleted_at` below: a project that has not
-      // applied the `ean` migration would otherwise reject every row, not
-      // just the ones that carry an EAN. A cleared EAN therefore stays on
-      // the server - acceptable for a remembered-once field.
-      if (ean != null) 'ean': ean,
+      // Always sent, null included: PostgREST leaves a column alone when its
+      // key is absent, so an omitted `ean` would keep a cleared EAN alive on
+      // the server, pull it back on the next fetch, and answer a scan of that
+      // EAN with a medication that is no longer that pack (review I1). The
+      // column is required: a project without it is reported by name, with
+      // the migration to apply (`missingMedicationColumn`, review I2).
+      'ean': ean,
       'image_path': imagePath,
       'notes': notes,
       'is_archived': isArchived,

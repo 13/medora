@@ -22,11 +22,28 @@ void main() {
     expect(m.imagePath, isNull);
   });
 
-  test('toJson omits ean when there is none', () {
-    // A project that has not applied the ean migration still accepts the
-    // row: the key is only sent when it carries a value (like deleted_at).
+  test('toJson always sends ean, so clearing one propagates', () {
+    // Review I1: PostgREST leaves a column alone when the key is absent, so
+    // an omitted `ean` would keep a cleared EAN alive on the server and pull
+    // it back onto every device. The key is always sent; a project that has
+    // not applied `20260916000000_medication_ean.sql` is reported instead
+    // (see `missingMedicationColumn`).
     const m = MedicationModel(id: 'm1', name: 'X', quantity: 1);
-    expect(m.toJson().containsKey('ean'), isFalse);
+    final json = m.toJson();
+    expect(json.containsKey('ean'), isTrue);
+    expect(json['ean'], isNull);
+  });
+
+  test('fromJson reads an ean provisioned as a number', () {
+    // A column added by hand as `bigint` would otherwise throw for every row
+    // and stall the pull cursor forever.
+    final m = MedicationModel.fromJson({
+      'id': 'm1',
+      'name': 'X',
+      'quantity': 1,
+      'ean': 8057737141836,
+    });
+    expect(m.ean, '8057737141836');
   });
 
   test('toJson sends the pack EAN when the medication has one', () {

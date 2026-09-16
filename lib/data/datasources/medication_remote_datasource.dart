@@ -7,6 +7,55 @@ import 'package:medora/core/constants.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// The migration that adds the `ean` column this datasource sends.
+const medicationEanMigration =
+    'supabase/migrations/20260916000000_medication_ean.sql';
+
+/// A Supabase project whose `medications` table is missing a column the app
+/// writes. The push that hit it keeps failing (and backing off) until the
+/// project is migrated, so the message has to say which file fixes it —
+/// without it the user only sees "1 row failed" (review I2).
+class MissingMedicationColumnException implements Exception {
+  const MissingMedicationColumnException(this.column, this.cause);
+
+  /// The column the project does not have, as the server named it.
+  final String column;
+  final PostgrestException cause;
+
+  @override
+  String toString() =>
+      'The Supabase project is missing the medications.$column column. '
+      'Apply $medicationEanMigration to the project, then sync again '
+      '(server: ${cause.message}).';
+}
+
+/// The first name the server quoted in its message — the column it could not
+/// find.
+final _quotedName = RegExp(r'''["']([A-Za-z_][A-Za-z0-9_]*)["']''');
+
+/// [error] read as a missing column, else null: PostgREST answers `PGRST204`
+/// when a payload key is not in its schema cache, Postgres `42703` when the
+/// column does not exist at all.
+MissingMedicationColumnException? missingMedicationColumn(Object error) {
+  if (error is! PostgrestException) return null;
+  if (error.code != 'PGRST204' && error.code != '42703') return null;
+  final column = _quotedName.firstMatch(error.message)?.group(1);
+  return MissingMedicationColumnException(column ?? 'ean', error);
+}
+
+/// Runs [send], turning a missing-column rejection into a
+/// [MissingMedicationColumnException]. Every other error passes through
+/// untouched.
+Future<T> mapMedicationSchemaErrors<T>(Future<T> Function() send) async {
+  try {
+    return await send();
+  } on PostgrestException catch (e) {
+    final missing = missingMedicationColumn(e);
+    if (missing != null) throw missing;
+    rethrow;
+  }
+}
+
 class MedicationRemoteDatasource {
   MedicationRemoteDatasource(this._client);
 
@@ -78,22 +127,29 @@ class MedicationRemoteDatasource {
   }
 
   /// Add a new medication.
-  Future<void> addMedication(MedicationModel model) async {
-    await _client.from(AppConstants.medicationsTable).insert(model.toJson());
-  }
+  Future<void> addMedication(MedicationModel model) =>
+      mapMedicationSchemaErrors(() async {
+        await _client
+            .from(AppConstants.medicationsTable)
+            .insert(model.toJson());
+      });
 
   /// Update a medication.
-  Future<void> updateMedication(MedicationModel model) async {
-    await _client
-        .from(AppConstants.medicationsTable)
-        .update(model.toJson())
-        .eq('id', model.id);
-  }
+  Future<void> updateMedication(MedicationModel model) =>
+      mapMedicationSchemaErrors(() async {
+        await _client
+            .from(AppConstants.medicationsTable)
+            .update(model.toJson())
+            .eq('id', model.id);
+      });
 
   /// Upsert a medication (insert or update).
-  Future<void> upsertMedication(MedicationModel model) async {
-    await _client.from(AppConstants.medicationsTable).upsert(model.toJson());
-  }
+  Future<void> upsertMedication(MedicationModel model) =>
+      mapMedicationSchemaErrors(() async {
+        await _client
+            .from(AppConstants.medicationsTable)
+            .upsert(model.toJson());
+      });
 
   /// Delete a medication.
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`
