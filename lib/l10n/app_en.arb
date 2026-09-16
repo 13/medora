@@ -357,6 +357,7 @@
   "no": "No",
   "yes": "Yes",
   "allRemindersCancelled": "All reminders cancelled",
+  "notificationsBlocked": "Notifications are blocked. Allow them for Medora in your system settings.",
   "dataSection": "Data",
   "online": "Online",
   "offline": "Offline",

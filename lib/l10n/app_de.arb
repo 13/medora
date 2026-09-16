@@ -246,6 +246,7 @@
   "no": "Nein",
   "yes": "Ja",
   "allRemindersCancelled": "Alle Erinnerungen abgebrochen",
+  "notificationsBlocked": "Benachrichtigungen sind blockiert. Bitte in den Systemeinstellungen für Medora erlauben.",
   "dataSection": "Daten",
   "online": "Online",
   "offline": "Offline",

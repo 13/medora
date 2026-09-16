@@ -746,6 +746,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get allRemindersCancelled => 'All reminders cancelled';
 
   @override
+  String get notificationsBlocked =>
+      'Notifications are blocked. Allow them for Medora in your system settings.';
+
+  @override
   String get dataSection => 'Data';
 
   @override

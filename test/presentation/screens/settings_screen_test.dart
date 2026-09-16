@@ -6,12 +6,15 @@ import 'package:medora/core/app_config.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../helpers/failing_medication_repo.dart';
 import '../../helpers/fake_reminder_port.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/test_database.dart';
@@ -63,35 +66,43 @@ void main() {
     buildInfoProvider.overrideWith((ref) async => _fixedBuildInfo),
   ];
 
-  testWidgets(
-    'local-only desktop shows the grouped sections without Security or Advanced',
-    (tester) async {
-      await pumpMedoraApp(
-        tester,
-        const SettingsScreen(),
-        overrides: await baseOverrides(),
-      );
-      await tester.pumpAndSettle();
+  testWidgets('local-only desktop hides Notifications, Security and Advanced', (
+    tester,
+  ) async {
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await baseOverrides(),
+    );
+    await tester.pumpAndSettle();
 
-      for (final title in [
-        'Appearance',
-        'Notifications',
-        'Data',
-        'Cloud sync',
-        'Danger Zone',
-        'About',
-      ]) {
-        await tester.scrollUntilVisible(
-          find.text(title),
-          200,
-          scrollable: find.byType(Scrollable).first,
-        );
-        expect(find.text(title), findsOneWidget, reason: title);
-      }
-      expect(find.text('Security'), findsNothing);
-      expect(find.text('Advanced'), findsNothing);
-    },
-  );
+    // Asserted before scrolling: once the list has moved on, the group
+    // would be unbuilt anyway and this would pass either way.
+    expect(
+      find.text('Notifications'),
+      findsNothing,
+      reason:
+          'desktop cannot schedule a notification, so the whole group '
+          'is dead UI there — every tile in it, not just the stock switch',
+    );
+
+    for (final title in [
+      'Appearance',
+      'Data',
+      'Cloud sync',
+      'Danger Zone',
+      'About',
+    ]) {
+      await tester.scrollUntilVisible(
+        find.text(title),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text(title), findsOneWidget, reason: title);
+    }
+    expect(find.text('Security'), findsNothing);
+    expect(find.text('Advanced'), findsNothing);
+  });
 
   testWidgets('About shows version, build, date, commit and channel', (
     tester,
@@ -328,20 +339,36 @@ void main() {
     },
   );
 
-  testWidgets('stock and expiry reminders are on by default and can be '
-      'turned off', (tester) async {
+  /// One low-stock medication, so a reconcile has something to book.
+  final lowStock = Medication(
+    id: 'x',
+    name: 'Aspirin',
+    quantity: 0,
+    minimumStockLevel: 2,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
+  Future<List<Override>> notificationOverrides(FakePort port) async => [
+    sharedPreferencesProvider.overrideWithValue(
+      await SharedPreferences.getInstance(),
+    ),
+    syncStartupDelayProvider.overrideWithValue(Duration.zero),
+    reminderPortProvider.overrideWithValue(port),
+    medicationRepositoryProvider.overrideWithValue(
+      FailingMedicationRepo(medications: [lowStock]),
+    ),
+    platformCapabilitiesProvider.overrideWithValue(_notificationsOnly),
+    buildInfoProvider.overrideWith((ref) async => _fixedBuildInfo),
+  ];
+
+  testWidgets('stock and expiry reminders are on by default, and the switch '
+      'books and cancels them', (tester) async {
+    final port = FakePort();
     final container = await pumpMedoraApp(
       tester,
       const SettingsScreen(),
-      overrides: [
-        sharedPreferencesProvider.overrideWithValue(
-          await SharedPreferences.getInstance(),
-        ),
-        syncStartupDelayProvider.overrideWithValue(Duration.zero),
-        reminderPortProvider.overrideWithValue(FakePort()),
-        platformCapabilitiesProvider.overrideWithValue(_notificationsOnly),
-        buildInfoProvider.overrideWith((ref) async => _fixedBuildInfo),
-      ],
+      overrides: await notificationOverrides(port),
     );
     await tester.pumpAndSettle();
 
@@ -354,7 +381,54 @@ void main() {
 
     await tester.tap(find.text('Stock and expiry reminders'));
     await tester.pumpAndSettle();
-
     expect(container.read(stockRemindersEnabledProvider), isFalse);
+
+    // Back on: this is the reconcile the switch is wired to.
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    expect(container.read(stockRemindersEnabledProvider), isTrue);
+    expect(port.stockAlerts.map((a) => a.id), [
+      stockAlertId('x', StockAlertKind.lowStock),
+    ]);
+
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    expect(port.cancelledStockAlerts, [
+      stockAlertId('x', StockAlertKind.lowStock),
+    ]);
+  });
+
+  testWidgets('a denied permission leaves the switch off and says so', (
+    tester,
+  ) async {
+    final port = FakePort();
+    final container = await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await notificationOverrides(port),
+    );
+    await tester.pumpAndSettle();
+
+    // Off first, so turning it back on is what asks for the permission.
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    port.permissionGranted = false;
+
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(stockRemindersEnabledProvider),
+      isFalse,
+      reason: 'a switch must not claim what the OS will not do',
+    );
+    expect(
+      find.text(
+        'Notifications are blocked. Allow them for Medora in your system '
+        'settings.',
+      ),
+      findsOneWidget,
+    );
+    expect(port.stockAlerts, isEmpty);
   });
 }

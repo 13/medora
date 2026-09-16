@@ -754,6 +754,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get allRemindersCancelled => 'Tutti i promemoria annullati';
 
   @override
+  String get notificationsBlocked =>
+      'Le notifiche sono bloccate. Consentile a Medora nelle impostazioni di sistema.';
+
+  @override
   String get dataSection => 'Dati';
 
   @override

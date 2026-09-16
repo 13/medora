@@ -246,6 +246,7 @@
   "no": "No",
   "yes": "Sì",
   "allRemindersCancelled": "Tutti i promemoria annullati",
+  "notificationsBlocked": "Le notifiche sono bloccate. Consentile a Medora nelle impostazioni di sistema.",
   "dataSection": "Dati",
   "online": "Online",
   "offline": "Offline",

@@ -34,12 +34,31 @@ import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/register_freshness.dart';
-import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
+/// Asks the OS for permission to show notifications, and says so when it is
+/// refused.
+///
+/// The switches call this before turning themselves on: a switch left on
+/// after a denial promises reminders the system will never deliver, and
+/// nothing else in the app would ever mention it.
+Future<bool> _permitted(
+  BuildContext context,
+  WidgetRef ref,
+  AppLocalizations l10n,
+) async {
+  final granted = await ref.read(reminderPortProvider).ensurePermissions();
+  if (!granted && context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.notificationsBlocked)));
+  }
+  return granted;
+}
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -131,33 +150,34 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           // ── Notifications ──────────────────────────────────
-          _SettingsGroup(
-            title: l10n.notifications,
-            children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.notifications_outlined),
-                title: Text(l10n.enableNotifications),
-                subtitle: Text(l10n.receiveDoseReminders),
-                value: remindersEnabled,
-                onChanged: (value) async {
-                  if (value) {
-                    await ReminderService.instance.requestPermissions();
-                  }
-                  await ref.read(remindersEnabledProvider.notifier).set(value);
-                  if (value) ref.read(reminderSchedulerProvider).reset();
-                  await ref.read(reminderSchedulerProvider).reconcile();
-                },
-              ),
-              if (caps.hasLocalNotifications)
+          // Gated as a whole: the reminder service early-returns from every
+          // method where the platform cannot schedule, so on desktop and web
+          // every tile here would claim to do something it cannot.
+          if (caps.hasLocalNotifications)
+            _SettingsGroup(
+              title: l10n.notifications,
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.notifications_outlined),
+                  title: Text(l10n.enableNotifications),
+                  subtitle: Text(l10n.receiveDoseReminders),
+                  value: remindersEnabled,
+                  onChanged: (value) async {
+                    if (value && !await _permitted(context, ref, l10n)) return;
+                    await ref
+                        .read(remindersEnabledProvider.notifier)
+                        .set(value);
+                    if (value) ref.read(reminderSchedulerProvider).reset();
+                    await ref.read(reminderSchedulerProvider).reconcile();
+                  },
+                ),
                 SwitchListTile(
                   secondary: const Icon(Icons.inventory_2_outlined),
                   title: Text(l10n.stockAndExpiryReminders),
                   subtitle: Text(l10n.stockAndExpiryRemindersHint),
                   value: ref.watch(stockRemindersEnabledProvider),
                   onChanged: (value) async {
-                    if (value) {
-                      await ReminderService.instance.requestPermissions();
-                    }
+                    if (value && !await _permitted(context, ref, l10n)) return;
                     await ref
                         .read(stockRemindersEnabledProvider.notifier)
                         .set(value);
@@ -166,71 +186,73 @@ class SettingsScreen extends ConsumerWidget {
                     );
                   },
                 ),
-              ListTile(
-                leading: const Icon(Icons.cancel_outlined),
-                title: Text(l10n.cancelAllReminders),
-                subtitle: Text(l10n.removePendingNotifications),
-                enabled: remindersEnabled,
-                onTap: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: Text(l10n.cancelAllReminders),
-                      content: Text(l10n.cancelAllRemindersConfirm),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: Text(l10n.no),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: Text(l10n.yes),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true && context.mounted) {
-                    await ref.read(reminderPortProvider).cancelAll();
-                    ref.read(reminderSchedulerProvider).reset();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(l10n.allRemindersCancelled)),
-                      );
-                    }
-                  }
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.timer_off_outlined),
-                title: Text(l10n.missedGracePeriod),
-                subtitle: Text(l10n.missedGracePeriodDesc),
-                trailing: DropdownButton<int>(
-                  value: kMissedGraceOptions.contains(graceMinutes)
-                      ? graceMinutes
-                      : 120,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    for (final m in kMissedGraceOptions)
-                      DropdownMenuItem(
-                        value: m,
-                        child: Text(
-                          m < 60
-                              ? l10n.minutesShort(m)
-                              : l10n.hoursShort(m ~/ 60),
-                        ),
+                ListTile(
+                  leading: const Icon(Icons.cancel_outlined),
+                  title: Text(l10n.cancelAllReminders),
+                  subtitle: Text(l10n.removePendingNotifications),
+                  enabled: remindersEnabled,
+                  onTap: () async {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(l10n.cancelAllReminders),
+                        content: Text(l10n.cancelAllRemindersConfirm),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text(l10n.no),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(l10n.yes),
+                          ),
+                        ],
                       ),
-                  ],
-                  onChanged: (v) async {
-                    if (v == null) return;
-                    await ref.read(missedGraceMinutesProvider.notifier).set(v);
-                    await ref
-                        .read(appStartupTasksProvider)
-                        .run(includeSync: false);
+                    );
+                    if (confirm == true && context.mounted) {
+                      await ref.read(reminderPortProvider).cancelAll();
+                      ref.read(reminderSchedulerProvider).reset();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(l10n.allRemindersCancelled)),
+                        );
+                      }
+                    }
                   },
                 ),
-              ),
-            ],
-          ),
+                ListTile(
+                  leading: const Icon(Icons.timer_off_outlined),
+                  title: Text(l10n.missedGracePeriod),
+                  subtitle: Text(l10n.missedGracePeriodDesc),
+                  trailing: DropdownButton<int>(
+                    value: kMissedGraceOptions.contains(graceMinutes)
+                        ? graceMinutes
+                        : 120,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      for (final m in kMissedGraceOptions)
+                        DropdownMenuItem(
+                          value: m,
+                          child: Text(
+                            m < 60
+                                ? l10n.minutesShort(m)
+                                : l10n.hoursShort(m ~/ 60),
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) async {
+                      if (v == null) return;
+                      await ref
+                          .read(missedGraceMinutesProvider.notifier)
+                          .set(v);
+                      await ref
+                          .read(appStartupTasksProvider)
+                          .run(includeSync: false);
+                    },
+                  ),
+                ),
+              ],
+            ),
 
           // ── Security ───────────────────────────────────────
           if (caps.hasBiometrics)

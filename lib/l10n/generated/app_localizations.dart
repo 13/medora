@@ -1435,6 +1435,12 @@ abstract class AppLocalizations {
   /// **'All reminders cancelled'**
   String get allRemindersCancelled;
 
+  /// No description provided for @notificationsBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are blocked. Allow them for Medora in your system settings.'**
+  String get notificationsBlocked;
+
   /// No description provided for @dataSection.
   ///
   /// In en, this message translates to:
