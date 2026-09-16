@@ -24,6 +24,7 @@ class DoseLogLocalDatasource {
            p.dosage_amount AS dosage_amount,
            p.dosage_unit AS dosage_unit,
            p.notes AS prescription_notes,
+           p.schedule_type AS schedule_type,
            t.name AS treatment_name
     FROM dose_logs d
     LEFT JOIN prescriptions p ON d.prescription_id = p.id
@@ -428,6 +429,7 @@ class DoseLogLocalDatasource {
       patientTags: MedicationModel.parseTags(row['patient_tags']),
       treatmentName: row['treatment_name'] as String?,
       prescriptionNotes: row['prescription_notes'] as String?,
+      asNeeded: row['schedule_type'] == 'as_needed',
     );
   }
 

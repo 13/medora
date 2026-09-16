@@ -501,7 +501,9 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-/// Thin progress bar summarizing today's doses, hidden when there are none.
+/// Thin progress bar summarizing today's scheduled doses, hidden when there
+/// are none. A dose logged for an as-needed prescription was never scheduled,
+/// so it counts in neither number.
 class _TodayProgress extends ConsumerWidget {
   const _TodayProgress();
 
@@ -511,7 +513,8 @@ class _TodayProgress extends ConsumerWidget {
     final dosesAsync = ref.watch(todaysDoseLogsProvider);
 
     return dosesAsync.maybeWhen(
-      data: (doses) {
+      data: (all) {
+        final doses = all.where((d) => !d.asNeeded).toList();
         final total = doses.length;
         if (total == 0) return const SizedBox.shrink();
         final taken = doses.where((d) => d.status == DoseStatus.taken).length;

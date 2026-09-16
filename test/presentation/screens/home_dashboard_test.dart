@@ -251,6 +251,62 @@ void main() {
     expect(bar.value, closeTo(1 / 3, 1e-9));
   });
 
+  testWidgets('a dose logged as needed is not a scheduled dose', (
+    tester,
+  ) async {
+    useTallPhone(tester);
+    final real = DateTime.now();
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    await seedDoseLog(db, s.prescriptionId, recentToday(real), status: 'taken');
+    await seedDoseLog(db, s.prescriptionId, laterToday(real));
+    await seedDoseLog(db, s.prescriptionId, laterToday(real, minutes: 120));
+    final asNeeded = await seedPrescription(db, scheduleType: 'as_needed');
+    await seedDoseLog(
+      db,
+      asNeeded.prescriptionId,
+      recentToday(real, minutes: 20),
+      status: 'taken',
+    );
+
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 of 3 taken · 2 pending'), findsOneWidget);
+    final bar = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(bar.value, closeTo(1 / 3, 1e-9));
+  });
+
+  testWidgets('with only as-needed doses today there is no progress bar', (
+    tester,
+  ) async {
+    useTallPhone(tester);
+    final db = await AppDatabase.instance.database;
+    final asNeeded = await seedPrescription(db, scheduleType: 'as_needed');
+    await seedDoseLog(
+      db,
+      asNeeded.prescriptionId,
+      recentToday(DateTime.now()),
+      status: 'taken',
+    );
+
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.textContaining(' taken · '), findsNothing);
+  });
+
   testWidgets('with no doses today there is no progress bar at all', (
     tester,
   ) async {

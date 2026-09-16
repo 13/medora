@@ -23,6 +23,7 @@ class DoseLogModel {
     this.patientTags = const [],
     this.treatmentName,
     this.prescriptionNotes,
+    this.asNeeded = false,
   });
 
   final String id;
@@ -44,6 +45,9 @@ class DoseLogModel {
   final List<String> patientTags;
   final String? treatmentName;
   final String? prescriptionNotes;
+
+  /// Joined: the prescription's schedule is 'as_needed'. Local only.
+  final bool asNeeded;
 
   factory DoseLogModel.fromJson(Map<String, dynamic> json) {
     final prescription = json['prescriptions'] as Map<String, dynamic>?;
@@ -102,6 +106,7 @@ class DoseLogModel {
       patientTags: MedicationModel.parseTags(map['patient_tags']),
       treatmentName: map['treatment_name'] as String?,
       prescriptionNotes: map['prescription_notes'] as String?,
+      asNeeded: map['schedule_type'] == 'as_needed',
     );
   }
 
@@ -136,6 +141,7 @@ class DoseLogModel {
       patientTags: patientTags,
       treatmentName: treatmentName,
       prescriptionNotes: prescriptionNotes,
+      asNeeded: asNeeded,
     );
   }
 
@@ -157,6 +163,7 @@ class DoseLogModel {
       patientTags: entity.patientTags,
       treatmentName: entity.treatmentName,
       prescriptionNotes: entity.prescriptionNotes,
+      asNeeded: entity.asNeeded,
     );
   }
 }
