@@ -14,6 +14,16 @@ class FakePort implements ReminderPort {
   /// the underlying notification plugin failing mid-reconcile.
   bool throwOnSchedule = false;
 
+  /// What [ensurePermissions] reports, and how often it was asked.
+  bool permissionGranted = true;
+  int ensurePermissionsCalls = 0;
+
+  @override
+  Future<bool> ensurePermissions() async {
+    ensurePermissionsCalls++;
+    return permissionGranted;
+  }
+
   @override
   Future<void> cancelAll() async => cancelAllCalls++;
 

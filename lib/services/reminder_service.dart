@@ -188,9 +188,10 @@ class ReminderService implements ReminderPort {
   Future<void> scheduleStockAlert(StockAlert alert) async {
     if (!_supported) return;
     await _ensureInitialized();
-    // The planner works from an injected clock; by the time the scheduler
-    // gets here the slot may have passed, and a past zonedSchedule either
-    // throws or fires at once.
+    // Deliberately the real clock, not the planner's injected one: this is
+    // the last check before the OS takes over, and by now the slot planned
+    // earlier may have passed — a past zonedSchedule either throws or fires
+    // at once. Injecting a test clock here would silently drop every alert.
     if (!alert.when.isAfter(DateTime.now())) return;
     final l10n = resolveLocalizations();
     await _scheduleNotification(
@@ -341,6 +342,9 @@ class ReminderService implements ReminderPort {
     await _ensureInitialized();
     await _notifications.cancelAll();
   }
+
+  @override
+  Future<bool> ensurePermissions() => requestPermissions();
 
   Future<bool> requestPermissions() async {
     if (!_supported) return true;

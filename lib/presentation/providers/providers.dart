@@ -55,6 +55,7 @@ import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/scan_temp_cleanup.dart';
 import 'package:medora/services/scanner_ports.dart';
+import 'package:medora/services/stock_alert_store.dart';
 import 'package:medora/services/stock_reminder_scheduler.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_service.dart';
@@ -219,6 +220,10 @@ final stockReminderSchedulerProvider = Provider<StockReminderScheduler>((ref) {
       return lastEnabled;
     },
     now: ref.watch(nowProvider),
+    // Persisted: this scheduler cannot fall back on cancelAll(), so an alert
+    // booked in a previous session can only be cancelled if its id survived
+    // the restart.
+    store: StockAlertStore(ref.watch(sharedPreferencesProvider)),
   );
 
   // Notification text is baked in when the alert is scheduled, so a language

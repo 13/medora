@@ -27,6 +27,13 @@ abstract class ReminderPort {
   /// the two schedulers never cancel each other's notifications.
   Future<void> scheduleStockAlert(StockAlert alert);
 
+  /// Ask the OS for permission to show notifications, and report whether it
+  /// is granted.
+  ///
+  /// Safe to call repeatedly: the platform prompts at most once and answers
+  /// from the stored decision afterwards.
+  Future<bool> ensurePermissions();
+
   /// Cancel one stock or expiry notification by its [StockAlert.id].
   Future<void> cancelStockAlert(int id);
 }

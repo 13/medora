@@ -23,7 +23,7 @@ void main() {
     // The worst case: every dose slot taken (two notifications each) and
     // every stock slot taken. stockAlertsFor's default limit is the stock
     // share — see stock_expiry_reminders_test.
-    final doses =
+    const doses =
         ReminderScheduler.maxNotifications ~/
         ReminderScheduler.notificationsPerDose;
     expect(

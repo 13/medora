@@ -30,6 +30,8 @@ class _Port implements ReminderPort {
   Future<void> scheduleStockAlert(StockAlert alert) async {}
   @override
   Future<void> cancelStockAlert(int id) async {}
+  @override
+  Future<bool> ensurePermissions() async => true;
 }
 
 void main() {

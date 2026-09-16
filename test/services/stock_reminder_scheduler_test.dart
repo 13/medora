@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
+import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
+import 'package:medora/services/stock_alert_store.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
 import 'package:medora/services/stock_reminder_scheduler.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -38,6 +43,48 @@ Future<String> _seedMed(
   });
   return id;
 }
+
+/// A repository whose load hangs until the test completes it, so two
+/// reconciles can be made to overlap deliberately.
+class _GatedMeds implements MedicationRepository {
+  final calls = <Completer<Result<List<Medication>>>>[];
+
+  @override
+  Future<Result<List<Medication>>> getMedications() {
+    final completer = Completer<Result<List<Medication>>>();
+    calls.add(completer);
+    return completer.future;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+/// Serves [_inner] until [fail] is set, then fails every load.
+class _FlakyMeds implements MedicationRepository {
+  _FlakyMeds(this._inner);
+
+  final MedicationRepository _inner;
+  bool fail = false;
+
+  @override
+  Future<Result<List<Medication>>> getMedications() async =>
+      fail ? const Result.failure('db down') : _inner.getMedications();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+Medication _lowStock(String id) => Medication(
+  id: id,
+  name: 'Aspirin',
+  quantity: 0,
+  minimumStockLevel: 2,
+  createdAt: DateTime(2026),
+  updatedAt: DateTime(2026),
+);
 
 void main() {
   setUp(setUpTestDatabase);
@@ -211,5 +258,191 @@ void main() {
 
     expect(count, 0);
     expect(port.stockAlerts, isEmpty);
+  });
+
+  test(
+    'a restart still cancels an alert the cabinet no longer wants',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final id = await _seedMed(db, quantity: 1);
+      final store = StockAlertStore.inMemory();
+      final port = FakePort();
+
+      StockReminderScheduler restart() => StockReminderScheduler(
+        port: port,
+        medications: repo(),
+        stockRemindersEnabled: () => true,
+        now: () => now,
+        store: store,
+      );
+
+      expect(await restart().reconcile(), 1);
+
+      await db.update(
+        'medications',
+        {'quantity': 20},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+      // A fresh instance is a fresh process. Without a persisted snapshot it
+      // has no memory of the id, cancels nothing, and tomorrow morning the
+      // phone announces "1 left" for a full box.
+      expect(await restart().reconcile(), 0);
+      expect(port.cancelledStockAlerts, [
+        stockAlertId(id, StockAlertKind.lowStock),
+      ]);
+    },
+  );
+
+  test(
+    'a restart with the setting off cancels what the last session booked',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final id = await _seedMed(db, quantity: 1);
+      final store = StockAlertStore.inMemory();
+      final port = FakePort();
+
+      await StockReminderScheduler(
+        port: port,
+        medications: repo(),
+        stockRemindersEnabled: () => true,
+        now: () => now,
+        store: store,
+      ).reconcile();
+
+      expect(
+        await StockReminderScheduler(
+          port: port,
+          medications: repo(),
+          stockRemindersEnabled: () => false,
+          now: () => now,
+          store: store,
+        ).reconcile(),
+        0,
+      );
+      expect(port.cancelledStockAlerts, [
+        stockAlertId(id, StockAlertKind.lowStock),
+      ]);
+    },
+  );
+
+  test('overlapping reconciles do not corrupt the snapshot', () async {
+    final meds = _GatedMeds();
+    final port = FakePort();
+    var enabled = true;
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: meds,
+      stockRemindersEnabled: () => enabled,
+      now: () => now,
+    );
+
+    final startup = scheduler.reconcile();
+    await pumpEventQueue();
+    expect(meds.calls, hasLength(1));
+
+    // The user flips the switch off while the startup run waits on the DB.
+    enabled = false;
+    final fromSettings = scheduler.reconcile();
+    meds.calls.single.complete(Result.success([_lowStock('a')]));
+    await Future.wait([startup, fromSettings]);
+
+    final id = stockAlertId('a', StockAlertKind.lowStock);
+    expect(port.stockAlerts.map((a) => a.id), [id]);
+    expect(
+      port.cancelledStockAlerts,
+      [id],
+      reason: 'the rerun saw the switch was off and took back what it booked',
+    );
+
+    // The snapshot has to be empty now, not full of alerts that were cancelled.
+    enabled = true;
+    final again = scheduler.reconcile();
+    await pumpEventQueue();
+    meds.calls.last.complete(Result.success([_lowStock('a')]));
+    expect(await again, 1);
+    expect(port.stockAlerts, hasLength(2));
+  });
+
+  test(
+    'nothing is scheduled while notification permission is denied',
+    () async {
+      final db = await AppDatabase.instance.database;
+      await _seedMed(db, quantity: 1);
+
+      final port = FakePort()..permissionGranted = false;
+      final scheduler = StockReminderScheduler(
+        port: port,
+        medications: repo(),
+        stockRemindersEnabled: () => true,
+        now: () => now,
+      );
+
+      expect(await scheduler.reconcile(), 0);
+      expect(port.stockAlerts, isEmpty);
+      expect(port.ensurePermissionsCalls, 1);
+
+      // Granted later in system settings: the next reconcile just works.
+      port.permissionGranted = true;
+      expect(await scheduler.reconcile(), 1);
+      expect(port.stockAlerts, hasLength(1));
+    },
+  );
+
+  test('permission is not asked when there is nothing to schedule', () async {
+    final port = FakePort();
+    final count = await StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+    ).reconcile();
+
+    expect(count, 0);
+    expect(
+      port.ensurePermissionsCalls,
+      0,
+      reason: 'an empty cabinet must not raise a permission dialog',
+    );
+  });
+
+  test('a failed load keeps the snapshot rather than cancelling', () async {
+    final db = await AppDatabase.instance.database;
+    await _seedMed(db, quantity: 1);
+
+    final meds = _FlakyMeds(repo());
+    final port = FakePort();
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: meds,
+      stockRemindersEnabled: () => true,
+      now: () => now,
+    );
+    expect(await scheduler.reconcile(), 1);
+
+    meds.fail = true;
+    expect(await scheduler.reconcile(), 1);
+    expect(port.cancelledStockAlerts, isEmpty);
+    expect(port.stockAlerts, hasLength(1));
+  });
+
+  test('a port failure is retried on the next run', () async {
+    final db = await AppDatabase.instance.database;
+    await _seedMed(db, quantity: 1);
+
+    final port = FakePort()..throwOnSchedule = true;
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+    );
+    expect(await scheduler.reconcile(), 0);
+    expect(port.stockAlerts, isEmpty);
+
+    port.throwOnSchedule = false;
+    expect(await scheduler.reconcile(), 1);
+    expect(port.stockAlerts, hasLength(1));
   });
 }
