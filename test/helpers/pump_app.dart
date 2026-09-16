@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
+import 'package:medora/core/provider_retry.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 
@@ -12,17 +13,18 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 /// [locale] drives both the MaterialApp locale and `Intl.defaultLocale`, so
 /// date/number formatting matches the l10n strings.
 ///
-/// [retry] is the container's retry policy. Riverpod retries a failed
-/// provider on a timer by default, so a test that wants to *see* an error
-/// state — and prove that only the Retry button clears it — passes
-/// `(_, _) => null` to switch that off. Left null, the default applies.
+/// [retry] is the container's retry policy, and defaults to [medoraRetry] —
+/// the one main.dart installs — so a test sees the same wait before an error
+/// shell that a user does. A test that wants no automatic retry at all (to
+/// prove that only the Retry button cleared an error, say) passes
+/// `(_, _) => null`; passing `null` restores Riverpod's own default.
 Future<ProviderContainer> pumpMedoraApp(
   WidgetTester tester,
   Widget home, {
   List<Override> overrides = const [],
   Brightness brightness = Brightness.light,
   Locale locale = const Locale('en'),
-  Duration? Function(int retryCount, Object error)? retry,
+  Duration? Function(int retryCount, Object error)? retry = medoraRetry,
 }) async {
   final previousLocale = Intl.defaultLocale;
   Intl.defaultLocale = locale.languageCode;

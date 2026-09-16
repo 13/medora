@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:medora/core/app_config.dart';
 import 'package:medora/core/cloud_credentials_prefs.dart';
+import 'package:medora/core/provider_retry.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme.dart';
 import 'package:medora/data/local/db_setup.dart'
@@ -42,6 +43,11 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      // Left unset, Riverpod retries a failed provider ten times with a
+      // doubling backoff and keeps it in AsyncLoading throughout, so a
+      // failed read showed a loading skeleton for some thirteen seconds
+      // before the error and its Retry button appeared.
+      retry: medoraRetry,
       child: const MedoraApp(),
     ),
   );

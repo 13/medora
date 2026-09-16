@@ -436,4 +436,53 @@ void main() {
     expect(find.byType(RefreshProgressIndicator), findsNothing);
     expect(find.text('Alpha'), findsOneWidget);
   });
+
+  testWidgets('a failed read reaches the error shell within a second', (
+    tester,
+  ) async {
+    useTallPhone(tester);
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: [
+        ...await overrides(),
+        medicationListProvider.overrideWith(_AlwaysFailsMedications.new),
+      ],
+      // Deliberately no `retry:` override: this case is about the policy the
+      // app itself ships (`medoraRetry`, the same one main.dart hands its
+      // ProviderScope). A provider that is waiting out a retry stays
+      // AsyncLoading, so under Riverpod's own default — ten attempts, 200 ms
+      // doubling to 6.4 s — these cards show skeletons for some thirteen
+      // seconds before the user is told anything is wrong, and this fails.
+    );
+    await tester.pump();
+    await pumpFor(tester, const Duration(seconds: 1));
+
+    expect(find.text('Something went wrong'), findsNWidgets(2));
+    expect(find.widgetWithText(FilledButton, 'Retry'), findsNWidgets(2));
+  });
+
+  testWidgets('a transient failure heals itself without a tap', (tester) async {
+    useTallPhone(tester);
+    var builds = 0;
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: [
+        ...await overrides(),
+        medicationListProvider.overrideWith(
+          () => _FailsOnceMedications(() => ++builds),
+        ),
+      ],
+    );
+    await tester.pump();
+    await pumpFor(tester, const Duration(seconds: 1));
+
+    // Nothing was tapped: the one retry the policy allows is what recovered
+    // the cabinet, which is the half of the bargain that pays for the short
+    // budget above.
+    expect(builds, 2, reason: 'exactly one automatic retry');
+    expect(find.text('Something went wrong'), findsNothing);
+    expect(find.text('Alpha'), findsOneWidget);
+  });
 }
