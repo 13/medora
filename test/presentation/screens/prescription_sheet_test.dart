@@ -403,6 +403,9 @@ void main() {
       );
       expect(rows.single['schedule_type'], 'as_needed');
       expect(rows.single['schedule_times'], isNull);
+      // A zero duration: an older build, which reads the type as a fixed
+      // interval, generates no doses for it either.
+      expect(rows.single['duration_days'], 0);
       expect(
         await db.query(
           'dose_logs',
@@ -442,9 +445,10 @@ void main() {
         whereArgs: [seeded.treatmentId, seeded.prescriptionId],
       );
       expect(rows.single['schedule_type'], 'as_needed');
-      // The NOT NULL columns keep their defaults.
+      // The NOT NULL columns keep a value: the interval its default, the
+      // duration zero.
       expect(rows.single['interval_hours'], 8);
-      expect(rows.single['duration_days'], 7);
+      expect(rows.single['duration_days'], 0);
     });
 
     testWidgets('switching a scheduled prescription to as needed drops its '
@@ -481,6 +485,7 @@ void main() {
         whereArgs: [seeded.prescriptionId],
       );
       expect(p.single['schedule_type'], 'as_needed');
+      expect(p.single['duration_days'], 0);
       final doses = await db.query(
         'dose_logs',
         where: 'prescription_id = ?',

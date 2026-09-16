@@ -385,4 +385,22 @@ Flutter pin in `.fvmrc` moves, not before.
 2. Bump `version:` in `pubspec.yaml` (the `+build` must increase for Play).
 3. Build the artifact for the target platform.
 4. For Android, verify the signer certificate is *not* `CN=Android Debug`.
-5. Tag the commit and upload.
+5. Add the hand-written notes below to the release body, which
+   `tools/release_notes.sh` builds from commit subjects only.
+6. Tag the commit and upload.
+
+### Hand-written release notes
+
+- **The first release with as-needed prescriptions** (`as_needed`) needs this
+  note:
+
+  > **"As needed" / "Bei Bedarf" medicines.** Update Medora on every phone and
+  > tablet you sync before you add an as-needed medicine. Older versions read
+  > it as "every 8 hours for 7 days": they create doses for it, send
+  > reminders, and mark doses as missed, and those missed doses then show on
+  > your other devices too.
+
+  This build saves an as-needed prescription with a duration of 0 days, so an
+  older build generates nothing for it. The note still matters: an older
+  build shows it as "every 8h · 0 days", and editing it there asks for a
+  duration of at least one day, after which that build does generate doses.

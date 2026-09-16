@@ -698,6 +698,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       interval = (24 / _selectedTimes.length).round();
     }
 
+    final asNeeded = _scheduleType == 'as_needed';
     final prescription = Prescription(
       id: existing?.id ?? const Uuid().v4(),
       treatmentId: widget.treatmentId,
@@ -706,7 +707,13 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       dosageAmount: amount,
       dosageUnit: _dosageUnitOverride,
       intervalHours: interval,
-      durationDays: int.tryParse(_durationController.text.trim()) ?? 7,
+      // An as-needed prescription is saved with no duration. Older builds
+      // read the type as a fixed interval, and a zero duration is what keeps
+      // them from generating (and reminding, and marking missed) doses for
+      // it. Switching back to a schedule then asks for a real duration.
+      durationDays: asNeeded
+          ? 0
+          : int.tryParse(_durationController.text.trim()) ?? 7,
       // New prescriptions use `_roundedNow`, captured when the sheet was
       // opened, so the fixed-interval preview above matches what is saved.
       startTime: existing?.startTime ?? _roundedNow,

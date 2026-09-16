@@ -250,4 +250,24 @@ void main() {
       expect(dose('20 Tropfen').unitsPerDose(medicationUnit: 'drops'), 20);
     });
   });
+
+  test('a zero duration generates nothing, whatever the type is read as', () {
+    // An older build reads 'as_needed' as a fixed interval: with the zero
+    // duration an as-needed prescription is saved with, that is no dose.
+    for (final type in ['fixed_interval', 'as_needed', 'a_future_type']) {
+      expect(
+        _p(durationDays: 0, scheduleType: type).scheduledDoseTimes,
+        isEmpty,
+        reason: type,
+      );
+    }
+    expect(
+      _p(
+        durationDays: 0,
+        scheduleType: 'times_per_day',
+        scheduleTimes: ['08:00', '20:00'],
+      ).scheduledDoseTimes,
+      isEmpty,
+    );
+  });
 }
