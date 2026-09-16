@@ -183,6 +183,12 @@ class SyncService {
     await _pullAll(report, force: true);
   });
 
+  /// How many times one [syncAll] runs another cycle on its own, for rows
+  /// still pending after their push or for requests made meanwhile. Past
+  /// that, whatever is still pending waits for the next request, so a row
+  /// that changes on every cycle cannot keep the service syncing for ever.
+  static const maxAutomaticReruns = 3;
+
   /// Set when a plain [syncAll] was asked for while a cycle was running; the
   /// running cycle then runs one more before it returns.
   bool _rerunRequested = false;
@@ -222,6 +228,7 @@ class SyncService {
 
     _rerunRequested = false;
     SyncReport? first;
+    var reruns = 0;
     do {
       _rerunRequested = false;
       _setState(SyncState.syncing);
@@ -235,6 +242,14 @@ class SyncService {
       if (!_isOnline() || _currentUserId() == null) {
         debugPrint('Sync: queued $label dropped (offline or signed out)');
         _rerunRequested = false;
+      } else if (reruns == maxAutomaticReruns) {
+        debugPrint(
+          'Sync: $label stopped after $reruns re-runs; '
+          'rows still pending wait for the next sync',
+        );
+        _rerunRequested = false;
+      } else {
+        reruns++;
       }
     } while (_rerunRequested);
     _rerunRequested = false;

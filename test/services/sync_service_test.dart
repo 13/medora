@@ -29,8 +29,9 @@ class Harness {
     DateTime? start,
     StreamController<bool>? online,
     FamilyLocalDatasource? familyLocal,
+    FakeMedicationRemote Function(DateTime Function() clock)? medicationRemote,
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
-    meds = FakeMedicationRemote(clock.now);
+    meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
     prescriptions = FakePrescriptionRemote(clock.now);
     doses = FakeDoseLogRemote(clock.now);
@@ -76,6 +77,39 @@ class FailingFamilyDelete extends FamilyLocalDatasource {
   @override
   Future<void> deleteFamily(String id) async =>
       throw StateError('cannot drop family $id');
+}
+
+/// A medication server whose every upsert is joined by a local edit of the
+/// same row, as a writer that touches the row on every cycle would do: the
+/// cycle always finds the row changed after its push. Stops after [limit]
+/// edits so a missing cap fails the test instead of hanging it.
+class EditOnEveryPushRemote extends FakeMedicationRemote {
+  EditOnEveryPushRemote(super.clock, {this.limit = 50});
+
+  final int limit;
+  int upserts = 0;
+
+  @override
+  Future<DateTime?> upsertMedication(MedicationModel model) async {
+    upserts++;
+    if (upserts <= limit) {
+      final db = await AppDatabase.instance.database;
+      final row = (await localRow('medications', model.id))!;
+      final stamp = DateTime.parse(row['updated_at'] as String);
+      await db.update(
+        'medications',
+        {
+          'name': 'edit $upserts',
+          'updated_at': stamp
+              .add(const Duration(milliseconds: 1))
+              .toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [model.id],
+      );
+    }
+    return super.upsertMedication(model);
+  }
 }
 
 /// Hand-advanced clock shared by the service and the fake remotes.
@@ -1556,6 +1590,40 @@ void main() {
       expect(h.meds.table.sinceCalls.length, 1);
       expect(h.service.currentState, isNot(SyncState.syncing));
     });
+
+    test(
+      'automatic re-runs stop after '
+      '${SyncService.maxAutomaticReruns}; the row waits for the next sync',
+      () async {
+        late EditOnEveryPushRemote remote;
+        final h = Harness(
+          medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        );
+        await MedicationLocalDatasource().upsert(
+          MedicationModel(
+            id: 'm-busy',
+            name: 'Local',
+            quantity: 1,
+            updatedAt: h.clock.now(),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
+
+        await h.service.syncAll();
+
+        const cycles = 1 + SyncService.maxAutomaticReruns;
+        expect(remote.upserts, cycles);
+        expect(h.meds.table.sinceCalls.length, cycles);
+        expect(h.service.currentState, isNot(SyncState.syncing));
+        final row = (await localRow('medications', 'm-busy'))!;
+        expect(row['sync_status'], SyncStatus.pendingUpdate);
+        expect(row['name'], 'edit $cycles');
+
+        // The next request starts afresh, with its own allowance.
+        await h.service.syncAll();
+        expect(remote.upserts, 2 * cycles);
+      },
+    );
 
     test('force operations asked for during a cycle are not queued', () async {
       final h = Harness();
