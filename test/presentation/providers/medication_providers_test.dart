@@ -229,4 +229,41 @@ void main() {
       stockAlertId('x', StockAlertKind.lowStock),
     ]);
   });
+
+  test('lowStockProvider takes quantity at or below the minimum', () async {
+    final c = await make();
+    final notifier = c.read(medicationListProvider.notifier);
+    await c.read(medicationListProvider.future);
+    await notifier.addMedication(
+      const Medication(id: 'at', name: 'At', quantity: 2, minimumStockLevel: 2),
+    );
+    await notifier.addMedication(
+      const Medication(
+        id: 'below',
+        name: 'Below',
+        quantity: 1,
+        minimumStockLevel: 2,
+      ),
+    );
+    await notifier.addMedication(
+      const Medication(
+        id: 'above',
+        name: 'Above',
+        quantity: 3,
+        minimumStockLevel: 2,
+      ),
+    );
+    await notifier.addMedication(
+      const Medication(
+        id: 'archived',
+        name: 'Archived',
+        quantity: 0,
+        minimumStockLevel: 2,
+        isArchived: true,
+      ),
+    );
+
+    final low = await c.read(lowStockProvider.future);
+    expect(low.map((m) => m.name).toSet(), {'At', 'Below'});
+  });
 }

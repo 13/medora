@@ -56,10 +56,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          ref.invalidate(expiringSoonProvider);
-          ref.invalidate(lowStockProvider);
-          ref.invalidate(activeTreatmentsProvider);
+          // The derived lists only re-filter what the source providers
+          // already hold, so invalidating them alone never re-read the
+          // database: a row written by a sync pull stayed invisible until
+          // the next cold start. Invalidate the sources; the derived lists
+          // follow.
+          ref.invalidate(medicationListProvider);
+          ref.invalidate(treatmentListProvider);
           ref.invalidate(todaysDoseLogsProvider);
+          try {
+            await Future.wait<Object>([
+              ref.read(medicationListProvider.future),
+              ref.read(treatmentListProvider.future),
+              ref.read(todaysDoseLogsProvider.future),
+            ]);
+          } catch (_) {
+            // The cards render the failure themselves; here it only has to
+            // stop the spinner instead of escaping as an unhandled error.
+          }
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -557,7 +571,13 @@ class _ExpiringSoonCard extends ConsumerWidget {
     return AsyncValueView<List<Medication>>(
       value: expiringAsync,
       compact: true,
-      onRetry: () async => ref.invalidate(expiringSoonProvider),
+      // The source list is the only place a cabinet read can fail, so a
+      // retry that re-awaited the derived provider alone re-awaited the
+      // same failure and could never recover.
+      onRetry: () async {
+        ref.invalidate(medicationListProvider);
+        ref.invalidate(expiringSoonProvider);
+      },
       emptyWhen: (meds) => meds.isEmpty,
       empty: Card(
         child: EmptyStateWidget(
@@ -604,7 +624,11 @@ class _LowStockCard extends ConsumerWidget {
     return AsyncValueView<List<Medication>>(
       value: lowStockAsync,
       compact: true,
-      onRetry: () async => ref.invalidate(lowStockProvider),
+      // See _ExpiringSoonCard: the derived list cannot recover on its own.
+      onRetry: () async {
+        ref.invalidate(medicationListProvider);
+        ref.invalidate(lowStockProvider);
+      },
       emptyWhen: (meds) => meds.isEmpty,
       empty: Card(
         child: EmptyStateWidget(
@@ -686,7 +710,11 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
     return AsyncValueView<List<Treatment>>(
       value: treatmentsAsync,
       compact: true,
-      onRetry: () async => ref.invalidate(activeTreatmentsProvider),
+      // See _ExpiringSoonCard: the derived list cannot recover on its own.
+      onRetry: () async {
+        ref.invalidate(treatmentListProvider);
+        ref.invalidate(activeTreatmentsProvider);
+      },
       emptyWhen: (treatments) => treatments.isEmpty,
       empty: Card(
         child: EmptyStateWidget(

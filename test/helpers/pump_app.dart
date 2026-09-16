@@ -11,17 +11,23 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 ///
 /// [locale] drives both the MaterialApp locale and `Intl.defaultLocale`, so
 /// date/number formatting matches the l10n strings.
+///
+/// [retry] is the container's retry policy. Riverpod retries a failed
+/// provider on a timer by default, so a test that wants to *see* an error
+/// state — and prove that only the Retry button clears it — passes
+/// `(_, _) => null` to switch that off. Left null, the default applies.
 Future<ProviderContainer> pumpMedoraApp(
   WidgetTester tester,
   Widget home, {
   List<Override> overrides = const [],
   Brightness brightness = Brightness.light,
   Locale locale = const Locale('en'),
+  Duration? Function(int retryCount, Object error)? retry,
 }) async {
   final previousLocale = Intl.defaultLocale;
   Intl.defaultLocale = locale.languageCode;
   addTearDown(() => Intl.defaultLocale = previousLocale);
-  final container = ProviderContainer(overrides: overrides);
+  final container = ProviderContainer(overrides: overrides, retry: retry);
   addTearDown(container.dispose);
   await tester.pumpWidget(
     UncontrolledProviderScope(
