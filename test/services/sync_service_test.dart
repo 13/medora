@@ -20,6 +20,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' show Database;
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:uuid/uuid.dart';
@@ -38,13 +39,14 @@ class Harness {
     Duration requestTimeout = const Duration(seconds: 30),
     Duration capRetryDelay = const Duration(seconds: 15),
     int maxPullPages = SyncService.defaultMaxPullPages,
+    SyncCursorStore? cursors,
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
     prescriptions = FakePrescriptionRemote(clock.now);
     doses = (doseLogRemote ?? FakeDoseLogRemote.new)(clock.now);
     family = FakeFamilyRemote(clock.now);
-    cursors = SyncCursorStore.inMemory();
+    this.cursors = cursors ?? SyncCursorStore.inMemory();
     failures = SyncFailureStore.inMemory();
     service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
@@ -57,7 +59,7 @@ class Harness {
       doseLogRemote: doses,
       familyLocal: familyLocal ?? FamilyLocalDatasource(),
       familyRemote: family,
-      cursors: cursors,
+      cursors: this.cursors,
       failures: failures,
       isOnline: () => this.online,
       currentUserId: () => userId,
@@ -2815,6 +2817,382 @@ void main() {
       expect(report, isNotNull);
       expect(h.doses.table.pageCalls, hasLength(3));
       expect(await localDoseCount(), 1000);
+    });
+  });
+  group('pull repair after an upgrade', () {
+    // What an older build left in the preferences: every table's cursor
+    // where its newest-first, capped pull put it, and no repair marker.
+    const tables = ['medications', 'treatments', 'prescriptions', 'dose_logs'];
+    const doneKey = 'sync.pull_repair.done';
+
+    Future<SharedPreferences> prefsWith(Map<String, Object> values) async {
+      SharedPreferences.setMockInitialValues(values);
+      return SharedPreferences.getInstance();
+    }
+
+    Future<SharedPreferences> upgradedPrefs(DateTime cursor) => prefsWith({
+      for (final t in tables)
+        'sync.last_pull_at.$t': cursor.toUtc().toIso8601String(),
+    });
+
+    Map<String, Object> snapshot(SharedPreferences prefs) => {
+      for (final k in prefs.getKeys()) k: prefs.get(k)!,
+    };
+
+    /// A medication, treatment, prescription and three doses that only the
+    /// server holds, stamped [stamp]: rows the old pull left behind its
+    /// cursor. Returns their ids per table.
+    Future<Map<String, List<String>>> seedServerOnly(
+      Harness h,
+      DateTime stamp,
+    ) async {
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final doseIds = [
+        for (var i = 0; i < 3; i++)
+          await seedDoseLog(
+            db,
+            seeded.prescriptionId,
+            DateTime(2026, 3, 1, 8).add(Duration(hours: 8 * i)),
+            status: i == 0 ? 'taken' : 'pending',
+          ),
+      ];
+      h.meds.table.seed(
+        MedicationModel.fromLocalMap(
+          (await localRow('medications', seeded.medicationId))!,
+        ).toJson(),
+        updatedAt: stamp,
+      );
+      h.treatments.table.seed(
+        TreatmentModel.fromLocalMap(
+          (await localRow('treatments', seeded.treatmentId))!,
+        ).toJson(),
+        updatedAt: stamp,
+      );
+      h.prescriptions.table.seed(
+        PrescriptionModel.fromLocalMap(
+          (await localRow('prescriptions', seeded.prescriptionId))!,
+        ).toJson(),
+        updatedAt: stamp,
+      );
+      for (final (i, id) in doseIds.indexed) {
+        h.doses.table.seed(
+          DoseLogModel.fromLocalMap(
+            (await localRow('dose_logs', id))!,
+          ).toJson(),
+          updatedAt: stamp.add(Duration(seconds: i)),
+        );
+      }
+      for (final id in doseIds) {
+        await db.delete('dose_logs', where: 'id = ?', whereArgs: [id]);
+      }
+      await db.delete(
+        'prescriptions',
+        where: 'id = ?',
+        whereArgs: [seeded.prescriptionId],
+      );
+      await db.delete(
+        'treatments',
+        where: 'id = ?',
+        whereArgs: [seeded.treatmentId],
+      );
+      await db.delete(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [seeded.medicationId],
+      );
+      return {
+        'medications': [seeded.medicationId],
+        'treatments': [seeded.treatmentId],
+        'prescriptions': [seeded.prescriptionId],
+        'dose_logs': doseIds,
+      };
+    }
+
+    Future<void> expectAllLocal(Map<String, List<String>> ids) async {
+      for (final MapEntry(key: table, value: tableIds) in ids.entries) {
+        for (final id in tableIds) {
+          expect(await localRow(table, id), isNotNull, reason: '$table/$id');
+        }
+      }
+    }
+
+    Future<void> expectNoneLocal(Map<String, List<String>> ids) async {
+      for (final MapEntry(key: table, value: tableIds) in ids.entries) {
+        for (final id in tableIds) {
+          expect(await localRow(table, id), isNull, reason: '$table/$id');
+        }
+      }
+    }
+
+    List<FakeRemoteTable> remoteTables(Harness h) => [
+      h.meds.table,
+      h.treatments.table,
+      h.prescriptions.table,
+      h.doses.table,
+    ];
+
+    test('an upgraded device whose cursors sit past rows the server holds '
+        'gets them on its first sync, and records the repair', () async {
+      final clock = DateTime.utc(2026, 3, 4, 12);
+      final oldCursor = clock.subtract(const Duration(hours: 1));
+      final prefs = await upgradedPrefs(oldCursor);
+      final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+      final missing = await seedServerOnly(
+        h,
+        clock.subtract(const Duration(days: 2)),
+      );
+      // The same holds past one page: the old pull lost these too.
+      final base = clock.subtract(const Duration(days: 3));
+      final older = await seedRemoteDoses(
+        h,
+        1500,
+        (i) => base.add(Duration(milliseconds: i)),
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      await expectAllLocal(missing);
+      expect(await localDoseCount(), 1503);
+      for (final id in [older.first, older.last]) {
+        expect(await localRow('dose_logs', id), isNotNull);
+      }
+      expect(
+        (await localRow('dose_logs', missing['dose_logs']!.first))!['status'],
+        'taken',
+      );
+      for (final table in remoteTables(h)) {
+        expect(table.pageCalls.first.since, isNull);
+      }
+      expect(h.doses.table.pageCalls, hasLength(2));
+      expect(prefs.getInt(doneKey), 1);
+      // The cursors are the full pull's own again.
+      expect(
+        await h.cursors.lastPullAt('medications'),
+        clock.subtract(const Duration(days: 2, seconds: 1)),
+      );
+    });
+
+    test('the repair runs once: later syncs, and a restarted app, pull '
+        'from the stored cursors', () async {
+      final clock = DateTime.utc(2026, 3, 4, 12);
+      final prefs = await upgradedPrefs(
+        clock.subtract(const Duration(hours: 1)),
+      );
+      final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+      await seedServerOnly(h, clock.subtract(const Duration(days: 2)));
+      await h.service.syncAll();
+      final cursor = await h.cursors.lastPullAt('medications');
+      expect(cursor, isNotNull);
+
+      h.clock.advance(const Duration(minutes: 5));
+      await h.service.syncAll();
+      expect(h.meds.table.pageCalls.last.since, cursor);
+
+      // A restart: a new service over the same preferences.
+      final restarted = Harness(
+        start: h.clock.now(),
+        cursors: SyncCursorStore(prefs),
+      );
+      await restarted.service.syncAll();
+      for (final table in remoteTables(restarted)) {
+        expect(table.pageCalls.first.since, isNotNull);
+      }
+      expect(restarted.meds.table.pageCalls.single.since, cursor);
+      expect(prefs.getInt(doneKey), 1);
+    });
+
+    test('a sync that cannot run (offline, signed out) leaves the repair for '
+        'a later sync', () async {
+      final clock = DateTime.utc(2026, 3, 4, 12);
+      final prefs = await upgradedPrefs(
+        clock.subtract(const Duration(hours: 1)),
+      );
+      final before = snapshot(prefs);
+      final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+      final missing = await seedServerOnly(
+        h,
+        clock.subtract(const Duration(days: 2)),
+      );
+
+      h.online = false;
+      expect(await h.service.syncAll(), isNull);
+      h.online = true;
+      h.userId = null;
+      expect(await h.service.syncAll(), isNull);
+      expect(snapshot(prefs), before);
+      await expectNoneLocal(missing);
+
+      h.userId = 'user-a';
+      final report = (await h.service.syncAll())!;
+      expect(report.failures, isEmpty);
+      await expectAllLocal(missing);
+      expect(prefs.getInt(doneKey), 1);
+    });
+
+    test('a repair sync whose pull fails is not recorded; a later sync '
+        'finishes it without pulling again what already arrived', () async {
+      final clock = DateTime.utc(2026, 3, 4, 12);
+      final prefs = await upgradedPrefs(
+        clock.subtract(const Duration(hours: 1)),
+      );
+      final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+      final missing = await seedServerOnly(
+        h,
+        clock.subtract(const Duration(days: 2)),
+      );
+      h.doses.table.throwOnFetch = StateError('connection reset');
+
+      final first = (await h.service.syncAll())!;
+      expect(h.service.currentState, SyncState.partial);
+      expect(first.failures.map((f) => '${f.table}/${f.id}'), ['dose_logs/*']);
+      expect(
+        await localRow('medications', missing['medications']!.single),
+        isNotNull,
+      );
+      for (final id in missing['dose_logs']!) {
+        expect(await localRow('dose_logs', id), isNull);
+      }
+      expect(prefs.getInt(doneKey), isNull);
+      final medCursor = await h.cursors.lastPullAt('medications');
+
+      h.doses.table.throwOnFetch = null;
+      h.clock.advance(const Duration(minutes: 5));
+      final second = (await h.service.syncAll())!;
+      expect(second.failures, isEmpty);
+      await expectAllLocal(missing);
+      expect(h.doses.table.pageCalls.last.since, isNull);
+      expect(h.meds.table.pageCalls.last.since, medCursor);
+      expect(prefs.getInt(doneKey), 1);
+    });
+
+    test('a failed family fetch leaves the repair unfinished too', () async {
+      final clock = DateTime.utc(2026, 3, 4, 12);
+      final prefs = await upgradedPrefs(
+        clock.subtract(const Duration(hours: 1)),
+      );
+      final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+      // A membership row the client cannot read: the family fetch throws.
+      h.family.members.rows['broken'] = {'id': 'broken', 'user_id': 'user-a'};
+
+      final first = (await h.service.syncAll())!;
+      expect(first.failures.map((f) => '${f.table}/${f.id}'), ['families/*']);
+      expect(prefs.getInt(doneKey), isNull);
+
+      h.family.members.rows.remove('broken');
+      h.clock.advance(const Duration(minutes: 5));
+      final second = (await h.service.syncAll())!;
+      expect(second.failures, isEmpty);
+      expect(prefs.getInt(doneKey), 1);
+    });
+
+    test('local-only mode leaves the cursors and the marker alone', () async {
+      final prefs = await upgradedPrefs(DateTime.utc(2026, 3, 4, 11));
+      final before = snapshot(prefs);
+      final service = SyncService(
+        medicationLocal: MedicationLocalDatasource(),
+        medicationRemote: null,
+        treatmentLocal: TreatmentLocalDatasource(),
+        treatmentRemote: null,
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        prescriptionRemote: null,
+        doseLogLocal: DoseLogLocalDatasource(),
+        doseLogRemote: null,
+        familyLocal: FamilyLocalDatasource(),
+        familyRemote: null,
+        cursors: SyncCursorStore(prefs),
+        isOnline: () => true,
+        currentUserId: () => 'user-a',
+        onlineStream: const Stream<bool>.empty(),
+      );
+      addTearDown(service.dispose);
+
+      expect(await service.syncAll(), isNull);
+      expect(await service.forcePush(), isNull);
+      expect(snapshot(prefs), before);
+    });
+
+    test('a fresh install records the repair with its first pull', () async {
+      final prefs = await prefsWith({});
+      final h = Harness(cursors: SyncCursorStore(prefs));
+      h.meds.table.seed(
+        const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson(),
+      );
+
+      await h.service.syncAll();
+      expect(prefs.getInt(doneKey), 1);
+      final cursor = await h.cursors.lastPullAt('medications');
+
+      h.clock.advance(const Duration(minutes: 5));
+      await h.service.syncAll();
+      expect(h.meds.table.pageCalls.map((c) => c.since), [null, cursor]);
+    });
+
+    test('the repair pull keeps local changes still waiting to be pushed, '
+        'and rows the server does not have', () async {
+      final clock = DateTime.utc(2026, 3, 4, 12);
+      final prefs = await upgradedPrefs(
+        clock.subtract(const Duration(hours: 1)),
+      );
+      final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+      final medLocal = MedicationLocalDatasource();
+      // An edit made after the server's copy, waiting out a backoff.
+      h.meds.table.seed(
+        const MedicationModel(
+          id: 'm-edit',
+          name: 'Server',
+          quantity: 1,
+        ).toJson(),
+        updatedAt: clock.subtract(const Duration(days: 2)),
+      );
+      await medLocal.upsert(
+        MedicationModel(
+          id: 'm-edit',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: clock.subtract(const Duration(days: 1)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      await h.failures.recordFailure('medications', 'm-edit', clock);
+      // A delete waiting out a backoff, of a row the server still has.
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final treatment = TreatmentModel.fromLocalMap(
+        (await localRow('treatments', seeded.treatmentId))!,
+      );
+      h.treatments.table.seed(
+        treatment.toJson(),
+        updatedAt: clock.subtract(const Duration(days: 2)),
+      );
+      await db.update(
+        'treatments',
+        {'sync_status': SyncStatus.pendingDelete},
+        where: 'id = ?',
+        whereArgs: [treatment.id],
+      );
+      await h.failures.recordFailure('treatments', treatment.id, clock);
+      // A synced row the server does not have: nothing is wiped.
+      await medLocal.upsert(
+        const MedicationModel(id: 'm-local', name: 'Only here', quantity: 2),
+        syncStatus: SyncStatus.synced,
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.skippedBackoff, 2);
+      expect(prefs.getInt(doneKey), 1);
+      expect(h.meds.table.pageCalls.first.since, isNull);
+      final edited = (await localRow('medications', 'm-edit'))!;
+      expect(edited['name'], 'Local');
+      expect(edited['sync_status'], SyncStatus.pendingUpdate);
+      expect(
+        (await localRow('treatments', treatment.id))!['sync_status'],
+        SyncStatus.pendingDelete,
+      );
+      expect((await localRow('medications', 'm-local'))!['name'], 'Only here');
+      expect(h.meds.table.get('m-edit')!['name'], 'Server');
     });
   });
 }

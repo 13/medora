@@ -33,6 +33,12 @@
 /// [SyncService.capRetryDelay]. Every request to the server has a timeout
 /// ([SyncService.requestTimeout]) and fails like a network error.
 ///
+/// After an upgrade, the first cycle that runs pulls every table from the
+/// beginning once ([SyncCursorStore.startPullRepair]): builds before the
+/// paged pull left their cursors past rows they never received. The pull
+/// uses the same merge rules as any other, so local changes still waiting
+/// to be pushed are kept, and nothing local is wiped.
+///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
 /// cycle. A row that fails to push repeatedly is backed off exponentially
@@ -210,8 +216,15 @@ class SyncService {
   Future<SyncReport?> _syncAll({required bool retryAfterCap}) => _run(
     'sync',
     (report) async {
+      // Only here, past every guard in [_run]: local-only mode, an offline
+      // device and a signed-out user leave the repair for a later sync.
+      final repairing = await _cursors.startPullRepair();
       await _pushPendingChanges(report);
-      await _pullAll(report, force: false);
+      final fetchedAll = await _pullAll(report, force: false);
+      // A table whose fetch failed keeps the cursor of its last stored page
+      // (none, if it failed at once), so the next cycle still gets the rest;
+      // the repair is recorded once a cycle has fetched every table.
+      if (repairing && fetchedAll) await _cursors.finishPullRepair();
     },
     queueable: true,
     retryAfterCap: retryAfterCap,
@@ -1044,10 +1057,12 @@ class SyncService {
 
   // ── Pull ───────────────────────────────────────────────────
 
-  Future<void> _pullAll(SyncReport report, {required bool force}) async {
+  /// Returns false when a fetch failed, so some table was not read to its
+  /// end (or to [maxPullPages]).
+  Future<bool> _pullAll(SyncReport report, {required bool force}) async {
     final pulled = PulledPrescriptions();
-    await _pullFamilies(report, failFast: force);
-    await Future.wait([
+    final families = await _pullFamilies(report, failFast: force);
+    final both = await Future.wait([
       _pullTable<MedicationModel>(
         table: 'medications',
         report: report,
@@ -1073,7 +1088,7 @@ class SyncService {
         upsert: (t) => _safeUpsertTreatment(t, force: force),
       ),
     ]);
-    await _pullTable<PrescriptionModel>(
+    final prescriptions = await _pullTable<PrescriptionModel>(
       table: 'prescriptions',
       report: report,
       force: force,
@@ -1086,7 +1101,7 @@ class SyncService {
       delete: prescriptionLocal.hardDelete,
       upsert: (p) => _safeUpsertPrescription(p, pulled, force: force),
     );
-    await _pullTable<DoseLogModel>(
+    final doses = await _pullTable<DoseLogModel>(
       table: 'dose_logs',
       report: report,
       force: force,
@@ -1106,6 +1121,7 @@ class SyncService {
         debugPrint('Sync: generating doses for pulled prescriptions: $e');
       }
     }
+    return families && !both.contains(false) && prescriptions && doses;
   }
 
   /// The default for [maxPullPages]: 50,000 rows per table per cycle.
@@ -1127,7 +1143,10 @@ class SyncService {
   /// pull, so the other tables still sync. When [force] is set the caller has
   /// already cleared the local database, so the same failure is rethrown as
   /// [_FetchFailedFatally] and aborts the whole cycle instead.
-  Future<void> _pullTable<T>({
+  ///
+  /// Returns false when a page could not be fetched or placed, true when
+  /// the pull read to the end or to [maxPullPages].
+  Future<bool> _pullTable<T>({
     required String table,
     required SyncReport report,
     required bool force,
@@ -1148,7 +1167,7 @@ class SyncService {
       } catch (e) {
         report.failures.add(SyncFailure(table, '*', 'pull: $e'));
         if (force) throw _FetchFailedFatally(table, e);
-        return;
+        return false;
       }
       for (final row in rows) {
         try {
@@ -1172,7 +1191,7 @@ class SyncService {
         report.failures.add(
           SyncFailure(table, idOf(last), 'pull: row without updated_at'),
         );
-        return;
+        return false;
       }
       if (last != null) after = PullKey(lastStamp!, idOf(last));
       final complete = rows.length < pullPageSize;
@@ -1180,12 +1199,13 @@ class SyncService {
       if (!cursorHeld && stamp != null) {
         await _storePullCursor(table, stamp, complete: complete);
       }
-      if (complete) return;
+      if (complete) return true;
     }
     debugPrint(
       'Sync: $table pull stopped after $maxPullPages pages; '
       'the next cycle continues',
     );
+    return true;
   }
 
   /// Stores the cursor for a pull whose last stored row has [stamp].
@@ -1208,14 +1228,15 @@ class SyncService {
     await _cursors.setLastPullAt(table, cursor);
   }
 
-  Future<void> _pullFamilies(SyncReport report, {bool failFast = false}) async {
+  /// Returns false when a fetch failed.
+  Future<bool> _pullFamilies(SyncReport report, {bool failFast = false}) async {
     try {
       final membership = await _remote(familyRemote!.getCurrentMembership());
-      if (membership == null) return;
+      if (membership == null) return true;
       final family = await _remote(
         familyRemote!.getFamilyById(membership.familyId),
       );
-      if (family == null) return;
+      if (family == null) return true;
       // A row with unpushed local changes (in particular a pending_delete
       // from "leave family" / "remove member") must not be stamped back to
       // `synced` from the remote copy — that would silently drop the user's
@@ -1236,9 +1257,11 @@ class SyncService {
         family.id,
         members.map((m) => m.id).toSet(),
       );
+      return true;
     } catch (e) {
       report.failures.add(SyncFailure('families', '*', 'pull: $e'));
       if (failFast) throw _FetchFailedFatally('families', e);
+      return false;
     }
   }
 
