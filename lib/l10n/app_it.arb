@@ -11,6 +11,7 @@
 
   "dashboard": "Pannello",
   "seeAll": "Mostra tutto",
+  "moreCount": "{count, plural, =1{1 altro} other{Altri {count}}}",
 
   "todaysDoses": "Dosi di oggi",
   "noDosesScheduled": "Nessuna dose programmata per oggi",
@@ -21,9 +22,10 @@
   "newTreatment": "Nuovo\ntrattamento",
 
   "expiringSoon": "In scadenza",
+  "expiringOrExpired": "Scaduti e in scadenza",
   "lowStock": "Scorte basse",
   "activeTreatments": "Trattamenti attivi",
-  "statExpiring": "In scadenza",
+  "statExpiring": "Scadenza",
   "statLowStock": "Scorte basse",
   "statTreatments": "Trattamenti",
   "allMedicationsWithinDate": "Tutti i farmaci sono in corso di validità",
@@ -80,7 +82,7 @@
   "minimumStock": "Scorta minima",
 
   "expired": "Scaduto",
-  "expiresInDaysShort": "Scade tra {days} giorni",
+  "expiresInDaysShort": "{days, plural, =0{Scade oggi} =1{Scade tra 1 giorno} other{Scade tra {days} giorni}}",
   "valid": "Valido",
   "quantityLeft": "{quantity} rimanenti",
 
@@ -477,7 +479,6 @@
   "foreignDataDelete": "Elimina i dati locali",
   "continueLabel": "Continua",
 
-  "daysLabel": "Giorni",
   "leftLabel": "Rimanenti",
 
   "notificationChannelName": "Promemoria dosi",

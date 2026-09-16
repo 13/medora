@@ -34,6 +34,17 @@ class AppLocalizationsIt extends AppLocalizations {
   String get seeAll => 'Mostra tutto';
 
   @override
+  String moreCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Altri $count',
+      one: '1 altro',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get todaysDoses => 'Dosi di oggi';
 
   @override
@@ -57,13 +68,16 @@ class AppLocalizationsIt extends AppLocalizations {
   String get expiringSoon => 'In scadenza';
 
   @override
+  String get expiringOrExpired => 'Scaduti e in scadenza';
+
+  @override
   String get lowStock => 'Scorte basse';
 
   @override
   String get activeTreatments => 'Trattamenti attivi';
 
   @override
-  String get statExpiring => 'In scadenza';
+  String get statExpiring => 'Scadenza';
 
   @override
   String get statLowStock => 'Scorte basse';
@@ -230,7 +244,14 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String expiresInDaysShort(int days) {
-    return 'Scade tra $days giorni';
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Scade tra $days giorni',
+      one: 'Scade tra 1 giorno',
+      zero: 'Scade oggi',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1410,9 +1431,6 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get continueLabel => 'Continua';
-
-  @override
-  String get daysLabel => 'Giorni';
 
   @override
   String get leftLabel => 'Rimanenti';

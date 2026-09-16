@@ -11,6 +11,7 @@
 
   "dashboard": "Übersicht",
   "seeAll": "Alle anzeigen",
+  "moreCount": "{count, plural, =1{1 weiteres} other{{count} weitere}}",
 
   "todaysDoses": "Heutige Dosen",
   "noDosesScheduled": "Keine Dosen für heute geplant",
@@ -21,9 +22,10 @@
   "newTreatment": "Neue\nBehandlung",
 
   "expiringSoon": "Bald ablaufend",
+  "expiringOrExpired": "Abgelaufen & bald ablaufend",
   "lowStock": "Niedriger Bestand",
   "activeTreatments": "Aktive Behandlungen",
-  "statExpiring": "Läuft ab",
+  "statExpiring": "Ablauf",
   "statLowStock": "Wenig Vorrat",
   "statTreatments": "Behandlungen",
   "allMedicationsWithinDate": "Alle Medikamente sind haltbar",
@@ -80,7 +82,7 @@
   "minimumStock": "Mindestbestand",
 
   "expired": "Abgelaufen",
-  "expiresInDaysShort": "Läuft in {days} Tagen ab",
+  "expiresInDaysShort": "{days, plural, =0{Läuft heute ab} =1{Läuft in 1 Tag ab} other{Läuft in {days} Tagen ab}}",
   "valid": "Gültig",
   "quantityLeft": "{quantity} übrig",
 
@@ -477,7 +479,6 @@
   "foreignDataDelete": "Lokale Daten löschen",
   "continueLabel": "Fortfahren",
 
-  "daysLabel": "Tage",
   "leftLabel": "Übrig",
 
   "notificationChannelName": "Einnahmeerinnerungen",

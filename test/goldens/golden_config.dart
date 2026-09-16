@@ -117,8 +117,13 @@ List<DoseLog> goldenDosesTwoDue() => [
         : dose,
 ];
 
-/// Pumps [home] at 412×915 @1x with fixed data and clock. Golden files live
-/// next to the test.
+/// Pumps [home] at 412 dp wide @1x with fixed data and clock. Golden files
+/// live next to the test.
+///
+/// [height] defaults to a 915 dp phone. A screen whose content is taller
+/// than that raises it so the golden still covers every section: a golden
+/// only guards what it can see, and a card pushed past the viewport edge
+/// stops being covered without anything failing.
 ///
 /// [doses] replaces the day's doses for both the "today" provider and the
 /// per-day one, so a fixture can put the screen in a state the default day
@@ -128,8 +133,9 @@ Future<void> pumpGolden(
   Widget home, {
   required Brightness brightness,
   List<DoseLog>? doses,
+  double height = 915,
 }) async {
-  tester.view.physicalSize = const Size(412, 915);
+  tester.view.physicalSize = Size(412, height);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);

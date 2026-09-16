@@ -20,6 +20,7 @@ import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
+import 'package:medora/presentation/widgets/medication_expiry_tile.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_status_chip.dart';
 import 'package:medora/presentation/widgets/update_banner.dart';
@@ -55,10 +56,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          ref.invalidate(expiringSoonProvider);
-          ref.invalidate(lowStockProvider);
-          ref.invalidate(activeTreatmentsProvider);
+          // The derived lists only re-filter what the source providers
+          // already hold, so invalidating them alone never re-read the
+          // database: a row written by a sync pull stayed invisible until
+          // the next cold start. Invalidate the sources; the derived lists
+          // follow.
+          ref.invalidate(medicationListProvider);
+          ref.invalidate(treatmentListProvider);
           ref.invalidate(todaysDoseLogsProvider);
+          try {
+            // Awaited, so the spinner retracts for an honest reason. Note
+            // that it is honest about the *read*: TodaysDoseLogsNotifier
+            // generates any missing dose logs in the background and returns
+            // as soon as the fetch lands, so doses materialized by this
+            // pull can appear a moment after the spinner has gone.
+            await Future.wait<Object>([
+              ref.read(medicationListProvider.future),
+              ref.read(treatmentListProvider.future),
+              ref.read(todaysDoseLogsProvider.future),
+            ]);
+          } on Exception catch (_) {
+            // The cards render the failure themselves; here it only has to
+            // stop the spinner instead of escaping as an unhandled error.
+            // Deliberately not a bare `catch`: an Error is a bug in a
+            // build(), and swallowing it would leave the console silent.
+          }
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -87,10 +109,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const _ActiveTreatmentsCard(),
             const SizedBox(height: 16),
 
-            // Expiring Soon
+            // Expired & expiring: one card, expired rows first.
             _SectionHeader(
-              title: l10n.expiringSoon,
-              onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
+              // Not `expiringSoon`: the rows underneath say "Expired", and
+              // "Bald ablaufend" / "In scadenza" mean *about to* expire.
+              title: l10n.expiringOrExpired,
+              // Not the medications tab: that opens unfiltered and sorted by
+              // name, so the dashboard's count and the list it links to
+              // disagreed. This route shows the same set in the same order.
+              onSeeAll: () => context.push(AppRoutes.expiringMedications),
             ),
             const _ExpiringSoonCard(),
             const SizedBox(height: 16),
@@ -211,7 +238,16 @@ class _NowCardState extends ConsumerState<_NowCard> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
+        // Wrap, not Row. "Einnehmen" beside "Überspringen" already overflows
+        // this card by 2.3 dp on a 360 dp phone at a 1.0x text scale, and by
+        // 83 dp at 1.6x - a striped overflow bar across the only two actions
+        // the dashboard offers. A Wrap places the two buttons exactly where
+        // the Row did while they fit, and moves Skip onto its own line when
+        // they stop fitting.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             FilledButton.icon(
               onPressed: _busy
@@ -220,7 +256,6 @@ class _NowCardState extends ConsumerState<_NowCard> {
               icon: const Icon(Icons.check),
               label: Text(l10n.take),
             ),
-            const SizedBox(width: 8),
             TextButton(
               onPressed: _busy
                   ? null
@@ -355,17 +390,25 @@ class _StatTiles extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final expiring = ref.watch(expiringSoonProvider).value?.length ?? 0;
+    final expiringMeds = ref.watch(expiringSoonProvider).value ?? const [];
+    final expiring = expiringMeds.length;
     final lowStock = ref.watch(lowStockProvider).value?.length ?? 0;
     final treatments = ref.watch(activeTreatmentsProvider).value?.length ?? 0;
+    // The count covers both states, so an amber number over a red "Expired"
+    // row would understate what the card below it is saying.
+    final anyExpired = expiringMeds.any(
+      (m) => m.expiredAt(ref.watch(nowProvider)()),
+    );
 
     return Row(
       children: [
         _StatTile(
           label: l10n.statExpiring,
           value: expiring,
-          color: context.medora.warning,
-          onTap: () => MainShellScope.of(context)?.switchTab(1),
+          color: anyExpired ? context.medora.danger : context.medora.warning,
+          // The same list the section header opens: the count and the list it
+          // leads to have to agree.
+          onTap: () => context.push(AppRoutes.expiringMedications),
         ),
         const SizedBox(width: 12),
         _StatTile(
@@ -404,11 +447,16 @@ class _StatTile extends StatelessWidget {
     final numberColor = value == 0 ? context.colors.onSurfaceVariant : color;
     return Expanded(
       child: Card(
+        // The card theme adds 12 dp of margin either side (theme.dart:43,
+        // :108) — 24 dp off a tile that is only ~101 dp wide on a 360 dp
+        // phone, which is what pushed the single-word labels past their box.
+        // The Row's SizedBox gaps already space the three tiles apart.
+        margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -420,11 +468,27 @@ class _StatTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: context.text.labelMedium?.copyWith(
-                    color: context.colors.onSurfaceVariant,
+                // Shrink to fit, rather than wrap. A word wider than its line
+                // is broken by Skia at an arbitrary character - it is not
+                // clipped and not ellipsized - so "Behandlungen" split as
+                // "Behandlun / gen" from a text scale of about 1.06, which is
+                // one notch of Android's font-size slider and exactly the bug
+                // this tile was reported for. BoxFit.scaleDown only ever
+                // shrinks, and every label fits the tile unscaled, so the
+                // caption still grows with the user's setting until it
+                // reaches the tile's width and then holds there instead of
+                // breaking. The ellipsis is a backstop for a future label
+                // long enough to be unreadable when scaled down.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.labelMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -524,7 +588,12 @@ class _ExpiringSoonCard extends ConsumerWidget {
     return AsyncValueView<List<Medication>>(
       value: expiringAsync,
       compact: true,
-      onRetry: () async => ref.invalidate(expiringSoonProvider),
+      // The source list is the only place a cabinet read can fail, so a
+      // retry that re-awaited the derived provider alone re-awaited the
+      // same failure and could never recover. Invalidating the source is
+      // the whole fix: a derived list re-runs when its source does, which
+      // is exactly what pull-to-refresh relies on.
+      onRetry: () async => ref.invalidate(medicationListProvider),
       emptyWhen: (meds) => meds.isEmpty,
       empty: Card(
         child: EmptyStateWidget(
@@ -534,61 +603,25 @@ class _ExpiringSoonCard extends ConsumerWidget {
         ),
       ),
       data: (meds) {
+        final shown = meds.take(3).toList();
+        final hidden = meds.length - shown.length;
         return Card(
           child: Column(
-            children: meds.take(3).map((med) {
-              final days = med.daysUntilExpiry(now);
-              return ListTile(
-                leading: Icon(
-                  Icons.warning_amber_rounded,
-                  color: context.medora.warning,
+            children: [
+              for (final med in shown) MedicationExpiryTile(med: med, now: now),
+              // The three slots go to the most urgent rows, so once expired
+              // and expiring medications share the card the merely-expiring
+              // ones fall off the bottom. Without this the card looks
+              // complete while disagreeing with its own stat tile.
+              if (hidden > 0)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.more_horiz),
+                  title: Text(l10n.moreCount(hidden)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.expiringMedications),
                 ),
-                title: Text(med.name),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (med.expiryDate != null)
-                      Text(
-                        med.expiryDate!.formatted,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    if (med.patientTags.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: med.patientTags
-                            .map((t) => TagChip(label: t, fontSize: 10))
-                            .toList(),
-                      ),
-                    ],
-                  ],
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${days ?? 0}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: context.medora.warning,
-                      ),
-                    ),
-                    Text(
-                      l10n.daysLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: context.colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                dense: true,
-                onTap: () => context.push('/medications/${med.id}'),
-              );
-            }).toList(),
+            ],
           ),
         );
       },
@@ -607,7 +640,8 @@ class _LowStockCard extends ConsumerWidget {
     return AsyncValueView<List<Medication>>(
       value: lowStockAsync,
       compact: true,
-      onRetry: () async => ref.invalidate(lowStockProvider),
+      // See _ExpiringSoonCard: the derived list cannot recover on its own.
+      onRetry: () async => ref.invalidate(medicationListProvider),
       emptyWhen: (meds) => meds.isEmpty,
       empty: Card(
         child: EmptyStateWidget(
@@ -646,26 +680,35 @@ class _LowStockCard extends ConsumerWidget {
                     ],
                   ],
                 ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${med.quantity}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: context.medora.warning,
+                // Shrink to fit. A ListTile gives its trailing slot the
+                // tile's own height, and the count stacked over "Left"
+                // overflows that by 12 dp from a 1.6x text scale. The stat
+                // tiles already solve the same problem the same way:
+                // BoxFit.scaleDown only ever shrinks, so at every ordinary
+                // text scale this paints what it painted before.
+                trailing: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${med.quantity}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: context.medora.warning,
+                        ),
                       ),
-                    ),
-                    Text(
-                      l10n.leftLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: context.colors.onSurfaceVariant,
+                      Text(
+                        l10n.leftLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: context.colors.onSurfaceVariant,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 dense: true,
                 onTap: () => context.push('/medications/${med.id}'),
@@ -689,7 +732,8 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
     return AsyncValueView<List<Treatment>>(
       value: treatmentsAsync,
       compact: true,
-      onRetry: () async => ref.invalidate(activeTreatmentsProvider),
+      // See _ExpiringSoonCard: the derived list cannot recover on its own.
+      onRetry: () async => ref.invalidate(treatmentListProvider),
       emptyWhen: (treatments) => treatments.isEmpty,
       empty: Card(
         child: EmptyStateWidget(

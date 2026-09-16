@@ -97,19 +97,28 @@ Future<String> seedDoseLog(
 /// A time on the same calendar day as [now], at most [minutes] before it
 /// (never crossing midnight) — stays inside the 2 h missed-dose grace window
 /// whatever the wall-clock hour, so maintenance never marks it missed.
+///
+/// The clamp is start-of-day, not 00:01: within the first [minutes] of a day
+/// it is the only value that is both still today and not *after* [now], and
+/// a seed in the future is not overdue — which is what a caller asking for a
+/// recent time is invariably about to assert. Pinned by `seed_test.dart`.
 DateTime recentToday(DateTime now, {int minutes = 30}) {
   final candidate = now.subtract(Duration(minutes: minutes));
   return candidate.day == now.day
       ? candidate
-      : DateTime(now.year, now.month, now.day, 0, 1);
+      : DateTime(now.year, now.month, now.day);
 }
 
 /// A time on the same calendar day as [now], at least [minutes] after it
 /// (never crossing midnight) — for seeds that must land later today
 /// relative to the real clock, whatever the wall-clock hour.
+///
+/// The clamp is the last instant of the day for the mirror of the reason
+/// above: 23:59 is already in the past at 23:59:30, which would seed an
+/// upcoming dose as an overdue one. Pinned by `seed_test.dart`.
 DateTime laterToday(DateTime now, {int minutes = 60}) {
   final candidate = now.add(Duration(minutes: minutes));
   return candidate.day == now.day
       ? candidate
-      : DateTime(now.year, now.month, now.day, 23, 59);
+      : DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
 }

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
@@ -19,51 +20,118 @@ void main() {
   });
   tearDown(tearDownTestDatabase);
 
-  Future<ProviderContainer> make() async {
+  Future<ProviderContainer> make({DateTime? now}) async {
     final prefs = await SharedPreferences.getInstance();
     final c = ProviderContainer(
-      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        if (now != null) nowProvider.overrideWithValue(() => now),
+      ],
     );
     addTearDown(c.dispose);
     return c;
   }
 
   test(
-    'expiringSoonProvider lists only unexpired items within 30 days',
+    'expiringSoonProvider keeps expired items and sorts most urgent first',
     () async {
-      final c = await make();
+      final now = DateTime(2026, 3, 4, 15);
+      final c = await make(now: now);
       final notifier = c.read(medicationListProvider.notifier);
       await c.read(medicationListProvider.future);
-      final today = DateTime.now();
+
+      Future<void> add(String name, int days, {bool archived = false}) =>
+          notifier.addMedication(
+            Medication(
+              id: name,
+              name: name,
+              quantity: 1,
+              isArchived: archived,
+              // Calendar arithmetic, not absolute time: adding a
+              // Duration shifts the date by one across a DST fall-back.
+              expiryDate: DateTime(2026, 3, 4 + days),
+            ),
+          );
+
+      await add('LongExpired', -40);
+      await add('Expired', -1);
+      await add('Today', 0);
+      await add('Soon', 10);
+      await add('Edge', 30);
+      await add('Far', 31);
+      await add('ArchivedExpired', -5, archived: true);
       await notifier.addMedication(
-        Medication(
-          id: 'a',
-          name: 'Expired',
-          quantity: 1,
-          expiryDate: today.subtract(const Duration(days: 1)),
-        ),
-      );
-      await notifier.addMedication(
-        Medication(
-          id: 'b',
-          name: 'Soon',
-          quantity: 1,
-          expiryDate: today.add(const Duration(days: 10)),
-        ),
-      );
-      await notifier.addMedication(
-        Medication(
-          id: 'c',
-          name: 'Far',
-          quantity: 1,
-          expiryDate: today.add(const Duration(days: 90)),
-        ),
+        const Medication(id: 'NoDate', name: 'NoDate', quantity: 1),
       );
 
       final soon = await c.read(expiringSoonProvider.future);
-      expect(soon.map((m) => m.name).toList(), ['Soon']);
+      expect(soon.map((m) => m.name).toList(), [
+        'LongExpired',
+        'Expired',
+        'Today',
+        'Soon',
+        'Edge',
+      ]);
     },
   );
+
+  test('medications sharing an expiry date keep a stable order', () async {
+    // Dart's List.sort is only stable up to 32 elements, and the comparator
+    // has one key. A cabinet larger than that would reshuffle rows that share
+    // an expiry date on every rebuild - visible jitter on a dashboard whose
+    // whole job is to be glanced at.
+    final now = DateTime(2026, 3, 4, 15);
+    final c = await make(now: now);
+    final notifier = c.read(medicationListProvider.notifier);
+    await c.read(medicationListProvider.future);
+
+    final names = [
+      for (var i = 0; i < 40; i++) 'Med${i.toString().padLeft(2, '0')}',
+    ];
+    for (final name in names) {
+      await notifier.addMedication(
+        Medication(
+          id: name,
+          name: name,
+          quantity: 1,
+          expiryDate: DateTime(2026, 3, 10),
+        ),
+      );
+    }
+
+    final first = (await c.read(
+      expiringSoonProvider.future,
+    )).map((m) => m.name).toList();
+    expect(first, names, reason: 'equal expiry dates must fall back to name');
+
+    c.invalidate(expiringSoonProvider);
+    final second = (await c.read(
+      expiringSoonProvider.future,
+    )).map((m) => m.name).toList();
+    expect(second, first, reason: 'the order must not move between rebuilds');
+  });
+
+  test('one expired medication is not an empty expiry list', () async {
+    // The dashboard's "All medications are within date" empty state keys off
+    // this list being empty. With an expired box in the cabinet it must not
+    // be, or the empty state is an actively false statement.
+    final now = DateTime(2026, 3, 4, 15);
+    final c = await make(now: now);
+    final notifier = c.read(medicationListProvider.notifier);
+    await c.read(medicationListProvider.future);
+    await notifier.addMedication(
+      Medication(
+        id: 'a',
+        name: 'Bentelan',
+        quantity: 8,
+        expiryDate: DateTime(2025, 12),
+      ),
+    );
+
+    final soon = await c.read(expiringSoonProvider.future);
+    expect(soon.single.name, 'Bentelan');
+    expect(soon.single.expiredAt(now), isTrue);
+  });
 
   test('mutations do not pass through a loading state', () async {
     final c = await make();
@@ -160,5 +228,42 @@ void main() {
     expect(port.stockAlerts.map((a) => a.id), [
       stockAlertId('x', StockAlertKind.lowStock),
     ]);
+  });
+
+  test('lowStockProvider takes quantity at or below the minimum', () async {
+    final c = await make();
+    final notifier = c.read(medicationListProvider.notifier);
+    await c.read(medicationListProvider.future);
+    await notifier.addMedication(
+      const Medication(id: 'at', name: 'At', quantity: 2, minimumStockLevel: 2),
+    );
+    await notifier.addMedication(
+      const Medication(
+        id: 'below',
+        name: 'Below',
+        quantity: 1,
+        minimumStockLevel: 2,
+      ),
+    );
+    await notifier.addMedication(
+      const Medication(
+        id: 'above',
+        name: 'Above',
+        quantity: 3,
+        minimumStockLevel: 2,
+      ),
+    );
+    await notifier.addMedication(
+      const Medication(
+        id: 'archived',
+        name: 'Archived',
+        quantity: 0,
+        minimumStockLevel: 2,
+        isArchived: true,
+      ),
+    );
+
+    final low = await c.read(lowStockProvider.future);
+    expect(low.map((m) => m.name).toSet(), {'At', 'Below'});
   });
 }

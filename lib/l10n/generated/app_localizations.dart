@@ -148,6 +148,12 @@ abstract class AppLocalizations {
   /// **'See All'**
   String get seeAll;
 
+  /// No description provided for @moreCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 more} other{{count} more}}'**
+  String moreCount(int count);
+
   /// No description provided for @todaysDoses.
   ///
   /// In en, this message translates to:
@@ -190,6 +196,12 @@ abstract class AppLocalizations {
   /// **'Expiring Soon'**
   String get expiringSoon;
 
+  /// No description provided for @expiringOrExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'Expired & Expiring'**
+  String get expiringOrExpired;
+
   /// No description provided for @lowStock.
   ///
   /// In en, this message translates to:
@@ -205,7 +217,7 @@ abstract class AppLocalizations {
   /// No description provided for @statExpiring.
   ///
   /// In en, this message translates to:
-  /// **'Expiring'**
+  /// **'Expiry'**
   String get statExpiring;
 
   /// No description provided for @statLowStock.
@@ -511,7 +523,7 @@ abstract class AppLocalizations {
   /// No description provided for @expiresInDaysShort.
   ///
   /// In en, this message translates to:
-  /// **'Expires in {days} days'**
+  /// **'{days, plural, =0{Expires today} =1{Expires in 1 day} other{Expires in {days} days}}'**
   String expiresInDaysShort(int days);
 
   /// No description provided for @valid.
@@ -2658,12 +2670,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Continue'**
   String get continueLabel;
-
-  /// No description provided for @daysLabel.
-  ///
-  /// In en, this message translates to:
-  /// **'Days'**
-  String get daysLabel;
 
   /// No description provided for @leftLabel.
   ///

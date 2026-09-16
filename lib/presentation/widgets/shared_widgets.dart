@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/clock.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
@@ -36,7 +37,10 @@ class ExpiryBadge extends StatelessWidget {
 
     final (bg, fg, label) = daysUntilExpiry < 0
         ? (medora.dangerContainer, medora.onDangerContainer, l10n.expired)
-        : daysUntilExpiry <= 30
+        // The same window `expiringSoonProvider` uses to decide what reaches
+        // the dashboard at all. Two copies of the number would let the card
+        // draw a green "Valid" pill on a row it had just flagged.
+        : daysUntilExpiry <= AppConstants.expiryWarningDays
         ? (
             medora.warningContainer,
             medora.onWarningContainer,

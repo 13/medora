@@ -15,6 +15,7 @@ import 'package:medora/presentation/screens/export/export_screen.dart';
 import 'package:medora/presentation/screens/family/family_screen.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/screens/medication/add_medication_screen.dart';
+import 'package:medora/presentation/screens/medication/expiring_medications_screen.dart';
 import 'package:medora/presentation/screens/medication/medication_detail_screen.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
@@ -31,6 +32,10 @@ class AppRoutes {
   static const medications = '/medications';
   static const medicationDetail = '/medications/:id';
   static const addMedication = '/medications/add';
+
+  /// The dashboard's expiry card in full. Declared before
+  /// [medicationDetail] so it is not read as a medication id.
+  static const expiringMedications = '/medications/expiring';
   static const editMedication = '/medications/:id/edit';
   static const treatments = '/treatments';
   static const treatmentDetail = '/treatments/:id';
@@ -118,6 +123,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               initialEan: state.uri.queryParameters['ean'],
               lookupResult: state.extra,
             ),
+          ),
+          GoRoute(
+            path: AppRoutes.expiringMedications,
+            builder: (_, _) => const ExpiringMedicationsScreen(),
           ),
           GoRoute(
             path: AppRoutes.editMedication,

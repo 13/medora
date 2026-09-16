@@ -11,6 +11,12 @@
 
   "dashboard": "Dashboard",
   "seeAll": "See All",
+  "moreCount": "{count, plural, =1{1 more} other{{count} more}}",
+  "@moreCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
 
   "todaysDoses": "Today's Doses",
   "noDosesScheduled": "No doses scheduled for today",
@@ -28,9 +34,10 @@
   "newTreatment": "New\nTreatment",
 
   "expiringSoon": "Expiring Soon",
+  "expiringOrExpired": "Expired & Expiring",
   "lowStock": "Low Stock",
   "activeTreatments": "Active Treatments",
-  "statExpiring": "Expiring",
+  "statExpiring": "Expiry",
   "statLowStock": "Low stock",
   "statTreatments": "Treatments",
   "allMedicationsWithinDate": "All medications are within date",
@@ -111,7 +118,7 @@
   "minimumStock": "Minimum Stock",
 
   "expired": "Expired",
-  "expiresInDaysShort": "Expires in {days} days",
+  "expiresInDaysShort": "{days, plural, =0{Expires today} =1{Expires in 1 day} other{Expires in {days} days}}",
   "@expiresInDaysShort": {
     "placeholders": {
       "days": { "type": "int" }
@@ -619,7 +626,6 @@
   "foreignDataDelete": "Delete local data",
   "continueLabel": "Continue",
 
-  "daysLabel": "Days",
   "leftLabel": "Left",
 
   "notificationChannelName": "Dose Reminders",
