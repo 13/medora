@@ -6,6 +6,7 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
@@ -21,6 +22,7 @@ import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' show Database;
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:uuid/uuid.dart';
 
 import '../helpers/fake_remotes.dart';
 import '../helpers/seed.dart';
@@ -35,6 +37,7 @@ class Harness {
     FakeDoseLogRemote Function(DateTime Function() clock)? doseLogRemote,
     Duration requestTimeout = const Duration(seconds: 30),
     Duration capRetryDelay = const Duration(seconds: 15),
+    int maxPullPages = SyncService.defaultMaxPullPages,
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
@@ -62,6 +65,7 @@ class Harness {
       now: clock.now,
       requestTimeout: requestTimeout,
       capRetryDelay: capRetryDelay,
+      maxPullPages: maxPullPages,
     );
     // A retry armed at the re-run cap must not fire into a later test.
     addTearDown(service.dispose);
@@ -233,6 +237,50 @@ Future<Map<String, dynamic>?> localRow(String table, String id) async {
 }
 
 int cycles() => 1 + SyncService.maxAutomaticReruns;
+
+/// A dose-log server that ignores where a page should start and answers the
+/// first page every time, so a pull that trusted it would never end.
+class EndlessPagesRemote extends FakeDoseLogRemote {
+  EndlessPagesRemote(super.clock);
+
+  @override
+  Future<List<DoseLogModel>> getDoseLogsSince(
+    DateTime? since, {
+    PullKey? after,
+  }) => super.getDoseLogsSince(since);
+}
+
+/// Seeds [count] dose rows of one local prescription on the server, the
+/// i-th stamped [stampOf] (i). Their ids are random, so the id order is not
+/// the seeding order. Returns the ids.
+Future<List<String>> seedRemoteDoses(
+  Harness h,
+  int count,
+  DateTime Function(int i) stampOf,
+) async {
+  final db = await AppDatabase.instance.database;
+  final presc = await seedPrescription(db);
+  final ids = <String>[];
+  for (var i = 0; i < count; i++) {
+    final id = const Uuid().v4();
+    ids.add(id);
+    h.doses.table.seed(
+      DoseLogModel(
+        id: id,
+        prescriptionId: presc.prescriptionId,
+        scheduledTime: DateTime.utc(2026, 3).add(Duration(minutes: i)),
+      ).toJson(),
+      updatedAt: stampOf(i),
+    );
+  }
+  return ids;
+}
+
+Future<int> localDoseCount() async {
+  final db = await AppDatabase.instance.database;
+  final rows = await db.rawQuery('SELECT COUNT(*) AS n FROM dose_logs');
+  return rows.single['n']! as int;
+}
 
 /// The server's older copy of the medication `m-busy`.
 void seedBusyRemote(Harness h) => h.meds.table.seed(
@@ -2588,5 +2636,185 @@ void main() {
         await controller.close();
       },
     );
+  });
+
+  group('paged pull (the server answers at most 1000 rows)', () {
+    test(
+      'a first pull of 2,500 dose rows stores all of them in one cycle',
+      () async {
+        final h = Harness();
+        final base = h.clock.now().subtract(const Duration(days: 1));
+        DateTime stamp(int i) => base.add(Duration(milliseconds: i));
+        await seedRemoteDoses(h, 2500, stamp);
+
+        final report = (await h.service.syncAll())!;
+
+        expect(report.failures, isEmpty);
+        expect(report.pulled, 2500);
+        expect(await localDoseCount(), 2500);
+        expect(h.doses.table.pageCalls, hasLength(3));
+        expect(
+          await h.cursors.lastPullAt('dose_logs'),
+          stamp(2499).toUtc().subtract(const Duration(seconds: 1)),
+        );
+      },
+    );
+
+    test('rows sharing one updated_at across a page boundary are each stored '
+        'exactly once', () async {
+      final h = Harness();
+      final shared = h.clock.now().subtract(const Duration(hours: 2));
+      final later = h.clock.now().subtract(const Duration(hours: 1));
+      final ids = await seedRemoteDoses(
+        h,
+        1800,
+        (i) => i < 1500 ? shared : later.add(Duration(milliseconds: i)),
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      // `pulled` counts every row applied: a row repeated across pages
+      // would count twice, a skipped one not at all.
+      expect(report.pulled, 1800);
+      expect(await localDoseCount(), 1800);
+      for (final id in ids) {
+        expect(await localRow('dose_logs', id), isNotNull, reason: id);
+      }
+      expect(h.doses.table.pageCalls, hasLength(2));
+      expect(h.doses.table.pageCalls[1].after?.updatedAt, shared.toUtc());
+      expect(
+        await h.cursors.lastPullAt('dose_logs'),
+        later
+            .add(const Duration(milliseconds: 1799))
+            .toUtc()
+            .subtract(const Duration(seconds: 1)),
+      );
+    });
+
+    test('1,500 generated doses all arrive on a first pull, and the cursor '
+        'then passes them', () async {
+      final h = Harness();
+      await seedRemoteDoses(h, 1500, (_) => DateTime.utc(1970));
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.pulled, 1500);
+      expect(await localDoseCount(), 1500);
+      expect(await h.cursors.lastPullAt('dose_logs'), DateTime.utc(1970, 1, 2));
+    });
+
+    test('a failure on page 2 keeps page 1 and its cursor; the next cycle '
+        'completes', () async {
+      final h = Harness();
+      final base = h.clock.now().subtract(const Duration(days: 1));
+      DateTime stamp(int i) => base.add(Duration(seconds: i));
+      final ids = await seedRemoteDoses(h, 2500, stamp);
+      var failed = false;
+      h.doses.table.onPage = (call, since, after) {
+        if (after != null && !failed) {
+          failed = true;
+          throw StateError('connection reset');
+        }
+      };
+
+      final first = (await h.service.syncAll())!;
+
+      expect(h.service.currentState, SyncState.partial);
+      expect(
+        first.failures.where((f) => f.table == 'dose_logs').map((f) => f.id),
+        ['*'],
+      );
+      expect(await localDoseCount(), 1000);
+      // Page 1 is the 1000 oldest rows.
+      expect(await localRow('dose_logs', ids[999]), isNotNull);
+      expect(await localRow('dose_logs', ids[1000]), isNull);
+      final pageOneEnd = stamp(
+        999,
+      ).toUtc().subtract(const Duration(seconds: 1));
+      expect(await h.cursors.lastPullAt('dose_logs'), pageOneEnd);
+
+      h.clock.advance(const Duration(minutes: 5));
+      h.doses.table.pageCalls.clear();
+      final second = (await h.service.syncAll())!;
+
+      expect(second.failures, isEmpty);
+      expect(await localDoseCount(), 2500);
+      expect(h.doses.table.pageCalls.first.since, pageOneEnd);
+      expect(
+        await h.cursors.lastPullAt('dose_logs'),
+        stamp(2499).toUtc().subtract(const Duration(seconds: 1)),
+      );
+    });
+
+    test('a failure on page 2 among generated doses keeps the cursor before '
+        'them, so the next cycle still gets the rest', () async {
+      final h = Harness();
+      await seedRemoteDoses(h, 1500, (_) => DateTime.utc(1970));
+      var failed = false;
+      h.doses.table.onPage = (call, since, after) {
+        if (after != null && !failed) {
+          failed = true;
+          throw StateError('connection reset');
+        }
+      };
+
+      await h.service.syncAll();
+
+      expect(await localDoseCount(), 1000);
+      expect(
+        await h.cursors.lastPullAt('dose_logs'),
+        DateTime.utc(1969, 12, 31, 23, 59, 59),
+      );
+
+      h.clock.advance(const Duration(minutes: 5));
+      final second = (await h.service.syncAll())!;
+
+      expect(second.failures, isEmpty);
+      expect(await localDoseCount(), 1500);
+      expect(await h.cursors.lastPullAt('dose_logs'), DateTime.utc(1970, 1, 2));
+    });
+
+    test('a row on page 2 that fails to apply holds the cursor at page 1 while '
+        'later pages are still stored', () async {
+      final h = Harness();
+      final base = h.clock.now().subtract(const Duration(days: 1));
+      DateTime stamp(int i) => base.add(Duration(seconds: i));
+      final ids = await seedRemoteDoses(h, 2500, stamp);
+      // Its prescription is nowhere, so the local insert breaks the foreign
+      // key and throws.
+      h.doses.table.rows[ids[1500]]!['prescription_id'] = 'no-such';
+
+      final report = (await h.service.syncAll())!;
+
+      expect(
+        report.failures.where((f) => f.table == 'dose_logs').map((f) => f.id),
+        [ids[1500]],
+      );
+      expect(await localDoseCount(), 2499);
+      expect(await localRow('dose_logs', ids[2499]), isNotNull);
+      expect(
+        await h.cursors.lastPullAt('dose_logs'),
+        stamp(999).toUtc().subtract(const Duration(seconds: 1)),
+      );
+    });
+
+    test('a server that never ends a page stops the pull after the page '
+        'limit', () async {
+      final h = Harness(doseLogRemote: EndlessPagesRemote.new, maxPullPages: 3);
+      await seedRemoteDoses(
+        h,
+        1200,
+        (i) => DateTime.utc(2026, 3).add(Duration(seconds: i)),
+      );
+
+      final report = await h.service.syncAll().timeout(
+        const Duration(seconds: 60),
+      );
+
+      expect(report, isNotNull);
+      expect(h.doses.table.pageCalls, hasLength(3));
+      expect(await localDoseCount(), 1000);
+    });
   });
 }

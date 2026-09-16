@@ -2,6 +2,7 @@
 library;
 
 import 'package:medora/core/constants.dart';
+import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,18 +24,21 @@ class PrescriptionRemoteDatasource {
         .toList();
   }
 
-  /// Rows changed after [since] (UTC); all rows when null. Includes tombstones.
-  Future<List<PrescriptionModel>> getPrescriptionsSince(DateTime? since) async {
-    final base = _client
-        .from(AppConstants.prescriptionsTable)
-        .select('*, medications(name), treatments(name)');
-    final filtered = since == null
-        ? base
-        : base.gt('updated_at', since.toUtc().toIso8601String());
-    final response = await filtered.order('updated_at');
-    return (response as List)
-        .map((json) => PrescriptionModel.fromJson(json as Map<String, dynamic>))
-        .toList();
+  /// One page of the rows changed after [since] (UTC; all rows when null),
+  /// tombstones included: the rows after [after] in the pull order, at most
+  /// [pullPageSize] of them. See `pullPage`.
+  Future<List<PrescriptionModel>> getPrescriptionsSince(
+    DateTime? since, {
+    PullKey? after,
+  }) async {
+    final response = await pullPage(
+      _client
+          .from(AppConstants.prescriptionsTable)
+          .select('*, medications(name), treatments(name)'),
+      since: since,
+      after: after,
+    );
+    return response.map(PrescriptionModel.fromJson).toList();
   }
 
   /// The remote row's `updated_at`, or null when the row is not there.

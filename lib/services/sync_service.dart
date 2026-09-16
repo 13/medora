@@ -52,6 +52,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -97,6 +98,7 @@ class SyncService {
     this.onPrescriptionsPulled,
     this.requestTimeout = const Duration(seconds: 30),
     this.capRetryDelay = const Duration(seconds: 15),
+    this.maxPullPages = defaultMaxPullPages,
   }) : _cursors = cursors ?? SyncCursorStore.inMemory(),
        _failures = failures ?? SyncFailureStore.inMemory(),
        _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline),
@@ -141,6 +143,11 @@ class SyncService {
   /// How long after a [syncAll] stopped at [maxAutomaticReruns] the one
   /// delayed retry runs.
   final Duration capRetryDelay;
+
+  /// The most pages one table pulls in one cycle ([pullPageSize] rows each).
+  /// A server that keeps answering full pages cannot hold the cycle for
+  /// ever; the next cycle continues from the stored cursor.
+  final int maxPullPages;
 
   final SyncCursorStore _cursors;
   final SyncFailureStore _failures;
@@ -1045,7 +1052,8 @@ class SyncService {
         table: 'medications',
         report: report,
         force: force,
-        fetch: (since) => _remote(medicationRemote!.getMedicationsSince(since)),
+        fetch: (since, after) =>
+            _remote(medicationRemote!.getMedicationsSince(since, after: after)),
         idOf: (m) => m.id,
         updatedAtOf: (m) => m.updatedAt,
         deletedAtOf: (m) => m.deletedAt,
@@ -1056,7 +1064,8 @@ class SyncService {
         table: 'treatments',
         report: report,
         force: force,
-        fetch: (since) => _remote(treatmentRemote!.getTreatmentsSince(since)),
+        fetch: (since, after) =>
+            _remote(treatmentRemote!.getTreatmentsSince(since, after: after)),
         idOf: (t) => t.id,
         updatedAtOf: (t) => t.updatedAt,
         deletedAtOf: (t) => t.deletedAt,
@@ -1068,8 +1077,9 @@ class SyncService {
       table: 'prescriptions',
       report: report,
       force: force,
-      fetch: (since) =>
-          _remote(prescriptionRemote!.getPrescriptionsSince(since)),
+      fetch: (since, after) => _remote(
+        prescriptionRemote!.getPrescriptionsSince(since, after: after),
+      ),
       idOf: (p) => p.id,
       updatedAtOf: (p) => p.updatedAt,
       deletedAtOf: (p) => p.deletedAt,
@@ -1080,7 +1090,8 @@ class SyncService {
       table: 'dose_logs',
       report: report,
       force: force,
-      fetch: (since) => _remote(doseLogRemote!.getDoseLogsSince(since)),
+      fetch: (since, after) =>
+          _remote(doseLogRemote!.getDoseLogsSince(since, after: after)),
       idOf: (d) => d.id,
       updatedAtOf: (d) => d.updatedAt,
       deletedAtOf: (d) => d.deletedAt,
@@ -1097,19 +1108,30 @@ class SyncService {
     }
   }
 
+  /// The default for [maxPullPages]: 50,000 rows per table per cycle.
+  static const defaultMaxPullPages = 50;
+
   /// Delta pull for one table: asks the remote only for rows newer than the
   /// stored cursor, applies tombstones as hard deletes, and advances the
-  /// cursor (with a 1 s overlap) to the newest `updated_at` it saw.
+  /// cursor (with a 1 s overlap) to the newest `updated_at` it stored.
   ///
-  /// A failure to fetch the table at all is normally recorded and skipped, so
-  /// the other tables still sync. When [force] is set the caller has already
-  /// cleared the local database, so the same failure is rethrown as
+  /// The rows come in pages of [pullPageSize], oldest first, each page
+  /// starting after the last row of the one before (see `pullPage`), until a
+  /// page comes back short or [maxPullPages] pages were read. The cursor is
+  /// stored after every page, so a failure part-way leaves it at the end of
+  /// the last page that was fully stored, and the next cycle picks up from
+  /// there. Once a row of a page fails to apply, the cursor stays where it
+  /// was for the rest of the cycle, so that row is fetched again.
+  ///
+  /// A failure to fetch a page is normally recorded and ends this table's
+  /// pull, so the other tables still sync. When [force] is set the caller has
+  /// already cleared the local database, so the same failure is rethrown as
   /// [_FetchFailedFatally] and aborts the whole cycle instead.
   Future<void> _pullTable<T>({
     required String table,
     required SyncReport report,
     required bool force,
-    required Future<List<T>> Function(DateTime? since) fetch,
+    required Future<List<T>> Function(DateTime? since, PullKey? after) fetch,
     required String Function(T) idOf,
     required DateTime? Function(T) updatedAtOf,
     required DateTime? Function(T) deletedAtOf,
@@ -1117,40 +1139,73 @@ class SyncService {
     required Future<void> Function(T row) upsert,
   }) async {
     final since = force ? null : await _cursors.lastPullAt(table);
-    final List<T> rows;
-    try {
-      rows = await fetch(since);
-    } catch (e) {
-      report.failures.add(SyncFailure(table, '*', 'pull: $e'));
-      if (force) throw _FetchFailedFatally(table, e);
-      return;
-    }
-    DateTime? newest;
-    var anyFailure = false;
-    for (final row in rows) {
+    PullKey? after;
+    var cursorHeld = false;
+    for (var page = 0; page < maxPullPages; page++) {
+      final List<T> rows;
       try {
-        if (deletedAtOf(row) != null) {
-          await delete(idOf(row));
-          report.deleted++;
-        } else {
-          await upsert(row);
-        }
-        report.pulled++;
+        rows = await fetch(since, after);
       } catch (e) {
-        anyFailure = true;
-        report.failures.add(SyncFailure(table, idOf(row), 'apply: $e'));
+        report.failures.add(SyncFailure(table, '*', 'pull: $e'));
+        if (force) throw _FetchFailedFatally(table, e);
+        return;
       }
-      final u = updatedAtOf(row)?.toUtc();
-      if (u != null && (newest == null || u.isAfter(newest))) newest = u;
+      for (final row in rows) {
+        try {
+          if (deletedAtOf(row) != null) {
+            await delete(idOf(row));
+            report.deleted++;
+          } else {
+            await upsert(row);
+          }
+          report.pulled++;
+        } catch (e) {
+          cursorHeld = true;
+          report.failures.add(SyncFailure(table, idOf(row), 'apply: $e'));
+        }
+      }
+      final last = rows.isEmpty ? null : rows.last;
+      final lastStamp = last == null ? null : updatedAtOf(last)?.toUtc();
+      if (last != null && lastStamp == null) {
+        // No position to continue from; the rows are stored, the cursor
+        // stays, and the next cycle asks again.
+        report.failures.add(
+          SyncFailure(table, idOf(last), 'pull: row without updated_at'),
+        );
+        return;
+      }
+      if (last != null) after = PullKey(lastStamp!, idOf(last));
+      final complete = rows.length < pullPageSize;
+      final stamp = after?.updatedAt;
+      if (!cursorHeld && stamp != null) {
+        await _storePullCursor(table, stamp, complete: complete);
+      }
+      if (complete) return;
     }
-    if (newest != null && !anyFailure) {
-      // Rows stamped by the app itself (1970) are never meant to come with a
-      // delta pull; a cursor left before them would fetch all of them again
-      // on every cycle while no real change has been seen.
-      var cursor = newest.subtract(const Duration(seconds: 1));
-      if (cursor.isBefore(_weakStampCeiling)) cursor = _weakStampCeiling;
-      await _cursors.setLastPullAt(table, cursor);
+    debugPrint(
+      'Sync: $table pull stopped after $maxPullPages pages; '
+      'the next cycle continues',
+    );
+  }
+
+  /// Stores the cursor for a pull whose last stored row has [stamp].
+  ///
+  /// Rows stamped by the app itself (1970) are never meant to come with a
+  /// delta pull; once a pull has read to the end ([complete]), a cursor left
+  /// before them would fetch all of them again on every cycle while no real
+  /// change has been seen, so it is lifted past them. A pull that stopped
+  /// part-way keeps the cursor just before its last row even there, so the
+  /// app-stamped rows it has not read yet still come with the next cycle.
+  Future<void> _storePullCursor(
+    String table,
+    DateTime stamp, {
+    required bool complete,
+  }) async {
+    var cursor = stamp.subtract(const Duration(seconds: 1));
+    if (complete && cursor.isBefore(_weakStampCeiling)) {
+      cursor = _weakStampCeiling;
     }
+    await _cursors.setLastPullAt(table, cursor);
   }
 
   Future<void> _pullFamilies(SyncReport report, {bool failFast = false}) async {
