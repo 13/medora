@@ -1284,6 +1284,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get searchAifaByName => 'AIFA-Datenbank durchsuchen';
 
   @override
+  String get searchSupplementByName =>
+      'Nahrungsergänzungsmittel-Register durchsuchen';
+
+  @override
+  String get supplementSearchHint => 'Produktname';
+
+  @override
   String get quantityUnit => 'Einheit';
 
   @override

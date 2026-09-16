@@ -570,6 +570,8 @@
   "formLabel": "Form",
   "atcCodeLabel": "ATC Code",
   "searchAifaByName": "Search AIFA Database",
+  "searchSupplementByName": "Search the supplement register",
+  "supplementSearchHint": "Product name",
 
   "quantityUnit": "Unit",
   "unitPieces": "Pieces",

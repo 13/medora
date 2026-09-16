@@ -1279,6 +1279,12 @@ class AppLocalizationsIt extends AppLocalizations {
   String get searchAifaByName => 'Cerca nel database AIFA';
 
   @override
+  String get searchSupplementByName => 'Cerca nel registro integratori';
+
+  @override
+  String get supplementSearchHint => 'Nome del prodotto';
+
+  @override
   String get quantityUnit => 'Unità';
 
   @override

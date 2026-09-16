@@ -1268,6 +1268,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchAifaByName => 'Search AIFA Database';
 
   @override
+  String get searchSupplementByName => 'Search the supplement register';
+
+  @override
+  String get supplementSearchHint => 'Product name';
+
+  @override
   String get quantityUnit => 'Unit';
 
   @override

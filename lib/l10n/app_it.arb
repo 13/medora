@@ -431,6 +431,8 @@
   "formLabel": "Forma",
   "atcCodeLabel": "Codice ATC",
   "searchAifaByName": "Cerca nel database AIFA",
+  "searchSupplementByName": "Cerca nel registro integratori",
+  "supplementSearchHint": "Nome del prodotto",
 
   "quantityUnit": "Unità",
   "unitPieces": "Pezzi",

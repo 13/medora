@@ -431,6 +431,8 @@
   "formLabel": "Darreichungsform",
   "atcCodeLabel": "ATC-Code",
   "searchAifaByName": "AIFA-Datenbank durchsuchen",
+  "searchSupplementByName": "Nahrungsergänzungsmittel-Register durchsuchen",
+  "supplementSearchHint": "Produktname",
 
   "quantityUnit": "Einheit",
   "unitPieces": "Stück",

@@ -2419,6 +2419,18 @@ abstract class AppLocalizations {
   /// **'Search AIFA Database'**
   String get searchAifaByName;
 
+  /// No description provided for @searchSupplementByName.
+  ///
+  /// In en, this message translates to:
+  /// **'Search the supplement register'**
+  String get searchSupplementByName;
+
+  /// No description provided for @supplementSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Product name'**
+  String get supplementSearchHint;
+
   /// No description provided for @quantityUnit.
   ///
   /// In en, this message translates to:
