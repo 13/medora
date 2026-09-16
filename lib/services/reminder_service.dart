@@ -227,6 +227,36 @@ class ReminderService implements ReminderPort {
   @override
   Future<void> cancelAll() => cancelAllReminders();
 
+  /// Whether [id] belongs to the stock and expiry scheduler.
+  ///
+  /// [stockAlertId] hands out offsets 8 and 9 of the same 16-slot block the
+  /// dose reminders take offsets 0-3 of, so the low nibble says who owns it.
+  static bool _isStockAlertId(int id) => (id & 0xF) == 0x8 || (id & 0xF) == 0x9;
+
+  @override
+  Future<void> cancelAllDoses() async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    // Enumerated rather than cancelled wholesale: `cancelAll()` would take
+    // the stock and expiry alerts with it, and their owner's snapshot would
+    // still claim they are booked — so they would die on every cold start
+    // and never come back.
+    final List<PendingNotificationRequest> pending;
+    try {
+      pending = await _notifications.pendingNotificationRequests();
+    } catch (e) {
+      // Nothing is cancelled, which is the safe half of the trade: the ids
+      // are re-used in place when the doses are scheduled again, so at worst
+      // a stale reminder survives until its own dose is reconciled.
+      debugPrint('Reminders: could not list pending notifications: $e');
+      return;
+    }
+    for (final request in pending) {
+      if (_isStockAlertId(request.id)) continue;
+      await _notifications.cancel(id: request.id);
+    }
+  }
+
   @override
   Future<void> cancelForDose(String doseId) async {
     if (!_supported) return;

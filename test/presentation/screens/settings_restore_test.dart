@@ -261,7 +261,7 @@ void main() {
     expect(find.textContaining('${manifest.totalRows} rows'), findsOneWidget);
     expect(find.text('1.0.0+11'), findsOneWidget);
 
-    final cancelledBefore = port.cancelAllCalls;
+    final cancelledBefore = port.cancelAllDosesCalls;
     // "Replace everything" is preselected.
     await tester.tap(find.text('Restore'));
     await tester.pumpAndSettle();
@@ -273,7 +273,7 @@ void main() {
     expect(await db.query('medications'), hasLength(1));
     expect(await db.query('dose_logs'), hasLength(1));
     expect(
-      port.cancelAllCalls,
+      port.cancelAllDosesCalls,
       greaterThan(cancelledBefore),
       reason: 'the reminders are reset and reconciled after a restore',
     );

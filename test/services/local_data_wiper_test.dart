@@ -20,6 +20,8 @@ class _Port implements ReminderPort {
   @override
   Future<void> cancelAll() async => cancels++;
   @override
+  Future<void> cancelAllDoses() async {}
+  @override
   Future<void> cancelForDose(String doseId) async {}
   @override
   Future<void> scheduleForDose({
