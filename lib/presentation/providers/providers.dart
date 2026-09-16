@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
@@ -49,8 +50,10 @@ import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
+import 'package:medora/services/scan_temp_cleanup.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
@@ -317,6 +320,8 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         await ref.read(todaysDoseLogsProvider.notifier).refresh();
         ref.read(doseDataVersionProvider.notifier).bump();
       }
+      // Crop folders orphaned by a crash mid-scan (see scan_temp_cleanup).
+      if (!kIsWeb) await cleanScanTempDirs(await getTemporaryDirectory());
     },
     reminders: () =>
         ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
