@@ -152,6 +152,39 @@ void main() {
     expect(statuses, {SyncStatus.synced});
   });
 
+  test('a remembered pack EAN survives export and restore', () async {
+    final db = await AppDatabase.instance.database;
+    await db.insert('medications', {
+      'id': 'med-ean',
+      'name': 'Zinco-C',
+      'quantity': 1,
+      'minimum_stock_level': 0,
+      'barcode': '107018',
+      'ean': '8057737141836',
+      'created_at': '2026-03-01T08:00:00.000',
+      'updated_at': '2026-03-01T08:00:00.000',
+      'sync_status': SyncStatus.synced,
+    });
+
+    final file = await makeService().exportToFile(outDir);
+    final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
+    expect(json['schemaVersion'], 14);
+    final exported =
+        ((json['tables']! as Map)['medications']! as List).single as Map;
+    expect(exported['ean'], '8057737141836');
+
+    await AppDatabase.instance.clearAllData();
+    await makeService().restore(file, mode: RestoreMode.replace);
+
+    final restored = (await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: ['med-ean'],
+    )).single;
+    expect(restored['ean'], '8057737141836');
+    expect(restored['barcode'], '107018');
+  });
+
   test('restore replace drops rows that are not in the backup', () async {
     final db = await AppDatabase.instance.database;
     await seedEverything(db);

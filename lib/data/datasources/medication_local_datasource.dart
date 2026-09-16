@@ -126,12 +126,15 @@ class MedicationLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
+  /// The medication whose label code or EAN is [barcode] (a pack carries
+  /// both; a scan may produce either).
   Future<MedicationModel?> getMedicationByBarcode(String barcode) async {
     final db = await _db;
     final rows = await db.query(
       'medications',
-      where: 'barcode = ? AND sync_status != ?',
-      whereArgs: [barcode, SyncStatus.pendingDelete],
+      where: '(barcode = ? OR ean = ?) AND sync_status != ?',
+      whereArgs: [barcode, barcode, SyncStatus.pendingDelete],
+      limit: 1,
     );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
@@ -232,6 +235,7 @@ class MedicationLocalDatasource {
       minimumStockLevel: row['minimum_stock_level'] as int? ?? 0,
       storageLocation: row['storage_location'] as String?,
       barcode: row['barcode'] as String?,
+      ean: row['ean'] as String?,
       imagePath: row['image_path'] as String?,
       notes: row['notes'] as String?,
       isArchived: (row['is_archived'] as int? ?? 0) == 1,
@@ -264,6 +268,7 @@ class MedicationLocalDatasource {
       'minimum_stock_level': m.minimumStockLevel,
       'storage_location': m.storageLocation,
       'barcode': m.barcode,
+      'ean': m.ean,
       'image_path': m.imagePath,
       'notes': m.notes,
       'is_archived': m.isArchived ? 1 : 0,

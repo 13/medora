@@ -80,12 +80,12 @@ void main() {
       final upgraded = await AppDatabase.instance.database;
 
       expect(await columnsOf(upgraded, 'medications'), contains('deleted_at'));
-      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
+      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
 
       // Reopen: nothing re-applied, no duplicate rows.
       await AppDatabase.instance.reset();
       final again = await AppDatabase.instance.database;
-      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
+      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
       await again.close();
       await dir.delete(recursive: true);
     },
@@ -137,7 +137,7 @@ void main() {
       'med_def.jpg',
       null,
     ]);
-    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
+    expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
   });
@@ -200,11 +200,20 @@ void main() {
       expect(rows['n'], '2026-03-01T08:00:00.000');
       expect(rows['z'], isNot(endsWith('Z')));
       expect(DateTime.parse(rows['z']!), DateTime.utc(2026, 3, 1, 7).toLocal());
-      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13]);
+      expect(await AppDatabase.instance.appliedMigrations(), [11, 12, 13, 14]);
       await AppDatabase.instance.reset();
       await dir.delete(recursive: true);
     },
   );
+
+  test('migration 14 adds the ean column and its index', () async {
+    final db = await AppDatabase.instance.database;
+    expect(await columnsOf(db, 'medications'), contains('ean'));
+    final indexes = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'medications'",
+    );
+    expect(indexes.map((r) => r['name']), contains('idx_local_med_ean'));
+  });
 
   test('clearAllData empties every table', () async {
     final db = await AppDatabase.instance.database;

@@ -29,6 +29,7 @@ class MedicationModel {
     this.minimumStockLevel = AppConstants.defaultMinimumStock,
     this.storageLocation,
     this.barcode,
+    this.ean,
     this.imagePath,
     this.notes,
     this.isArchived = false,
@@ -55,6 +56,10 @@ class MedicationModel {
   final int minimumStockLevel;
   final String? storageLocation;
   final String? barcode;
+
+  /// The EAN barcode of the pack, alongside the label code in [barcode].
+  final String? ean;
+
   final String? imagePath;
   final String? notes;
   final bool isArchived;
@@ -112,6 +117,7 @@ class MedicationModel {
       minimumStockLevel: json['minimum_stock_level'] as int? ?? 0,
       storageLocation: json['storage_location'] as String?,
       barcode: json['barcode'] as String?,
+      ean: json['ean'] as String?,
       imagePath: json['image_path'] != null
           ? PhotoStorage.toStoredName(json['image_path'] as String)
           : null,
@@ -156,6 +162,7 @@ class MedicationModel {
       minimumStockLevel: map['minimum_stock_level'] as int? ?? 0,
       storageLocation: map['storage_location'] as String?,
       barcode: map['barcode'] as String?,
+      ean: map['ean'] as String?,
       imagePath: map['image_path'] as String?,
       notes: map['notes'] as String?,
       isArchived: (map['is_archived'] as int? ?? 0) == 1,
@@ -192,6 +199,7 @@ class MedicationModel {
       'minimum_stock_level': minimumStockLevel,
       'storage_location': storageLocation,
       'barcode': barcode,
+      'ean': ean,
       'image_path': imagePath,
       'notes': notes,
       'is_archived': isArchived,
@@ -221,6 +229,7 @@ class MedicationModel {
       minimumStockLevel: minimumStockLevel,
       storageLocation: storageLocation,
       barcode: barcode,
+      ean: ean,
       imagePath: imagePath,
       notes: notes,
       isArchived: isArchived,
@@ -250,6 +259,7 @@ class MedicationModel {
       minimumStockLevel: entity.minimumStockLevel,
       storageLocation: entity.storageLocation,
       barcode: entity.barcode,
+      ean: entity.ean,
       imagePath: entity.imagePath,
       notes: entity.notes,
       isArchived: entity.isArchived,

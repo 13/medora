@@ -54,7 +54,7 @@ is needed.
 ## Optional: cloud sync with Supabase
 
 1. Apply the SQL files in `supabase/migrations/` in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
-   - **Fresh project** (nothing applied yet): `supabase db push` applies both migrations.
+   - **Fresh project** (nothing applied yet): `supabase db push` applies all three migrations.
    - **Existing install** that ran `20260901000000_initial_schema.sql` by hand: the migration history is empty, so `supabase db push` would try to replay the initial schema. Tell Supabase it is already applied first, then push:
 
      ```bash
@@ -62,7 +62,7 @@ is needed.
      supabase db push
      ```
 
-   - Or skip the CLI entirely and paste only the new file (`20260914000000_tombstones_and_family.sql`) into the SQL editor. It is written to be re-runnable (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP POLICY IF EXISTS`).
+   - Or skip the CLI entirely and paste the newer files in order (`20260914000000_tombstones_and_family.sql`, then `20260916000000_medication_ean.sql`) into the SQL editor. They are written to be re-runnable (`IF NOT EXISTS`, `CREATE OR REPLACE`, `DROP POLICY IF EXISTS`). `20260916000000_medication_ean.sql` adds the `ean` column that a client on local schema v14 uploads with every medication, so apply it before syncing from an updated app.
 2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
 3. Run or build with the defines:
 

@@ -14,7 +14,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 13;
+const int kSchemaVersion = 14;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -75,5 +75,14 @@ final List<Migration> kMigrations = [
         );
       }
     }
+  }),
+  // v14: the EAN barcode of the pack, next to the label code in `barcode`.
+  // A scan that reads both remembers both, and a later scan of either finds
+  // the medication.
+  Migration(14, (db) async {
+    await db.execute('ALTER TABLE medications ADD COLUMN ean TEXT');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_local_med_ean ON medications(ean)',
+    );
   }),
 ];
