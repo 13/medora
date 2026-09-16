@@ -104,33 +104,6 @@ class TreatmentLocalDatasource {
     );
   }
 
-  /// The raw row for [id] while it has changes to push (any status but
-  /// `synced`), or null when it is synced or gone.
-  Future<Map<String, dynamic>?> getUnsyncedRow(String id) async {
-    final db = await _db;
-    final rows = await db.query(
-      'treatments',
-      where: 'id = ? AND sync_status != ?',
-      whereArgs: [id, SyncStatus.synced],
-    );
-    return rows.isEmpty ? null : rows.first;
-  }
-
-  /// Compare-and-set [markSynced]: marks the row synced only while its stored
-  /// `updated_at` is still [updatedAt] — the copy that was just pushed — and
-  /// it is not waiting to be deleted. A row edited or deleted while the push
-  /// was in flight stays pending. Returns whether the row was marked.
-  Future<bool> markSyncedIfUnchanged(String id, String updatedAt) async {
-    final db = await _db;
-    final count = await db.update(
-      'treatments',
-      {'sync_status': SyncStatus.synced},
-      where: 'id = ? AND updated_at = ? AND sync_status != ?',
-      whereArgs: [id, updatedAt, SyncStatus.pendingDelete],
-    );
-    return count > 0;
-  }
-
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('treatments');

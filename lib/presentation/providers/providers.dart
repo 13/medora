@@ -141,12 +141,15 @@ final medicationRepositoryProvider = Provider<MedicationRepository>(
   ),
 );
 
-final treatmentRepositoryProvider = Provider<TreatmentRepository>(
-  (ref) => TreatmentRepositoryImpl(
+final treatmentRepositoryProvider = Provider<TreatmentRepository>((ref) {
+  final cloud = ref.watch(treatmentDatasourceProvider) != null;
+  return TreatmentRepositoryImpl(
     localDatasource: ref.watch(treatmentLocalDatasourceProvider),
-    remoteDatasource: ref.watch(treatmentDatasourceProvider),
-  ),
-);
+    // The sync cycle is the only push path: a write asks for one, and it
+    // queues behind a cycle that is already running.
+    requestSync: cloud ? () => ref.read(syncServiceProvider).syncAll() : null,
+  );
+});
 
 final prescriptionRepositoryProvider = Provider<PrescriptionRepository>(
   (ref) => PrescriptionRepositoryImpl(
