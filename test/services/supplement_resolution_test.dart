@@ -23,6 +23,17 @@ CodeCandidate _supplement(
   alternatives: alternatives,
 );
 
+/// Built from a parameter on purpose: a non-const instance, so
+/// `identical` really pins the instance and not a canonicalised twin.
+CodeCandidate _aic(String code, {List<String> alternatives = const []}) =>
+    CodeCandidate(
+      code: code,
+      kind: CodeKind.aic,
+      sourceText: 'AIC $code',
+      box: const Rect.fromLTWH(0, 0, 10, 10),
+      alternatives: alternatives,
+    );
+
 void main() {
   final asked = <String>[];
   Future<List<SupplementEntry>> find(String code) async {
@@ -68,17 +79,21 @@ void main() {
 
   test('other kinds are never looked up', () async {
     final input = [
-      const CodeCandidate(
-        code: '034567891',
-        kind: CodeKind.aic,
-        sourceText: 'AIC 034567891',
-        box: Rect.fromLTWH(0, 0, 10, 10),
-        alternatives: ['134567891'],
-      ),
+      _aic('034567891', alternatives: const ['134567891']),
     ];
     final result = await resolveSupplementCandidates(input, find);
     expect(identical(result.single, input.single), isTrue);
     expect(asked, isEmpty);
+  });
+
+  test('a code is looked up once for the whole list', () async {
+    // Review M1: every lookup is a database round trip on the UI isolate.
+    final result = await resolveSupplementCandidates([
+      _supplement('999999', alternatives: ['888888']),
+      _supplement('888888', alternatives: ['107018']),
+    ], find);
+    expect(asked, ['999999', '888888', '107018']);
+    expect(result.map((c) => c.code), ['999999', '107018']);
   });
 
   test('a rewrite that collides with an existing chip is dropped', () async {

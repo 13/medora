@@ -22,6 +22,12 @@ Future<List<CodeCandidate>> resolveSupplementCandidates(
     for (final c in candidates)
       if (c.kind == CodeKind.supplement) c.code,
   };
+  // Every lookup is a database round trip on the UI isolate, and readings
+  // repeat across candidates, so each distinct code is asked once.
+  final known = <String, bool>{};
+  Future<bool> isKnown(String code) async =>
+      known[code] ??= (await findByCode(code)).isNotEmpty;
+
   for (final candidate in candidates) {
     if (candidate.kind != CodeKind.supplement) {
       resolved.add(candidate);
@@ -29,7 +35,7 @@ Future<List<CodeCandidate>> resolveSupplementCandidates(
     }
     String? match;
     for (final code in [candidate.code, ...candidate.alternatives]) {
-      if ((await findByCode(code)).isNotEmpty) {
+      if (await isKnown(code)) {
         match = code;
         break;
       }

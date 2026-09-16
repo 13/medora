@@ -137,7 +137,15 @@ List<CodeCandidate> findCodeCandidates(
         box: boxFor(span),
         alternatives: codeOf == null
             ? const []
-            : _alternativeCodes(text, span, repairs, prefixes, code, codeOf),
+            : _alternativeCodes(
+                text,
+                span,
+                repairs,
+                prefixes,
+                kind,
+                code,
+                codeOf,
+              ),
       );
       found.add(candidate);
       lineOf[candidate] = lineIndex;
@@ -711,6 +719,11 @@ final _edgePunctuation = RegExp(r'^[.:,;]+|[.:,;]+$');
 /// a lookalike letter is read as a prefix plus a code: the letter is left
 /// unrepaired (so spans and element boxes still line up) and [prefixes]
 /// maps its position to the digit it would otherwise have become.
+/// A [prefixes] entry says only that the character at that position stands
+/// in front of the code; the code behind it may need no repair at all
+/// (`COD MINSAN: G123456`), so an entry never implies a [repairs] entry.
+/// Both readers ([_codeEdge] and [_alternativeCodes]) use the position
+/// alone, which is the invariant that holds either way.
 ({String text, Map<int, String> repairs, Map<int, String> prefixes})
 _repairCodeTokens(String text) {
   final repairs = <int, String>{};
@@ -779,6 +792,7 @@ List<String> _alternativeCodes(
   _Span span,
   Map<int, String> repairs,
   Map<int, String> prefixes,
+  CodeKind kind,
   String code,
   String Function(String) codeOf,
 ) {
@@ -819,8 +833,10 @@ List<String> _alternativeCodes(
     }
   }
   // The prefix read as its digit after all: the same readings, one digit
-  // longer. Only for codes whose length is not fixed (not AIC).
-  if (prefix != null && code.length != maxRepairedAicDigits) {
+  // longer. Only for kinds whose length is not fixed: an AIC with a tenth
+  // digit is no AIC, while a supplement code of any length may have one
+  // (review M4 — keyed on the kind, not on the length of this reading).
+  if (prefix != null && kind != CodeKind.aic) {
     for (final reading in [code, ...result]) {
       if (result.length == maxCodeAlternatives) break;
       final alternative = codeOf('$prefix$reading');
