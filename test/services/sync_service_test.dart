@@ -147,6 +147,9 @@ class RejectingDoseRemote extends FakeDoseLogRemote {
   final Set<String> hideIds = {};
   FakeRemoteTable? prescriptions;
 
+  /// When set, the read-back never answers.
+  Object? readBackError;
+
   /// Every insert request, as the ids it carried.
   final List<List<String>> inserts = [];
 
@@ -172,10 +175,14 @@ class RejectingDoseRemote extends FakeDoseLogRemote {
   }
 
   @override
-  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async => [
-    for (final d in await super.getDoseLogsByIds(ids))
-      if (!hideIds.contains(d.id)) d,
-  ];
+  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async {
+    final error = readBackError;
+    if (error != null) throw error;
+    return [
+      for (final d in await super.getDoseLogsByIds(ids))
+        if (!hideIds.contains(d.id)) d,
+    ];
+  }
 }
 
 /// Seeds a prescription and generates its whole schedule as `pending_create`
@@ -1768,10 +1775,16 @@ void main() {
         [ids[2]],
       ]);
 
-      // After its backoff the bad row goes out alone; once the server takes
-      // it, it is synced like the others.
-      remote.rejectIds.clear();
+      // After its backoff the bad row goes out alone, and fails alone.
       h.clock.advance(const Duration(hours: 1));
+      final again = (await h.service.syncAll())!;
+      expect(remote.inserts.last, [ids[1]]);
+      expect(again.failures.map((f) => f.id), [ids[1]]);
+      expect((await h.failures.get('dose_logs', ids[1]))!.count, 2);
+
+      // Once the server takes it, it is synced like the others.
+      remote.rejectIds.clear();
+      h.clock.advance(const Duration(hours: 2));
       await h.service.syncAll();
       expect(remote.inserts.last, [ids[1]]);
       expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
@@ -1829,6 +1842,22 @@ void main() {
         SyncStatus.synced,
       ]);
       expect(await h.failures.get('dose_logs', ids.first), isNotNull);
+    });
+
+    test('a read-back without an answer leaves the rows pending with '
+        'backoff', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      remote.readBackError = TimeoutException('no answer');
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => f.id), unorderedEquals(ids));
+      expect(await syncStatuses(ids), everyElement(SyncStatus.pendingCreate));
+      for (final id in ids) {
+        expect(await h.failures.get('dose_logs', id), isNotNull);
+      }
     });
 
     test('a batch that fails does not stop the batches after it', () async {
