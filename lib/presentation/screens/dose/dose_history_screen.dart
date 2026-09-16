@@ -309,32 +309,70 @@ class _DoseHistoryTile extends StatelessWidget {
             ),
         ],
       ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            scheduledTime,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          Text(
-            statusLabel,
-            style: TextStyle(
-              color: statusColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+      // Cap the column, do not let it take the row. A ListTile hands its
+      // trailing slot loose constraints - the whole 320 dp of content width
+      // at 360 dp - so this column claimed its natural width and the title
+      // was left whatever remained (at 360 dp the title's box is always
+      // 260 dp minus this column). In German at 1.6x the status word is
+      // "Ueberspringen" and the column took 121.2 dp, so "Tachipirina 1000"
+      // got 138.8 dp for a word needing 140.2 and was broken mid-word.
+      // Nothing overflowed sideways and nothing left the viewport, so
+      // takeException stayed silent and no earlier test saw it.
+      //
+      // The slot is also only 56 dp tall, and a taken dose stacks three
+      // lines in it: at 1.6x that column overflowed the slot by 19 dp, the
+      // same way the Home Low Stock row's trailing column did. One guard
+      // settles both - BoxFit.scaleDown fits the column to the slot in
+      // whichever direction it does not fit, and only ever shrinks.
+      //
+      // The cap is bounded on both sides and both bounds are measured, not
+      // guessed. It must stay above 0.3225: German's widest column is
+      // 103.2 dp of the 320 dp slot at 1.3x, the top of Android's font-size
+      // slider, and a cap below that would narrow a column that fits, which
+      // is shrinking text the user asked to be bigger for no reason. It must stay below 0.3744, which is
+      // the 119.8 dp that leaves "Tachipirina 1000" the 140.2 dp it needs
+      // at 1.6x. 0.35 sits between them with about 9 dp either side. German
+      // is the only locale this ever bites: Italian and English want
+      // 76.5 dp and 72.4 dp at that same 1.6x.
+      //
+      // The time and the status repeat what the row already says - the
+      // leading icon carries the same status in colour - so this column is
+      // what gives way, and the medication name keeps its row.
+      trailing: LayoutBuilder(
+        builder: (context, constraints) => ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.35),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  scheduledTime,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (takenTimeStr != null)
+                  Text(
+                    '@ $takenTimeStr',
+                    style: TextStyle(
+                      color: context.colors.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                  ),
+              ],
             ),
           ),
-          if (takenTimeStr != null)
-            Text(
-              '@ $takenTimeStr',
-              style: TextStyle(
-                color: context.colors.onSurfaceVariant,
-                fontSize: 10,
-              ),
-            ),
-        ],
+        ),
       ),
       isThreeLine: true,
     );
