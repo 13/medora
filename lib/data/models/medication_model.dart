@@ -199,7 +199,11 @@ class MedicationModel {
       'minimum_stock_level': minimumStockLevel,
       'storage_location': storageLocation,
       'barcode': barcode,
-      'ean': ean,
+      // Only sent when set, like `deleted_at` below: a project that has not
+      // applied the `ean` migration would otherwise reject every row, not
+      // just the ones that carry an EAN. A cleared EAN therefore stays on
+      // the server - acceptable for a remembered-once field.
+      if (ean != null) 'ean': ean,
       'image_path': imagePath,
       'notes': notes,
       'is_archived': isArchived,
