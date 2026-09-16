@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/extensions.dart';
@@ -24,6 +25,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/treatment/treatment_detail_screen.dart';
+import 'package:medora/services/export_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/failing_dose_repo.dart';
@@ -58,15 +60,15 @@ void main() {
   });
   tearDown(tearDownTestDatabase);
 
-  Future<List<Override>> overrides() async => [
+  Future<List<Override>> overrides({
+    PlatformCapabilities caps = PlatformCapabilities.desktop,
+  }) async => [
     sharedPreferencesProvider.overrideWithValue(
       await SharedPreferences.getInstance(),
     ),
     syncStartupDelayProvider.overrideWithValue(Duration.zero),
     reminderPortProvider.overrideWithValue(FakePort()),
-    platformCapabilitiesProvider.overrideWithValue(
-      PlatformCapabilities.desktop,
-    ),
+    platformCapabilitiesProvider.overrideWithValue(caps),
     nowProvider.overrideWithValue(() => now),
   ];
 
@@ -80,6 +82,7 @@ void main() {
     double scale = 1.0,
     Future<void> Function()? beforePump,
     List<Override> extraOverrides = const [],
+    PlatformCapabilities caps = PlatformCapabilities.desktop,
   }) async {
     await TreatmentLocalDatasource().upsert(
       TreatmentModel(
@@ -97,7 +100,10 @@ void main() {
     await pumpMedoraApp(
       tester,
       withTextScale(scale, const TreatmentDetailScreen(treatmentId: 't1')),
-      overrides: [...await overrides(), ...extraOverrides],
+      overrides: [
+        ...await overrides(caps: caps),
+        ...extraOverrides,
+      ],
       locale: locale,
     );
     await tester.pumpAndSettle();
@@ -803,6 +809,353 @@ void main() {
             ),
             screen,
           );
+          expect(tester.takeException(), isNull);
+        });
+      }
+    });
+  });
+
+  group('what was taken, and sharing the episode', () {
+    const shareChannel = MethodChannel('dev.fluttercommunity.plus/share');
+
+    /// The texts handed to the share sheet.
+    List<String> captureShares(WidgetTester tester) {
+      final shared = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        shareChannel,
+        (call) async {
+          shared.add((call.arguments as Map)['text'] as String);
+          return 'dev.fluttercommunity.plus/share/success';
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          shareChannel,
+          null,
+        ),
+      );
+      return shared;
+    }
+
+    Future<void> insertMedication(String id, String name) async =>
+        (await AppDatabase.instance.database).insert('medications', {
+          'id': id,
+          'name': name,
+          'quantity': 10,
+          'minimum_stock_level': 0,
+          'created_at': '2026-03-01T08:00:00.000',
+          'updated_at': '2026-03-01T08:00:00.000',
+          'sync_status': 'synced',
+        });
+
+    Future<void> insertPrescription(
+      String id, {
+      required String medicationId,
+      String treatmentId = 't1',
+      String scheduleType = 'fixed_interval',
+      int durationDays = 7,
+      String startTime = '2026-03-03T08:00:00.000',
+    }) async => (await AppDatabase.instance.database).insert('prescriptions', {
+      'id': id,
+      'treatment_id': treatmentId,
+      'medication_id': medicationId,
+      'dosage': '1 tablet',
+      'dosage_amount': 1.0,
+      'interval_hours': 8,
+      'duration_days': durationDays,
+      'start_time': startTime,
+      'is_active': 1,
+      'auto_diminish': 0,
+      'schedule_type': scheduleType,
+      'created_at': '2026-03-03T08:00:00.000',
+      'updated_at': '2026-03-03T08:00:00.000',
+      'sync_status': 'synced',
+    });
+
+    var doseSeq = 0;
+    Future<void> insertDose(
+      String prescriptionId,
+      DateTime at,
+      String status,
+    ) async => (await AppDatabase.instance.database).insert('dose_logs', {
+      'id': 'dose-${doseSeq++}',
+      'prescription_id': prescriptionId,
+      'scheduled_time': at.toIso8601String(),
+      'taken_time': status == 'taken' ? at.toIso8601String() : null,
+      'status': status,
+      'created_at': '2026-03-03T08:00:00.000',
+      'updated_at': '2026-03-03T08:00:00.000',
+      'sync_status': 'synced',
+    });
+
+    /// Ibuprofen every 8 h from Mar 3, 08:00 for 7 days (21 doses). By the
+    /// test clock (Mar 5, 12:00) seven are due: five taken, one missed and
+    /// one still pending, overdue. The other fourteen are still to come.
+    Future<void> seedScheduled() async {
+      await insertMedication('m1', 'Ibuprofen');
+      await insertPrescription('p1', medicationId: 'm1');
+      for (var i = 0; i < 21; i++) {
+        final at = DateTime(2026, 3, 3, 8).add(Duration(hours: 8 * i));
+        await insertDose(
+          'p1',
+          at,
+          i < 5
+              ? 'taken'
+              : i == 5
+              ? 'missed'
+              : 'pending',
+        );
+      }
+    }
+
+    /// Tachipirina as needed, taken on Mar 3 and twice on Mar 4.
+    Future<void> seedAsNeeded({bool taken = true}) async {
+      await insertMedication('m2', 'Tachipirina');
+      await insertPrescription(
+        'p2',
+        medicationId: 'm2',
+        scheduleType: 'as_needed',
+        durationDays: 0,
+        // Listed after the scheduled one, which starts earlier.
+        startTime: '2026-03-03T09:00:00.000',
+      );
+      if (!taken) return;
+      await insertDose('p2', DateTime(2026, 3, 3, 21), 'taken');
+      await insertDose('p2', DateTime(2026, 3, 4, 9), 'taken');
+      await insertDose('p2', DateTime(2026, 3, 4, 15), 'taken');
+    }
+
+    /// Another episode with its own medicine and doses.
+    Future<void> seedOtherEpisode() async {
+      await TreatmentLocalDatasource().upsert(
+        TreatmentModel(
+          id: 't2',
+          name: 'Migräne',
+          startDate: DateTime(2026, 2, 2),
+          sickLeaveFrom: DateTime(2026, 2, 2),
+          doctor: 'Dr. Bianchi',
+        ),
+        syncStatus: 'synced',
+      );
+      await insertMedication('m9', 'Sumatriptan');
+      await insertPrescription('p9', medicationId: 'm9', treatmentId: 't2');
+      await insertDose('p9', DateTime(2026, 3, 3, 8), 'taken');
+    }
+
+    Future<void> openMenu(WidgetTester tester) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AppBar),
+          matching: find.byType(PopupMenuButton<String>),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a scheduled prescription counts only the doses due so far', (
+      tester,
+    ) async {
+      await seedAndPump(tester, beforePump: seedScheduled);
+      expect(find.text('5 of 7 taken'), findsOneWidget);
+    });
+
+    testWidgets('an as-needed prescription shows how many were taken, and '
+        'when', (tester) async {
+      await seedAndPump(tester, beforePump: seedAsNeeded);
+      expect(find.text('3 taken (Mar 3, 2026 – Mar 4, 2026)'), findsOneWidget);
+      expect(find.textContaining(' of '), findsNothing);
+    });
+
+    testWidgets('logging a dose updates the count at once', (tester) async {
+      await seedAndPump(tester, beforePump: () => seedAsNeeded(taken: false));
+      expect(find.text('Not taken'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('logDose_p2')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not taken'), findsNothing);
+      expect(find.text('1 taken (Mar 5, 2026)'), findsOneWidget);
+    });
+
+    testWidgets('German reads "5 von 7 eingenommen"', (tester) async {
+      await seedAndPump(
+        tester,
+        beforePump: seedScheduled,
+        locale: const Locale('de'),
+      );
+      expect(find.text('5 von 7 eingenommen'), findsOneWidget);
+    });
+
+    testWidgets('"Share record" hands over this episode, and only this one, '
+        'as text', (tester) async {
+      final shared = captureShares(tester);
+      await seedAndPump(
+        tester,
+        from: DateTime(2026, 3, 3),
+        ref: '1234567890',
+        doctor: 'Dr. Rossi, Bozen',
+        beforePump: () async {
+          await seedScheduled();
+          await seedAsNeeded();
+          await seedOtherEpisode();
+        },
+      );
+
+      await openMenu(tester);
+      await tester.tap(find.text('Share record'));
+      await tester.pumpAndSettle();
+
+      expect(shared, [
+        'Sinusitis\n'
+            'Illness: Mar 3, 2026 – Ongoing\n'
+            'Sick leave: Mar 3, 2026 – Ongoing (Day 3)\n'
+            'Certificate no.: 1234567890\n'
+            'Doctor: Dr. Rossi, Bozen\n'
+            'Medications:\n'
+            '- Ibuprofen: 1 tablet · Every 8 hours · 7 days\n'
+            '  5 of 7 taken\n'
+            '- Tachipirina: 1 tablet · As Needed\n'
+            '  3 taken (Mar 3, 2026 – Mar 4, 2026)',
+      ]);
+    });
+
+    testWidgets('German shares German text', (tester) async {
+      final shared = captureShares(tester);
+      await seedAndPump(
+        tester,
+        from: DateTime(2026, 3, 3),
+        to: DateTime(2026, 3, 4),
+        locale: const Locale('de'),
+        beforePump: seedAsNeeded,
+      );
+
+      await openMenu(tester);
+      await tester.tap(find.text('Verlauf teilen'));
+      await tester.pumpAndSettle();
+
+      expect(shared, [
+        'Sinusitis\n'
+            'Krankheit: 3. März 2026 – Laufend\n'
+            'Krankenstand: 3. März 2026 – 4. März 2026 (2 Tage)\n'
+            'Medikamente:\n'
+            '- Tachipirina: 1 tablet · Bei Bedarf\n'
+            '  3 eingenommen (3. März 2026 – 4. März 2026)',
+      ]);
+    });
+
+    testWidgets('without a share sheet there is no "Share record"', (
+      tester,
+    ) async {
+      await seedAndPump(tester, caps: PlatformCapabilities.web);
+      await openMenu(tester);
+      expect(find.text('Share record'), findsNothing);
+      expect(find.text('End Treatment'), findsOneWidget);
+    });
+
+    group('layout at 360 dp', () {
+      setUpAll(loadAppFonts);
+
+      for (final locale in const ['de', 'it', 'en']) {
+        testWidgets('the counts and the menu stay whole in $locale at 1.6x', (
+          tester,
+        ) async {
+          usePhone(tester);
+          useAppTextScale(tester, 1.6);
+          await seedAndPump(
+            tester,
+            beforePump: () async {
+              await seedScheduled();
+              await seedAsNeeded();
+            },
+            locale: Locale(locale),
+            scale: 1.6,
+          );
+          final l10n = lookupAppLocalizations(Locale(locale));
+          final labels = EpisodeLabels.fromL10n(l10n);
+          final scheduled = find.text(l10n.dosesTakenOfPlanned(5, 7));
+          final asNeeded = find.text(
+            '${l10n.dosesTakenAsNeeded(3)} '
+            '(${labels.date(DateTime(2026, 3, 3))} – '
+            '${labels.date(DateTime(2026, 3, 4))})',
+          );
+
+          void expectWhole(Finder text, Rect box) {
+            expect(text, findsOneWidget);
+            expect(MediaQuery.textScalerOf(tester.element(text)).scale(1), 1.6);
+            final data = tester.widget<Text>(text).data;
+            final fit = measureText(tester, text);
+            expect(
+              fit.minIntrinsic,
+              lessThanOrEqualTo(fit.maxWidth + 0.5),
+              reason: '"$data" is broken mid-word: $fit',
+            );
+            expect(fit.exceeded, isFalse, reason: '"$data" is cut: $fit');
+            final paragraph = tester.renderObject<RenderParagraph>(
+              find.descendant(of: text, matching: find.byType(RichText)),
+            );
+            expect(
+              paragraph.softWrap || fit.maxIntrinsic <= fit.maxWidth + 0.5,
+              isTrue,
+              reason: '"$data" does not wrap and is cut: $fit',
+            );
+            // A paragraph as wide as its box ends exactly on the box's
+            // edge, which Rect.contains does not count as inside.
+            final rect = tester.getRect(text);
+            final inside = box.inflate(0.5);
+            expect(
+              inside.contains(rect.topLeft) &&
+                  inside.contains(rect.bottomRight),
+              isTrue,
+              reason: '"$data" at $rect lies outside $box',
+            );
+          }
+
+          Rect cardOf(Finder text) => tester.getRect(
+            find.ancestor(of: text, matching: find.byType(Card)).first,
+          );
+
+          for (final text in [scheduled, asNeeded]) {
+            await tester.scrollUntilVisible(text, 100);
+            await tester.pumpAndSettle();
+            expectWhole(text, cardOf(text));
+          }
+          // "14 of 15 taken" is one short fact; it keeps to one line, in
+          // the same style and box as the count on screen.
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.descendant(of: scheduled, matching: find.byType(RichText)),
+          );
+          final painter = TextPainter(
+            text: TextSpan(
+              text: l10n.dosesTakenOfPlanned(14, 15),
+              style: paragraph.text.style,
+            ),
+            textDirection: paragraph.textDirection,
+            textScaler: paragraph.textScaler,
+          )..layout();
+          addTearDown(painter.dispose);
+          expect(
+            painter.maxIntrinsicWidth,
+            lessThanOrEqualTo(paragraph.constraints.maxWidth + 0.5),
+            reason: 'a two-digit count wraps',
+          );
+          expect(tester.takeException(), isNull);
+
+          await openMenu(tester);
+          final screen = tester.getRect(find.byType(Scaffold).first);
+          for (final label in [
+            l10n.shareEpisode,
+            l10n.endTreatment,
+            l10n.deleteTreatment,
+          ]) {
+            final text = find.text(label).last;
+            expectWhole(text, screen);
+            // A menu entry wrapped onto two lines is still whole, but the
+            // share entry must at least keep to the menu's width.
+            final item = tester.getRect(
+              find.ancestor(of: text, matching: find.byType(ListTile)).first,
+            );
+            expectWhole(text, item);
+          }
           expect(tester.takeException(), isNull);
         });
       }

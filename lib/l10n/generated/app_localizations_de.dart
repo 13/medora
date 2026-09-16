@@ -409,6 +409,31 @@ class AppLocalizationsDe extends AppLocalizations {
   String get doctorHint => 'z.B. Dr. Rossi, Bozen';
 
   @override
+  String get illness => 'Krankheit';
+
+  @override
+  String get sickLeavePeriod => 'Krankenstand';
+
+  @override
+  String dosesTakenOfPlanned(int taken, int total) {
+    return '$taken von $total eingenommen';
+  }
+
+  @override
+  String dosesTakenAsNeeded(int taken) {
+    String _temp0 = intl.Intl.pluralLogic(
+      taken,
+      locale: localeName,
+      other: '$taken eingenommen',
+      zero: 'Nicht eingenommen',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get shareEpisode => 'Verlauf teilen';
+
+  @override
   String get prescriptions => 'Verschreibungen';
 
   @override

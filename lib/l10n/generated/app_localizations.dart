@@ -784,6 +784,36 @@ abstract class AppLocalizations {
   /// **'e.g. Dr. Rossi, Bolzano'**
   String get doctorHint;
 
+  /// No description provided for @illness.
+  ///
+  /// In en, this message translates to:
+  /// **'Illness'**
+  String get illness;
+
+  /// Label of the sick-leave line in a shared episode, next to the illness line. Must read differently from 'illness' (in Italian both would be 'Malattia').
+  ///
+  /// In en, this message translates to:
+  /// **'Sick leave'**
+  String get sickLeavePeriod;
+
+  /// Doses of a scheduled prescription taken, out of the doses that were due up to now.
+  ///
+  /// In en, this message translates to:
+  /// **'{taken} of {total} taken'**
+  String dosesTakenOfPlanned(int taken, int total);
+
+  /// Doses logged for an as-needed prescription.
+  ///
+  /// In en, this message translates to:
+  /// **'{taken, plural, =0{Not taken} other{{taken} taken}}'**
+  String dosesTakenAsNeeded(int taken);
+
+  /// No description provided for @shareEpisode.
+  ///
+  /// In en, this message translates to:
+  /// **'Share record'**
+  String get shareEpisode;
+
   /// No description provided for @prescriptions.
   ///
   /// In en, this message translates to:

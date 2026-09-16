@@ -7,7 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/extensions.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
+import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/intake_count.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -21,6 +24,8 @@ import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart'
 import 'package:medora/presentation/screens/treatment/prescription_sheet.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
+import 'package:medora/services/export_service.dart';
+import 'package:share_plus/share_plus.dart';
 
 class TreatmentDetailScreen extends ConsumerStatefulWidget {
   const TreatmentDetailScreen({super.key, required this.treatmentId});
@@ -45,6 +50,10 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
     final prescriptionsAsync = ref.watch(
       prescriptionsByTreatmentProvider(widget.treatmentId),
     );
+    final episodeDoses =
+        ref.watch(doseLogsByTreatmentProvider(widget.treatmentId)).value ??
+        const <DoseLog>[];
+    final canShare = ref.watch(platformCapabilitiesProvider).hasFileShare;
     final treatment = treatmentsAsync.value
         ?.where((t) => t.id == widget.treatmentId)
         .firstOrNull;
@@ -64,6 +73,8 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                 PopupMenuButton<String>(
                   onSelected: (value) async {
                     switch (value) {
+                      case 'share':
+                        await _shareEpisode(treatment);
                       case 'end':
                         await confirmAndEndTreatment(context, ref, treatment);
                       case 'delete':
@@ -102,6 +113,16 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                     }
                   },
                   itemBuilder: (ctx) => [
+                    if (canShare)
+                      PopupMenuItem(
+                        value: 'share',
+                        child: ListTile(
+                          leading: const Icon(Icons.share),
+                          title: Text(l10n.shareEpisode),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
                     if (treatment.isActive)
                       PopupMenuItem(
                         value: 'end',
@@ -343,6 +364,13 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                 data: (prescriptions) {
                   return Column(
                     children: prescriptions.map((p) {
+                      final intake = _intakeText(
+                        l10n,
+                        p,
+                        treatment,
+                        episodeDoses,
+                        now,
+                      );
                       return Dismissible(
                         key: ValueKey(p.id),
                         direction: DismissDirection.endToStart,
@@ -642,6 +670,26 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                                   existing: p,
                                 ),
                               ),
+                              // What was taken, on its own row under the
+                              // tile: the subtitle leaves 144 dp at 360 dp and
+                              // 1.6x, and even in line with the title (216 dp)
+                              // "14 von 15 eingenommen" would wrap.
+                              if (intake != null)
+                                Padding(
+                                  padding: const EdgeInsetsDirectional.fromSTEB(
+                                    16,
+                                    0,
+                                    16,
+                                    8,
+                                  ),
+                                  child: Text(
+                                    intake,
+                                    key: Key('intake_${p.id}'),
+                                    style: context.text.bodySmall?.copyWith(
+                                      color: context.colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
                               // Nothing is scheduled, so there is nothing to
                               // tick off: each intake is logged here. Below
                               // the tile, not in its subtitle, which is too
@@ -708,6 +756,51 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
           label: l10n.undo,
           onPressed: () => unawaited(actions.undoTake(id)),
         ),
+      ),
+    );
+  }
+
+  /// "5 of 7 taken", or "3 taken (…)" for an as-needed prescription; null
+  /// while nothing of the schedule is due yet.
+  String? _intakeText(
+    AppLocalizations l10n,
+    Prescription p,
+    Treatment treatment,
+    List<DoseLog> doses,
+    DateTime now,
+  ) => intakeText(
+    IntakeCount.of(p, doses, now: now, treatmentActive: treatment.isActive),
+    EpisodeLabels.fromL10n(l10n),
+  );
+
+  /// Shares this episode, and nothing else, as plain text.
+  Future<void> _shareEpisode(Treatment treatment) async {
+    final l10n = AppLocalizations.of(context);
+    // Read fresh: the list on screen may still be loading.
+    final prescriptions = await ref.read(
+      prescriptionsByTreatmentProvider(widget.treatmentId).future,
+    );
+    final doses = await ref.read(
+      doseLogsByTreatmentProvider(widget.treatmentId).future,
+    );
+    if (!mounted) return;
+    final text = buildEpisodeSummary(
+      treatment: treatment,
+      prescriptions: prescriptions,
+      doses: doses,
+      labels: EpisodeLabels.fromL10n(l10n),
+      now: ref.read(nowProvider)(),
+      dosageText: (p) => prescriptionDosageLabel(l10n, p),
+    );
+    // An iPad anchors its share sheet to a rectangle; the screen will do.
+    final box = context.findRenderObject() as RenderBox?;
+    await SharePlus.instance.share(
+      ShareParams(
+        text: text,
+        subject: treatment.name,
+        sharePositionOrigin: box == null
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
       ),
     );
   }
