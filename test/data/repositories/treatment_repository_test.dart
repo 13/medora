@@ -86,6 +86,20 @@ void main() {
       expect(await syncStatus('t1'), SyncStatus.pendingUpdate);
     });
 
+    test('endTreatment on a row deleted on this device fails and keeps the '
+        'delete pending', () async {
+      await local.upsert(episode, syncStatus: SyncStatus.synced);
+      await local.markDeleted('t1');
+
+      final result = await repo.endTreatment('t1');
+      expect(result.isFailure, isTrue);
+
+      expect(await syncStatus('t1'), SyncStatus.pendingDelete);
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.deletedAt, isNotNull);
+      expect(stored.isActive, isTrue);
+    });
+
     test('endTreatment on a missing id fails instead of writing', () async {
       final result = await repo.endTreatment('nope');
       expect(result.isFailure, isTrue);

@@ -167,6 +167,9 @@ class TreatmentLocalDatasource {
       updatedAt: row['updated_at'] != null
           ? DateTime.tryParse(row['updated_at'] as String)
           : null,
+      deletedAt: row['deleted_at'] != null
+          ? DateTime.tryParse(row['deleted_at'] as String)
+          : null,
     );
   }
 

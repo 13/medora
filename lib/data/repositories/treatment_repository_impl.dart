@@ -123,6 +123,11 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
     try {
       final existing = await localDatasource.getTreatmentById(id);
       if (existing == null) return const Result.failure('Treatment not found');
+      // Ending a row deleted on this device would overwrite its tombstone
+      // and pending delete, silently undoing the delete.
+      if (existing.deletedAt != null) {
+        return const Result.failure('Treatment was deleted');
+      }
       final now = DateTime.now();
       // Copy, never rebuild: a field-by-field rebuild drops every column
       // the author did not list (this is how the sick-leave columns were
