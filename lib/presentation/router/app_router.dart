@@ -115,6 +115,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: AppRoutes.addMedication,
             builder: (_, state) => AddMedicationScreen(
               initialBarcode: state.uri.queryParameters['barcode'],
+              initialEan: state.uri.queryParameters['ean'],
               lookupResult: state.extra,
             ),
           ),

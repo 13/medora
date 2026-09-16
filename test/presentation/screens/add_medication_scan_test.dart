@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme.dart';
+import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -385,6 +386,68 @@ void main() {
     final l10n = await AppLocalizations.delegate.load(const Locale('en'));
     expect(field('707018'), findsOneWidget);
     expect(find.text(l10n.supplementNotFound), findsOneWidget);
+  });
+
+  testWidgets(
+    'a scanned supplement remembers the pack EAN on the saved medication',
+    (tester) async {
+      final registry = _FakeRegistry(const [_zinco]);
+      await pumpWithFakeScanner(
+        tester,
+        const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+        overrides: [
+          supplementRegistryServiceProvider.overrideWithValue(registry),
+        ],
+      );
+
+      await scanWithChip(tester);
+      expect(field('107018'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+      await tester.pumpAndSettle();
+
+      // A later scan of the pack's EAN finds the medication filed under its
+      // label code.
+      final saved = await MedicationLocalDatasource().getMedicationByBarcode(
+        '8057737141836',
+      );
+      expect(saved?.barcode, '107018');
+      expect(saved?.ean, '8057737141836');
+    },
+  );
+
+  testWidgets('a plain EAN scan is the barcode itself, with no second code', (
+    tester,
+  ) async {
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('8057737141836', CodeKind.ean),
+    );
+
+    await scanWithChip(tester);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Medication Name *').first,
+      'Moment',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+    await tester.pumpAndSettle();
+
+    final saved = await MedicationLocalDatasource().getMedicationByBarcode(
+      '8057737141836',
+    );
+    expect(saved?.barcode, '8057737141836');
+    expect(saved?.ean, isNull);
+  });
+
+  test('ScanResult equality includes the pack EAN', () {
+    expect(
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+      isNot(const ScanResult('107018', CodeKind.supplement)),
+    );
+    expect(
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+    );
   });
 
   test('ScanResult equality includes alternatives', () {

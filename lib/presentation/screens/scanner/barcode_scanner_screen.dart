@@ -120,6 +120,17 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Size _imageSize = Size.zero;
   List<CodeCandidate> _candidates = const [];
 
+  /// The EAN the same photo carried, when a barcode was decoded next to the
+  /// label code. Remembered on the medication so a later scan of either
+  /// code finds it; [addMedicationWithBarcode] drops it when the scanned
+  /// code already is that EAN.
+  String? get _bestEan {
+    for (final candidate in _candidates) {
+      if (candidate.kind == CodeKind.ean) return candidate.code;
+    }
+    return null;
+  }
+
   /// The inputs behind [_candidates], kept so an area rescan merges into
   /// them instead of replacing everything found so far.
   List<OcrLine> _photoLines = const [];
@@ -832,7 +843,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       case CodeKind.ean:
         _openEan(candidate);
       case CodeKind.other:
-        _leaveAndPush(addMedicationWithBarcode(candidate.code));
+        _leaveAndPush(addMedicationWithBarcode(candidate.code, ean: _bestEan));
     }
   }
 
@@ -918,7 +929,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Future<void> _openSupplement(CodeCandidate candidate) async {
     final code = candidate.code;
     if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
-      _leaveAndPush(addMedicationWithBarcode(code));
+      _leaveAndPush(addMedicationWithBarcode(code, ean: _bestEan));
       return;
     }
     final l10n = AppLocalizations.of(context);
@@ -954,7 +965,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           entry = await showSupplementPicker(context, entries);
         case SupplementNotFound():
           _leaveAndPush(
-            addMedicationWithBarcode(code),
+            addMedicationWithBarcode(code, ean: _bestEan),
             message: l10n.supplementNotFound,
           );
           return;
@@ -971,7 +982,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         if (!mounted) return;
         if (!use) {
           _leaveAndPush(
-            addMedicationWithBarcode(code),
+            addMedicationWithBarcode(code, ean: _bestEan),
             message: l10n.supplementNotFound,
           );
           return;
@@ -989,7 +1000,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   void _selectSupplement(SupplementEntry entry, String code) {
     final l10n = AppLocalizations.of(context);
     _leaveAndPush(
-      addMedicationWithBarcode(code),
+      addMedicationWithBarcode(code, ean: _bestEan),
       message: l10n.autoFilledFromBarcode,
       extra: entry,
     );
@@ -1016,7 +1027,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           message: l10n.scanMedicationInCabinet,
         );
       } else {
-        _leaveAndPush(addMedicationWithBarcode(candidate.code));
+        _leaveAndPush(addMedicationWithBarcode(candidate.code, ean: _bestEan));
       }
     } catch (e) {
       debugPrint('Cabinet barcode lookup error: $e');
@@ -1297,7 +1308,15 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
     if (widget.returnBarcodeOnly) {
       if (mounted) {
-        context.pop(ScanResult(rawCode, kind, alternatives: alternatives));
+        context.pop(
+          ScanResult(
+            rawCode,
+            kind,
+            alternatives: alternatives,
+            // The code itself is the EAN: nothing to remember beside it.
+            ean: kind == CodeKind.ean ? null : _bestEan,
+          ),
+        );
       }
       return;
     }
@@ -1478,7 +1497,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       }
     }
     _leaveAndPush(
-      addMedicationWithBarcode(code),
+      addMedicationWithBarcode(code, ean: _bestEan),
       message: l10n.autoFilledFromBarcode,
       extra: result,
     );

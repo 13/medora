@@ -36,11 +36,17 @@ class AddMedicationScreen extends ConsumerStatefulWidget {
     super.key,
     this.medicationId,
     this.initialBarcode,
+    this.initialEan,
     this.lookupResult,
   });
 
   final String? medicationId;
   final String? initialBarcode;
+
+  /// The pack's EAN, when the scan that opened this screen read one next
+  /// to the label code in [initialBarcode].
+  final String? initialEan;
+
   final Object? lookupResult;
 
   @override
@@ -82,6 +88,9 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   DateTime? _expiryDate;
   bool _isLoading = false;
   bool _isEditMode = false;
+
+  /// The pack's EAN, remembered next to the barcode field's label code.
+  String? _ean;
   Medication? _existingMedication;
   String? _imagePath;
 
@@ -99,6 +108,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
     _storageLocationController = TextEditingController();
     _barcodeController = TextEditingController(text: widget.initialBarcode);
+    _ean = widget.initialEan;
     _notesController = TextEditingController();
 
     _isEditMode = widget.medicationId != null;
@@ -214,6 +224,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           _minStockController.text = med.minimumStockLevel.toString();
           _storageLocationController.text = med.storageLocation ?? '';
           _barcodeController.text = med.barcode ?? '';
+          _ean = med.ean;
           _notesController.text = med.notes ?? '';
           _imagePath = med.imagePath;
         });
@@ -235,7 +246,10 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   Future<void> _openScanner() async {
     final result = await context.push<ScanResult>(AppRoutes.scannerReturnOnly);
     if (result == null || !mounted) return;
-    setState(() => _barcodeController.text = result.code);
+    setState(() {
+      _barcodeController.text = result.code;
+      _ean = result.ean;
+    });
     // The barcode field lives in Stock & storage: show what was filled.
     _stockExpanded.value = true;
     switch (result.kind) {
@@ -1002,6 +1016,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       barcode: _barcodeController.text.trim().isEmpty
           ? null
           : _barcodeController.text.trim(),
+      ean: _ean,
       imagePath: _imagePath,
       notes: _notesController.text.trim().isEmpty
           ? null

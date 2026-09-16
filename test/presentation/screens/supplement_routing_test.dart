@@ -108,4 +108,18 @@ void main() {
     );
     expect(addMedicationWithBarcode('A 1'), '/medications/add?barcode=A+1');
   });
+
+  test('a pack EAN read from the same photo rides along', () {
+    expect(
+      addMedicationWithBarcode('107018', ean: '8057737141836'),
+      '/medications/add?barcode=107018&ean=8057737141836',
+    );
+  });
+
+  test('an EAN that is the scanned code itself is not repeated', () {
+    expect(
+      addMedicationWithBarcode('8057737141836', ean: '8057737141836'),
+      '/medications/add?barcode=8057737141836',
+    );
+  });
 }

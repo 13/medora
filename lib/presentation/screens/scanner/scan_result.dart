@@ -14,7 +14,12 @@ import 'package:medora/services/code_candidates.dart';
 
 @immutable
 class ScanResult {
-  const ScanResult(this.code, this.kind, {this.alternatives = const []});
+  const ScanResult(
+    this.code,
+    this.kind, {
+    this.alternatives = const [],
+    this.ean,
+  });
 
   final String code;
   final CodeKind kind;
@@ -22,16 +27,24 @@ class ScanResult {
   /// See `CodeCandidate.alternatives`.
   final List<String> alternatives;
 
+  /// The EAN barcode the same photo carried next to [code], when [code] is
+  /// a label code rather than the EAN itself. Remembered on the medication
+  /// so a later scan of either finds it.
+  final String? ean;
+
   @override
   bool operator ==(Object other) =>
       other is ScanResult &&
       other.code == code &&
       other.kind == kind &&
+      other.ean == ean &&
       listEquals(other.alternatives, alternatives);
 
   @override
-  int get hashCode => Object.hash(code, kind, Object.hashAll(alternatives));
+  int get hashCode =>
+      Object.hash(code, kind, ean, Object.hashAll(alternatives));
 
   @override
-  String toString() => 'ScanResult(${kind.name} $code)';
+  String toString() =>
+      'ScanResult(${kind.name} $code${ean == null ? '' : ' ean $ean'})';
 }
