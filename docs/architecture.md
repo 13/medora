@@ -159,20 +159,32 @@ failing is skipped until `min(2^count minutes, 6 h)` after its last attempt.
 **Pull** is a delta per table: only rows newer than the stored cursor, tombstones
 (`deleted_at`) applied as hard local deletes, and the cursor advanced to the
 newest `updated_at` seen minus **1 second** of overlap, only when the whole table
-applied cleanly. **Conflicts** resolve **last write wins by
-`updated_at`** on both sides: the push reads the remote value first and leaves a
-row it would clobber for the pull to overwrite, while the pull keeps a locally
-pending row at least as new as the remote copy and never resurrects a row a
-local tombstone has deleted. `forcePush` skips that comparison; **force pull**
+applied cleanly; a dose cursor never sits before `1970-01-02`. **Conflicts**
+resolve **last write wins by `updated_at`** on both sides: the push reads the
+remote value first and leaves a row it would clobber for the pull to overwrite,
+while the pull keeps a locally pending row at least as new as the remote copy
+and never resurrects a row a local tombstone has deleted. The server stamps
+every update with its own clock, so of two explicit changes the one that
+reaches the server last wins, whenever it was made. An insert keeps the
+client's stamp, so a push whose answer carries the stamp it sent (a row
+created offline) is sent once more to take the server's, and devices that
+synced meanwhile still pull it. `forcePush` skips that comparison; **force pull**
 wipes local rows and re-downloads, aborting if a table cannot be fetched
 afterwards. Families are pulled separately, through the `join_family`
 security-definer RPC. **Doses** created on a device (a generated schedule, a
 logged dose) are inserted only where the server lacks their id, **100** per
 request, then read back and stored as synced, so a dose taken elsewhere is never
-replaced. A generated dose is stamped `1970-01-01`, and marking an overdue dose
-*missed* is a local conclusion: its stamp moves just past the previous one and
-nothing is queued, so any real change pulled later wins. On start and resume the
-sync runs before that marking. Every request has a **30 s** timeout and fails
+replaced; a batch the server refuses is sent again row by row, and the doses of
+a prescription the server refused wait for it. A generated dose is stamped
+`1970-01-01` and no delta pull brings it, so every device generates its own
+copies under the same ids (`dose_slot.dart`, from the prescription's wall-clock
+`start_time`): `DoseScheduleService` regenerates a prescription a pull stored
+as new or rescheduled, and on start, resume and after every sync it
+regenerates any running prescription whose stored doses differ from its
+scheduled times. Marking an overdue dose *missed* is a local conclusion: its
+stamp moves just past the previous one and nothing is queued, so any real
+change pulled later wins; a dose with an unpushed change is left for later. On
+start and resume the sync runs before that marking. Every request has a **30 s** timeout and fails
 like a network error. Each cycle fills a `SyncReport` that Settings renders,
 offering `discardFailedRow` per failed row; auto-sync fires **2 s** after
 connectivity returns, and a mid-cycle `syncAll()` is queued, up to **3**
