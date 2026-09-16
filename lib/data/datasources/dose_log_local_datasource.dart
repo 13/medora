@@ -52,9 +52,18 @@ class DoseLogLocalDatasource {
 
   /// Shared WHERE fragment: non-pending rows are always included (they are
   /// historical facts); pending rows only when their prescription/treatment
-  /// is active and their medication is not archived (or absent).
+  /// is active, their medication is not archived (or absent) and their
+  /// prescription has a schedule ([_scheduled]).
   static const _pendingOnlyIfActive =
-      '''(d.status != 'pending' OR ((p.is_active IS NULL OR p.is_active = 1) AND (t.id IS NULL OR t.is_active = 1) AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))))''';
+      '''(d.status != 'pending' OR ((p.is_active IS NULL OR p.is_active = 1) AND (t.id IS NULL OR t.is_active = 1) AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0)) AND $_scheduled))''';
+
+  /// An as-needed prescription has no schedule, so a pending dose of one is
+  /// never due: this app never creates one, but an older build that reads
+  /// 'as_needed' as a fixed interval generates them and syncs them over, and
+  /// a prescription switched to as-needed elsewhere leaves its old ones.
+  /// Such a dose is neither listed, nor reminded, nor marked missed.
+  static const _scheduled =
+      '''(p.schedule_type IS NULL OR p.schedule_type != 'as_needed')''';
 
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
     final now = DateTime.now();
@@ -102,8 +111,9 @@ class DoseLogLocalDatasource {
     return _dedupeById(rows).map(_fromRow).toList();
   }
 
-  /// Pending doses with scheduled_time in [start, end), for active
-  /// prescriptions/treatments and non-archived medications, earliest first.
+  /// Pending doses with scheduled_time in [start, end), for active scheduled
+  /// prescriptions, active treatments and non-archived medications, earliest
+  /// first.
   Future<List<DoseLogModel>> getPendingBetween(
     DateTime start,
     DateTime end,
@@ -117,6 +127,7 @@ class DoseLogLocalDatasource {
         AND (p.is_active IS NULL OR p.is_active = 1)
         AND (t.id IS NULL OR t.is_active = 1)
         AND (m.id IS NULL OR (m.is_archived IS NULL OR m.is_archived = 0))
+        AND $_scheduled
         ORDER BY d.scheduled_time ASC''',
       [
         start.toIso8601String(),
@@ -271,9 +282,9 @@ class DoseLogLocalDatasource {
   }
 
   /// Mark pending doses scheduled before [cutoff] as missed. Returns the
-  /// count. Scoped to doses whose prescription is active, whose treatment is
-  /// active (or absent), and whose medication is not archived (or absent) —
-  /// the same predicates [getPendingBetween] uses.
+  /// count. Scoped to doses whose prescription is active and scheduled,
+  /// whose treatment is active (or absent), and whose medication is not
+  /// archived (or absent) — the same predicates [getPendingBetween] uses.
   Future<int> markOverduePendingAsMissed(DateTime cutoff) async {
     final db = await _db;
     return db.rawUpdate(
@@ -289,6 +300,7 @@ class DoseLogLocalDatasource {
              WHERE p.is_active = 1
                AND (t.id IS NULL OR t.is_active = 1)
                AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
+               AND $_scheduled
            )''',
       [
         SyncStatus.pendingUpdate,

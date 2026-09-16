@@ -75,4 +75,96 @@ void main() {
   test('getDoseLogById returns null for unknown id', () async {
     expect(await DoseLogLocalDatasource().getDoseLogById('nope'), isNull);
   });
+
+  group('a pending dose of an as-needed prescription', () {
+    // Nothing here creates one any more, but an older app build that reads
+    // 'as_needed' as a fixed interval generates them and syncs them over,
+    // and a prescription switched to as-needed on another device leaves its
+    // old pending doses there. None of them is a dose anyone is due to take.
+    final at = DateTime(2026, 3, 1, 8);
+
+    Future<({String pending, String taken})> seed() async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      return (
+        pending: await seedDoseLog(db, s.prescriptionId, at),
+        taken: await seedDoseLog(
+          db,
+          s.prescriptionId,
+          at.add(const Duration(hours: 1)),
+          status: 'taken',
+          takenTime: at.add(const Duration(hours: 1)),
+        ),
+      );
+    }
+
+    test('is not listed for its day, while a taken one is', () async {
+      final ids = await seed();
+      final day = await DoseLogLocalDatasource().getDoseLogsByDateRange(
+        DateTime(2026, 3),
+        DateTime(2026, 3, 2),
+      );
+      expect(day.map((d) => d.id), [ids.taken]);
+    });
+
+    test('is not listed for today', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      final now = DateTime.now();
+      final midnight = DateTime(now.year, now.month, now.day);
+      await seedDoseLog(db, s.prescriptionId, midnight);
+      final taken = await seedDoseLog(
+        db,
+        s.prescriptionId,
+        midnight,
+        status: 'taken',
+        takenTime: midnight,
+      );
+      final today = await DoseLogLocalDatasource().getTodaysDoseLogs();
+      expect(today.map((d) => d.id), [taken]);
+    });
+
+    test('is never offered for a reminder', () async {
+      await seed();
+      final pending = await DoseLogLocalDatasource().getPendingBetween(
+        DateTime(2026, 3),
+        DateTime(2026, 3, 2),
+      );
+      expect(pending, isEmpty);
+    });
+
+    test('is never marked missed', () async {
+      final ids = await seed();
+      final changed = await DoseLogLocalDatasource().markOverduePendingAsMissed(
+        DateTime(2026, 3, 2),
+      );
+      expect(changed, 0);
+      final row = (await DoseLogLocalDatasource().getDoseLogById(ids.pending))!;
+      expect(row.status, DoseStatus.pending);
+    });
+  });
+
+  test('a pending dose of a scheduled prescription is still listed, '
+      'reminded and marked missed', () async {
+    // The control for the group above.
+    final db = await AppDatabase.instance.database;
+    final s = await seedPrescription(db);
+    final id = await seedDoseLog(db, s.prescriptionId, DateTime(2026, 3, 1, 8));
+    final ds = DoseLogLocalDatasource();
+    expect(
+      (await ds.getDoseLogsByDateRange(
+        DateTime(2026, 3),
+        DateTime(2026, 3, 2),
+      )).map((d) => d.id),
+      [id],
+    );
+    expect(
+      (await ds.getPendingBetween(
+        DateTime(2026, 3),
+        DateTime(2026, 3, 2),
+      )).map((d) => d.id),
+      [id],
+    );
+    expect(await ds.markOverduePendingAsMissed(DateTime(2026, 3, 2)), 1);
+  });
 }
