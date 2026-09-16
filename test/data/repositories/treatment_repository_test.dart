@@ -3,6 +3,7 @@ import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
+import 'package:medora/domain/entities/treatment.dart';
 
 import '../../helpers/test_database.dart';
 
@@ -101,6 +102,140 @@ void main() {
       final result = await repo.endTreatment('nope');
       expect(result.isFailure, isTrue);
       expect(await local.getTreatments(), isEmpty);
+    });
+  });
+
+  group('ending the sick leave with the treatment', () {
+    // 18:30, so a stored time of day would show.
+    final now = DateTime(2026, 3, 12, 18, 30);
+    late TreatmentRepositoryImpl repo;
+
+    setUp(() {
+      repo = TreatmentRepositoryImpl(localDatasource: local, now: () => now);
+    });
+
+    Future<void> seedLeave({
+      required DateTime from,
+      DateTime? to,
+      String id = 't1',
+    }) => local.upsert(
+      TreatmentModel(
+        id: id,
+        name: 'Sinusitis',
+        startDate: DateTime(2026, 3, 2),
+        sickLeaveFrom: from,
+        sickLeaveTo: to,
+        sickLeaveRef: '1234567890',
+        doctor: 'Dr. Rossi, Bozen',
+        updatedAt: DateTime(2026, 3, 2, 8),
+      ),
+      syncStatus: SyncStatus.synced,
+    );
+
+    test('End takes its date and stamp from the injected clock', () async {
+      await seedLeave(from: DateTime(2026, 3, 3));
+      await repo.endTreatment('t1');
+      final stored = (await local.getTreatmentById('t1'))!;
+      // end_date is stored date-only, updated_at in UTC.
+      expect(stored.endDate, DateTime(2026, 3, 12));
+      expect(stored.updatedAt!.isAtSameMomentAs(now), isTrue);
+    });
+
+    test('add and update stamp with the injected clock too', () async {
+      await repo.addTreatment(
+        Treatment(id: 't1', name: 'Grippe', startDate: DateTime(2026, 3, 2)),
+      );
+      var stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.createdAt!.isAtSameMomentAs(now), isTrue);
+      expect(stored.updatedAt!.isAtSameMomentAs(now), isTrue);
+
+      final later = TreatmentRepositoryImpl(
+        localDatasource: local,
+        now: () => DateTime(2026, 3, 14, 9),
+      );
+      await later.updateTreatment(stored.toDomain().copyWith(notes: 'x'));
+      stored = (await local.getTreatmentById('t1'))!;
+      expect(
+        stored.updatedAt!.isAtSameMomentAs(DateTime(2026, 3, 14, 9)),
+        isTrue,
+      );
+    });
+
+    test('closes an open leave on today\'s date', () async {
+      await seedLeave(from: DateTime(2026, 3, 3));
+
+      final result = await repo.endTreatment('t1', endSickLeave: true);
+      expect(result.isSuccess, isTrue);
+
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.isActive, isFalse);
+      expect(stored.sickLeaveFrom, DateTime(2026, 3, 3));
+      expect(stored.sickLeaveTo, DateTime(2026, 3, 12));
+      expect(stored.sickLeaveRef, '1234567890');
+      expect(stored.doctor, 'Dr. Rossi, Bozen');
+      expect(await syncStatus('t1'), SyncStatus.pendingUpdate);
+      expect(result.dataOrNull!.sickLeaveTo, DateTime(2026, 3, 12));
+      expect(result.dataOrNull!.isSickLeaveOpen, isFalse);
+    });
+
+    test('a leave that started today closes today', () async {
+      await seedLeave(from: DateTime(2026, 3, 12));
+      await repo.endTreatment('t1', endSickLeave: true);
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.sickLeaveTo, DateTime(2026, 3, 12));
+    });
+
+    test('without endSickLeave the leave stays open', () async {
+      await seedLeave(from: DateTime(2026, 3, 3));
+      await repo.endTreatment('t1');
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.isActive, isFalse);
+      expect(stored.sickLeaveTo, isNull);
+    });
+
+    test('an already closed leave is never moved', () async {
+      await seedLeave(from: DateTime(2026, 3, 3), to: DateTime(2026, 3, 5));
+      await repo.endTreatment('t1', endSickLeave: true);
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.isActive, isFalse);
+      expect(stored.sickLeaveTo, DateTime(2026, 3, 5));
+    });
+
+    test('a leave that has not started yet stays open', () async {
+      await seedLeave(from: DateTime(2026, 3, 13));
+      final result = await repo.endTreatment('t1', endSickLeave: true);
+      expect(result.isSuccess, isTrue);
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.isActive, isFalse);
+      expect(stored.sickLeaveFrom, DateTime(2026, 3, 13));
+      expect(stored.sickLeaveTo, isNull);
+    });
+
+    test('a treatment without a leave gets none', () async {
+      await local.upsert(
+        TreatmentModel(
+          id: 't1',
+          name: 'Grippe',
+          startDate: DateTime(2026, 3, 2),
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+      final result = await repo.endTreatment('t1', endSickLeave: true);
+      expect(result.isSuccess, isTrue);
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.isActive, isFalse);
+      expect(stored.sickLeaveFrom, isNull);
+      expect(stored.sickLeaveTo, isNull);
+    });
+
+    test('a deleted treatment is not touched, leave included', () async {
+      await seedLeave(from: DateTime(2026, 3, 3));
+      await local.markDeleted('t1');
+      final result = await repo.endTreatment('t1', endSickLeave: true);
+      expect(result.isFailure, isTrue);
+      final stored = (await local.getTreatmentById('t1'))!;
+      expect(stored.sickLeaveTo, isNull);
+      expect(await syncStatus('t1'), SyncStatus.pendingDelete);
     });
   });
 

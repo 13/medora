@@ -25,10 +25,17 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   /// [requestSync] starts (or queues) a sync cycle. It is not awaited, and a
   /// failure only logs: the row stays pending for the next cycle. Null in
   /// local-only mode, where nothing is pushed.
-  TreatmentRepositoryImpl({required this.localDatasource, this._requestSync});
+  ///
+  /// [now] is the clock for the dates and stamps a write sets.
+  TreatmentRepositoryImpl({
+    required this.localDatasource,
+    this._requestSync,
+    this._now = systemNow,
+  });
 
   final TreatmentLocalDatasource localDatasource;
   final RequestSync? _requestSync;
+  final Now _now;
 
   @override
   Future<Result<List<Treatment>>> getTreatments() async {
@@ -64,10 +71,11 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   @override
   Future<Result<Treatment>> addTreatment(Treatment treatment) async {
     try {
+      final now = _now();
       final model = TreatmentModel.fromDomain(
         treatment.copyWith(
-          updatedAt: DateTime.now(),
-          createdAt: treatment.createdAt ?? DateTime.now(),
+          updatedAt: now,
+          createdAt: treatment.createdAt ?? now,
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
@@ -84,7 +92,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
       final previous = await localDatasource.getTreatmentById(treatment.id);
       final model = TreatmentModel.fromDomain(
         treatment.copyWith(
-          updatedAt: nextUpdatedAt(previous?.updatedAt, DateTime.now()),
+          updatedAt: nextUpdatedAt(previous?.updatedAt, _now()),
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
@@ -107,7 +115,10 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   }
 
   @override
-  Future<Result<Treatment>> endTreatment(String id) async {
+  Future<Result<Treatment>> endTreatment(
+    String id, {
+    bool endSickLeave = false,
+  }) async {
     try {
       final existing = await localDatasource.getTreatmentById(id);
       if (existing == null) return const Result.failure('Treatment not found');
@@ -116,13 +127,17 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
       if (existing.deletedAt != null) {
         return const Result.failure('Treatment was deleted');
       }
-      final now = DateTime.now();
+      final now = _now();
       // Copy, never rebuild: a field-by-field rebuild drops every column
       // the author did not list (this is how the sick-leave columns were
       // silently lost on every "End").
       final ended = existing.copyWith(
         endDate: now,
         isActive: false,
+        // Null keeps the stored value: a closed leave is never moved.
+        sickLeaveTo: endSickLeave
+            ? existing.toDomain().sickLeaveEndAt(now)
+            : null,
         updatedAt: nextUpdatedAt(existing.updatedAt, now),
       );
       // The sync cycle pushes the WHOLE row with an upsert.

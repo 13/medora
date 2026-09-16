@@ -87,6 +87,26 @@ class Treatment {
     return span < 0 ? null : span + 1;
   }
 
+  /// The `sickLeaveTo` to store when the leave is ended at [now], or null
+  /// when there is nothing to end.
+  ///
+  /// An open leave ends on the calendar date of [now] (date only, like
+  /// every sick-leave date). Null when:
+  /// - no leave is recorded;
+  /// - the leave is already closed: a closed leave is never moved;
+  /// - the open leave starts after [now]'s date. Ending it "today" would
+  ///   put its end before its start, and clamping to the start would
+  ///   invent a day off that has not happened, so it stays open for the
+  ///   user to edit or remove.
+  ///
+  /// A leave that started today therefore ends today, never earlier.
+  DateTime? sickLeaveEndAt(DateTime now) {
+    final from = sickLeaveFrom;
+    if (from == null || sickLeaveTo != null) return null;
+    if (calendarDaysBetween(from, now) < 0) return null;
+    return DateTime(now.year, now.month, now.day);
+  }
+
   /// A copy with the given fields replaced. A null argument keeps the
   /// current value, so a field cannot be cleared here; build a new
   /// [Treatment] for that.

@@ -57,9 +57,10 @@ class TreatmentListNotifier extends AsyncNotifier<List<Treatment>> {
     );
   }
 
-  Future<void> endTreatment(String id) async {
+  /// Ends [id]; with [endSickLeave] its open sick leave ends today too.
+  Future<void> endTreatment(String id, {bool endSickLeave = false}) async {
     final repo = ref.read(treatmentRepositoryProvider);
-    final result = await repo.endTreatment(id);
+    final result = await repo.endTreatment(id, endSickLeave: endSickLeave);
     await result.when(
       success: (_) => refresh(),
       failure: (msg) => throw Exception(msg),

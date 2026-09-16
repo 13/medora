@@ -134,6 +134,39 @@ void main() {
     });
   });
 
+  group('sickLeaveEndAt', () {
+    test('an open leave ends on the calendar date of now', () {
+      final t = _t(sickLeaveFrom: DateTime(2026, 3, 3));
+      expect(
+        t.sickLeaveEndAt(DateTime(2026, 3, 12, 18, 30)),
+        DateTime(2026, 3, 12),
+      );
+    });
+
+    test('a leave that started today ends today, even if its start carries '
+        'a later time of day', () {
+      final t = _t(sickLeaveFrom: DateTime(2026, 3, 12, 20));
+      expect(t.sickLeaveEndAt(DateTime(2026, 3, 12, 7)), DateTime(2026, 3, 12));
+    });
+
+    test('there is nothing to end without a leave', () {
+      expect(_t().sickLeaveEndAt(DateTime(2026, 3, 12)), isNull);
+    });
+
+    test('a closed leave is never moved', () {
+      final t = _t(
+        sickLeaveFrom: DateTime(2026, 3, 3),
+        sickLeaveTo: DateTime(2026, 3, 9),
+      );
+      expect(t.sickLeaveEndAt(DateTime(2026, 3, 12)), isNull);
+    });
+
+    test('an open leave that has not started yet is not ended', () {
+      final t = _t(sickLeaveFrom: DateTime(2026, 3, 13));
+      expect(t.sickLeaveEndAt(DateTime(2026, 3, 12, 23, 59)), isNull);
+    });
+  });
+
   group('copyWith', () {
     final base = _t(
       sickLeaveFrom: DateTime(2026, 3, 3),

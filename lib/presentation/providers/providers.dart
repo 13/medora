@@ -148,6 +148,7 @@ final treatmentRepositoryProvider = Provider<TreatmentRepository>((ref) {
     // The sync cycle is the only push path: a write asks for one, and it
     // queues behind a cycle that is already running.
     requestSync: cloud ? () => ref.read(syncServiceProvider).syncAll() : null,
+    now: ref.watch(nowProvider),
   );
 });
 
