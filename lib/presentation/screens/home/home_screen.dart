@@ -404,11 +404,16 @@ class _StatTile extends StatelessWidget {
     final numberColor = value == 0 ? context.colors.onSurfaceVariant : color;
     return Expanded(
       child: Card(
+        // The card theme adds 12 dp of margin either side (theme.dart:43,
+        // :108) — 24 dp off a tile that is only ~101 dp wide on a 360 dp
+        // phone, which is what pushed the single-word labels past their box.
+        // The Row's SizedBox gaps already space the three tiles apart.
+        margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -423,6 +428,10 @@ class _StatTile extends StatelessWidget {
                 Text(
                   label,
                   textAlign: TextAlign.center,
+                  // A longer future label, or any text scale above 1.0,
+                  // degrades to an ellipsis instead of a hard clip.
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: context.text.labelMedium?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
