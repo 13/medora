@@ -14,7 +14,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 14;
+const int kSchemaVersion = 15;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -84,5 +84,16 @@ final List<Migration> kMigrations = [
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_local_med_ean ON medications(ean)',
     );
+  }),
+  // v15: sick leave (Krankenstand) on an illness episode: the days unable to
+  // work, which need not equal the illness period, plus the certificate
+  // number and the doctor. All nullable — an ordinary therapy leaves them
+  // empty. No index: the list screen loads every treatment and filters in
+  // Dart.
+  Migration(15, (db) async {
+    await db.execute('ALTER TABLE treatments ADD COLUMN sick_leave_from TEXT');
+    await db.execute('ALTER TABLE treatments ADD COLUMN sick_leave_to TEXT');
+    await db.execute('ALTER TABLE treatments ADD COLUMN sick_leave_ref TEXT');
+    await db.execute('ALTER TABLE treatments ADD COLUMN doctor TEXT');
   }),
 ];

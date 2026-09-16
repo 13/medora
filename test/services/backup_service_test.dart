@@ -168,7 +168,8 @@ void main() {
 
     final file = await makeService().exportToFile(outDir);
     final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
-    expect(json['schemaVersion'], 14);
+    // EAN arrived in v14; any later schema still carries it.
+    expect(json['schemaVersion'], greaterThanOrEqualTo(14));
     final exported =
         ((json['tables']! as Map)['medications']! as List).single as Map;
     expect(exported['ean'], '8057737141836');

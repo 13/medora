@@ -56,10 +56,12 @@ widget tests can render a configured build.
 ## Local data: schema, backup and restore
 
 `lib/data/local/migrations.dart` is an append-only ledger of `Migration`
-(version + function); `kSchemaVersion` is **13** and must equal the last entry,
+(version + function); `kSchemaVersion` is **15** and must equal the last entry,
 and existing migrations are never edited: v11 added tombstone columns, v12 bare
 photo filenames, v13 naive-local dose timestamps so string ranges line up with
-local day boundaries. `BackupService` writes the database and photo folder into one versioned JSON
+local day boundaries, v14 the medication EAN, v15 the sick-leave columns
+(`sick_leave_from`, `sick_leave_to`, `sick_leave_ref`, `doctor`) on
+`treatments`, all nullable. `BackupService` writes the database and photo folder into one versioned JSON
 envelope (`format: "medora-backup"`, `version`, `schemaVersion`, `createdAt`,
 `appVersion`, `tables`, base64 `photos`); rows go out exactly as stored, minus
 `sync_status`. `inspect` validates it first, so a backup from a newer build is

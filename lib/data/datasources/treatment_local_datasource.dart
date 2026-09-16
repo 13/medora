@@ -126,6 +126,14 @@ class TreatmentLocalDatasource {
           : null,
       isActive: (row['is_active'] as int? ?? 1) == 1,
       notes: row['notes'] as String?,
+      sickLeaveFrom: row['sick_leave_from'] != null
+          ? DateTime.tryParse(row['sick_leave_from'] as String)
+          : null,
+      sickLeaveTo: row['sick_leave_to'] != null
+          ? DateTime.tryParse(row['sick_leave_to'] as String)
+          : null,
+      sickLeaveRef: row['sick_leave_ref'] as String?,
+      doctor: row['doctor'] as String?,
       createdAt: row['created_at'] != null
           ? DateTime.tryParse(row['created_at'] as String)
           : null,
@@ -146,6 +154,10 @@ class TreatmentLocalDatasource {
       'end_date': m.endDate?.toIso8601String().split('T').first,
       'is_active': m.isActive ? 1 : 0,
       'notes': m.notes,
+      'sick_leave_from': m.sickLeaveFrom?.toIso8601String().split('T').first,
+      'sick_leave_to': m.sickLeaveTo?.toIso8601String().split('T').first,
+      'sick_leave_ref': m.sickLeaveRef,
+      'doctor': m.doctor,
       'created_at':
           m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'updated_at':

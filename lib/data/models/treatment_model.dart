@@ -17,6 +17,10 @@ class TreatmentModel {
     this.endDate,
     this.isActive = true,
     this.notes,
+    this.sickLeaveFrom,
+    this.sickLeaveTo,
+    this.sickLeaveRef,
+    this.doctor,
     this.createdAt,
     this.updatedAt,
     this.deletedAt,
@@ -31,6 +35,18 @@ class TreatmentModel {
   final DateTime? endDate;
   final bool isActive;
   final String? notes;
+
+  /// First day of certified sick leave (date only).
+  final DateTime? sickLeaveFrom;
+
+  /// Last day of certified sick leave (date only); null while it is open.
+  final DateTime? sickLeaveTo;
+
+  /// Sick-note / certificate number.
+  final String? sickLeaveRef;
+
+  /// The doctor who certified the leave.
+  final String? doctor;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -54,6 +70,14 @@ class TreatmentModel {
           : null,
       isActive: json['is_active'] == true || json['is_active'] == 1,
       notes: json['notes'] as String?,
+      sickLeaveFrom: json['sick_leave_from'] != null
+          ? DateTime.tryParse(json['sick_leave_from'] as String)
+          : null,
+      sickLeaveTo: json['sick_leave_to'] != null
+          ? DateTime.tryParse(json['sick_leave_to'] as String)
+          : null,
+      sickLeaveRef: json['sick_leave_ref'] as String?,
+      doctor: json['doctor'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : null,
@@ -80,6 +104,14 @@ class TreatmentModel {
           : null,
       isActive: (map['is_active'] as int? ?? 1) == 1,
       notes: map['notes'] as String?,
+      sickLeaveFrom: map['sick_leave_from'] != null
+          ? DateTime.tryParse(map['sick_leave_from'] as String)
+          : null,
+      sickLeaveTo: map['sick_leave_to'] != null
+          ? DateTime.tryParse(map['sick_leave_to'] as String)
+          : null,
+      sickLeaveRef: map['sick_leave_ref'] as String?,
+      doctor: map['doctor'] as String?,
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'] as String)
           : null,
@@ -103,6 +135,10 @@ class TreatmentModel {
       'end_date': endDate?.toIso8601String().split('T').first,
       'is_active': isActive,
       'notes': notes,
+      'sick_leave_from': sickLeaveFrom?.toIso8601String().split('T').first,
+      'sick_leave_to': sickLeaveTo?.toIso8601String().split('T').first,
+      'sick_leave_ref': sickLeaveRef,
+      'doctor': doctor,
       'updated_at': updatedAt?.toUtc().toIso8601String(),
       if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
     };
@@ -119,6 +155,10 @@ class TreatmentModel {
       endDate: endDate,
       isActive: isActive,
       notes: notes,
+      sickLeaveFrom: sickLeaveFrom,
+      sickLeaveTo: sickLeaveTo,
+      sickLeaveRef: sickLeaveRef,
+      doctor: doctor,
       createdAt: createdAt,
       updatedAt: updatedAt,
     );
@@ -135,6 +175,10 @@ class TreatmentModel {
       endDate: entity.endDate,
       isActive: entity.isActive,
       notes: entity.notes,
+      sickLeaveFrom: entity.sickLeaveFrom,
+      sickLeaveTo: entity.sickLeaveTo,
+      sickLeaveRef: entity.sickLeaveRef,
+      doctor: entity.doctor,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     );
