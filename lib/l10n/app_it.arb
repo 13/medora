@@ -11,6 +11,7 @@
 
   "dashboard": "Pannello",
   "seeAll": "Mostra tutto",
+  "moreCount": "{count, plural, =1{1 altro} other{Altri {count}}}",
 
   "todaysDoses": "Dosi di oggi",
   "noDosesScheduled": "Nessuna dose programmata per oggi",

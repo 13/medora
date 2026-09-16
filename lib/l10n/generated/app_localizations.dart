@@ -148,6 +148,12 @@ abstract class AppLocalizations {
   /// **'See All'**
   String get seeAll;
 
+  /// No description provided for @moreCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 more} other{{count} more}}'**
+  String moreCount(int count);
+
   /// No description provided for @todaysDoses.
   ///
   /// In en, this message translates to:

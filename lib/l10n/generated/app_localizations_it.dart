@@ -34,6 +34,17 @@ class AppLocalizationsIt extends AppLocalizations {
   String get seeAll => 'Mostra tutto';
 
   @override
+  String moreCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Altri $count',
+      one: '1 altro',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get todaysDoses => 'Dosi di oggi';
 
   @override

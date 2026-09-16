@@ -11,6 +11,12 @@
 
   "dashboard": "Dashboard",
   "seeAll": "See All",
+  "moreCount": "{count, plural, =1{1 more} other{{count} more}}",
+  "@moreCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
 
   "todaysDoses": "Today's Doses",
   "noDosesScheduled": "No doses scheduled for today",

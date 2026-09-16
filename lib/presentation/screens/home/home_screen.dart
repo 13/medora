@@ -20,6 +20,7 @@ import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
+import 'package:medora/presentation/widgets/medication_expiry_tile.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sync_status_chip.dart';
 import 'package:medora/presentation/widgets/update_banner.dart';
@@ -92,7 +93,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // Not `expiringSoon`: the rows underneath say "Expired", and
               // "Bald ablaufend" / "In scadenza" mean *about to* expire.
               title: l10n.expiringOrExpired,
-              onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
+              // Not the medications tab: that opens unfiltered and sorted by
+              // name, so the dashboard's count and the list it links to
+              // disagreed. This route shows the same set in the same order.
+              onSeeAll: () => context.push(AppRoutes.expiringMedications),
             ),
             const _ExpiringSoonCard(),
             const SizedBox(height: 16),
@@ -563,47 +567,25 @@ class _ExpiringSoonCard extends ConsumerWidget {
         ),
       ),
       data: (meds) {
+        final shown = meds.take(3).toList();
+        final hidden = meds.length - shown.length;
         return Card(
           child: Column(
-            children: meds.take(3).map((med) {
-              final expired = med.expiredAt(now);
-              return ListTile(
-                leading: Icon(
-                  expired ? Icons.error_outline : Icons.warning_amber_rounded,
-                  color: expired
-                      ? context.medora.danger
-                      : context.medora.warning,
+            children: [
+              for (final med in shown) MedicationExpiryTile(med: med, now: now),
+              // The three slots go to the most urgent rows, so once expired
+              // and expiring medications share the card the merely-expiring
+              // ones fall off the bottom. Without this the card looks
+              // complete while disagreeing with its own stat tile.
+              if (hidden > 0)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.more_horiz),
+                  title: Text(l10n.moreCount(hidden)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoutes.expiringMedications),
                 ),
-                title: Text(med.name),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (med.expiryDate != null)
-                      Text(
-                        med.expiryDate!.formatted,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    if (med.patientTags.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: med.patientTags
-                            .map((t) => TagChip(label: t, fontSize: 10))
-                            .toList(),
-                      ),
-                    ],
-                  ],
-                ),
-                // The badge the medication list and the detail screen
-                // already show: red "Expired" below zero, amber "Expires in
-                // N days" up to the threshold. The old hand-rolled day
-                // column would have read "-93 Days" for an expired box.
-                trailing: ExpiryBadge(expiryDate: med.expiryDate, now: now),
-                dense: true,
-                onTap: () => context.push('/medications/${med.id}'),
-              );
-            }).toList(),
+            ],
           ),
         );
       },
