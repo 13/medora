@@ -8,5 +8,23 @@ Documentation=https://github.com/13/medora/blob/main/docs/release.md
 [Service]
 Type=oneshot
 ExecStart=%h/repo/medora/tools/refresh_supplements_data.sh
-# The Ministry site can be slow; the PDF is ~4,100 pages.
+# The Ministry site can be slow; the PDF is ~4,100 pages. The script traps
+# the SIGTERM this eventually sends, so a timed-out run still removes its
+# temp dir instead of leaking it.
 TimeoutStartSec=3600
+
+# Sandboxing, kept to the directives that cannot break this workload: the
+# script needs the network (curl, gh, git), $HOME (gh credentials, the repo,
+# the log) and /tmp (mktemp -d), so ProtectHome, PrivateTmp, PrivateNetwork
+# and the filesystem directives are deliberately *not* set. What is left
+# costs the unit nothing it uses.
+NoNewPrivileges=true
+PrivateDevices=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
