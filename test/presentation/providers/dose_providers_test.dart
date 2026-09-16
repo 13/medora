@@ -547,6 +547,43 @@ void main() {
       },
     );
 
+    test('drops dosed from a bottle counted in drops take that many', () async {
+      // Whether the amount is counted depends on the medication's own unit.
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {
+          'auto_diminish': 1,
+          'dosage': '20 drops',
+          'dosage_amount': 20.0,
+          'dosage_unit': 'drops',
+        },
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      await db.update(
+        'medications',
+        {'quantity': 100, 'quantity_unit': 'drops'},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      final actions = (await pinnedContainer()).read(doseActionsProvider);
+
+      await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 80);
+
+      // The same dose from a medication counted in ml is one unit.
+      await db.update(
+        'medications',
+        {'quantity_unit': 'ml'},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      await actions.logAsNeededDose(s.prescriptionId);
+      expect(await quantity(db, s.medicationId), 79);
+    });
+
     test('logging a dose does not bring a deleted medication back', () async {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db, scheduleType: 'as_needed');
