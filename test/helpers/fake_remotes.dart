@@ -234,8 +234,27 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   }
 
   @override
-  Future<DateTime?> upsertPrescription(PrescriptionModel model) async =>
-      table.upsert(model.toJson());
+  Future<DateTime?> upsertPrescription(PrescriptionModel model) async {
+    final json = model.toJson();
+    json['start_time'] = asTimestamptz(json['start_time'] as String);
+    return table.upsert(json);
+  }
+
+  /// What a `timestamptz` column in a UTC session gives back for [raw]: a
+  /// time without an offset is read as UTC, and the answer always carries
+  /// one (`2026-03-01T08:00:00+00:00`), which `DateTime.parse` turns into a
+  /// UTC value.
+  static String asTimestamptz(String raw) {
+    final hasOffset = RegExp(
+      r'(Z|[+-]\d{2}(:?\d{2})?)$',
+    ).hasMatch(raw.substring(raw.indexOf('T') + 1));
+    final utc = hasOffset
+        ? DateTime.parse(raw).toUtc()
+        : DateTime.parse('${raw}Z');
+    final text = utc.toIso8601String();
+    return '${text.substring(0, text.length - 1)}+00:00';
+  }
+
   @override
   Future<void> deletePrescription(String id) async => table.tombstone(id);
 }

@@ -46,3 +46,38 @@ final DateTime generatedUpdatedAt = DateTime.utc(1970);
 /// that copy was stored.
 DateTime automaticUpdatedAt(DateTime? previous) =>
     previous == null ? generatedUpdatedAt : nextUpdatedAt(previous, previous);
+
+/// A prescription's start time: the wall-clock time the user chose, as a
+/// local [DateTime], whatever offset [raw] carries.
+///
+/// The app writes `start_time` without an offset, and a `timestamptz`
+/// column stores such a value under the server session's zone and gives it
+/// back with that zone's offset (`2026-03-01T08:00:00+00:00`). Only the
+/// digits survive the round trip unchanged, so they are what this reads: a
+/// device that took the offset at its word would place the schedule hours
+/// away from the one the creating device generated, and across a daylight
+/// saving change it would derive different dose ids for the same doses.
+DateTime parseWallClock(String raw) {
+  final text = raw.trim();
+  final separator = text.indexOf(RegExp('[T ]'));
+  if (separator < 0) return DateTime.parse(text);
+  final time = text.substring(separator + 1);
+  final offset = RegExp(r'(Z|[+-]\d{2}(:?\d{2})?)$').firstMatch(time);
+  final local = offset == null
+      ? text
+      : text.substring(0, separator + 1 + offset.start);
+  return DateTime.parse(local);
+}
+
+/// [time]'s wall-clock digits as an ISO string without an offset: how a
+/// prescription's start time is stored (see [parseWallClock]).
+String wallClockString(DateTime time) => DateTime(
+  time.year,
+  time.month,
+  time.day,
+  time.hour,
+  time.minute,
+  time.second,
+  time.millisecond,
+  time.microsecond,
+).toIso8601String();

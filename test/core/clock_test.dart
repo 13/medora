@@ -38,4 +38,38 @@ void main() {
       );
     });
   });
+
+  group('parseWallClock', () {
+    test('keeps the digits, whatever offset the server added', () {
+      for (final raw in [
+        '2026-03-01T08:30:00',
+        '2026-03-01T08:30:00.000',
+        '2026-03-01T08:30:00Z',
+        '2026-03-01T08:30:00.000Z',
+        '2026-03-01T08:30:00+00:00',
+        '2026-03-01T08:30:00+02:00',
+        '2026-03-01T08:30:00-05',
+        '2026-03-01 08:30:00+0100',
+      ]) {
+        final parsed = parseWallClock(raw);
+        expect(parsed, DateTime(2026, 3, 1, 8, 30), reason: raw);
+        expect(parsed.isUtc, isFalse, reason: raw);
+      }
+    });
+
+    test('reads a date alone as local midnight', () {
+      expect(parseWallClock('2026-03-02'), DateTime(2026, 3, 2));
+    });
+
+    test('wallClockString writes the digits without an offset', () {
+      expect(
+        wallClockString(DateTime.utc(2026, 3, 1, 8, 30)),
+        '2026-03-01T08:30:00.000',
+      );
+      expect(
+        parseWallClock(wallClockString(DateTime(2026, 10, 25, 2, 30))),
+        DateTime(2026, 10, 25, 2, 30),
+      );
+    });
+  });
 }

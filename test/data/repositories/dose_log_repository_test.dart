@@ -4,6 +4,7 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/dose_slot.dart';
 
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
@@ -61,6 +62,59 @@ void main() {
     expect(
       (await repo.markDoseMissed(id)).dataOrNull!.status,
       DoseStatus.missed,
+    );
+  });
+
+  test('generating never replaces a dose already stored under a slot\'s id, '
+      'whatever its time', () async {
+    final db = await AppDatabase.instance.database;
+    final seeded = await seedPrescription(db, durationDays: 1);
+    final slot = DateTime(2026, 3, 1, 8);
+    // An older build stored this slot's dose two hours off, and it was
+    // taken there.
+    final id = await seedDoseLog(
+      db,
+      seeded.prescriptionId,
+      DateTime(2026, 3, 1, 10),
+      id: scheduledDoseId(seeded.prescriptionId, slot),
+      status: 'taken',
+      takenTime: DateTime(2026, 3, 1, 10, 5),
+    );
+
+    final generated = (await makeRepo().generateDoseLogsForPrescription(
+      seeded.prescriptionId,
+    )).dataOrNull!;
+
+    expect(generated.map((d) => d.id).where((i) => i == id), hasLength(1));
+    final row = (await db.query(
+      'dose_logs',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(row['status'], 'taken');
+    expect(row['sync_status'], SyncStatus.synced);
+    expect(
+      DateTime.parse(row['scheduled_time']! as String),
+      DateTime(2026, 3, 1, 10),
+    );
+    // The other two slots of the day were generated.
+    expect(await db.query('dose_logs'), hasLength(3));
+  });
+
+  test('a scheduled dose id depends on the prescription and the minute', () {
+    expect(
+      scheduledDoseId('p1', DateTime(2026, 3, 1, 8, 0, 30)),
+      scheduledDoseId('p1', DateTime(2026, 3, 1, 8)),
+    );
+    expect(
+      scheduledDoseId('p1', DateTime(2026, 3, 1, 8)),
+      isNot(scheduledDoseId('p2', DateTime(2026, 3, 1, 8))),
+    );
+    // The ids already on servers were made from this key; it must not move.
+    expect(doseSlotKey(DateTime(2026, 3, 1, 8, 5)), '2026-03-01T08:05');
+    expect(
+      scheduledDoseId('p1', DateTime(2026, 3, 1, 8)),
+      '70857337-6964-53ed-9ab1-dce41e155305',
     );
   });
 

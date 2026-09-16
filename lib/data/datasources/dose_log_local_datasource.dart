@@ -195,23 +195,21 @@ class DoseLogLocalDatasource {
     }
   }
 
-  Future<void> upsertBatch(
+  /// Inserts [models] in one transaction, leaving any row that already has
+  /// one of their ids untouched: a generated dose never replaces a dose
+  /// already stored, whatever its time or status.
+  Future<void> insertBatchIfAbsent(
     List<DoseLogModel> models, {
     required String syncStatus,
   }) async {
     final db = await _db;
-    // Optimize: Use a single transaction and direct insert if possible
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (final model in models) {
-        final row = _toRow(model, syncStatus);
-        // Use insert with ConflictAlgorithm.replace or manual logic.
-        // Since generateDoseLogsForPrescription handles the existence check,
-        // we can just use insert here.
         batch.insert(
           'dose_logs',
-          row,
-          conflictAlgorithm: ConflictAlgorithm.replace,
+          _toRow(model, syncStatus),
+          conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }
       await batch.commit(noResult: true);

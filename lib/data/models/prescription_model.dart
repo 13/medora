@@ -2,6 +2,8 @@
 library;
 
 import 'dart:convert';
+
+import 'package:medora/core/clock.dart';
 import 'package:medora/domain/entities/prescription.dart';
 
 class PrescriptionModel {
@@ -71,7 +73,7 @@ class PrescriptionModel {
       dosageUnit: json['dosage_unit'] as String?,
       intervalHours: json['interval_hours'] as int? ?? 8,
       durationDays: json['duration_days'] as int? ?? 7,
-      startTime: DateTime.parse(json['start_time'] as String),
+      startTime: parseWallClock(json['start_time'] as String),
       isActive: json['is_active'] as bool? ?? true,
       autoDiminish: json['auto_diminish'] == true || json['auto_diminish'] == 1,
       notes: json['notes'] as String?,
@@ -101,7 +103,7 @@ class PrescriptionModel {
       'dosage_unit': dosageUnit,
       'interval_hours': intervalHours,
       'duration_days': durationDays,
-      'start_time': startTime.toIso8601String(),
+      'start_time': wallClockString(startTime),
       'is_active': isActive,
       'auto_diminish': autoDiminish,
       'notes': notes,
@@ -131,7 +133,7 @@ class PrescriptionModel {
       dosageUnit: map['dosage_unit'] as String?,
       intervalHours: map['interval_hours'] as int? ?? 8,
       durationDays: map['duration_days'] as int? ?? 7,
-      startTime: DateTime.parse(map['start_time'] as String),
+      startTime: parseWallClock(map['start_time'] as String),
       isActive: (map['is_active'] as int? ?? 1) == 1,
       autoDiminish: (map['auto_diminish'] as int? ?? 0) == 1,
       notes: map['notes'] as String?,
@@ -162,7 +164,7 @@ class PrescriptionModel {
       'dosage_unit': dosageUnit,
       'interval_hours': intervalHours,
       'duration_days': durationDays,
-      'start_time': startTime.toIso8601String(),
+      'start_time': wallClockString(startTime),
       'is_active': isActive ? 1 : 0,
       'auto_diminish': autoDiminish ? 1 : 0,
       'notes': notes,

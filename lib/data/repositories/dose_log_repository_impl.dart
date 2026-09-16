@@ -10,8 +10,8 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/dose_slot.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
-import 'package:uuid/uuid.dart';
 
 /// Writes go to the local database only: each one stores the rows as
 /// pending and asks for a sync cycle, which is the one place that pushes
@@ -28,8 +28,6 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   final DoseLogLocalDatasource localDatasource;
   final PrescriptionLocalDatasource prescriptionLocal;
   final RequestSync? _requestSync;
-
-  static const _uuid = Uuid();
 
   @override
   Future<Result<List<DoseLog>>> getDoseLogsByPrescription(
@@ -211,13 +209,16 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         return const Result.success([]);
       }
 
-      // Check for existing dose logs to avoid duplicates.
+      // A slot is there when a dose has its time or its id: a row stored
+      // under the id at another time (written by an older build) is kept,
+      // never replaced.
       final existingModels = await localDatasource.getDoseLogsByPrescription(
         prescriptionId,
       );
-      final existingTimes = existingModels
-          .map((m) => _truncateToMinute(m.scheduledTime))
-          .toSet();
+      final existingTimes = {
+        for (final m in existingModels) doseSlotKey(m.scheduledTime),
+      };
+      final existingIds = {for (final m in existingModels) m.id};
 
       final newDoseLogs = <DoseLogModel>[];
       final now = DateTime.now();
@@ -226,25 +227,18 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       // of the same dose that someone took, skipped or marked on another
       // device always wins over this one.
       for (final time in scheduledTimes) {
-        final timeString = _truncateToMinute(time);
-        if (!existingTimes.contains(timeString)) {
-          // Use deterministic ID (v5) to avoid duplicates across devices.
-          // Seed with prescriptionId and truncated scheduled time.
-          final deterministicId = _uuid.v5(
-            Namespace.url.value,
-            '$prescriptionId-$timeString',
-          );
-
-          newDoseLogs.add(
-            DoseLogModel(
-              id: deterministicId,
-              prescriptionId: prescriptionId,
-              scheduledTime: time,
-              createdAt: now,
-              updatedAt: generatedUpdatedAt,
-            ),
-          );
-        }
+        if (existingTimes.contains(doseSlotKey(time))) continue;
+        final id = scheduledDoseId(prescriptionId, time);
+        if (existingIds.contains(id)) continue;
+        newDoseLogs.add(
+          DoseLogModel(
+            id: id,
+            prescriptionId: prescriptionId,
+            scheduledTime: time,
+            createdAt: now,
+            updatedAt: generatedUpdatedAt,
+          ),
+        );
       }
 
       if (newDoseLogs.isEmpty) {
@@ -259,7 +253,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
         '(${existingModels.length} already exist) for prescription $prescriptionId',
       );
 
-      await localDatasource.upsertBatch(
+      await localDatasource.insertBatchIfAbsent(
         newDoseLogs,
         syncStatus: SyncStatus.pendingCreate,
       );
@@ -290,18 +284,14 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       );
       final stillScheduled = prescription == null
           ? const <String>{}
-          : prescription
-                .toDomain()
-                .scheduledDoseTimes
-                .map(_truncateToMinute)
-                .toSet();
+          : prescription.toDomain().scheduledDoseTimes.map(doseSlotKey).toSet();
       final existing = await localDatasource.getDoseLogsByPrescription(
         prescriptionId,
       );
       final keepIds = {
         for (final dose in existing)
           if (dose.status == DoseStatus.pending &&
-              stillScheduled.contains(_truncateToMinute(dose.scheduledTime)))
+              stillScheduled.contains(doseSlotKey(dose.scheduledTime)))
             dose.id,
       };
       // Delete only pending (not yet taken/skipped/missed) dose logs
@@ -320,10 +310,4 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
 
   /// Asks for a sync cycle without waiting for it.
   void _syncSoon() => requestSyncSoon(_requestSync, 'dose log');
-
-  /// Truncate a DateTime to minute precision for consistent comparison.
-  static String _truncateToMinute(DateTime dt) {
-    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}'
-        'T${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
 }
