@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
@@ -83,8 +84,11 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   @override
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
     try {
-      final changed = await localDatasource.markOverduePendingAsMissed(cutoff);
-      if (changed > 0) _syncSoon();
+      final (:changed, :unpushed) = await localDatasource
+          .markOverduePendingAsMissed(cutoff);
+      // A dose the server already has stays `synced`: the change is local
+      // only (see the datasource), so there is nothing to push.
+      if (unpushed > 0) _syncSoon();
       return Result.success(changed);
     } catch (e, st) {
       return Result.failure('Failed to mark overdue doses: $e', st);
@@ -205,6 +209,10 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
 
       final newDoseLogs = <DoseLogModel>[];
       final now = DateTime.now();
+      // A generated dose carries the weakest stamp there is, and the sync
+      // cycle only inserts it where the server does not have it yet: a copy
+      // of the same dose that someone took, skipped or marked on another
+      // device always wins over this one.
       for (final time in scheduledTimes) {
         final timeString = _truncateToMinute(time);
         if (!existingTimes.contains(timeString)) {
@@ -221,7 +229,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
               prescriptionId: prescriptionId,
               scheduledTime: time,
               createdAt: now,
-              updatedAt: now,
+              updatedAt: generatedUpdatedAt,
             ),
           );
         }
@@ -255,14 +263,40 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   }
 
   /// Regenerate dose logs for an updated prescription.
-  /// Deletes old pending doses and creates new ones.
+  ///
+  /// Deletes the pending doses the new schedule no longer has and creates
+  /// the ones it adds. A pending dose whose time is still scheduled is kept
+  /// as it is: its id would come back unchanged, and deleting it would throw
+  /// away a local change still waiting to be pushed.
   @override
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
     String prescriptionId,
   ) async {
     try {
+      final prescription = await prescriptionLocal.getPrescriptionById(
+        prescriptionId,
+      );
+      final stillScheduled = prescription == null
+          ? const <String>{}
+          : prescription
+                .toDomain()
+                .scheduledDoseTimes
+                .map(_truncateToMinute)
+                .toSet();
+      final existing = await localDatasource.getDoseLogsByPrescription(
+        prescriptionId,
+      );
+      final keepIds = {
+        for (final dose in existing)
+          if (dose.status == DoseStatus.pending &&
+              stillScheduled.contains(_truncateToMinute(dose.scheduledTime)))
+            dose.id,
+      };
       // Delete only pending (not yet taken/skipped/missed) dose logs
-      await localDatasource.deletePendingByPrescription(prescriptionId);
+      await localDatasource.deletePendingByPrescription(
+        prescriptionId,
+        keepIds: keepIds,
+      );
 
       // Generate fresh dose logs
       return await generateDoseLogsForPrescription(prescriptionId);

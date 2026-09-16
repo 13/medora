@@ -260,32 +260,48 @@ void main() {
       expect(requests.statuses, isEmpty);
     });
 
-    test(
-      'marking overdue doses asks for a sync only when one changed',
-      () async {
-        final db = await AppDatabase.instance.database;
-        final prescriptionId = (await seedPrescription(db)).prescriptionId;
-        final id = await seedDoseLog(
-          db,
-          prescriptionId,
-          DateTime(2026, 3, 1, 8),
-        );
-        final requests = _Requests('dose_logs')..id = id;
-        final repo = DoseLogRepositoryImpl(
-          localDatasource: DoseLogLocalDatasource(),
-          prescriptionLocal: PrescriptionLocalDatasource(),
-          requestSync: requests.call,
-        );
+    test('marking overdue doses asks for a sync only when a changed dose is '
+        'not on the server yet', () async {
+      final db = await AppDatabase.instance.database;
+      final prescriptionId = (await seedPrescription(db)).prescriptionId;
+      final synced = await seedDoseLog(
+        db,
+        prescriptionId,
+        DateTime(2026, 3, 1, 6),
+      );
+      final id = await seedDoseLog(db, prescriptionId, DateTime(2026, 3, 1, 8));
+      await db.update(
+        'dose_logs',
+        {'sync_status': pendingCreate},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final requests = _Requests('dose_logs')..id = id;
+      final repo = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        requestSync: requests.call,
+      );
 
-        await repo.markOverduePendingAsMissed(DateTime(2026, 3, 1, 7));
-        await pumpEventQueue();
-        expect(requests.statuses, isEmpty);
+      // Only the synced dose is overdue: marked, but nothing to push.
+      final first = await repo.markOverduePendingAsMissed(
+        DateTime(2026, 3, 1, 7),
+      );
+      await pumpEventQueue();
+      expect(first.dataOrNull, 1);
+      expect(requests.statuses, isEmpty);
+      final syncedRow = (await db.query(
+        'dose_logs',
+        where: 'id = ?',
+        whereArgs: [synced],
+      )).single;
+      expect(syncedRow['status'], 'missed');
+      expect(syncedRow['sync_status'], 'synced');
 
-        await repo.markOverduePendingAsMissed(DateTime(2026, 3, 1, 9));
-        await pumpEventQueue();
-        expect(requests.statuses, [pendingUpdate]);
-      },
-    );
+      await repo.markOverduePendingAsMissed(DateTime(2026, 3, 1, 9));
+      await pumpEventQueue();
+      expect(requests.statuses, [pendingCreate]);
+    });
 
     test('deleting asks for one sync after the tombstone, and a missing '
         'dose asks for none', () async {

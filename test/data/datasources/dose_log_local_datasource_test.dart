@@ -138,7 +138,7 @@ void main() {
       final changed = await DoseLogLocalDatasource().markOverduePendingAsMissed(
         DateTime(2026, 3, 2),
       );
-      expect(changed, 0);
+      expect(changed.changed, 0);
       final row = (await DoseLogLocalDatasource().getDoseLogById(ids.pending))!;
       expect(row.status, DoseStatus.pending);
     });
@@ -165,6 +165,9 @@ void main() {
       )).map((d) => d.id),
       [id],
     );
-    expect(await ds.markOverduePendingAsMissed(DateTime(2026, 3, 2)), 1);
+    expect(
+      (await ds.markOverduePendingAsMissed(DateTime(2026, 3, 2))).changed,
+      1,
+    );
   });
 }

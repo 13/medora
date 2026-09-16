@@ -411,6 +411,7 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         await ref.read(syncServiceProvider).syncAll();
       }
     },
+    syncEnabled: () => ref.read(appModeProvider) == AppMode.cloud,
     // Least urgent step, so it runs last - and only where an update could
     // actually be installed: Android, with a repo configured at build time.
     updateCheck:

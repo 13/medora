@@ -51,6 +51,40 @@ class FakeRemoteTable {
     return updatedAt(id);
   }
 
+  /// Inserts the rows whose id is not there yet, keeping each client
+  /// `updated_at` (no `BEFORE INSERT` trigger), and leaves the others alone
+  /// — `upsert(rows, ignoreDuplicates: true)`. Returns how many it inserted.
+  Future<int> insertIfAbsent(List<Map<String, dynamic>> jsons) async {
+    await beforeCall?.call();
+    for (final json in jsons) {
+      _guard(json['id'] as String);
+    }
+    insertBatches.add(jsons.length);
+    var inserted = 0;
+    for (final json in jsons) {
+      final id = json['id'] as String;
+      if (rows.containsKey(id)) continue;
+      rows[id] = {
+        ...json,
+        'updated_at': json['updated_at'] ?? clock().toUtc().toIso8601String(),
+      };
+      inserted++;
+    }
+    return inserted;
+  }
+
+  /// The size of every [insertIfAbsent] request, in order.
+  final List<int> insertBatches = [];
+
+  /// The rows with these ids, tombstones included — `select().inFilter`.
+  Future<List<Map<String, dynamic>>> getMany(List<String> ids) async {
+    await beforeCall?.call();
+    return [
+      for (final id in ids)
+        if (rows[id] != null) Map<String, dynamic>.from(rows[id]!),
+    ];
+  }
+
   void tombstone(String id) {
     _guard(id);
     final existing = rows[id];
@@ -230,6 +264,12 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   @override
   Future<DateTime?> upsertDoseLog(DoseLogModel model) async =>
       table.upsert(model.toJson());
+  @override
+  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async =>
+      table.insertIfAbsent([for (final m in models) m.toJson()]);
+  @override
+  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async =>
+      (await table.getMany(ids)).map(DoseLogModel.fromJson).toList();
   @override
   Future<void> deleteDoseLog(String id) async => table.tombstone(id);
 }

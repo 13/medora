@@ -90,6 +90,37 @@ class DoseLogRemoteDatasource {
     return serverStampOf(response);
   }
 
+  /// Inserts [models] in one request, leaving every row the server already
+  /// has untouched (`ON CONFLICT (id) DO NOTHING`).
+  ///
+  /// This is how a dose this device created reaches the server: a dose with
+  /// a deterministic id may already be there, taken or skipped on another
+  /// device, and a generated copy must never replace it. The answer carries
+  /// no rows; read them back with [getDoseLogsByIds].
+  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
+    if (models.isEmpty) return;
+    await _client
+        .from(AppConstants.doseLogsTable)
+        .upsert(
+          [for (final m in models) m.toJson()],
+          onConflict: 'id',
+          ignoreDuplicates: true,
+        );
+  }
+
+  /// The server's rows with these [ids], tombstones included. Ids the server
+  /// does not have are simply absent from the list.
+  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final response = await _client
+        .from(AppConstants.doseLogsTable)
+        .select()
+        .inFilter('id', ids);
+    return (response as List)
+        .map((json) => DoseLogModel.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Delete a dose log from remote.
   /// Soft delete (tombstone). The row stays on the server with `deleted_at`
   /// set so other devices pull the deletion; see spec §4.6.

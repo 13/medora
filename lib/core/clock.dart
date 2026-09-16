@@ -33,3 +33,16 @@ DateTime nextUpdatedAt(DateTime? previous, DateTime now) {
   final floor = previous.add(const Duration(milliseconds: 1));
   return now.isAfter(floor) ? now : floor;
 }
+
+/// The `updated_at` of a dose row the app generated from a schedule.
+///
+/// It is the weakest stamp there is, so under last-write-wins any copy of the
+/// same dose that a person actually touched, on any device, is newer.
+final DateTime generatedUpdatedAt = DateTime.utc(1970);
+
+/// The `updated_at` of a change the app made on its own (marking an overdue
+/// dose missed) to a row stamped [previous]: just past [previous], never the
+/// current time, so the change loses to any real edit made elsewhere since
+/// that copy was stored.
+DateTime automaticUpdatedAt(DateTime? previous) =>
+    previous == null ? generatedUpdatedAt : nextUpdatedAt(previous, previous);

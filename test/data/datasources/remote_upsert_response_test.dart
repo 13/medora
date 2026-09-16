@@ -100,4 +100,89 @@ void main() {
       );
     });
   }
+
+  group('dose logs created on this device', () {
+    DoseLogModel dose(String id) => DoseLogModel(
+      id: id,
+      prescriptionId: 'p1',
+      scheduledTime: DateTime.utc(2026, 3, 2, 8),
+      updatedAt: DateTime.utc(1970),
+    );
+
+    test('go out as one insert that leaves existing rows alone', () async {
+      final requests = <http.Request>[];
+      final client = clientAnswering((request) {
+        requests.add(request);
+        return http.Response('', 201, request: request);
+      });
+
+      await DoseLogRemoteDatasource(
+        client,
+      ).insertDoseLogsIfAbsent([dose('d1'), dose('d2')]);
+
+      final request = requests.single;
+      expect(request.method, 'POST');
+      expect(request.url.path, '/rest/v1/dose_logs');
+      expect(request.url.queryParameters['on_conflict'], 'id');
+      expect(
+        request.headers['Prefer'],
+        contains('resolution=ignore-duplicates'),
+      );
+      final body = jsonDecode(request.body) as List<dynamic>;
+      expect(body.map((r) => (r as Map)['id']), ['d1', 'd2']);
+      expect((body.first as Map)['updated_at'], '1970-01-01T00:00:00.000Z');
+    });
+
+    test('an empty list sends nothing', () async {
+      var calls = 0;
+      final client = clientAnswering((request) {
+        calls++;
+        return http.Response('', 201, request: request);
+      });
+      final remote = DoseLogRemoteDatasource(client);
+      await remote.insertDoseLogsIfAbsent(const []);
+      expect(await remote.getDoseLogsByIds(const []), isEmpty);
+      expect(calls, 0);
+    });
+
+    test('are read back by id, tombstones included', () async {
+      final requests = <http.Request>[];
+      final client = clientAnswering((request) {
+        requests.add(request);
+        return http.Response(
+          jsonEncode([
+            {
+              'id': 'd1',
+              'prescription_id': 'p1',
+              'scheduled_time': '2026-03-02T08:00:00Z',
+              'status': 'taken',
+              'updated_at': '2026-03-02T08:05:00Z',
+            },
+            {
+              'id': 'd2',
+              'prescription_id': 'p1',
+              'scheduled_time': '2026-03-02T16:00:00Z',
+              'status': 'pending',
+              'updated_at': '2026-03-02T08:06:00Z',
+              'deleted_at': '2026-03-02T08:06:00Z',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+          request: request,
+        );
+      });
+
+      final rows = await DoseLogRemoteDatasource(
+        client,
+      ).getDoseLogsByIds(['d1', 'd2']);
+
+      final request = requests.single;
+      expect(request.method, 'GET');
+      expect(request.url.queryParameters['id'], 'in.("d1","d2")');
+      expect(request.url.queryParameters.containsKey('deleted_at'), isFalse);
+      expect(rows.map((d) => d.status.name), ['taken', 'pending']);
+      expect(rows.last.deletedAt, isNotNull);
+    });
+  });
 }

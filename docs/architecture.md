@@ -166,9 +166,16 @@ pending row at least as new as the remote copy and never resurrects a row a
 local tombstone has deleted. `forcePush` skips that comparison; **force pull**
 wipes local rows and re-downloads, aborting if a table cannot be fetched
 afterwards. Families are pulled separately, through the `join_family`
-security-definer RPC. Each cycle fills a `SyncReport` that Settings renders,
+security-definer RPC. **Doses** created on a device (a generated schedule, a
+logged dose) are inserted only where the server lacks their id, **100** per
+request, then read back and stored as synced, so a dose taken elsewhere is never
+replaced. A generated dose is stamped `1970-01-01`, and marking an overdue dose
+*missed* is a local conclusion: its stamp moves just past the previous one and
+nothing is queued, so any real change pulled later wins. On start and resume the
+sync runs before that marking. Each cycle fills a `SyncReport` that Settings renders,
 offering `discardFailedRow` per failed row; auto-sync fires **2 s** after
-connectivity returns, and a mid-cycle `syncAll()` is queued. Schema, RLS and
+connectivity returns, and a mid-cycle `syncAll()` is queued, up to **3**
+re-runs. Schema, RLS and
 triggers live in `supabase/migrations/`.
 
 ## Theme and localization rules

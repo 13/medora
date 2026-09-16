@@ -42,6 +42,14 @@ void main() {
         status: 'taken',
       );
 
+      final previousStamp =
+          (await db.query(
+                'dose_logs',
+                where: 'id = ?',
+                whereArgs: [old],
+              )).first['updated_at']!
+              as String;
+
       final repo = DoseLogRepositoryImpl(
         localDatasource: DoseLogLocalDatasource(),
         prescriptionLocal: PrescriptionLocalDatasource(),
@@ -57,14 +65,19 @@ void main() {
       expect((await ds.getDoseLogById(recent))!.status, DoseStatus.pending);
       expect((await ds.getDoseLogById(future))!.status, DoseStatus.pending);
       expect((await ds.getDoseLogById(taken))!.status, DoseStatus.taken);
-      // Marked rows are flagged for sync and stamped.
+      // "Missed" is the app's own conclusion: the row is not queued for a
+      // push, and its stamp moves just past the previous one, so a dose
+      // taken on another device since then still wins.
       final row = (await db.query(
         'dose_logs',
         where: 'id = ?',
         whereArgs: [old],
       )).first;
-      expect(row['sync_status'], SyncStatus.pendingUpdate);
-      expect(row['updated_at'], isNotNull);
+      expect(row['sync_status'], SyncStatus.synced);
+      expect(
+        DateTime.parse(row['updated_at']! as String),
+        DateTime.parse(previousStamp).add(const Duration(milliseconds: 1)),
+      );
     },
   );
 

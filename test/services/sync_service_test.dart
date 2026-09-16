@@ -14,6 +14,7 @@ import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
@@ -30,11 +31,12 @@ class Harness {
     StreamController<bool>? online,
     FamilyLocalDatasource? familyLocal,
     FakeMedicationRemote Function(DateTime Function() clock)? medicationRemote,
+    FakeDoseLogRemote Function(DateTime Function() clock)? doseLogRemote,
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
     treatments = FakeTreatmentRemote(clock.now);
     prescriptions = FakePrescriptionRemote(clock.now);
-    doses = FakeDoseLogRemote(clock.now);
+    doses = (doseLogRemote ?? FakeDoseLogRemote.new)(clock.now);
     family = FakeFamilyRemote(clock.now);
     cursors = SyncCursorStore.inMemory();
     failures = SyncFailureStore.inMemory();
@@ -110,6 +112,25 @@ class EditOnEveryPushRemote extends FakeMedicationRemote {
     }
     return super.upsertMedication(model);
   }
+}
+
+/// Seeds a prescription and generates its whole schedule as `pending_create`
+/// rows, as the app does; returns the prescription id and the dose ids.
+Future<(String, List<String>)> seedSchedule({required int durationDays}) async {
+  final db = await AppDatabase.instance.database;
+  final seeded = await seedPrescription(db, durationDays: durationDays);
+  final generated = await DoseLogRepositoryImpl(
+    localDatasource: DoseLogLocalDatasource(),
+    prescriptionLocal: PrescriptionLocalDatasource(),
+  ).generateDoseLogsForPrescription(seeded.prescriptionId);
+  return (seeded.prescriptionId, [for (final d in generated.dataOrNull!) d.id]);
+}
+
+Future<List<String>> syncStatuses(List<String> ids) async {
+  final db = await AppDatabase.instance.database;
+  final rows = await db.query('dose_logs', columns: ['id', 'sync_status']);
+  final byId = {for (final r in rows) r['id']: r['sync_status'] as String};
+  return [for (final id in ids) byId[id] ?? 'gone'];
 }
 
 /// Hand-advanced clock shared by the service and the fake remotes.
@@ -1521,6 +1542,129 @@ void main() {
         DateTime.parse(row['updated_at'] as String).toUtc(),
         h.meds.table.updatedAt('m-stamp'),
       );
+    });
+  });
+
+  group('new dose logs', () {
+    test('a generated schedule goes out in batches, not row by row', () async {
+      final h = Harness();
+      // 84 days, every 8 hours.
+      final (_, ids) = await seedSchedule(durationDays: 84);
+      expect(ids, hasLength(252));
+      var calls = 0;
+      h.doses.table.beforeCall = () async => calls++;
+
+      final report = (await h.service.syncAll())!;
+
+      expect(h.doses.table.insertBatches, [100, 100, 52]);
+      // Three inserts, three reads back, one pull.
+      expect(calls, 7);
+      expect(report.pushed, 252);
+      expect(report.failures, isEmpty);
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+      expect(h.doses.table.rows, hasLength(252));
+    });
+
+    test('a dose the server already has is left alone and adopted', () async {
+      final h = Harness();
+      final (prescriptionId, ids) = await seedSchedule(durationDays: 1);
+      final taken = (await localRow('dose_logs', ids.first))!;
+      h.doses.table.seed({
+        ...DoseLogModel.fromLocalMap(taken).toJson(),
+        'status': 'taken',
+        'taken_time': h.clock.now().toIso8601String(),
+      }, updatedAt: h.clock.now().subtract(const Duration(days: 30)));
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.pushed, ids.length);
+      expect(h.doses.table.rows[ids.first]!['status'], 'taken');
+      final local = (await localRow('dose_logs', ids.first))!;
+      expect(local['status'], 'taken');
+      expect(local['taken_time'], isNotNull);
+      expect(local['sync_status'], SyncStatus.synced);
+      expect(local['prescription_id'], prescriptionId);
+      // The rest were inserted with the weakest stamp there is.
+      expect(
+        DateTime.parse(h.doses.table.rows[ids.last]!['updated_at'] as String),
+        DateTime.utc(1970),
+      );
+    });
+
+    test('a server tombstone deletes the local copy', () async {
+      final h = Harness();
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      h.doses.table.seed({
+        ...DoseLogModel.fromLocalMap(
+          (await localRow('dose_logs', ids.first))!,
+        ).toJson(),
+        'deleted_at': h.clock.now().toIso8601String(),
+      });
+
+      await h.service.syncAll();
+
+      expect(await localRow('dose_logs', ids.first), isNull);
+      expect(await syncStatuses(ids.skip(1).toList()), [
+        SyncStatus.synced,
+        SyncStatus.synced,
+      ]);
+    });
+
+    test('a dose taken while its batch is sent stays pending and goes out '
+        'on the re-run', () async {
+      final h = Harness();
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      final release = Completer<void>();
+      var held = false;
+      h.doses.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        await release.future;
+      };
+
+      final cycle = h.service.syncAll();
+      await pumpEventQueue();
+      await DoseLogLocalDatasource().updateStatus(
+        ids.first,
+        'taken',
+        takenTime: h.clock.now(),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      release.complete();
+      await cycle;
+
+      expect(h.doses.table.rows[ids.first]!['status'], 'taken');
+      final local = (await localRow('dose_logs', ids.first))!;
+      expect(local['status'], 'taken');
+      expect(local['sync_status'], SyncStatus.synced);
+    });
+
+    test('a failed batch leaves every row pending with backoff', () async {
+      final h = Harness();
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      h.doses.table.failIds.add(ids.last);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => f.id), unorderedEquals(ids));
+      expect(await syncStatuses(ids), everyElement(SyncStatus.pendingCreate));
+      for (final id in ids) {
+        expect(await h.failures.get('dose_logs', id), isNotNull);
+      }
+      expect(h.doses.table.rows, isEmpty);
+
+      // Within the backoff nothing is sent; afterwards the batch goes out
+      // and the failure records are cleared.
+      h.doses.table.failIds.clear();
+      final skipped = (await h.service.syncAll())!;
+      expect(skipped.skippedBackoff, ids.length);
+      expect(h.doses.table.rows, isEmpty);
+      h.clock.advance(const Duration(hours: 1));
+      await h.service.syncAll();
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+      for (final id in ids) {
+        expect(await h.failures.get('dose_logs', id), isNull);
+      }
     });
   });
 

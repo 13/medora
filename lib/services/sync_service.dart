@@ -13,6 +13,13 @@
 ///   not as a failure. `pending_create` rows (the remote row does not exist yet) and
 ///   `pending_delete` tombstones (a delete always wins) push unconditionally,
 ///   and `forcePush` skips the comparison entirely.
+/// - A `pending_create` **dose log** is the exception: a dose has a
+///   deterministic id, so the server may already have it, taken on another
+///   device. New dose logs are inserted only where the server lacks them, in
+///   batches, and the server's rows are then stored locally
+///   ([_pushNewDoseLogs]). Generated doses and doses the app marked missed on
+///   its own carry the weakest stamps (see `generatedUpdatedAt` and
+///   `automaticUpdatedAt`), so any real change wins.
 /// - On the **pull** side [_localPendingIsNewer] keeps a locally pending row
 ///   that is at least as new as the remote copy.
 /// - A pushed row is marked synced only if it is still the copy the push
@@ -466,26 +473,129 @@ class SyncService {
       return true;
     });
 
-    await _pushBatch('dose_logs', report, where, whereArgs, (row) async {
-      final model = DoseLogModel.fromLocalMap(row);
-      if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await doseLogRemote!.deleteDoseLog(model.id);
-        await doseLogLocal.hardDelete(model.id);
-      } else {
-        final staleAt = await _staleAgainstRemote(
-          row,
-          doseLogRemote!.getUpdatedAt,
-          force: forceAll,
-        );
-        if (staleAt != null) {
-          await _skipStale('dose_logs', report, staleAt);
-          return false;
+    // A dose this device created is only ever inserted where the server does
+    // not have it yet, in batches (see [_pushNewDoseLogs]); a forced push is
+    // the exception, since it means "my copy is the truth".
+    if (!forceAll) await _pushNewDoseLogs(report);
+    await _pushBatch(
+      'dose_logs',
+      report,
+      forceAll ? where : 'sync_status != ? AND sync_status != ?',
+      forceAll ? whereArgs : [SyncStatus.synced, SyncStatus.pendingCreate],
+      (row) async {
+        final model = DoseLogModel.fromLocalMap(row);
+        if (row['sync_status'] == SyncStatus.pendingDelete) {
+          await doseLogRemote!.deleteDoseLog(model.id);
+          await doseLogLocal.hardDelete(model.id);
+        } else {
+          final staleAt = await _staleAgainstRemote(
+            row,
+            doseLogRemote!.getUpdatedAt,
+            force: forceAll,
+          );
+          if (staleAt != null) {
+            await _skipStale('dose_logs', report, staleAt);
+            return false;
+          }
+          final serverAt = await doseLogRemote!.upsertDoseLog(model);
+          await _settlePushed('dose_logs', row, serverAt);
         }
-        final serverAt = await doseLogRemote!.upsertDoseLog(model);
-        await _settlePushed('dose_logs', row, serverAt);
+        return true;
+      },
+    );
+  }
+
+  /// How many new dose logs one request inserts. The read-back lists their
+  /// ids in the URL, which keeps it well under common URL limits.
+  static const doseLogInsertBatchSize = 100;
+
+  /// Pushes the `pending_create` dose logs: a generated schedule can be
+  /// hundreds of rows, and the same dose (deterministic id) can already be on
+  /// the server, taken on another device.
+  ///
+  /// Per batch: one insert that leaves existing rows alone, then one read of
+  /// the same ids. Each local row that is still the copy this cycle read is
+  /// replaced by the server's row, marked `synced` (or deleted if the server
+  /// has a tombstone). A row changed meanwhile stays pending and the cycle
+  /// runs again.
+  ///
+  /// A batch whose insert or read fails leaves all its rows
+  /// pending with backoff. If the insert did land, the next attempt inserts
+  /// nothing and reads the rows back, so the outcome is the same.
+  Future<void> _pushNewDoseLogs(SyncReport report) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'dose_logs',
+      where: 'sync_status = ?',
+      whereArgs: [SyncStatus.pendingCreate],
+      orderBy: 'scheduled_time',
+    );
+    final ready = <Map<String, dynamic>>[];
+    final backedOff = <String>{};
+    for (final row in rows) {
+      final id = row['id'] as String;
+      final failure = await _failures.get('dose_logs', id);
+      if (failure != null) {
+        if (failure.isBackingOffAt(_now())) {
+          report.skippedBackoff++;
+          continue;
+        }
+        backedOff.add(id);
       }
-      return true;
-    });
+      ready.add(row);
+    }
+    for (var start = 0; start < ready.length; start += doseLogInsertBatchSize) {
+      final batch = ready.sublist(
+        start,
+        (start + doseLogInsertBatchSize).clamp(0, ready.length),
+      );
+      final ids = [for (final row in batch) row['id'] as String];
+      final List<DoseLogModel> server;
+      try {
+        await doseLogRemote!.insertDoseLogsIfAbsent([
+          for (final row in batch) DoseLogModel.fromLocalMap(row),
+        ]);
+        server = await doseLogRemote!.getDoseLogsByIds(ids);
+      } catch (e) {
+        for (final id in ids) {
+          await _failures.recordFailure('dose_logs', id, _now());
+          report.failures.add(SyncFailure('dose_logs', id, 'push: $e'));
+        }
+        continue;
+      }
+      final byId = {for (final d in server) d.id: d};
+      for (final row in batch) {
+        final id = row['id'] as String;
+        final remote = byId[id];
+        if (remote == null) {
+          await _failures.recordFailure('dose_logs', id, _now());
+          report.failures.add(
+            SyncFailure(
+              'dose_logs',
+              id,
+              'push: not on the server after insert',
+            ),
+          );
+          continue;
+        }
+        final settled = remote.deletedAt != null
+            ? await doseLogLocal.deletePushedCreate(
+                id,
+                pushedUpdatedAt: row['updated_at'],
+              )
+            : await doseLogLocal.adoptPushedCreate(
+                remote,
+                pushedUpdatedAt: row['updated_at'],
+              );
+        if (settled) {
+          report.pushed++;
+          if (backedOff.contains(id)) await _failures.clear('dose_logs', id);
+        } else if (await _isLocallyPending('dose_logs', id)) {
+          _rerunRequested = true;
+        }
+      }
+      await Future<void>.delayed(Duration.zero);
+    }
   }
 
   /// Settles a row this cycle has just pushed (see [settlePushedRow]): synced
@@ -888,6 +998,9 @@ class SyncService {
     if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) {
       return;
     }
+    // An overdue dose this device marked missed is not pushed, so the server
+    // still has the pending copy; that copy coming back must not undo it.
+    if (!force && await doseLogLocal.isAutomaticallyMissedCopyOf(d)) return;
     await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
   }
 

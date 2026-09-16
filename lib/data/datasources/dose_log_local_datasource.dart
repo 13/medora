@@ -270,27 +270,49 @@ class DoseLogLocalDatasource {
     await db.delete('dose_logs');
   }
 
-  /// Delete only pending dose logs for a specific prescription.
-  /// Preserves taken/skipped/missed logs.
-  Future<int> deletePendingByPrescription(String prescriptionId) async {
+  /// Delete only pending dose logs for a specific prescription, except the
+  /// ones in [keepIds]. Preserves taken/skipped/missed logs.
+  Future<int> deletePendingByPrescription(
+    String prescriptionId, {
+    Set<String> keepIds = const {},
+  }) async {
     final db = await _db;
+    final keep = keepIds.toList();
     return db.delete(
       'dose_logs',
-      where: 'prescription_id = ? AND status = ?',
-      whereArgs: [prescriptionId, 'pending'],
+      where:
+          'prescription_id = ? AND status = ?'
+          '${keep.isEmpty ? '' : ' AND id NOT IN (${List.filled(keep.length, '?').join(', ')})'}',
+      whereArgs: [prescriptionId, 'pending', ...keep],
     );
   }
 
-  /// Mark pending doses scheduled before [cutoff] as missed. Returns the
-  /// count. Scoped to doses whose prescription is active and scheduled,
+  /// Mark pending doses scheduled before [cutoff] as missed. Returns how
+  /// many changed, and how many of those still have to be pushed. Scoped to doses whose prescription is active and scheduled,
   /// whose treatment is active (or absent), and whose medication is not
   /// archived (or absent) — the same predicates [getPendingBetween] uses.
-  Future<int> markOverduePendingAsMissed(DateTime cutoff) async {
+  ///
+  /// "Missed" is the app's own conclusion, not something the user did, so
+  /// it must never beat a dose taken on another device that this device has
+  /// not pulled yet:
+  /// - each row is stamped just past its own stamp ([automaticUpdatedAt]),
+  ///   not with the current time;
+  /// - `sync_status` is left alone. A row the server already has stays
+  ///   `synced`, so the change is not pushed: the server would stamp the
+  ///   update with its own clock and turn it into the newest write. Every
+  ///   device draws the same conclusion from its own copy, and a later pull
+  ///   of a real change replaces it. A row the server does not have yet
+  ///   (`pending_create`) is inserted only if still absent there.
+  Future<({int changed, int unpushed})> markOverduePendingAsMissed(
+    DateTime cutoff,
+  ) async {
     final db = await _db;
-    return db.rawUpdate(
-      '''UPDATE dose_logs
-         SET status = 'missed', sync_status = ?, updated_at = ?
-         WHERE status = 'pending'
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'dose_logs',
+        columns: ['id', 'updated_at', 'sync_status'],
+        where:
+            '''status = 'pending'
            AND scheduled_time < ?
            AND sync_status != ?
            AND prescription_id IN (
@@ -302,13 +324,84 @@ class DoseLogLocalDatasource {
                AND (m.id IS NULL OR m.is_archived IS NULL OR m.is_archived = 0)
                AND $_scheduled
            )''',
-      [
-        SyncStatus.pendingUpdate,
-        DateTime.now().toIso8601String(),
-        cutoff.toIso8601String(),
-        SyncStatus.pendingDelete,
-      ],
+        whereArgs: [cutoff.toIso8601String(), SyncStatus.pendingDelete],
+      );
+      for (final row in rows) {
+        final raw = row['updated_at'] as String?;
+        final previous = raw == null ? null : DateTime.tryParse(raw);
+        await txn.update(
+          'dose_logs',
+          {
+            'status': 'missed',
+            'updated_at': automaticUpdatedAt(previous).toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+      return (
+        changed: rows.length,
+        unpushed: rows
+            .where((r) => r['sync_status'] != SyncStatus.synced)
+            .length,
+      );
+    });
+  }
+
+  /// Stores the server's copy of a dose this device pushed as new, as
+  /// `synced`, but only if the local row is still the `pending_create` copy
+  /// stamped [pushedUpdatedAt]. Returns false when the row changed meanwhile
+  /// (it stays pending for the next cycle) or is gone.
+  Future<bool> adoptPushedCreate(
+    DoseLogModel remote, {
+    required Object? pushedUpdatedAt,
+  }) async {
+    final db = await _db;
+    final changed = await db.update(
+      'dose_logs',
+      _toRow(remote, SyncStatus.synced),
+      where: 'id = ? AND updated_at IS ? AND sync_status = ?',
+      whereArgs: [remote.id, pushedUpdatedAt, SyncStatus.pendingCreate],
     );
+    return changed > 0;
+  }
+
+  /// Deletes the dose [id] when the server has a tombstone for it, but only
+  /// if the local row is still the `pending_create` copy stamped
+  /// [pushedUpdatedAt] (see [adoptPushedCreate]).
+  Future<bool> deletePushedCreate(
+    String id, {
+    required Object? pushedUpdatedAt,
+  }) async {
+    final db = await _db;
+    final deleted = await db.delete(
+      'dose_logs',
+      where: 'id = ? AND updated_at IS ? AND sync_status = ?',
+      whereArgs: [id, pushedUpdatedAt, SyncStatus.pendingCreate],
+    );
+    return deleted > 0;
+  }
+
+  /// True when the local copy of [remote] is an overdue dose this device
+  /// marked missed on its own ([markOverduePendingAsMissed]) and [remote] is
+  /// the still-pending copy that conclusion was drawn from, or an older one.
+  /// A pull must not turn such a dose back into a pending one.
+  Future<bool> isAutomaticallyMissedCopyOf(DoseLogModel remote) async {
+    if (remote.status != DoseStatus.pending) return false;
+    final db = await _db;
+    final rows = await db.query(
+      'dose_logs',
+      columns: ['updated_at'],
+      where: 'id = ? AND status = ? AND sync_status = ?',
+      whereArgs: [remote.id, 'missed', SyncStatus.synced],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    final raw = rows.first['updated_at'] as String?;
+    final local = raw == null ? null : DateTime.tryParse(raw);
+    final remoteAt = remote.updatedAt;
+    if (local == null || remoteAt == null) return false;
+    return !remoteAt.toUtc().isAfter(local.toUtc());
   }
 
   DoseLogModel _fromRow(Map<String, dynamic> row) {
