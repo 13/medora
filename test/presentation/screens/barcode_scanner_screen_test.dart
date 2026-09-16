@@ -68,7 +68,7 @@ OcrLine _minsan(String code) => OcrLine('COD MINSAN: $code', _minsanBox);
 CodeCandidate _eanCandidate([Rect box = _eanBox]) =>
     CodeCandidate.eanFromBarcode('8057737141836', box)!;
 
-/// The cabinet lookup `_openEan` makes.
+/// The cabinet lookup every selection makes.
 class _CabinetRepo extends FailingMedicationRepo {
   _CabinetRepo({this.match});
 
@@ -290,6 +290,7 @@ void main() {
     SupplementRegistryService? registry,
     CameraPort? camera,
     GalleryPort? gallery,
+    _CabinetRepo? cabinet,
     List<Override> extra = const [],
   }) => [
     ...scannerOverrides(
@@ -301,6 +302,9 @@ void main() {
     supplementRegistryServiceProvider.overrideWithValue(
       registry ?? FakeSupplementRegistry(),
     ),
+    // Every selection consults the cabinet first (review I4), so every test
+    // needs one: an empty cabinet unless the test says otherwise.
+    medicationRepositoryProvider.overrideWithValue(cabinet ?? _CabinetRepo()),
     ...extra,
   ];
 
@@ -578,7 +582,7 @@ void main() {
         barcodes: [
           [_eanCandidate()],
         ],
-        extra: [medicationRepositoryProvider.overrideWithValue(repo)],
+        cabinet: repo,
       ),
     );
     await _shoot(tester);
@@ -602,7 +606,7 @@ void main() {
         barcodes: [
           [_eanCandidate()],
         ],
-        extra: [medicationRepositoryProvider.overrideWithValue(_CabinetRepo())],
+        cabinet: _CabinetRepo(),
       ),
     );
     await _shoot(tester);
@@ -610,6 +614,105 @@ void main() {
 
     expect(harness.pushed, ['/medications/add?barcode=8057737141836']);
     expect(find.text('Already in your cabinet'), findsNothing);
+  });
+
+  testWidgets('a supplement code already in the cabinet opens that '
+      'medication', (tester) async {
+    // Review I4: the cabinet remembers both the label code and the pack EAN
+    // so a later scan of either finds the medication. Only the EAN chip used
+    // to look, so rescanning a stored pack by its label code walked the user
+    // into Add Medication and made a duplicate.
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final repo = _CabinetRepo(
+      match: const Medication(id: 'med-1', name: 'Zinco-C', quantity: 4),
+    );
+    final registry = FakeSupplementRegistry(entries: const [_zinco]);
+    final harness = await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [_minsan('107018')],
+        ],
+        registry: registry,
+        cabinet: repo,
+      ),
+    );
+    await _shoot(tester);
+    await _tapRow(tester, 1);
+
+    expect(repo.lookups, ['107018']);
+    expect(harness.pushed, ['/medications/med-1']);
+    expect(find.text('Already in your cabinet'), findsOneWidget);
+  });
+
+  testWidgets('an AIC already in the cabinet opens it without asking AIFA', (
+    tester,
+  ) async {
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final asked = <String>[];
+    final repo = _CabinetRepo(
+      match: const Medication(id: 'med-2', name: 'Tachipirina', quantity: 2),
+    );
+    final harness = await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [const OcrLine('AIC 034567891', _minsanBox)],
+          const <OcrLine>[],
+        ],
+        cabinet: repo,
+        extra: [
+          aifaSearchProvider.overrideWithValue((code) async {
+            asked.add(code);
+            return const [_tachipirina];
+          }),
+        ],
+      ),
+    );
+    await _shoot(tester);
+    await _tapRow(tester, 1);
+
+    expect(repo.lookups, ['034567891']);
+    expect(asked, isEmpty);
+    expect(harness.pushed, ['/medications/med-2']);
+    expect(find.text('Already in your cabinet'), findsOneWidget);
+  });
+
+  testWidgets('an unknown code in the cabinet opens that medication', (
+    tester,
+  ) async {
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final repo = _CabinetRepo(
+      match: const Medication(id: 'med-3', name: 'Vitamin D', quantity: 1),
+    );
+    final harness = await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [const <OcrLine>[]],
+        barcodes: [
+          [
+            const CodeCandidate(
+              code: 'X-12345',
+              kind: CodeKind.other,
+              sourceText: 'X-12345',
+              box: Rect.fromLTWH(20, 20, 60, 20),
+            ),
+          ],
+        ],
+        cabinet: repo,
+      ),
+    );
+    await _shoot(tester);
+    await _tapRow(tester, 1);
+
+    expect(repo.lookups, ['X-12345']);
+    expect(harness.pushed, ['/medications/med-3']);
   });
 
   testWidgets('rescanning an area merges what it finds into the list', (

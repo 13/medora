@@ -810,26 +810,61 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   // ── Selection ──────────────────────────────────────────────
 
-  void _onCandidateSelected(CodeCandidate candidate) {
+  /// The cabinet first, whatever the code is: a medication remembers both the
+  /// label code and the pack EAN it was scanned with, so a later scan of
+  /// either one opens it instead of adding it twice (`migrations.dart`,
+  /// `MedicationLocalDatasource.getMedicationByBarcode`). Only a code the
+  /// cabinet does not know goes on to the lookup its kind deserves — which
+  /// used to be the only path for everything but an EAN (review I4).
+  Future<void> _onCandidateSelected(CodeCandidate candidate) async {
     if (_isSearching) return;
     if (widget.returnBarcodeOnly) {
-      _handleCode(
+      await _handleCode(
         candidate.code,
         kind: candidate.kind,
         alternatives: candidate.alternatives,
       );
       return;
     }
+    if (await _openFromCabinet(candidate.code)) return;
+    if (!mounted) return;
     switch (candidate.kind) {
       case CodeKind.aic:
-        _handleCode(candidate.code, alternatives: candidate.alternatives);
+        await _handleCode(candidate.code, alternatives: candidate.alternatives);
       case CodeKind.supplement:
-        _openSupplement(candidate);
-      case CodeKind.ean:
-        _openEan(candidate);
-      case CodeKind.other:
+        await _openSupplement(candidate);
+      case CodeKind.ean || CodeKind.other:
         _leaveAndPush(addMedicationWithBarcode(candidate.code, ean: _bestEan));
     }
+  }
+
+  /// Opens the cabinet medication whose label code or pack EAN is [code], and
+  /// says whether it did.
+  ///
+  /// A lookup that fails is logged and answered as "no match": the kind's own
+  /// lookup is then the best the screen can still offer, and is exactly what
+  /// the user got before the cabinet was consulted at all.
+  Future<bool> _openFromCabinet(String code) async {
+    setState(() => _isSearching = true);
+    final l10n = AppLocalizations.of(context);
+    String? id;
+    try {
+      final result = await ref
+          .read(medicationRepositoryProvider)
+          .getMedicationByBarcode(code);
+      if (result.isFailure) debugPrint('[scan] cabinet lookup failed: $code');
+      id = result.dataOrNull?.id;
+    } catch (e) {
+      debugPrint('[scan] cabinet lookup error: $e');
+    }
+    if (!mounted) return true; // the screen is gone; nothing left to open
+    setState(() => _isSearching = false);
+    if (id == null) return false;
+    _leaveAndPush(
+      AppRoutes.medicationDetail.replaceFirst(':id', id),
+      message: l10n.scanMedicationInCabinet,
+    );
+    return true;
   }
 
   /// Supplement chips corrected to the register code that matches them,
@@ -989,37 +1024,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       message: l10n.autoFilledFromBarcode,
       extra: entry,
     );
-  }
-
-  /// The cabinet medication with this barcode, else Add Medication.
-  Future<void> _openEan(CodeCandidate candidate) async {
-    setState(() => _isSearching = true);
-    final l10n = AppLocalizations.of(context);
-    try {
-      final result = await ref
-          .read(medicationRepositoryProvider)
-          .getMedicationByBarcode(candidate.code);
-      if (!mounted) return;
-      setState(() => _isSearching = false);
-      if (result.isFailure) {
-        _showError();
-        return;
-      }
-      final medication = result.dataOrNull;
-      if (medication != null) {
-        _leaveAndPush(
-          AppRoutes.medicationDetail.replaceFirst(':id', medication.id),
-          message: l10n.scanMedicationInCabinet,
-        );
-      } else {
-        _leaveAndPush(addMedicationWithBarcode(candidate.code, ean: _bestEan));
-      }
-    } catch (e) {
-      debugPrint('Cabinet barcode lookup error: $e');
-      if (!mounted) return;
-      setState(() => _isSearching = false);
-      _showError();
-    }
   }
 
   /// Replaces the scanner (its photo is deleted in `dispose`) with
