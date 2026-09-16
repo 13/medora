@@ -39,19 +39,6 @@ class MedicationRemoteDatasource {
 
   final SupabaseClient _client;
 
-  /// Get all medications for the current user.
-  Future<List<MedicationModel>> getMedications() async {
-    final response = await _client
-        .from(AppConstants.medicationsTable)
-        .select()
-        .isFilter('deleted_at', null)
-        .order('name');
-
-    return (response as List)
-        .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
-        .toList();
-  }
-
   /// One page of the rows changed after [since] (UTC; all rows when null),
   /// tombstones included: the rows after [after] in the pull order, at most
   /// [pullPageSize] of them. See `pullPage`.
@@ -91,20 +78,6 @@ class MedicationRemoteDatasource {
         .maybeSingle();
 
     return response == null ? null : MedicationModel.fromJson(response);
-  }
-
-  /// Search medications by name or active ingredient.
-  Future<List<MedicationModel>> searchMedications(String query) async {
-    final response = await _client
-        .from(AppConstants.medicationsTable)
-        .select()
-        .or('name.ilike.%$query%,active_ingredients.ilike.%$query%')
-        .isFilter('deleted_at', null)
-        .order('name');
-
-    return (response as List)
-        .map((json) => MedicationModel.fromJson(json as Map<String, dynamic>))
-        .toList();
   }
 
   /// Upsert a medication (insert or update). Returns the `updated_at` the

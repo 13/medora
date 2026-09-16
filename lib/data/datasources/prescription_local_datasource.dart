@@ -160,15 +160,6 @@ class PrescriptionLocalDatasource {
     });
   }
 
-  Future<List<Map<String, dynamic>>> getPendingChanges() async {
-    final db = await _db;
-    return db.query(
-      'prescriptions',
-      where: 'sync_status != ?',
-      whereArgs: [SyncStatus.synced],
-    );
-  }
-
   Future<void> clearAll() async {
     final db = await _db;
     await db.delete('prescriptions');

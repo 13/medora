@@ -17,18 +17,6 @@ class TreatmentRemoteDatasource {
 
   final SupabaseClient _client;
 
-  Future<List<TreatmentModel>> getTreatments() async {
-    final response = await _client
-        .from(AppConstants.treatmentsTable)
-        .select()
-        .isFilter('deleted_at', null)
-        .order('start_date', ascending: false);
-
-    return (response as List)
-        .map((json) => TreatmentModel.fromJson(json as Map<String, dynamic>))
-        .toList();
-  }
-
   /// One page of the rows changed after [since] (UTC; all rows when null),
   /// tombstones included: the rows after [after] in the pull order, at most
   /// [pullPageSize] of them. See `pullPage`.
@@ -56,19 +44,6 @@ class TreatmentRemoteDatasource {
         .maybeSingle();
     final raw = response?['updated_at'] as String?;
     return raw == null ? null : DateTime.parse(raw).toUtc();
-  }
-
-  Future<List<TreatmentModel>> getActiveTreatments() async {
-    final response = await _client
-        .from(AppConstants.treatmentsTable)
-        .select()
-        .eq('is_active', true)
-        .isFilter('deleted_at', null)
-        .order('start_date', ascending: false);
-
-    return (response as List)
-        .map((json) => TreatmentModel.fromJson(json as Map<String, dynamic>))
-        .toList();
   }
 
   /// The single row with [id], or null when the server does not have it.

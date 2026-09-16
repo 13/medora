@@ -194,9 +194,6 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
-  Future<List<MedicationModel>> getMedications() async =>
-      table.live().map(MedicationModel.fromJson).toList();
-  @override
   Future<List<MedicationModel>> getMedicationsSince(
     DateTime? since, {
     PullKey? after,
@@ -208,9 +205,6 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
     return row == null ? null : MedicationModel.fromJson(row);
   }
 
-  @override
-  Future<List<MedicationModel>> searchMedications(String query) async =>
-      (await getMedications()).where((m) => m.name.contains(query)).toList();
   @override
   Future<DateTime?> upsertMedication(MedicationModel model) async =>
       table.upsert(model.toJson());
@@ -227,17 +221,11 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
-  Future<List<TreatmentModel>> getTreatments() async =>
-      table.live().map(TreatmentModel.fromJson).toList();
-  @override
   Future<List<TreatmentModel>> getTreatmentsSince(
     DateTime? since, {
     PullKey? after,
   }) async =>
       (await table.page(since, after)).map(TreatmentModel.fromJson).toList();
-  @override
-  Future<List<TreatmentModel>> getActiveTreatments() async =>
-      (await getTreatments()).where((t) => t.isActive).toList();
   @override
   Future<TreatmentModel?> getTreatmentById(String id) async {
     final row = table.get(id);
