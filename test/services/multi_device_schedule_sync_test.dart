@@ -612,4 +612,85 @@ void main() {
       expect(h.server.doses.table.insertBatches.length - before, 1);
     });
   });
+
+  group('a row created offline, long before it is pushed', () {
+    final hourAgo = DateTime.now().subtract(const Duration(hours: 1));
+
+    test('an as-needed intake reaches a device that synced since', () async {
+      final p = await h.createOnA(
+        start: DateTime(2026, 3, 1, 8),
+        scheduleType: 'as_needed',
+      );
+      await h.b.sync();
+      h.a.online = false;
+      const intake = 'intake-1';
+      await h.a.run(
+        (_) => h.a.doses.addDoseLog(
+          DoseLog(
+            id: intake,
+            prescriptionId: p.prescriptionId,
+            scheduledTime: hourAgo,
+            takenTime: hourAgo,
+            status: DoseStatus.taken,
+            createdAt: hourAgo,
+            updatedAt: hourAgo,
+          ),
+        ),
+      );
+      // B syncs meanwhile: its cursors move past the intake's time.
+      await h.b.sync();
+      h.a.online = true;
+      await h.a.sync();
+      await h.b.sync();
+
+      final onB = await h.b.row('dose_logs', intake);
+      expect(onB['status'], 'taken');
+      expect(onB['sync_status'], SyncStatus.synced);
+      final onA = await h.a.row('dose_logs', intake);
+      expect(onA['sync_status'], SyncStatus.synced);
+      // A keeps the stamp the server gave the intake.
+      expect(
+        DateTime.parse(
+          onA['updated_at']! as String,
+        ).isAfter(hourAgo.add(const Duration(minutes: 30))),
+        isTrue,
+      );
+    });
+
+    test('a prescription reaches a device that synced since, with its '
+        'doses', () async {
+      final now = DateTime.now();
+      h.a.online = false;
+      final p = await h.createOnA(
+        start: DateTime(now.year, now.month, now.day + 1, 8),
+      );
+      await h.a.run((db) async {
+        for (final (table, id) in [
+          ('medications', p.medicationId),
+          ('treatments', p.treatmentId),
+          ('prescriptions', p.prescriptionId),
+        ]) {
+          await db.update(
+            table,
+            {'updated_at': hourAgo.toIso8601String()},
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+        }
+      });
+      await h.b.sync();
+      h.a.online = true;
+      await h.a.sync();
+      await h.b.appSync(ensure: false);
+
+      expect(
+        (await h.b.row('prescriptions', p.prescriptionId))['treatment_id'],
+        p.treatmentId,
+      );
+      expect(
+        await h.b.slots(p.prescriptionId),
+        await h.a.slots(p.prescriptionId),
+      );
+    });
+  });
 }

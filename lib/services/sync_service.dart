@@ -62,6 +62,7 @@ import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
+import 'package:medora/domain/entities/dose_slot.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/sync_cursor_store.dart';
@@ -475,8 +476,9 @@ class SyncService {
           await _skipStale('medications', report, staleAt);
           return false;
         }
-        final serverAt = await _remote(
-          medicationRemote!.upsertMedication(model),
+        final serverAt = await _upsertStamped(
+          row,
+          () => medicationRemote!.upsertMedication(model),
         );
         await _settlePushed('medications', row, serverAt);
       }
@@ -498,7 +500,10 @@ class SyncService {
           await _skipStale('treatments', report, staleAt);
           return false;
         }
-        final serverAt = await _remote(treatmentRemote!.upsertTreatment(model));
+        final serverAt = await _upsertStamped(
+          row,
+          () => treatmentRemote!.upsertTreatment(model),
+        );
         await _settlePushed('treatments', row, serverAt);
       }
       return true;
@@ -519,8 +524,9 @@ class SyncService {
           await _skipStale('prescriptions', report, staleAt);
           return false;
         }
-        final serverAt = await _remote(
-          prescriptionRemote!.upsertPrescription(model),
+        final serverAt = await _upsertStamped(
+          row,
+          () => prescriptionRemote!.upsertPrescription(model),
         );
         await _settlePushed('prescriptions', row, serverAt);
       }
@@ -551,13 +557,20 @@ class SyncService {
             await _skipStale('dose_logs', report, staleAt);
             return false;
           }
-          final serverAt = await _remote(doseLogRemote!.upsertDoseLog(model));
+          final serverAt = await _upsertStamped(
+            row,
+            () => doseLogRemote!.upsertDoseLog(model),
+          );
           await _settlePushed('dose_logs', row, serverAt);
         }
         return true;
       },
     );
   }
+
+  /// Stamps at or before this are the app's own (`generatedUpdatedAt`,
+  /// `automaticUpdatedAt`), never a person's.
+  static final _weakStampCeiling = DateTime.utc(1970, 1, 2);
 
   /// How many new dose logs one request inserts. The read-back lists their
   /// ids in the URL, which keeps it well under common URL limits.
@@ -655,13 +668,20 @@ class SyncService {
           );
           continue;
         }
+        final DoseLogModel adopted;
+        try {
+          adopted = await _stampRecordedDose(row, remote);
+        } catch (e) {
+          await _failNewDoseLogs([row], report, e);
+          continue;
+        }
         final settled = remote.deletedAt != null
             ? await doseLogLocal.deletePushedCreate(
                 id,
                 pushedUpdatedAt: row['updated_at'],
               )
             : await doseLogLocal.adoptPushedCreate(
-                remote,
+                adopted,
                 pushedUpdatedAt: row['updated_at'],
               );
         if (settled) {
@@ -673,6 +693,44 @@ class SyncService {
       }
       await Future<void>.delayed(Duration.zero);
     }
+  }
+
+  /// [remote], with the server's own stamp when it is the copy of a dose a
+  /// person recorded on this device (an as-needed intake) that this device
+  /// just inserted: such a row is sent once more so that other devices'
+  /// delta pulls see it (see [_upsertStamped]). A generated dose (its id is
+  /// its slot's) keeps the weakest stamp, and a copy someone else wrote is
+  /// left as it is.
+  Future<DoseLogModel> _stampRecordedDose(
+    Map<String, dynamic> row,
+    DoseLogModel remote,
+  ) async {
+    if (remote.deletedAt != null) return remote;
+    final local = DoseLogModel.fromLocalMap(row);
+    if (local.id ==
+        scheduledDoseId(local.prescriptionId, local.scheduledTime)) {
+      return remote;
+    }
+    final sent = local.updatedAt;
+    final landed = remote.updatedAt;
+    if (sent == null ||
+        landed == null ||
+        !landed.isAtSameMomentAs(sent) ||
+        !sent.isAfter(_weakStampCeiling)) {
+      return remote;
+    }
+    final stamp = await _remote(doseLogRemote!.upsertDoseLog(local));
+    if (stamp == null) return remote;
+    return DoseLogModel(
+      id: remote.id,
+      prescriptionId: remote.prescriptionId,
+      scheduledTime: remote.scheduledTime,
+      takenTime: remote.takenTime,
+      status: remote.status,
+      notes: remote.notes,
+      createdAt: remote.createdAt,
+      updatedAt: stamp,
+    );
   }
 
   /// Inserts [batch] where the server lacks its rows and returns the rows
@@ -733,6 +791,27 @@ class SyncService {
       await _failures.recordFailure('dose_logs', id, _now());
       report.failures.add(SyncFailure('dose_logs', id, 'push: $error'));
     }
+  }
+
+  /// Sends a row with [upsert] and returns the stamp the server gave it.
+  ///
+  /// The server stamps an update with its own clock, but an insert keeps
+  /// the `updated_at` the row was sent with ([row]'s): a row created offline
+  /// would reach the server with a time other devices' delta pulls may
+  /// already be past, and they would never see it. An answer carrying
+  /// exactly the stamp that was sent is such an insert, so the row is sent
+  /// once more, and that update is stamped by the server.
+  Future<DateTime?> _upsertStamped(
+    Map<String, dynamic> row,
+    Future<DateTime?> Function() upsert,
+  ) async {
+    final raw = row['updated_at'] as String?;
+    final sent = raw == null ? null : DateTime.tryParse(raw);
+    final stamp = await _remote(upsert());
+    if (sent == null || stamp == null || !stamp.isAtSameMomentAs(sent)) {
+      return stamp;
+    }
+    return _remote(upsert());
   }
 
   /// [call] with the cycle's [requestTimeout]. A request that times out

@@ -153,6 +153,15 @@ class RejectingDoseRemote extends FakeDoseLogRemote {
   /// Every insert request, as the ids it carried.
   final List<List<String>> inserts = [];
 
+  /// The ids sent with a plain upsert, in order.
+  final List<String> upserted = [];
+
+  @override
+  Future<DateTime?> upsertDoseLog(DoseLogModel model) {
+    upserted.add(model.id);
+    return super.upsertDoseLog(model);
+  }
+
   @override
   Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
     inserts.add([for (final m in models) m.id]);
@@ -219,6 +228,12 @@ Future<Map<String, dynamic>?> localRow(String table, String id) async {
 }
 
 int cycles() => 1 + SyncService.maxAutomaticReruns;
+
+/// The server's older copy of the medication `m-busy`.
+void seedBusyRemote(Harness h) => h.meds.table.seed(
+  const MedicationModel(id: 'm-busy', name: 'Server', quantity: 1).toJson(),
+  updatedAt: h.clock.now().subtract(const Duration(days: 1)),
+);
 
 void main() {
   setUp(setUpTestDatabase);
@@ -1860,6 +1875,65 @@ void main() {
       }
     });
 
+    test('only a dose a person recorded here is sent again for a server '
+        'stamp', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final db = await AppDatabase.instance.database;
+      final (prescriptionId, ids) = await seedSchedule(durationDays: 1);
+      final recordedAt = h.clock.now().subtract(const Duration(hours: 1));
+      // A generated dose an older build stamped with the current time.
+      await db.update(
+        'dose_logs',
+        {'updated_at': recordedAt.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [ids.first],
+      );
+      final intake = await seedDoseLog(
+        db,
+        prescriptionId,
+        recordedAt,
+        id: 'intake',
+        status: 'taken',
+        takenTime: recordedAt,
+      );
+      final weak = await seedDoseLog(
+        db,
+        prescriptionId,
+        recordedAt,
+        id: 'weak',
+      );
+      await db.update(
+        'dose_logs',
+        {'updated_at': recordedAt.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [intake],
+      );
+      await db.update(
+        'dose_logs',
+        {'updated_at': DateTime.utc(1970).toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [weak],
+      );
+      await db.update('dose_logs', {'sync_status': SyncStatus.pendingCreate});
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(remote.upserted, [intake]);
+      expect(
+        h.doses.table.updatedAt(intake),
+        h.clock.now(),
+        reason: 'the server stamped it',
+      );
+      final stored = (await localRow('dose_logs', intake))!['updated_at'];
+      expect(
+        DateTime.parse(stored! as String).isAtSameMomentAs(h.clock.now()),
+        isTrue,
+      );
+      expect(h.doses.table.updatedAt(ids.first), recordedAt.toUtc());
+    });
+
     test('a batch that fails does not stop the batches after it', () async {
       final h = Harness();
       final (_, ids) = await seedSchedule(durationDays: 84);
@@ -2059,10 +2133,12 @@ void main() {
             id: 'm-busy',
             name: 'Local',
             quantity: 1,
-            updatedAt: h.clock.now(),
+            updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
           ),
           syncStatus: SyncStatus.pendingUpdate,
         );
+        // The server has the row, so every push is an update.
+        seedBusyRemote(h);
 
         await h.service.syncAll();
 
@@ -2091,10 +2167,12 @@ void main() {
           id: 'm-busy',
           name: 'Local',
           quantity: 1,
-          updatedAt: h.clock.now(),
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
         ),
         syncStatus: SyncStatus.pendingUpdate,
       );
+      // The server has the row, so every push is an update.
+      seedBusyRemote(h);
       const cycles = 1 + SyncService.maxAutomaticReruns;
 
       await h.service.syncAll();
@@ -2123,10 +2201,12 @@ void main() {
           id: 'm-busy',
           name: 'Local',
           quantity: 1,
-          updatedAt: h.clock.now(),
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
         ),
         syncStatus: SyncStatus.pendingUpdate,
       );
+      // The server has the row, so every push is an update.
+      seedBusyRemote(h);
       await h.service.syncAll();
       expect(h.service.hasCapRetryScheduled, isTrue);
 
@@ -2154,10 +2234,12 @@ void main() {
           id: 'm-busy',
           name: 'Local',
           quantity: 1,
-          updatedAt: h.clock.now(),
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
         ),
         syncStatus: SyncStatus.pendingUpdate,
       );
+      // The server has the row, so every push is an update.
+      seedBusyRemote(h);
       await h.service.syncAll();
       h.service.dispose();
       expect(h.service.hasCapRetryScheduled, isFalse);
