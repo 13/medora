@@ -8,8 +8,10 @@
 /// scanning run again on a temporary PNG crop around the text found, deleted
 /// right after. When no barcode decoded at all, the bars above the digits
 /// OCR read are cropped and scanned in four rotations (see
-/// [barcodeStripeCrop]). Photos taken here are temporary
-/// files, deleted on retake, when leaving the screen and in `dispose`.
+/// [barcodeStripeCrop]). On the review screen the user can drag a rectangle
+/// over the photo and rescan just that area, whose results are merged into
+/// the candidates already found. Photos taken here are temporary files,
+/// deleted on retake, when leaving the screen and in `dispose`.
 /// Gallery picks are deleted the same way only when the picker handed us a
 /// copy inside the app's temporary directory (Android copies picks into the
 /// app cache); a path outside it could be the user's original and is never
@@ -116,6 +118,15 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Size _imageSize = Size.zero;
   List<CodeCandidate> _candidates = const [];
 
+  /// The inputs behind [_candidates], kept so an area rescan merges into
+  /// them instead of replacing everything found so far.
+  List<OcrLine> _photoLines = const [];
+  List<OcrLine> _extraLines = const [];
+  List<CodeCandidate> _barcodes = const [];
+
+  /// Whether the review photo is in area-selection mode.
+  bool _selectingArea = false;
+
   /// The width the photo is decoded at for display (see [_photoImage]).
   int? _photoDecodeWidth;
 
@@ -127,6 +138,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   /// How long one rotation of a stripe crop may take to render.
   static const Duration _stripeTimeout = Duration(seconds: 15);
+
+  /// How long the crop of a user-selected area may take to render.
+  static const Duration _areaCropTimeout = Duration(seconds: 15);
 
   @override
   void initState() {
@@ -347,6 +361,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       _photoPath = path;
       _photoIsTemp = isTemp;
       _candidates = const [];
+      _photoLines = const [];
+      _extraLines = const [];
+      _barcodes = const [];
+      _selectingArea = false;
     });
     await _pausePreview();
     if (!mounted) return;
@@ -410,6 +428,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       setState(() {
         _imageSize = size;
         _candidates = candidates;
+        _photoLines = photoLines;
+        _extraLines = regionLines;
+        _barcodes = barcodes;
         _stage = _ScanStage.review;
       });
     } catch (e) {
@@ -569,6 +590,78 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     return found;
   }
 
+  /// Text recognition and barcode scanning on the area the user selected on
+  /// the review photo ([selection] in 0..1 fractions), merged into the
+  /// candidates already found. The crop is a PNG in a fresh `scan_area_`
+  /// directory, deleted when done.
+  Future<void> _rescanArea(Rect selection) async {
+    final path = _photoPath;
+    if (path == null || _isSearching) return;
+    final crop = rescanAreaCrop(selection, _imageSize);
+    if (crop == null) return;
+    setState(() => _isSearching = true);
+    Directory? dir;
+    final before = _candidates.length;
+    try {
+      dir = await (await getTemporaryDirectory()).createTemp('scan_area_');
+      final out = p.join(dir.path, 'area.png');
+      final written = await writeImageCrop(
+        path,
+        crop,
+        out,
+      ).timeout(_areaCropTimeout);
+      if (written == null || !mounted || _photoPath != path) return;
+      scanLog([
+        '[scan] area pass ${written.crop.width.round()}x'
+            '${written.crop.height.round()} @ ${written.crop.left.round()},'
+            '${written.crop.top.round()} scale ${written.scale}',
+      ]);
+      final input = InputImage.fromFilePath(out);
+      final (lines, found) = await (
+        _recognizeText(
+          input,
+          offset: written.crop.topLeft,
+          scale: written.scale,
+          pass: 'area',
+        ),
+        _scanBarcodes(input, pass: 'area'),
+      ).wait;
+      if (!mounted || _photoPath != path) return;
+      _extraLines = [..._extraLines, ...?lines];
+      _barcodes = [
+        ..._barcodes,
+        ...offsetCandidates(
+          found ?? const [],
+          written.crop.topLeft,
+          scale: written.scale,
+        ),
+      ];
+      var candidates = findCodeCandidates(
+        _photoLines,
+        regionLines: _extraLines,
+        barcodes: _barcodes,
+      );
+      candidates = await _resolveAgainstRegister(candidates);
+      if (!mounted || _photoPath != path) return;
+      setState(() {
+        _candidates = candidates;
+        _selectingArea = false;
+      });
+      if (candidates.length == before) {
+        final l10n = AppLocalizations.of(context);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.scanRescanNothingNew)));
+      }
+    } catch (e, stack) {
+      debugPrint('[scan] area rescan failed: $e\n$stack');
+      if (mounted) _showError();
+    } finally {
+      if (dir != null) await _deleteDirectory(dir);
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
   Future<void> _deleteDirectory(Directory dir) async {
     try {
       await dir.delete(recursive: true);
@@ -637,6 +730,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     _discardPhoto();
     setState(() {
       _candidates = const [];
+      _photoLines = const [];
+      _extraLines = const [];
+      _barcodes = const [];
+      _selectingArea = false;
       _imageSize = Size.zero;
       _stage = _ScanStage.capture;
     });
@@ -878,6 +975,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
             onRetake: _retake,
             onManualEntry: () => _showManualEntryDialog(context),
             busy: _isSearching,
+            onRescanArea: _rescanArea,
+            selecting: _selectingArea,
+            onToggleSelecting: () =>
+                setState(() => _selectingArea = !_selectingArea),
           ),
         ),
       },

@@ -379,4 +379,62 @@ void main() {
       expect(moved.single.box, const Rect.fromLTRB(120, 230, 150, 250));
     });
   });
+
+  group('rescanAreaCrop', () {
+    test('a half-size selection maps to whole photo pixels', () {
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
+          const Size(1000, 800),
+        ),
+        const Rect.fromLTRB(250, 200, 500, 400),
+      );
+    });
+
+    test('a selection under the minimum side has no crop', () {
+      // 1% of 1000x800 is 10x8 pixels, under minRescanSide.
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.10, 0.10, 0.11, 0.11),
+          const Size(1000, 800),
+        ),
+        isNull,
+      );
+    });
+
+    test('a selection beyond the edges clamps to the photo', () {
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(-0.5, -0.25, 1.5, 2.0),
+          const Size(1000, 800),
+        ),
+        const Rect.fromLTRB(0, 0, 1000, 800),
+      );
+    });
+
+    test('fractional pixels round outwards', () {
+      // 0.3001 * 1000 = 300.1 -> 300; 0.6009 * 1000 = 600.9 -> 601.
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.3001, 0.3001, 0.6009, 0.6009),
+          const Size(1000, 1000),
+        ),
+        const Rect.fromLTRB(300, 300, 601, 601),
+      );
+    });
+
+    test('null for an empty photo or a degenerate selection', () {
+      expect(
+        rescanAreaCrop(const Rect.fromLTRB(0, 0, 1, 1), Size.zero),
+        isNull,
+      );
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.5, 0.5, 0.5, 0.5),
+          const Size(1000, 800),
+        ),
+        isNull,
+      );
+    });
+  });
 }

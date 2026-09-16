@@ -524,6 +524,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'No code found. Retake the photo closer, or type the code.';
 
   @override
+  String get scanSelectArea => 'Select area';
+
+  @override
+  String get scanRescanArea => 'Scan selection';
+
+  @override
+  String get scanSelectAreaHint =>
+      'Drag a box around the code, then scan the selection.';
+
+  @override
+  String get scanRescanNothingNew => 'No new code found in that area.';
+
+  @override
   String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
 
   @override

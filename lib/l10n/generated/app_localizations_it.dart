@@ -528,6 +528,19 @@ class AppLocalizationsIt extends AppLocalizations {
       'Nessun codice trovato. Scatta più da vicino o inserisci il codice.';
 
   @override
+  String get scanSelectArea => 'Seleziona area';
+
+  @override
+  String get scanRescanArea => 'Scansiona selezione';
+
+  @override
+  String get scanSelectAreaHint =>
+      'Trascina un riquadro attorno al codice, poi scansiona la selezione.';
+
+  @override
+  String get scanRescanNothingNew => 'Nessun nuovo codice in quell\'area.';
+
+  @override
   String get scanCaptureHint =>
       'Fotografa la confezione con il codice AIC ben leggibile';
 

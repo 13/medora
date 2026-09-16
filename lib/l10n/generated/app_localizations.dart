@@ -1042,6 +1042,30 @@ abstract class AppLocalizations {
   /// **'No code found. Retake the photo closer, or type the code.'**
   String get scanNoCodeFound;
 
+  /// No description provided for @scanSelectArea.
+  ///
+  /// In en, this message translates to:
+  /// **'Select area'**
+  String get scanSelectArea;
+
+  /// No description provided for @scanRescanArea.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan selection'**
+  String get scanRescanArea;
+
+  /// No description provided for @scanSelectAreaHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag a box around the code, then scan the selection.'**
+  String get scanSelectAreaHint;
+
+  /// No description provided for @scanRescanNothingNew.
+  ///
+  /// In en, this message translates to:
+  /// **'No new code found in that area.'**
+  String get scanRescanNothingNew;
+
   /// No description provided for @scanCaptureHint.
   ///
   /// In en, this message translates to:

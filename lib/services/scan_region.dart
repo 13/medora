@@ -203,3 +203,27 @@ List<CodeCandidate> unrotateCandidates(
       alternatives: c.alternatives,
     ),
 ];
+
+/// The smallest useful side of a rescan crop, in photo pixels: a smaller
+/// drag is a stray tap, not a code.
+const double minRescanSide = 24;
+
+/// The photo-pixel crop for a user-selected [selection] (fractions of the
+/// displayed photo, 0..1), rounded outwards to whole pixels and clamped to
+/// [imageSize]; null when the photo is empty or the selection ends up
+/// smaller than [minRescanSide] pixels on a side.
+Rect? rescanAreaCrop(Rect selection, Size imageSize) {
+  if (imageSize.isEmpty) return null;
+  final raw = Rect.fromLTRB(
+    selection.left * imageSize.width,
+    selection.top * imageSize.height,
+    selection.right * imageSize.width,
+    selection.bottom * imageSize.height,
+  );
+  final left = math.max(0.0, raw.left.floorToDouble());
+  final top = math.max(0.0, raw.top.floorToDouble());
+  final right = math.min(imageSize.width, raw.right.ceilToDouble());
+  final bottom = math.min(imageSize.height, raw.bottom.ceilToDouble());
+  if (right - left < minRescanSide || bottom - top < minRescanSide) return null;
+  return Rect.fromLTRB(left, top, right, bottom);
+}

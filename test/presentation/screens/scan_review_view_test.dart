@@ -300,4 +300,153 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('dragging in selection mode reports the selected fractions', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    Rect? selected;
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ScanReviewView(
+          image: MemoryImage(_png),
+          imageSize: const Size(1000, 1000),
+          candidates: const [],
+          onSelected: (_) {},
+          onRetake: () {},
+          onManualEntry: () {},
+          selecting: true,
+          onToggleSelecting: () {},
+          onRescanArea: (area) => selected = area,
+        ),
+      ),
+      locale: const Locale('de'),
+    );
+    final photo = find.byKey(const ValueKey('scanPhoto'));
+    final box = tester.getRect(photo);
+    await tester.timedDragFrom(
+      box.topLeft + Offset(box.width / 4, box.height / 4),
+      Offset(box.width / 4, box.height / 4),
+      const Duration(milliseconds: 200),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('scanRescanArea')));
+    await tester.pumpAndSettle();
+    expect(selected, isNotNull);
+    expect(selected!.left, closeTo(0.25, 0.02));
+    expect(selected!.top, closeTo(0.25, 0.02));
+    expect(selected!.right, closeTo(0.5, 0.02));
+    expect(selected!.bottom, closeTo(0.5, 0.02));
+  });
+
+  testWidgets('the select-area button toggles the mode', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    var toggled = 0;
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ScanReviewView(
+          image: MemoryImage(_png),
+          imageSize: const Size(1000, 1000),
+          candidates: const [],
+          onSelected: (_) {},
+          onRetake: () {},
+          onManualEntry: () {},
+          onToggleSelecting: () => toggled++,
+          onRescanArea: (_) {},
+        ),
+      ),
+      locale: const Locale('de'),
+    );
+    await tester.tap(find.byKey(const ValueKey('scanSelectArea')));
+    expect(toggled, 1);
+  });
+
+  testWidgets('without a rescan callback the button is absent', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ScanReviewView(
+          image: MemoryImage(_png),
+          imageSize: const Size(1000, 1000),
+          candidates: const [],
+          onSelected: (_) {},
+          onRetake: () {},
+          onManualEntry: () {},
+        ),
+      ),
+      locale: const Locale('de'),
+    );
+    expect(find.byKey(const ValueKey('scanSelectArea')), findsNothing);
+  });
+
+  testWidgets('the rescan button appears only once an area is drawn', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ScanReviewView(
+          image: MemoryImage(_png),
+          imageSize: const Size(1000, 1000),
+          candidates: const [],
+          onSelected: (_) {},
+          onRetake: () {},
+          onManualEntry: () {},
+          selecting: true,
+          onToggleSelecting: () {},
+          onRescanArea: (_) {},
+        ),
+      ),
+      locale: const Locale('de'),
+    );
+    expect(find.byKey(const ValueKey('scanRescanArea')), findsNothing);
+    expect(
+      find.text('Ziehe einen Rahmen um den Code und scanne die Auswahl.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('no overflow at 360x800 with the rescan controls', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(360, 800));
+    await pumpMedoraApp(
+      tester,
+      Scaffold(
+        body: ScanReviewView(
+          image: MemoryImage(_png),
+          imageSize: const Size(1000, 1000),
+          candidates: [
+            for (var i = 0; i < 12; i++)
+              _c(
+                'A0${i}0000000 mit sehr langem Quelltext',
+                CodeKind.values[i % 4],
+                Rect.fromLTWH(i * 80.0, i * 80.0, 200, 50),
+              ),
+          ],
+          onSelected: (_) {},
+          onRetake: () {},
+          onManualEntry: () {},
+          selecting: true,
+          onToggleSelecting: () {},
+          onRescanArea: (_) {},
+        ),
+      ),
+      locale: const Locale('de'),
+    );
+    final photo = find.byKey(const ValueKey('scanPhoto'));
+    final box = tester.getRect(photo);
+    await tester.timedDragFrom(
+      box.topLeft + Offset(box.width / 4, box.height / 4),
+      Offset(box.width / 4, box.height / 4),
+      const Duration(milliseconds: 200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('scanRescanArea')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
