@@ -54,26 +54,29 @@ void main() {
 
   DateTime clock() => DateTime.now().toUtc();
 
-  /// A container in cloud mode (every remote datasource present) or in
-  /// local-only mode (none), with [sync] standing in for the sync service.
+  /// A container whose remote datasources exist only for the tables in
+  /// [remotes] (all four: cloud mode; none: local-only mode), with [sync]
+  /// standing in for the sync service.
   ProviderContainer container({
-    required bool cloud,
+    required Set<String> remotes,
     required _CountingSyncService sync,
   }) {
     final c = ProviderContainer(
       overrides: [
         syncServiceProvider.overrideWithValue(sync),
         medicationDatasourceProvider.overrideWithValue(
-          cloud ? FakeMedicationRemote(clock) : null,
+          remotes.contains('medications') ? FakeMedicationRemote(clock) : null,
         ),
         treatmentDatasourceProvider.overrideWithValue(
-          cloud ? FakeTreatmentRemote(clock) : null,
+          remotes.contains('treatments') ? FakeTreatmentRemote(clock) : null,
         ),
         prescriptionDatasourceProvider.overrideWithValue(
-          cloud ? FakePrescriptionRemote(clock) : null,
+          remotes.contains('prescriptions')
+              ? FakePrescriptionRemote(clock)
+              : null,
         ),
         doseLogDatasourceProvider.overrideWithValue(
-          cloud ? FakeDoseLogRemote(clock) : null,
+          remotes.contains('dose_logs') ? FakeDoseLogRemote(clock) : null,
         ),
       ],
     );
@@ -81,13 +84,14 @@ void main() {
     return c;
   }
 
-  /// One write through each of the four repositories, each followed by a
-  /// check of how many syncs [sync] has been asked for.
-  Future<void> writeThroughEachRepository(
+  const tables = ['treatments', 'medications', 'prescriptions', 'dose_logs'];
+
+  /// One write through each of the four repositories, in the order of
+  /// [tables]; returns, per table, how many syncs that write asked for.
+  Future<Map<String, int>> writeThroughEachRepository(
     ProviderContainer c,
-    _CountingSyncService sync, {
-    required int Function(int writes) expected,
-  }) async {
+    _CountingSyncService sync,
+  ) async {
     final db = await AppDatabase.instance.database;
     final seeded = await seedPrescription(db);
     final dose = await seedDoseLog(
@@ -95,45 +99,84 @@ void main() {
       seeded.prescriptionId,
       DateTime(2026, 3, 1, 8),
     );
+    final asked = <String, int>{};
+    Future<void> step(String table, Future<void> Function() write) async {
+      final before = sync.requests;
+      await write();
+      await pumpEventQueue();
+      asked[table] = sync.requests - before;
+    }
 
-    await c
-        .read(treatmentRepositoryProvider)
-        .addTreatment(
-          Treatment(id: 't-new', name: 'Flu', startDate: DateTime(2026, 3, 2)),
-        );
-    await pumpEventQueue();
-    expect(sync.requests, expected(1), reason: 'treatment write');
-
-    await c
-        .read(medicationRepositoryProvider)
-        .addMedication(
-          const Medication(id: 'm-new', name: 'Moment', quantity: 1),
-        );
-    await pumpEventQueue();
-    expect(sync.requests, expected(2), reason: 'medication write');
-
-    await c
-        .read(prescriptionRepositoryProvider)
-        .deactivatePrescription(seeded.prescriptionId);
-    await pumpEventQueue();
-    expect(sync.requests, expected(3), reason: 'prescription write');
-
-    await c.read(doseLogRepositoryProvider).markDoseTaken(dose);
-    await pumpEventQueue();
-    expect(sync.requests, expected(4), reason: 'dose log write');
+    await step(
+      'treatments',
+      () => c
+          .read(treatmentRepositoryProvider)
+          .addTreatment(
+            Treatment(
+              id: 't-new',
+              name: 'Flu',
+              startDate: DateTime(2026, 3, 2),
+            ),
+          ),
+    );
+    await step(
+      'medications',
+      () => c
+          .read(medicationRepositoryProvider)
+          .addMedication(
+            const Medication(id: 'm-new', name: 'Moment', quantity: 1),
+          ),
+    );
+    await step(
+      'prescriptions',
+      () => c
+          .read(prescriptionRepositoryProvider)
+          .deactivatePrescription(seeded.prescriptionId),
+    );
+    await step(
+      'dose_logs',
+      () => c.read(doseLogRepositoryProvider).markDoseTaken(dose),
+    );
+    return asked;
   }
 
   test('in cloud mode every repository write asks for one sync', () async {
     final sync = _CountingSyncService();
-    final c = container(cloud: true, sync: sync);
+    final c = container(remotes: tables.toSet(), sync: sync);
 
-    await writeThroughEachRepository(c, sync, expected: (writes) => writes);
+    expect(await writeThroughEachRepository(c, sync), {
+      for (final t in tables) t: 1,
+    });
   });
 
   test('in local-only mode no repository write asks for a sync', () async {
     final sync = _CountingSyncService();
-    final c = container(cloud: false, sync: sync);
+    final c = container(remotes: const {}, sync: sync);
 
-    await writeThroughEachRepository(c, sync, expected: (_) => 0);
+    expect(await writeThroughEachRepository(c, sync), {
+      for (final t in tables) t: 0,
+    });
   });
+
+  // Each repository looks at its own table's remote datasource, not at
+  // another table's.
+  for (final table in tables) {
+    test('only the $table remote: only its writes ask for a sync', () async {
+      final sync = _CountingSyncService();
+      final c = container(remotes: {table}, sync: sync);
+
+      expect(await writeThroughEachRepository(c, sync), {
+        for (final t in tables) t: t == table ? 1 : 0,
+      });
+    });
+
+    test('every remote but $table: its writes ask for none', () async {
+      final sync = _CountingSyncService();
+      final c = container(remotes: {...tables}..remove(table), sync: sync);
+
+      expect(await writeThroughEachRepository(c, sync), {
+        for (final t in tables) t: t == table ? 0 : 1,
+      });
+    });
+  }
 }

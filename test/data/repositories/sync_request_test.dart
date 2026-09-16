@@ -7,6 +7,7 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/data/repositories/prescription_repository_impl.dart';
@@ -88,6 +89,40 @@ void main() {
         pendingDelete,
       ]);
     });
+
+    test(
+      'a stock change asks for its sync after the new quantity is stored',
+      () async {
+        final medications = MedicationLocalDatasource();
+        await medications.upsert(
+          MedicationModel.fromDomain(
+            const Medication(id: 'm1', name: 'Moment', quantity: 5),
+          ),
+          syncStatus: SyncStatus.synced,
+        );
+        final quantities = <int?>[];
+        final repo = MedicationRepositoryImpl(
+          localDatasource: medications,
+          requestSync: () async {
+            final db = await AppDatabase.instance.database;
+            final rows = await db.query(
+              'medications',
+              columns: ['quantity'],
+              where: 'id = ?',
+              whereArgs: ['m1'],
+            );
+            quantities.add(rows.single['quantity'] as int?);
+          },
+        );
+
+        await repo.updateQuantity('m1', -1);
+        await pumpEventQueue();
+        await repo.updateQuantity('m1', -1);
+        await pumpEventQueue();
+
+        expect(quantities, [4, 3]);
+      },
+    );
 
     test('a failed request does not fail the write', () async {
       final requests = _Requests('medications')
