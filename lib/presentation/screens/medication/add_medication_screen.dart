@@ -18,6 +18,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/medication/aifa_search_sheet.dart';
+import 'package:medora/presentation/screens/medication/supplement_search_sheet.dart';
 import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
 import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
@@ -423,6 +424,42 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     }
   }
 
+  /// Search the food-supplement register by product name (offering the
+  /// first download) and prefill from the chosen product, exactly like a
+  /// scanned supplement code does.
+  Future<void> _showSupplementSearch() async {
+    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(supplementRegistryServiceProvider);
+    try {
+      if (!await service.hasData()) {
+        if (!mounted) return;
+        final downloaded = await confirmAndDownloadSupplementRegister(
+          context,
+          service,
+        );
+        if (!mounted || downloaded == null) return; // cancelled
+        if (!downloaded) {
+          messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+          return;
+        }
+      }
+      if (!mounted) return;
+      final entry = await showSupplementSearchSheet(context, service);
+      if (entry == null || !mounted) return;
+      setState(() => _applySupplementEntry(entry));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.autoFilledFromBarcode)),
+      );
+    } catch (e) {
+      debugPrint('Supplement register search error: $e');
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -508,6 +545,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                       label: Text(l10n.searchAifaByName),
                       onPressed: () => _showAifaTextSearch(context),
                     ),
+                    if (caps.hasSupplementRegister)
+                      ActionChip(
+                        avatar: const Icon(Icons.eco_outlined, size: 18),
+                        label: Text(l10n.searchSupplementByName),
+                        onPressed: _showSupplementSearch,
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),

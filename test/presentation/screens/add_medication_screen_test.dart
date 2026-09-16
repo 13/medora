@@ -127,6 +127,10 @@ void main() {
 
     expect(find.textContaining('min 0'), findsOneWidget);
 
+    // The header sits below the fold on the 800x600 default viewport once
+    // the quick-action chips wrap onto a second line.
+    await tester.ensureVisible(find.text('Stock & storage'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Stock & storage'));
     await tester.pumpAndSettle();
 
