@@ -33,6 +33,7 @@ import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/scanner/scan_result.dart';
@@ -44,6 +45,7 @@ import 'package:medora/services/barcode_adapter.dart';
 import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/image_size.dart';
 import 'package:medora/services/ocr_adapter.dart';
+import 'package:medora/services/register_freshness.dart';
 import 'package:medora/services/scan_debug.dart';
 import 'package:medora/services/scan_region.dart';
 import 'package:medora/services/supplement_registry_service.dart';
@@ -126,6 +128,13 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   /// Whether the review photo is in area-selection mode.
   bool _selectingArea = false;
+
+  /// Set while the on-device supplement register is stale, so the review
+  /// stage can offer an update; null when it is fresh, absent or unreadable.
+  RegisterFreshness? _registerFreshness;
+
+  /// Whether the user closed the staleness banner for this photo.
+  bool _registerWarningDismissed = false;
 
   /// The width the photo is decoded at for display (see [_photoImage]).
   int? _photoDecodeWidth;
@@ -359,6 +368,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     if (_photoPath != path) _discardPhoto();
     setState(() {
       _stage = _ScanStage.recognizing;
+      _registerWarningDismissed = false;
       _photoPath = path;
       _photoIsTemp = isTemp;
       _candidates = const [];
@@ -422,11 +432,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       }
       candidates = await _resolveAgainstRegister(candidates);
       if (!mounted || _photoPath != path) return;
+      final freshness = await _loadRegisterFreshness();
+      if (!mounted || _photoPath != path) return;
       scanLog([
         '[scan] image: ${size.width.round()}x${size.height.round()}',
         ...describeCandidates(candidates),
       ]);
       setState(() {
+        _registerFreshness = freshness;
         _imageSize = size;
         _candidates = candidates;
         _photoLines = photoLines;
@@ -834,6 +847,55 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
+  /// How old the on-device supplement register is, but only when that is
+  /// worth saying: null when the platform has no register, when nothing is
+  /// cached (the download prompt covers that), when it is still fresh, or
+  /// when the status cannot be read at all.
+  Future<RegisterFreshness?> _loadRegisterFreshness() async {
+    try {
+      if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
+        return null;
+      }
+      final service = ref.read(supplementRegistryServiceProvider);
+      final freshness = registerFreshness(
+        now: ref.read(nowProvider)(),
+        sourceUpdated: await service.sourceUpdated(),
+        lastSync: await service.lastSync(),
+        count: await service.count(),
+      );
+      return freshness.isStale ? freshness : null;
+    } catch (e) {
+      debugPrint('[scan] register freshness unavailable: $e');
+      return null;
+    }
+  }
+
+  /// Downloads the register from the review banner, then re-resolves the
+  /// chips against it: a supplement code read from this photo can become a
+  /// register match without the user having to scan again.
+  Future<void> _updateRegisterFromReview() async {
+    if (_isSearching) return;
+    final service = ref.read(supplementRegistryServiceProvider);
+    final downloaded = await confirmAndDownloadSupplementRegister(
+      context,
+      service,
+    );
+    if (!mounted || downloaded == null) return; // cancelled
+    if (!downloaded) {
+      _showError(); // offline or the download failed
+      return;
+    }
+    setState(() => _isSearching = true);
+    final candidates = await _resolveAgainstRegister(_candidates);
+    final freshness = await _loadRegisterFreshness();
+    if (!mounted) return;
+    setState(() {
+      _candidates = candidates;
+      _registerFreshness = freshness;
+      _isSearching = false;
+    });
+  }
+
   /// Looks the code up in the food-supplement register (offering the
   /// first download), then its alternative readings when it is not there,
   /// and opens Add Medication prefilled with the code that matched (after
@@ -994,9 +1056,46 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
             selecting: _selectingArea,
             onToggleSelecting: () =>
                 setState(() => _selectingArea = !_selectingArea),
+            banner: _buildRegisterBanner(l10n),
           ),
         ),
       },
+    );
+  }
+
+  /// The stale-register warning above the review list: the age, an update
+  /// action and a close button. Null while the register is fresh, missing
+  /// or the warning was dismissed for this photo.
+  Widget? _buildRegisterBanner(AppLocalizations l10n) {
+    final freshness = _registerFreshness;
+    if (freshness == null || _registerWarningDismissed) return null;
+    final days = freshness.days;
+    return Row(
+      children: [
+        Icon(
+          Icons.warning_amber_rounded,
+          color: context.colors.error,
+          size: 18,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            days == null ? l10n.registerStaleUnknown : l10n.registerStale(days),
+            style: TextStyle(color: context.colors.error),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('scanRegisterUpdate'),
+          onPressed: _isSearching ? null : _updateRegisterFromReview,
+          child: Text(l10n.registerUpdateNow),
+        ),
+        IconButton(
+          key: const ValueKey('scanRegisterDismiss'),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          icon: const Icon(Icons.close, size: 18),
+          onPressed: () => setState(() => _registerWarningDismissed = true),
+        ),
+      ],
     );
   }
 

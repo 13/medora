@@ -30,6 +30,7 @@ class ScanReviewView extends StatefulWidget {
     this.onRescanArea,
     this.selecting = false,
     this.onToggleSelecting,
+    this.banner,
   });
 
   final ImageProvider image;
@@ -48,6 +49,10 @@ class ScanReviewView extends StatefulWidget {
   /// finished rescan can leave it).
   final bool selecting;
   final VoidCallback? onToggleSelecting;
+
+  /// Shown above the candidate list, for anything the caller needs to say
+  /// about the scan itself (today: a stale supplement register).
+  final Widget? banner;
 
   @override
   State<ScanReviewView> createState() => _ScanReviewViewState();
@@ -156,6 +161,11 @@ class _ScanReviewViewState extends State<ScanReviewView> {
                       ),
                   ],
                 ),
+              ),
+            if (widget.banner != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: widget.banner,
               ),
             Expanded(
               child: widget.candidates.isEmpty

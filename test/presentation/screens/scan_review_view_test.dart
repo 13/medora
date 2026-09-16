@@ -48,6 +48,7 @@ Future<void> _pump(
   VoidCallback? onRetake,
   VoidCallback? onManualEntry,
   bool busy = false,
+  Widget? banner,
 }) async {
   await pumpMedoraApp(
     tester,
@@ -60,6 +61,7 @@ Future<void> _pump(
         onRetake: onRetake ?? () {},
         onManualEntry: onManualEntry ?? () {},
         busy: busy,
+        banner: banner,
       ),
     ),
     locale: const Locale('de'),
@@ -67,6 +69,27 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('a banner renders above the candidate list', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pump(
+      tester,
+      candidates: [_aic1],
+      banner: const Text('Zuletzt vor 60 Tagen aktualisiert'),
+    );
+
+    final banner = tester
+        .getTopLeft(find.text('Zuletzt vor 60 Tagen aktualisiert'))
+        .dy;
+    expect(banner, lessThan(tester.getTopLeft(find.text('AIC-Codes')).dy));
+  });
+
+  testWidgets('without a banner nothing is reserved for it', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pump(tester, candidates: [_aic1]);
+
+    expect(find.text('Zuletzt vor 60 Tagen aktualisiert'), findsNothing);
+  });
+
   testWidgets('sections, row numbers and markers follow the ranking', (
     tester,
   ) async {
