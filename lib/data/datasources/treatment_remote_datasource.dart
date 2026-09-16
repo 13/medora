@@ -99,14 +99,4 @@ class TreatmentRemoteDatasource {
         .update({'deleted_at': now, 'updated_at': now})
         .eq('id', id);
   }
-
-  Future<void> endTreatment(String id) async {
-    await _client
-        .from(AppConstants.treatmentsTable)
-        .update({
-          'is_active': false,
-          'end_date': DateTime.now().toIso8601String().split('T').first,
-        })
-        .eq('id', id);
-  }
 }

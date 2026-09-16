@@ -87,4 +87,87 @@ void main() {
     expect(back.sickLeaveRef, '1234567890');
     expect(back.doctor, 'Dr. Rossi, Bozen');
   });
+
+  group('copyWith', () {
+    final full = TreatmentModel(
+      id: 't1',
+      userId: 'user-a',
+      name: 'Stirnhöhlenentzündung',
+      patientTags: const ['Ben'],
+      symptomTags: const ['Kopfschmerzen'],
+      startDate: DateTime(2026, 3, 2),
+      endDate: DateTime(2026, 3, 11),
+      isActive: false,
+      notes: 'ging langsam weg',
+      sickLeaveFrom: DateTime(2026, 3, 3),
+      sickLeaveTo: DateTime(2026, 3, 9),
+      sickLeaveRef: '1234567890',
+      doctor: 'Dr. Rossi, Bozen',
+      createdAt: DateTime(2026, 3, 2, 8),
+      updatedAt: DateTime(2026, 3, 11, 8),
+      deletedAt: DateTime(2026, 3, 12, 8),
+    );
+
+    Map<String, Object?> fields(TreatmentModel m) => {
+      'id': m.id,
+      'userId': m.userId,
+      'name': m.name,
+      'patientTags': m.patientTags,
+      'symptomTags': m.symptomTags,
+      'startDate': m.startDate,
+      'endDate': m.endDate,
+      'isActive': m.isActive,
+      'notes': m.notes,
+      'sickLeaveFrom': m.sickLeaveFrom,
+      'sickLeaveTo': m.sickLeaveTo,
+      'sickLeaveRef': m.sickLeaveRef,
+      'doctor': m.doctor,
+      'createdAt': m.createdAt,
+      'updatedAt': m.updatedAt,
+      'deletedAt': m.deletedAt,
+    };
+
+    test('with no arguments keeps every field', () {
+      expect(fields(full.copyWith()), fields(full));
+    });
+
+    test('replaces every field it is given', () {
+      final other = TreatmentModel(
+        id: 't2',
+        userId: 'user-b',
+        name: 'Grippe',
+        patientTags: const ['Anna'],
+        symptomTags: const ['Fieber'],
+        startDate: DateTime(2026, 1, 31),
+        endDate: DateTime(2026, 2, 9),
+        notes: 'Bettruhe',
+        sickLeaveFrom: DateTime(2026, 2, 2),
+        sickLeaveTo: DateTime(2026, 2, 5),
+        sickLeaveRef: 'AB-42',
+        doctor: 'Dr. Bianchi',
+        createdAt: DateTime(2026, 2, 1, 8),
+        updatedAt: DateTime(2026, 2, 9, 8),
+        deletedAt: DateTime(2026, 2, 10, 8),
+      );
+      final copied = full.copyWith(
+        id: other.id,
+        userId: other.userId,
+        name: other.name,
+        patientTags: other.patientTags,
+        symptomTags: other.symptomTags,
+        startDate: other.startDate,
+        endDate: other.endDate,
+        isActive: other.isActive,
+        notes: other.notes,
+        sickLeaveFrom: other.sickLeaveFrom,
+        sickLeaveTo: other.sickLeaveTo,
+        sickLeaveRef: other.sickLeaveRef,
+        doctor: other.doctor,
+        createdAt: other.createdAt,
+        updatedAt: other.updatedAt,
+        deletedAt: other.deletedAt,
+      );
+      expect(fields(copied), fields(other));
+    });
+  });
 }

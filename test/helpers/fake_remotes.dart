@@ -181,9 +181,6 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
       table.upsert(model.toJson());
   @override
   Future<void> deleteTreatment(String id) async => table.tombstone(id);
-  @override
-  Future<void> endTreatment(String id) async =>
-      table.upsert({...table.rows[id]!, 'is_active': false});
 }
 
 class FakePrescriptionRemote implements PrescriptionRemoteDatasource {

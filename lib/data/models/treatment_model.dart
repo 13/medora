@@ -183,4 +183,49 @@ class TreatmentModel {
       updatedAt: entity.updatedAt,
     );
   }
+
+  /// Field-preserving copy. Use this instead of rebuilding the model by
+  /// hand: a hand-rolled rebuild silently drops every field the author
+  /// forgot, which is how the sick-leave columns were lost on "End".
+  ///
+  /// Note the codebase-wide `??` convention: passing null keeps the current
+  /// value, it does not clear the field. Clear a field by constructing a
+  /// new [TreatmentModel].
+  TreatmentModel copyWith({
+    String? id,
+    String? userId,
+    String? name,
+    List<String>? patientTags,
+    List<String>? symptomTags,
+    DateTime? startDate,
+    DateTime? endDate,
+    bool? isActive,
+    String? notes,
+    DateTime? sickLeaveFrom,
+    DateTime? sickLeaveTo,
+    String? sickLeaveRef,
+    String? doctor,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    DateTime? deletedAt,
+  }) {
+    return TreatmentModel(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
+      patientTags: patientTags ?? this.patientTags,
+      symptomTags: symptomTags ?? this.symptomTags,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      isActive: isActive ?? this.isActive,
+      notes: notes ?? this.notes,
+      sickLeaveFrom: sickLeaveFrom ?? this.sickLeaveFrom,
+      sickLeaveTo: sickLeaveTo ?? this.sickLeaveTo,
+      sickLeaveRef: sickLeaveRef ?? this.sickLeaveRef,
+      doctor: doctor ?? this.doctor,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+    );
+  }
 }

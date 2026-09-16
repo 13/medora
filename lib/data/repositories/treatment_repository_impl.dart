@@ -105,21 +105,20 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
     try {
       final existing = await localDatasource.getTreatmentById(id);
       if (existing == null) return const Result.failure('Treatment not found');
-      final ended = TreatmentModel(
-        id: existing.id,
-        userId: existing.userId,
-        name: existing.name,
-        patientTags: existing.patientTags,
-        symptomTags: existing.symptomTags,
-        startDate: existing.startDate,
-        endDate: DateTime.now(),
+      final now = DateTime.now();
+      // Copy, never rebuild: a field-by-field rebuild drops every column
+      // the author did not list (this is how the sick-leave columns were
+      // silently lost on every "End").
+      final ended = existing.copyWith(
+        endDate: now,
         isActive: false,
-        notes: existing.notes,
-        createdAt: existing.createdAt,
-        updatedAt: nextUpdatedAt(existing.updatedAt, DateTime.now()),
+        updatedAt: nextUpdatedAt(existing.updatedAt, now),
       );
       await localDatasource.upsert(ended, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground((r) => r.endTreatment(id), id);
+      // Push the WHOLE row. _syncInBackground marks the row synced on
+      // success, so a partial remote update would strand every column it
+      // omitted.
+      _syncInBackground((r) => r.upsertTreatment(ended), id);
       return Result.success(ended.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to end treatment: $e', st);
