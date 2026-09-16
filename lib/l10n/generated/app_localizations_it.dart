@@ -531,6 +531,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get scanSelectArea => 'Seleziona area';
 
   @override
+  String get scanSelectCentre => 'Seleziona il centro';
+
+  @override
   String get scanRescanArea => 'Scansiona selezione';
 
   @override

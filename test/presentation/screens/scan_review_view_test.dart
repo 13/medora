@@ -604,4 +604,63 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('the select-area button exposes its on/off state', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    final handle = tester.ensureSemantics();
+    await _pumpRescan(tester, selecting: false);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('scanSelectArea'))),
+      isSemantics(isButton: true, hasToggledState: true, isToggled: false),
+    );
+
+    await _pumpRescan(tester);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('scanSelectArea'))),
+      isSemantics(isButton: true, hasToggledState: true, isToggled: true),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('entering selection mode announces the hint', (tester) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pumpRescan(tester, selecting: false);
+    expect(tester.takeAnnouncements(), isEmpty);
+
+    await _pumpRescan(tester);
+
+    expect(
+      tester.takeAnnouncements().map((a) => a.message),
+      contains('Ziehe einen Rahmen um den Code und scanne die Auswahl.'),
+    );
+  });
+
+  testWidgets('the centre button selects an area without a drag', (
+    tester,
+  ) async {
+    // The only other way to produce a selection is a free-hand drag, which
+    // a screen-reader or keyboard user cannot perform - without this the
+    // whole rescan feature is unreachable for them.
+    _setSurface(tester, const Size(800, 1600));
+    Rect? selected;
+    await _pumpRescan(tester, onRescanArea: (area) => selected = area);
+    expect(find.byKey(const ValueKey('scanRescanArea')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('scanSelectCentre')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('scanRescanArea')));
+    await tester.pumpAndSettle();
+
+    expect(selected, const Rect.fromLTRB(0.25, 0.25, 0.75, 0.75));
+  });
+
+  testWidgets('the centre button is absent outside selection mode', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pumpRescan(tester, selecting: false);
+    expect(find.byKey(const ValueKey('scanSelectCentre')), findsNothing);
+  });
 }

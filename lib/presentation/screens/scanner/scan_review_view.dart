@@ -12,12 +12,18 @@
 /// drawing recognizer leaves the gesture arena the moment a second finger
 /// lands, so the zoom - the whole point of selecting a small code - still
 /// reaches the [InteractiveViewer].
+///
+/// A drag is not available to everyone, so selection mode also offers a
+/// button that selects the middle of the photo outright: without it the
+/// whole rescan is unreachable with a screen reader, since the button that
+/// runs it only appears once something has been drawn.
 library;
 
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/scan_region.dart';
@@ -70,12 +76,26 @@ class _ScanReviewViewState extends State<ScanReviewView> {
   /// The rectangle drawn on the photo, in fractions (0..1) of it.
   Rect? _selection;
 
+  /// What the centre button selects: the middle half of the photo, which is
+  /// where a code being photographed deliberately tends to sit.
+  static const Rect _centreSelection = Rect.fromLTRB(0.25, 0.25, 0.75, 0.75);
+
   @override
   void didUpdateWidget(ScanReviewView oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Leaving selection mode drops the rectangle, so coming back starts clean
     // (and a finished rescan does not leave a stale box on the photo).
     if (oldWidget.selecting && !widget.selecting) _selection = null;
+    if (!oldWidget.selecting && widget.selecting) {
+      // Turning the mode on changes the screen (the hint appears, the photo
+      // starts taking drawings) without moving focus, so nothing would
+      // otherwise reach a screen-reader user.
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        AppLocalizations.of(context).scanSelectAreaHint,
+        Directionality.of(context),
+      );
+    }
   }
 
   @override
@@ -141,14 +161,30 @@ class _ScanReviewViewState extends State<ScanReviewView> {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        TextButton.icon(
-                          key: const ValueKey('scanSelectArea'),
-                          onPressed: widget.busy
-                              ? null
-                              : widget.onToggleSelecting,
-                          icon: const Icon(Icons.crop),
-                          label: Text(l10n.scanSelectArea),
+                        MergeSemantics(
+                          child: Semantics(
+                            toggled: widget.selecting,
+                            child: TextButton.icon(
+                              key: const ValueKey('scanSelectArea'),
+                              onPressed: widget.busy
+                                  ? null
+                                  : widget.onToggleSelecting,
+                              icon: const Icon(Icons.crop),
+                              label: Text(l10n.scanSelectArea),
+                            ),
+                          ),
                         ),
+                        if (widget.selecting)
+                          TextButton.icon(
+                            key: const ValueKey('scanSelectCentre'),
+                            onPressed: widget.busy
+                                ? null
+                                : () => setState(
+                                    () => _selection = _centreSelection,
+                                  ),
+                            icon: const Icon(Icons.center_focus_strong),
+                            label: Text(l10n.scanSelectCentre),
+                          ),
                         if (widget.selecting && selection != null)
                           FilledButton.icon(
                             key: const ValueKey('scanRescanArea'),

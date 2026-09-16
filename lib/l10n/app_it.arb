@@ -177,6 +177,7 @@
   "scanOtherNumbers": "Altri numeri",
   "scanNoCodeFound": "Nessun codice trovato. Scatta più da vicino o inserisci il codice.",
   "scanSelectArea": "Seleziona area",
+  "scanSelectCentre": "Seleziona il centro",
   "scanRescanArea": "Scansiona selezione",
   "scanSelectAreaHint": "Trascina un riquadro attorno al codice, poi scansiona la selezione.",
   "scanRescanNothingNew": "Nessun nuovo codice in quell'area.",

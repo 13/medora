@@ -533,6 +533,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get scanSelectArea => 'Bereich wählen';
 
   @override
+  String get scanSelectCentre => 'Mitte auswählen';
+
+  @override
   String get scanRescanArea => 'Auswahl scannen';
 
   @override

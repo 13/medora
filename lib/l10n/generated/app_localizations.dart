@@ -1048,6 +1048,12 @@ abstract class AppLocalizations {
   /// **'Select area'**
   String get scanSelectArea;
 
+  /// No description provided for @scanSelectCentre.
+  ///
+  /// In en, this message translates to:
+  /// **'Select the centre'**
+  String get scanSelectCentre;
+
   /// No description provided for @scanRescanArea.
   ///
   /// In en, this message translates to:

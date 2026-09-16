@@ -259,6 +259,7 @@
   "scanOtherNumbers": "Other numbers",
   "scanNoCodeFound": "No code found. Retake the photo closer, or type the code.",
   "scanSelectArea": "Select area",
+  "scanSelectCentre": "Select the centre",
   "scanRescanArea": "Scan selection",
   "scanSelectAreaHint": "Drag a box around the code, then scan the selection.",
   "scanRescanNothingNew": "No new code found in that area.",
