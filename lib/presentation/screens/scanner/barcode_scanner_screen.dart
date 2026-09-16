@@ -707,10 +707,12 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     if (!candidates.any((c) => c.kind == CodeKind.supplement)) {
       return candidates;
     }
-    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
-      return candidates;
-    }
     try {
+      // Both reads inside the try: a throw here must fall back to the chips
+      // as read, not escape to `_recognize` and discard the photo (M2).
+      if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
+        return candidates;
+      }
       final service = ref.read(supplementRegistryServiceProvider);
       if (!await service.hasData()) return candidates;
       return await resolveSupplementCandidates(candidates, service.findByCode);
