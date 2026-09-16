@@ -12,6 +12,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
+import 'package:medora/services/notification_budget.dart';
 import 'package:medora/services/reminder_port.dart';
 
 class ReminderScheduler {
@@ -23,7 +24,10 @@ class ReminderScheduler {
   }) : _now = now ?? DateTime.now;
 
   static const horizon = Duration(days: 7);
-  static const maxNotifications = 60; // iOS allows 64 pending
+
+  /// This scheduler's share of the app-wide pending-notification budget;
+  /// the stock and expiry alerts spend the rest (see notification_budget).
+  static const maxNotifications = kDoseNotificationBudget;
   static const notificationsPerDose = 2;
 
   final ReminderPort _port;

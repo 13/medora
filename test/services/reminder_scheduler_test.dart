@@ -132,7 +132,11 @@ void main() {
       ReminderScheduler.maxNotifications ~/
           ReminderScheduler.notificationsPerDose,
     );
-    expect(port.scheduled.length, 30);
+    expect(
+      port.scheduled.length,
+      ReminderScheduler.maxNotifications ~/
+          ReminderScheduler.notificationsPerDose,
+    );
     expect(
       port.scheduled.first.scheduledTime,
       now.add(const Duration(hours: 1)),
