@@ -424,6 +424,11 @@ final barcodeScanPortProvider = Provider<BarcodeScanPort>((ref) {
   return port;
 });
 
+/// One camera for the whole container, which is what the routes allow:
+/// the scanner is the only screen that opens one and it always leaves by
+/// `pushReplacement`, so two live scanners never share it. Two would fight
+/// over this instance — the second's `initialize` takes the camera, the
+/// first's `dispose` closes it.
 final cameraPortProvider = Provider<CameraPort>((ref) {
   final port = CameraControllerPort();
   ref.onDispose(port.dispose);

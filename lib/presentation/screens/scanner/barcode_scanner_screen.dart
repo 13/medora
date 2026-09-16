@@ -301,8 +301,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       setState(() {});
       final path = await capture;
       if (path == null) {
-        // No photo was written; nothing to recognise or to report.
-        if (mounted) setState(() {});
+        // No photo was written. The port answers null only when it holds no
+        // controller, which [_isCameraReady] already excludes, so this is
+        // unreachable with the real camera — but a shutter that does
+        // nothing at all is the one outcome the user cannot act on.
+        if (mounted) {
+          setState(() {});
+          _showError();
+        }
         return;
       }
       if (!mounted) {

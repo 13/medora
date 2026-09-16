@@ -150,12 +150,21 @@ void _mockTemporaryDirectory(String path) {
 
 /// Real file I/O never completes under the test's fake clock, and widget
 /// rebuilds never happen inside `runAsync`, so the two take turns.
-Future<void> _settleWithIo(WidgetTester tester, {int rounds = 40}) async {
+///
+/// [until] is what the caller is waiting for: the loop stops as soon as it
+/// holds, so [rounds] is a ceiling for a slow disk rather than a budget
+/// every test spends in full.
+Future<void> _settleWithIo(
+  WidgetTester tester, {
+  int rounds = 40,
+  bool Function()? until,
+}) async {
   for (var i = 0; i < rounds; i++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 2)),
     );
     await tester.pump();
+    if (until != null && until()) return;
   }
 }
 
@@ -240,9 +249,17 @@ Future<_Harness> _pumpScanner(
 }
 
 /// Presses the shutter and waits for the whole recognition to land.
-Future<void> _shoot(WidgetTester tester, {int rounds = 40}) async {
+///
+/// The review photo appearing is what "landed" means: every pass has run by
+/// then. Waiting for it rather than for a fixed number of rounds keeps the
+/// fast path fast and a loaded machine passing.
+Future<void> _shoot(WidgetTester tester, {int rounds = 120}) async {
   await tester.tap(find.widgetWithIcon(FilledButton, Icons.camera_alt));
-  await _settleWithIo(tester, rounds: rounds);
+  await _settleWithIo(
+    tester,
+    rounds: rounds,
+    until: () => find.byKey(const ValueKey('scanPhoto')).evaluate().isNotEmpty,
+  );
   await _settle(tester);
 }
 
@@ -1109,6 +1126,80 @@ void main() {
           )
           .onPressed,
       isNotNull,
+    );
+  });
+
+  testWidgets('a capture that writes no photo says so', (tester) async {
+    // The real port answers null only when it holds no controller, which
+    // the shutter's own gating excludes; silence would leave the user
+    // tapping a button that does nothing.
+    final camera = FakeCamera();
+    await _pumpScanner(
+      tester,
+      overrides: baseOverrides(lines: [const <OcrLine>[]], camera: camera),
+    );
+
+    await tester.tap(find.widgetWithIcon(FilledButton, Icons.camera_alt));
+    await _settle(tester);
+
+    expect(camera.takePictureCalls, 1);
+    expect(find.text('Something went wrong'), findsOneWidget);
+    // Still on the camera, ready for another try.
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithIcon(FilledButton, Icons.camera_alt),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('declining an AIC alternative stays on the photo', (
+    tester,
+  ) async {
+    // Pinned as it is, not as it should be: the supplement path answers the
+    // same refusal by leaving for Add Medication with the code as read
+    // (see the test above), and the two dialogs therefore disagree. That
+    // asymmetry predates the ports and is a product decision to make
+    // deliberately, so this test records today's behaviour rather than
+    // changing it.
+    await _writePhoto(tester, photo);
+    _mockTemporaryDirectory(temp.path);
+
+    final harness = await _pumpScanner(
+      tester,
+      overrides: baseOverrides(
+        lines: [
+          [const OcrLine('AIC n. T34567891', _minsanBox)],
+          const <OcrLine>[],
+        ],
+        extra: [
+          aifaSearchProvider.overrideWithValue(
+            (code) async =>
+                code == '134567891' ? const [_tachipirina] : const [],
+          ),
+        ],
+      ),
+    );
+    await _shoot(tester);
+    await _tapRow(tester, 1);
+
+    await tester.tap(find.text('Cancel'));
+    await _settle(tester);
+
+    expect(harness.pushed, isEmpty);
+    expect(
+      find.text('Product not found — enter details manually'),
+      findsOneWidget,
+    );
+    // The review is still there, with the code as read.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('scanRow1')),
+        matching: find.text('734567891'),
+      ),
+      findsOneWidget,
     );
   });
 }
