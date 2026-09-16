@@ -19,8 +19,10 @@
 ///   read ([_settlePushed]); a row edited meanwhile stays pending and the
 ///   cycle runs once more.
 ///
-/// For treatments this is the only push path: the repository writes locally
-/// and asks for a [syncAll], which queues behind a running cycle.
+/// For medications, treatments, prescriptions and dose logs this is the only
+/// push path: the repositories write locally and ask for a [syncAll], which
+/// queues behind a running cycle. One [syncAll] re-runs itself at most
+/// [SyncService.maxAutomaticReruns] times.
 ///
 /// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
