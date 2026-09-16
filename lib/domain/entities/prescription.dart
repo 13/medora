@@ -64,6 +64,104 @@ class Prescription {
   final String? medicationName;
   final String? treatmentName;
 
+  /// How many units of the medication's stock one dose uses, for
+  /// auto-diminish. [medicationUnit] is the unit the stock is counted in.
+  ///
+  /// The dosage says how much of the *substance* is taken, which is not
+  /// always a count of stock units: "400 mg" of ibuprofen is one tablet, not
+  /// 400. So an amount is only counted when it is expressed in the stock's
+  /// own unit (or in a counting unit such as tablets or capsules when the
+  /// medication has no unit), or when it has no unit at all; any other dose
+  /// is one pack unit. Free-text dosages are read as a number and a unit, with
+  /// English, German and Italian unit names. The amount is rounded, so a
+  /// quarter tablet takes nothing.
+  int unitsPerDose({String? medicationUnit}) {
+    final stockUnit = _unitKey(medicationUnit);
+    final double amount;
+    final String? unit;
+    final amountValue = dosageAmount;
+    if (amountValue != null) {
+      amount = amountValue;
+      unit = _unitKey(dosageUnit) ?? stockUnit;
+    } else {
+      final match = RegExp(
+        r'^(\d+(?:[.,]\d+)?)\s*(\S*)',
+      ).firstMatch(dosage.trim());
+      final parsed = match == null
+          ? null
+          : double.tryParse(match.group(1)!.replaceAll(',', '.'));
+      if (parsed == null) return 1;
+      amount = parsed;
+      unit = _unitKey(match!.group(2));
+    }
+    final counted =
+        unit == null ||
+        (stockUnit != null ? unit == stockUnit : _countingUnits.contains(unit));
+    if (!counted) return 1;
+    final units = amount.round();
+    return units < 0 ? 0 : units;
+  }
+
+  /// The quantity-unit key [raw] names (`tablets` for "Tabletten"), the
+  /// lower-cased word itself when it is no known unit ("mg"), or null when
+  /// there is none.
+  static String? _unitKey(String? raw) {
+    var word = (raw ?? '').trim().toLowerCase();
+    while (word.endsWith('.')) {
+      word = word.substring(0, word.length - 1);
+    }
+    if (word.isEmpty) return null;
+    for (final MapEntry(:key, :value) in _unitNames.entries) {
+      if (key == word || value.contains(word)) return key;
+    }
+    return word;
+  }
+
+  /// Units that count whole items, so a medication without a unit is
+  /// assumed to be counted in them.
+  static const _countingUnits = {
+    'pieces',
+    'pills',
+    'tablets',
+    'capsules',
+    'bustine',
+    'ampoules',
+    'suppositories',
+    'patches',
+  };
+
+  /// The quantity-unit keys and the words a dosage may use for them.
+  static const _unitNames = {
+    'pieces': {'piece', 'pc', 'pcs', 'stück', 'stk', 'pezzo', 'pezzi'},
+    'pills': {'pill', 'pille', 'pillen', 'pillola', 'pillole'},
+    'tablets': {
+      'tablet',
+      'tab',
+      'tabs',
+      'tbl',
+      'tablette',
+      'tabletten',
+      'compressa',
+      'compresse',
+      'cpr',
+    },
+    'capsules': {'capsule', 'cap', 'caps', 'kapsel', 'kapseln', 'capsula'},
+    'ml': {'milliliter', 'millilitre', 'millilitro', 'millilitri'},
+    'drops': {'drop', 'tropfen', 'goccia', 'gocce', 'gtt'},
+    'bustine': {'bustina', 'sachet', 'sachets', 'beutel', 'btl'},
+    'ampoules': {
+      'ampoule',
+      'ampule',
+      'ampules',
+      'ampulle',
+      'ampullen',
+      'fiala',
+      'fiale',
+    },
+    'suppositories': {'suppository', 'zäpfchen', 'supposta', 'supposte'},
+    'patches': {'patch', 'pflaster', 'cerotto', 'cerotti'},
+  };
+
   /// Formatted dosage string: amount + unit if available, otherwise raw dosage text.
   String displayDosage({String? medicationUnit}) {
     if (dosageAmount != null) {

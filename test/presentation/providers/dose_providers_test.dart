@@ -133,6 +133,40 @@ void main() {
   });
 
   test(
+    'taking a scheduled "400 mg" dose takes one tablet from stock',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seedPrescription(db);
+      await db.update(
+        'prescriptions',
+        {'auto_diminish': 1, 'dosage': '400 mg', 'dosage_amount': null},
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      await db.update(
+        'medications',
+        {'quantity': 20},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      final id = await seedDoseLog(db, s.prescriptionId, recentToday(now));
+
+      await c.read(doseActionsProvider).take(id);
+      Future<int?> stock() async =>
+          (await db.query(
+                'medications',
+                where: 'id = ?',
+                whereArgs: [s.medicationId],
+              )).single['quantity']
+              as int?;
+      expect(await stock(), 19);
+
+      await c.read(doseActionsProvider).undoTake(id);
+      expect(await stock(), 20);
+    },
+  );
+
+  test(
     'takeAllDue skips ids that are not pending and does not double-count or double-diminish them',
     () async {
       final db = await AppDatabase.instance.database;
@@ -452,6 +486,35 @@ void main() {
       // The absolute quantity, marked for the sync cycle to push.
       expect(med.single['sync_status'], SyncStatus.pendingUpdate);
     });
+
+    test(
+      'a dosage of "400 mg" takes one tablet, or one unit, from stock',
+      () async {
+        final db = await AppDatabase.instance.database;
+        for (final unit in <String?>['tablets', null]) {
+          final s = await seedPrescription(db, scheduleType: 'as_needed');
+          await db.update(
+            'prescriptions',
+            {'auto_diminish': 1, 'dosage': '400 mg', 'dosage_amount': null},
+            where: 'id = ?',
+            whereArgs: [s.prescriptionId],
+          );
+          await db.update(
+            'medications',
+            {'quantity': 20, 'quantity_unit': unit},
+            where: 'id = ?',
+            whereArgs: [s.medicationId],
+          );
+          final container = await pinnedContainer();
+
+          await container
+              .read(doseActionsProvider)
+              .logAsNeededDose(s.prescriptionId);
+
+          expect(await quantity(db, s.medicationId), 19, reason: '$unit');
+        }
+      },
+    );
 
     test('leaves stock alone without auto-diminish', () async {
       final db = await AppDatabase.instance.database;

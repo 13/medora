@@ -242,10 +242,14 @@ Future<void> _diminishFor(
   try {
     if (!prescription.autoDiminish) return;
 
-    // Parse numeric amount from dosageAmount or dosage text
-    final amount =
-        prescription.dosageAmount?.round() ??
-        _parseDosageAmount(prescription.dosage);
+    final medication =
+        (await ref
+                .read(medicationRepositoryProvider)
+                .getMedicationById(prescription.medicationId))
+            .dataOrNull;
+    final amount = prescription.unitsPerDose(
+      medicationUnit: medication?.quantityUnit,
+    );
     if (amount <= 0) return;
 
     final medNotifier = ref.read(medicationListProvider.notifier);
@@ -256,15 +260,6 @@ Future<void> _diminishFor(
   } catch (_) {
     // Non-critical: don't fail the dose marking
   }
-}
-
-/// Parse leading integer from dosage string. Falls back to 1.
-int _parseDosageAmount(String dosage) {
-  final match = RegExp(r'^(\d+)').firstMatch(dosage.trim());
-  if (match != null) {
-    return int.tryParse(match.group(1)!) ?? 1;
-  }
-  return 1;
 }
 
 /// Provider for today's dose logs.

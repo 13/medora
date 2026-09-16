@@ -166,4 +166,88 @@ void main() {
       expect(p.dosesPerDay, 0);
     });
   });
+
+  group('unitsPerDose', () {
+    Prescription dose(String dosage, {double? amount, String? unit}) =>
+        Prescription(
+          id: 'p1',
+          treatmentId: 't1',
+          medicationId: 'm1',
+          dosage: dosage,
+          dosageAmount: amount,
+          dosageUnit: unit,
+          startTime: DateTime(2026, 3, 1, 8),
+        );
+
+    test('"400 mg" of ibuprofen is one tablet, with or without a unit', () {
+      expect(dose('400 mg').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('400 mg').unitsPerDose(), 1);
+      expect(dose('400mg').unitsPerDose(medicationUnit: ''), 1);
+      expect(dose('400 mg ibuprofen').unitsPerDose(), 1);
+    });
+
+    test('an amount in the medication\'s own unit is counted', () {
+      expect(
+        dose('2 tablets', amount: 2).unitsPerDose(medicationUnit: 'tablets'),
+        2,
+      );
+      expect(
+        dose(
+          '2 tablets',
+          amount: 2,
+          unit: 'tablets',
+        ).unitsPerDose(medicationUnit: 'tablets'),
+        2,
+      );
+      expect(dose('5 ml', amount: 5).unitsPerDose(medicationUnit: 'ml'), 5);
+      expect(dose('', amount: 1.5).unitsPerDose(medicationUnit: 'tablets'), 2);
+      expect(dose('', amount: 0.25).unitsPerDose(medicationUnit: 'tablets'), 0);
+    });
+
+    test('an amount in another unit is one pack unit', () {
+      expect(
+        dose(
+          '20 drops',
+          amount: 20,
+          unit: 'drops',
+        ).unitsPerDose(medicationUnit: 'ml'),
+        1,
+      );
+      expect(dose('2 capsules').unitsPerDose(medicationUnit: 'tablets'), 1);
+    });
+
+    test('an amount with no unit anywhere is a count', () {
+      expect(dose('', amount: 2).unitsPerDose(), 2);
+      expect(dose('2').unitsPerDose(), 2);
+    });
+
+    test('free text in a counting unit is counted, in any language', () {
+      for (final text in [
+        '2 tablets',
+        '2 Tabletten',
+        '2 compresse',
+        '2 cpr.',
+      ]) {
+        expect(dose(text).unitsPerDose(), 2, reason: text);
+        expect(
+          dose(text).unitsPerDose(medicationUnit: 'tablets'),
+          2,
+          reason: text,
+        );
+      }
+      expect(dose('1 tablet').unitsPerDose(medicationUnit: 'tablets'), 1);
+      expect(dose('3 Kapseln').unitsPerDose(medicationUnit: 'capsules'), 3);
+      expect(dose('2 Stück').unitsPerDose(), 2);
+      expect(dose('1,5 ml').unitsPerDose(medicationUnit: 'ml'), 2);
+    });
+
+    test('free text without a count, or in a unit that is not counted, is '
+        'one pack unit', () {
+      expect(dose('one tablet').unitsPerDose(), 1);
+      expect(dose('').unitsPerDose(), 1);
+      expect(dose('20 Tropfen').unitsPerDose(), 1);
+      expect(dose('10 ml').unitsPerDose(), 1);
+      expect(dose('20 Tropfen').unitsPerDose(medicationUnit: 'drops'), 20);
+    });
+  });
 }
