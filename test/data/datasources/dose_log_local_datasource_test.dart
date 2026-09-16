@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 
 import '../../helpers/seed.dart';
@@ -69,6 +70,38 @@ void main() {
       expect(row.takenTime, at);
       expect(row.medicationName, 'Moment');
       expect(row.prescriptionId, seeded.prescriptionId);
+    },
+  );
+
+  test(
+    'insertBatchIfAbsent leaves a stored dose with the same id alone',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final id = await seedDoseLog(
+        db,
+        seeded.prescriptionId,
+        DateTime(2026, 3, 1, 8),
+        status: 'taken',
+      );
+
+      await DoseLogLocalDatasource().insertBatchIfAbsent([
+        DoseLogModel(
+          id: id,
+          prescriptionId: seeded.prescriptionId,
+          scheduledTime: DateTime(2026, 3, 1, 8),
+        ),
+        DoseLogModel(
+          id: 'new',
+          prescriptionId: seeded.prescriptionId,
+          scheduledTime: DateTime(2026, 3, 1, 16),
+        ),
+      ], syncStatus: SyncStatus.pendingCreate);
+
+      final rows = {for (final r in await db.query('dose_logs')) r['id']: r};
+      expect(rows[id]!['status'], 'taken');
+      expect(rows[id]!['sync_status'], SyncStatus.synced);
+      expect(rows['new']!['sync_status'], SyncStatus.pendingCreate);
     },
   );
 

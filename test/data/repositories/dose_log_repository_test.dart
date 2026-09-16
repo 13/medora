@@ -120,10 +120,15 @@ void main() {
 
     await makeRepo().regenerateDoseLogsForPrescription(seeded.prescriptionId);
 
-    final ids = [for (final r in await db.query('dose_logs')) r['id']];
-    expect(ids, contains(id));
-    expect(ids, isNot(contains(other)));
-    expect(ids, hasLength(3));
+    final rows = {for (final r in await db.query('dose_logs')) r['id']: r};
+    expect(rows.keys, isNot(contains(other)));
+    expect(rows, hasLength(3));
+    // Untouched: not dropped and generated again as a new row to push.
+    expect(rows[id]!['sync_status'], SyncStatus.synced);
+    expect(
+      DateTime.parse(rows[id]!['scheduled_time']! as String),
+      DateTime(2026, 3, 1, 18),
+    );
   });
 
   test('a scheduled dose id depends on the prescription and the minute', () {
