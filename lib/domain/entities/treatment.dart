@@ -3,6 +3,8 @@
 /// Core domain entity representing an illness/treatment plan.
 library;
 
+import 'package:medora/core/clock.dart';
+
 class Treatment {
   const Treatment({
     required this.id,
@@ -16,6 +18,10 @@ class Treatment {
     this.notes,
     this.createdAt,
     this.updatedAt,
+    this.sickLeaveFrom,
+    this.sickLeaveTo,
+    this.sickLeaveRef,
+    this.doctor,
   });
 
   final String id;
@@ -30,6 +36,19 @@ class Treatment {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// First day unable to work (date only). Null when no sick leave was
+  /// recorded: an ordinary therapy simply leaves these empty.
+  final DateTime? sickLeaveFrom;
+
+  /// Last day unable to work (date only); null while the leave is open.
+  final DateTime? sickLeaveTo;
+
+  /// Certificate / protocol number (IT: numero di protocollo).
+  final String? sickLeaveRef;
+
+  /// Free text, e.g. "Dr. Rossi, Bolzano".
+  final String? doctor;
+
   /// Backward-compatible getters.
   String? get patientName =>
       patientTags.isNotEmpty ? patientTags.join(', ') : null;
@@ -41,6 +60,18 @@ class Treatment {
     if (endDate == null) return null;
     return endDate!.difference(startDate).inDays;
   }
+
+  bool get hasSickLeave => sickLeaveFrom != null;
+
+  bool get isSickLeaveOpen => sickLeaveFrom != null && sickLeaveTo == null;
+
+  /// Inclusive calendar days of sick leave; null when none is recorded.
+  ///
+  /// An open leave counts up to [now]. Inclusive (+1) because a sick note
+  /// "from Monday to Friday" means five days, not four.
+  int? sickLeaveDaysAt(DateTime now) => sickLeaveFrom == null
+      ? null
+      : calendarDaysBetween(sickLeaveFrom!, sickLeaveTo ?? now) + 1;
 
   Treatment copyWith({
     String? id,
@@ -54,6 +85,10 @@ class Treatment {
     String? notes,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? sickLeaveFrom,
+    DateTime? sickLeaveTo,
+    String? sickLeaveRef,
+    String? doctor,
   }) {
     return Treatment(
       id: id ?? this.id,
@@ -67,6 +102,10 @@ class Treatment {
       notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      sickLeaveFrom: sickLeaveFrom ?? this.sickLeaveFrom,
+      sickLeaveTo: sickLeaveTo ?? this.sickLeaveTo,
+      sickLeaveRef: sickLeaveRef ?? this.sickLeaveRef,
+      doctor: doctor ?? this.doctor,
     );
   }
 }
