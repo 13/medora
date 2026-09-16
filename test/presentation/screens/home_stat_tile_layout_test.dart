@@ -1,12 +1,15 @@
 /// The dashboard's three stat tiles each hold a single label under a number.
-/// "Behandlungen" and "Trattamenti" are one long word with no break
-/// opportunity, so they cannot wrap: without an explicit overflow they are
-/// painted straight past the tile and clipped, and nothing throws.
+/// The German and Italian labels are one long word, and a word wider than its
+/// line is broken by Skia at an arbitrary character - not clipped, and not
+/// ellipsized. The bug the user reported was "Behandlun / gen", so that is
+/// what these tests look for.
 ///
-/// These tests therefore assert geometry, never `takeException`. Real fonts
-/// are mandatory: in the test font a 12 sp label is about three times as
-/// wide as on a device (see test/helpers/fonts.dart), and `loadAppFonts()`
-/// is only wired up automatically under test/goldens/.
+/// They assert geometry, never `takeException`, and they assert it at every
+/// text scale up to 2.0x: the German label had 4.5 dp of headroom at 1.0x, so
+/// the same break returned at about 1.06x - one notch of Android's font-size
+/// slider. Real fonts are mandatory: in the test font a 12 sp label is about
+/// three times as wide as on a device (see test/helpers/fonts.dart), and
+/// `loadAppFonts()` is only wired up automatically under test/goldens/.
 library;
 
 import 'package:flutter/material.dart';
@@ -48,28 +51,37 @@ void main() {
     nowProvider.overrideWithValue(() => now),
   ];
 
-  /// What the label needs, measured from the span the paragraph actually
-  /// painted (resolved style, ambient text scale), against what it got.
+  /// What the label actually paints, against what the tile gives it.
   ///
-  /// [widestWord] is the decisive number. It is the width of the longest run
-  /// with no break opportunity, i.e. the width below which some word *must*
-  /// be clipped or ellipsized however many lines it is given. [natural] is
-  /// the one-line width, reported for context: a label wider than its box
-  /// but made of several words simply wraps, which is not this bug.
-  ({double natural, double widestWord, double box}) measure(
+  /// [painted] is the on-screen rect, so a shrink-to-fit transform is
+  /// included. [lines] is the decisive number: one line cannot contain a
+  /// mid-word break. [unscaled] is what the same label paints at a 1.0x text
+  /// scale - the floor below which shrinking to fit would quietly be undoing
+  /// the user's font-size setting.
+  ({double painted, double box, int lines, double unscaled}) measure(
     WidgetTester tester,
     Finder label,
   ) {
     final paragraph = tester.renderObject<RenderParagraph>(label);
-    final painter = TextPainter(
+    final unscaled = TextPainter(
+      text: paragraph.text,
+      textDirection: paragraph.textDirection,
+      textScaler: TextScaler.noScaling,
+    )..layout();
+    // Laid out unbounded, so this is one line of the label at the ambient
+    // text scale: the height the paragraph would have if it never wrapped.
+    final oneLine = TextPainter(
       text: paragraph.text,
       textDirection: paragraph.textDirection,
       textScaler: paragraph.textScaler,
     )..layout();
+    final card = find.ancestor(of: label, matching: find.byType(Card)).first;
     return (
-      natural: painter.width,
-      widestWord: painter.minIntrinsicWidth,
-      box: paragraph.constraints.maxWidth,
+      painted: tester.getRect(label).width,
+      // The tile's padding gives the label 4 dp either side.
+      box: tester.getSize(card).width - 8,
+      lines: (paragraph.size.height / oneLine.height).round(),
+      unscaled: unscaled.width,
     );
   }
 
@@ -92,98 +104,85 @@ void main() {
     'it': ['Scadenza', 'Scorte basse', 'Trattamenti'],
   };
 
+  // 1.06 is where German lost the fight; 1.15 and 1.3 are the second notch
+  // and the top of Android's font-size slider, and 2.0 is the accessibility
+  // ceiling the app claims to support.
+  const scales = <double>[1.0, 1.06, 1.3, 1.5, 2.0];
+
   for (final entry in labels.entries) {
-    testWidgets('stat tile labels fit a 360 dp phone in ${entry.key}', (
-      tester,
-    ) async {
-      usePhone(tester);
-
-      await pumpMedoraApp(
+    for (final scale in scales) {
+      testWidgets('stat tile labels stay whole in ${entry.key} at ${scale}x', (
         tester,
-        const HomeScreen(),
-        overrides: await overrides(),
-        locale: Locale(entry.key),
-      );
-      await tester.pumpAndSettle();
+      ) async {
+        usePhone(tester);
 
-      // Measure all three before asserting any, so a failure report carries
-      // the whole row's numbers rather than only the first one to break.
-      final measured =
-          <String, ({double natural, double widestWord, double box})>{};
-      for (final label in entry.value) {
-        final finder = statLabel(label);
-        expect(finder, findsOneWidget, reason: 'missing stat label $label');
-        measured[label] = measure(tester, finder);
-      }
-      printOnFailure(
-        measured.entries
-            .map(
-              (m) =>
-                  '"${m.key}": widest word ${m.value.widestWord.toStringAsFixed(1)} dp, '
-                  'one line ${m.value.natural.toStringAsFixed(1)} dp, '
-                  'box ${m.value.box.toStringAsFixed(1)} dp',
-            )
-            .join('\n'),
-      );
-
-      for (final label in entry.value) {
-        final m = measured[label]!;
-        expect(
-          m.widestWord,
-          lessThanOrEqualTo(m.box + 0.5),
-          reason:
-              '"$label" contains a word wider than the ${m.box.toStringAsFixed(1)} dp '
-              'the tile gives it at 360 dp, so it is clipped or ellipsized '
-              'mid-word',
-        );
-        // Only meaningful alongside the width check: a single unbreakable
-        // word is ellipsized on line 1, so this stays false even when the
-        // label does not fit.
-        expect(
-          tester
-              .renderObject<RenderParagraph>(statLabel(label))
-              .didExceedMaxLines,
-          isFalse,
-          reason: '"$label" spilled past its line budget at 360 dp',
-        );
-      }
-    });
-  }
-
-  for (final scale in const [1.5, 2.0]) {
-    testWidgets('stat tile labels give way at a ${scale}x text scale', (
-      tester,
-    ) async {
-      usePhone(tester);
-
-      await pumpMedoraApp(
-        tester,
-        Builder(
-          // Copy the ambient MediaQuery rather than replacing it, so only
-          // the text scale changes and the viewport metrics survive.
-          builder: (context) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: TextScaler.linear(scale)),
-            child: const HomeScreen(),
+        await pumpMedoraApp(
+          tester,
+          Builder(
+            // Copy the ambient MediaQuery rather than replacing it, so only
+            // the text scale changes and the viewport metrics survive.
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: const HomeScreen(),
+            ),
           ),
-        ),
-        overrides: await overrides(),
-        locale: const Locale('de'),
-      );
-      await tester.pumpAndSettle();
+          overrides: await overrides(),
+          locale: Locale(entry.key),
+        );
+        await tester.pumpAndSettle();
 
-      // At this size the longest label cannot fit, and that is fine: it must
-      // ellipsize inside its box rather than paint past it or overflow.
-      final paragraph = tester.renderObject<RenderParagraph>(
-        statLabel('Behandlungen'),
-      );
-      expect(
-        paragraph.size.width,
-        lessThanOrEqualTo(paragraph.constraints.maxWidth + 0.5),
-        reason: 'the label painted outside its tile at ${scale}x',
-      );
-      expect(tester.takeException(), isNull);
-    });
+        // Measure all three before asserting any, so a failure report
+        // carries the whole row's numbers, not only the first to break.
+        final measured =
+            <
+              String,
+              ({double painted, double box, int lines, double unscaled})
+            >{};
+        for (final label in entry.value) {
+          final finder = statLabel(label);
+          expect(finder, findsOneWidget, reason: 'missing stat label $label');
+          measured[label] = measure(tester, finder);
+        }
+        printOnFailure(
+          measured.entries
+              .map(
+                (m) =>
+                    '"${m.key}": painted ${m.value.painted.toStringAsFixed(1)} dp '
+                    'on ${m.value.lines} line(s), box ${m.value.box.toStringAsFixed(1)} dp, '
+                    'unscaled ${m.value.unscaled.toStringAsFixed(1)} dp',
+              )
+              .join('\n'),
+        );
+
+        for (final label in entry.value) {
+          final m = measured[label]!;
+          expect(
+            m.lines,
+            1,
+            reason:
+                '"$label" was broken across ${m.lines} lines at ${scale}x; a '
+                'word wider than its line is broken mid-word, which is the '
+                'reported bug',
+          );
+          expect(
+            m.painted,
+            lessThanOrEqualTo(m.box + 0.5),
+            reason:
+                '"$label" painted ${m.painted.toStringAsFixed(1)} dp into a '
+                '${m.box.toStringAsFixed(1)} dp tile at ${scale}x',
+          );
+          expect(
+            m.painted,
+            greaterThanOrEqualTo(m.unscaled - 0.5),
+            reason:
+                '"$label" shrank below its unscaled '
+                '${m.unscaled.toStringAsFixed(1)} dp at ${scale}x: shrinking '
+                'to fit must never undo the user\'s font-size setting',
+          );
+        }
+      });
+    }
   }
 }

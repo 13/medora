@@ -433,15 +433,27 @@ class _StatTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  // A longer future label, or any text scale above 1.0,
-                  // degrades to an ellipsis instead of a hard clip.
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.text.labelMedium?.copyWith(
-                    color: context.colors.onSurfaceVariant,
+                // Shrink to fit, rather than wrap. A word wider than its line
+                // is broken by Skia at an arbitrary character - it is not
+                // clipped and not ellipsized - so "Behandlungen" split as
+                // "Behandlun / gen" from a text scale of about 1.06, which is
+                // one notch of Android's font-size slider and exactly the bug
+                // this tile was reported for. BoxFit.scaleDown only ever
+                // shrinks, and every label fits the tile unscaled, so the
+                // caption still grows with the user's setting until it
+                // reaches the tile's width and then holds there instead of
+                // breaking. The ellipsis is a backstop for a future label
+                // long enough to be unreadable when scaled down.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.labelMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
