@@ -83,12 +83,15 @@ void main() {
     Future<void> Function()? beforePump,
     List<Override> extraOverrides = const [],
     PlatformCapabilities caps = PlatformCapabilities.desktop,
+    bool active = true,
   }) async {
     await TreatmentLocalDatasource().upsert(
       TreatmentModel(
         id: 't1',
         name: 'Sinusitis',
         startDate: DateTime(2026, 3, 3),
+        endDate: active ? null : DateTime(2026, 3, 5),
+        isActive: active,
         sickLeaveFrom: from,
         sickLeaveTo: to,
         sickLeaveRef: ref,
@@ -957,6 +960,15 @@ void main() {
     ) async {
       await seedAndPump(tester, beforePump: seedScheduled);
       expect(find.text('5 of 7 taken'), findsOneWidget);
+    });
+
+    testWidgets('an ended treatment expects no more of its doses', (
+      tester,
+    ) async {
+      // The dose still pending from this morning was never going to be
+      // taken once the treatment ended.
+      await seedAndPump(tester, beforePump: seedScheduled, active: false);
+      expect(find.text('5 of 6 taken'), findsOneWidget);
     });
 
     testWidgets('an as-needed prescription shows how many were taken, and '

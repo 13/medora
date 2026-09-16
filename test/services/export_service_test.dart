@@ -399,6 +399,36 @@ void main() {
       );
     });
 
+    test('an ended treatment expects none of its leftover doses', () {
+      // Ended on Mar 4: the dose still pending from that evening was never
+      // going to be taken, so it is not counted as missing.
+      final text = summary(
+        'de',
+        treatment: Treatment(
+          id: 't1',
+          name: 'Grippe',
+          startDate: DateTime(2026, 3, 3),
+          endDate: DateTime(2026, 3, 4),
+          isActive: false,
+        ),
+        prescriptions: [ibuprofen],
+        doses: [
+          DoseLog(
+            id: 'e1',
+            prescriptionId: 'p1',
+            scheduledTime: DateTime(2026, 3, 4, 8),
+            status: DoseStatus.taken,
+          ),
+          DoseLog(
+            id: 'e2',
+            prescriptionId: 'p1',
+            scheduledTime: DateTime(2026, 3, 4, 20),
+          ),
+        ],
+      );
+      expect(text, endsWith('\n  1 von 1 eingenommen'));
+    });
+
     test('the intake line of a scheduled prescription', () {
       final labels = labelsFor('de');
       final c = IntakeCount.of(
