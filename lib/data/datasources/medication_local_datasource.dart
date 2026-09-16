@@ -126,12 +126,22 @@ class MedicationLocalDatasource {
     return rows.map(_fromRow).toList();
   }
 
+  /// The medication whose label code or EAN is [barcode] (a pack carries
+  /// both; a scan may produce either).
+  ///
+  /// Two rows can match one code — the app writes `barcode=<EAN>` for a plain
+  /// EAN scan and `barcode=<label code>, ean=<EAN>` for a label scan of the
+  /// same pack — so the order is explicit rather than left to the query plan
+  /// (review I3): an exact `barcode` match first, then the EAN match, and
+  /// `id` to break any remaining tie the same way on every device.
   Future<MedicationModel?> getMedicationByBarcode(String barcode) async {
     final db = await _db;
-    final rows = await db.query(
-      'medications',
-      where: 'barcode = ? AND sync_status != ?',
-      whereArgs: [barcode, SyncStatus.pendingDelete],
+    final rows = await db.rawQuery(
+      'SELECT * FROM medications '
+      'WHERE (barcode = ? OR ean = ?) AND sync_status != ? '
+      'ORDER BY CASE WHEN barcode = ? THEN 0 ELSE 1 END, id '
+      'LIMIT 1',
+      [barcode, barcode, SyncStatus.pendingDelete, barcode],
     );
     if (rows.isEmpty) return null;
     return _fromRow(rows.first);
@@ -232,6 +242,7 @@ class MedicationLocalDatasource {
       minimumStockLevel: row['minimum_stock_level'] as int? ?? 0,
       storageLocation: row['storage_location'] as String?,
       barcode: row['barcode'] as String?,
+      ean: row['ean'] as String?,
       imagePath: row['image_path'] as String?,
       notes: row['notes'] as String?,
       isArchived: (row['is_archived'] as int? ?? 0) == 1,
@@ -264,6 +275,7 @@ class MedicationLocalDatasource {
       'minimum_stock_level': m.minimumStockLevel,
       'storage_location': m.storageLocation,
       'barcode': m.barcode,
+      'ean': m.ean,
       'image_path': m.imagePath,
       'notes': m.notes,
       'is_archived': m.isArchived ? 1 : 0,

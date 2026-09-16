@@ -20,5 +20,33 @@ sed -i "s/^version: .*/version: $NEW/" pubspec.yaml
 git add pubspec.yaml
 git commit -q -m "chore(release): v$NEW"
 git tag -a "v$NEW" -m "Medora $NEW"
-git push origin main "v$NEW"
+
+# Everything from here until the push exists only locally, and the `tag v$NEW
+# exists` guard above refuses a re-run while it does — so each step that can
+# fail undoes the commit and the tag itself instead of stranding them.
+# docs/release.md ("If a release run fails") documents the same two commands
+# for anything this cannot catch, such as an interrupted shell.
+rollback() {
+  git tag -d "v$NEW" > /dev/null 2>&1 || true
+  git reset -q --hard HEAD~1
+  echo "rolled back the local release commit and tag v$NEW" >&2
+}
+
+# The release body, built from the tag that now exists. The workflow rebuilds
+# it the same way from the pushed tag, so this copy is for reading the
+# changelog before it goes out (and for a manual gh release).
+if ! tools/release_notes.sh "v$NEW" > dist-notes.md; then
+  rollback
+  echo "release notes failed; nothing was pushed" >&2
+  exit 1
+fi
+echo "release notes written to dist-notes.md"
+
+# --atomic so a partial push is not a possible outcome: either main and the
+# tag are both on origin, or neither is and the rollback above is correct.
+if ! git push --atomic origin main "v$NEW"; then
+  rollback
+  echo "push failed; nothing was pushed" >&2
+  exit 1
+fi
 echo "tagged v$NEW — watch: gh run list --workflow Release"

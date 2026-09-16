@@ -530,6 +530,27 @@ class AppLocalizationsDe extends AppLocalizations {
       'Kein Code erkannt. Fotografiere näher oder tippe den Code ein.';
 
   @override
+  String get scanSelectArea => 'Bereich wählen';
+
+  @override
+  String get scanSelectCentre => 'Mitte auswählen';
+
+  @override
+  String get scanRescanArea => 'Auswahl scannen';
+
+  @override
+  String get scanSelectAreaHint =>
+      'Ziehe einen Rahmen um den Code und scanne die Auswahl.';
+
+  @override
+  String get scanRescanNothingNew =>
+      'In diesem Bereich wurde kein neuer Code gefunden.';
+
+  @override
+  String get scanRescanTooSmall =>
+      'Diese Auswahl ist zu klein zum Scannen. Ziehe einen größeren Rahmen.';
+
+  @override
   String get scanCaptureHint =>
       'Fotografiere die Packung so, dass der AIC-Code scharf ist';
 
@@ -553,6 +574,18 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get supplementRegisterDownload => 'Herunterladen';
+
+  @override
+  String registerStale(int days) {
+    return 'Zuletzt vor $days Tagen aktualisiert';
+  }
+
+  @override
+  String get registerStaleUnknown =>
+      'Alter unbekannt – Aktualisierung empfohlen';
+
+  @override
+  String get registerUpdateNow => 'Jetzt aktualisieren';
 
   @override
   String get supplementRegisterDownloading => 'Register wird heruntergeladen…';
@@ -697,6 +730,22 @@ class AppLocalizationsDe extends AppLocalizations {
   String get receiveDoseReminders => 'Erinnerungen an Einnahmen erhalten';
 
   @override
+  String get stockAndExpiryReminders => 'Bestands- und Ablauferinnerungen';
+
+  @override
+  String stockAndExpiryRemindersHint(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other:
+          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in $days Tagen abläuft',
+      one:
+          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get cancelAllReminders => 'Alle Erinnerungen abbrechen';
 
   @override
@@ -715,6 +764,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get allRemindersCancelled => 'Alle Erinnerungen abgebrochen';
+
+  @override
+  String get notificationsBlocked =>
+      'Benachrichtigungen sind blockiert. Bitte in den Systemeinstellungen für Medora erlauben.';
 
   @override
   String get dataSection => 'Daten';
@@ -1251,6 +1304,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get searchAifaByName => 'AIFA-Datenbank durchsuchen';
 
   @override
+  String get searchSupplementByName =>
+      'Nahrungsergänzungsmittel-Register durchsuchen';
+
+  @override
+  String get supplementSearchHint => 'Produktname';
+
+  @override
   String get quantityUnit => 'Einheit';
 
   @override
@@ -1388,6 +1448,36 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String notificationReminderBody(String dosage) {
     return '$dosage — Tippen zum Registrieren';
+  }
+
+  @override
+  String get notificationExpiryTitle => 'Läuft bald ab';
+
+  @override
+  String notificationExpiryBody(String name, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$name läuft in $days Tagen ab',
+      one: '$name läuft morgen ab',
+      zero: '$name läuft heute ab',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notificationLowStockTitle => 'Fast aufgebraucht';
+
+  @override
+  String notificationLowStockBody(String name, int quantity) {
+    String _temp0 = intl.Intl.pluralLogic(
+      quantity,
+      locale: localeName,
+      other: '$name: noch $quantity',
+      one: '$name: noch 1',
+      zero: '$name: nichts mehr übrig',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1663,6 +1753,12 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get updateInstallExplainBody =>
       'Android bittet dich zuerst um die Erlaubnis, dass Medora Apps installieren darf, und öffnet dann das Installationsprogramm. Deine Daten bleiben auf dem Gerät.';
+
+  @override
+  String get updateShowMore => 'Mehr anzeigen';
+
+  @override
+  String get updateShowLess => 'Weniger anzeigen';
 
   @override
   String get backupData => 'Daten sichern';

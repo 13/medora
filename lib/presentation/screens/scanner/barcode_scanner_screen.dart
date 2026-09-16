@@ -6,43 +6,50 @@
 /// numbered; the user taps the one to use). When the whole photo leaves
 /// something to find (see `scan_region.dart`), text recognition and barcode
 /// scanning run again on a temporary PNG crop around the text found, deleted
-/// right after. Photos taken here are temporary
-/// files, deleted on retake, when leaving the screen and in `dispose`.
+/// right after. When no barcode decoded at all, the bars above the digits
+/// OCR read are cropped and scanned in four rotations (see
+/// [barcodeStripeCrop]). On the review screen the user can drag a rectangle
+/// over the photo and rescan just that area, whose results are merged into
+/// the candidates already found. Photos taken here are temporary files,
+/// deleted on retake, when leaving the screen and in `dispose`.
 /// Gallery picks are deleted the same way only when the picker handed us a
 /// copy inside the app's temporary directory (Android copies picks into the
 /// app cache); a path outside it could be the user's original and is never
 /// touched.
+///
+/// The camera, the gallery picker and both ML Kit detectors are reached
+/// through the ports in `scanner_ports.dart`, read from providers, so this
+/// screen can be pumped in a widget test with fakes in their place.
 library;
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/scanner/capture_view.dart';
+import 'package:medora/presentation/screens/scanner/recognizing_view.dart';
 import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/presentation/screens/scanner/scan_review_view.dart';
 import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
 import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
-import 'package:medora/services/aifa_cache_service.dart';
-import 'package:medora/services/barcode_adapter.dart';
 import 'package:medora/services/code_candidates.dart';
 import 'package:medora/services/image_size.dart';
-import 'package:medora/services/ocr_adapter.dart';
+import 'package:medora/services/register_freshness.dart';
 import 'package:medora/services/scan_debug.dart';
 import 'package:medora/services/scan_region.dart';
+import 'package:medora/services/scanner_ports.dart';
 import 'package:medora/services/supplement_registry_service.dart';
+import 'package:medora/services/supplement_resolution.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -90,13 +97,25 @@ enum _ScanStage { capture, recognizing, review }
 
 class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     with WidgetsBindingObserver {
-  static const Color _onScrim = Color(0xFFFFFFFF); // on scrim
-
-  CameraController? _cameraController;
-  final TextRecognizer _textRecognizer = TextRecognizer();
-  final BarcodeScanner _barcodeScanner = BarcodeScanner(
-    formats: scanBarcodeFormats,
+  /// The plugin seams, read once. The providers own them (see
+  /// `scanner_ports.dart`); overriding those is what lets a widget test pump
+  /// this screen at all.
+  late final TextRecognitionPort _textPort = ref.read(
+    textRecognitionPortProvider,
   );
+  late final BarcodeScanPort _barcodePort = ref.read(barcodeScanPortProvider);
+  late final CameraPort _cameraPort = ref.read(cameraPortProvider);
+  late final GalleryPort _galleryPort = ref.read(galleryPortProvider);
+  late final Future<List<AifaSearchResult>> Function(String code) _aifaSearch =
+      ref.read(aifaSearchProvider);
+
+  /// Whether the camera is ours to drive: what a non-null controller used to
+  /// say, before a lifecycle pause released it.
+  bool _cameraLive = false;
+
+  /// Bumped by every initialisation and every release, so an initialisation
+  /// overtaken by a newer one (or by a pause) drops its result.
+  int _cameraGeneration = 0;
 
   _ScanStage _stage = _ScanStage.capture;
   bool _isSearching = false;
@@ -113,14 +132,51 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Size _imageSize = Size.zero;
   List<CodeCandidate> _candidates = const [];
 
-  /// The width the photo is decoded at for display (see [_photoImage]).
-  int? _photoDecodeWidth;
+  /// The EAN the same photo carried, when a barcode was decoded next to the
+  /// label code. Remembered on the medication so a later scan of either
+  /// code finds it; [addMedicationWithBarcode] drops it when the scanned
+  /// code already is that EAN.
+  String? get _bestEan {
+    for (final candidate in _candidates) {
+      if (candidate.kind == CodeKind.ean) return candidate.code;
+    }
+    return null;
+  }
+
+  /// The inputs behind [_candidates], kept so an area rescan merges into
+  /// them instead of replacing everything found so far.
+  List<OcrLine> _photoLines = const [];
+  List<OcrLine> _extraLines = const [];
+  List<CodeCandidate> _barcodes = const [];
+
+  /// Whether the review photo is in area-selection mode.
+  bool _selectingArea = false;
+
+  /// Set while the on-device supplement register is stale, so the review
+  /// stage can offer an update; null when it is fresh, absent or unreadable.
+  RegisterFreshness? _registerFreshness;
+
+  /// Whether the user closed the staleness banner for this photo.
+  bool _registerWarningDismissed = false;
+
+  /// Every width the photo has been decoded at for display (see
+  /// [_photoImage]): MediaQuery can change between builds (a rotation, a
+  /// split screen), and each width is a separate image-cache entry that
+  /// [_discardPhoto] has to evict.
+  final Set<int> _photoDecodeWidths = {};
 
   /// Longer side of the downscaled copy for the second barcode pass.
   static const int _barcodeRetryMaxSide = 1600;
 
   /// How long decoding and rendering the region crop may take.
   static const Duration _regionCropTimeout = Duration(seconds: 15);
+
+  /// How long the whole stripe pass may take, across every target and
+  /// every rotation of it.
+  static const Duration _stripeTimeout = Duration(seconds: 15);
+
+  /// How long the crop of a user-selected area may take to render.
+  static const Duration _areaCropTimeout = Duration(seconds: 15);
 
   @override
   void initState() {
@@ -131,17 +187,17 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _cameraController;
     if (state == AppLifecycleState.inactive) {
-      if (controller == null) return;
-      _cameraController = null;
+      if (!_cameraLive) return;
+      _cameraLive = false;
+      _cameraGeneration++;
       _torchOn = false;
       if (mounted) setState(() => _isCameraReady = false);
-      controller.dispose();
+      unawaited(_cameraPort.dispose());
     } else if (state == AppLifecycleState.resumed) {
       // Review keeps the photo; the camera comes back on retake.
-      if (_stage == _ScanStage.capture && controller == null) {
-        _initializeCamera();
+      if (_stage == _ScanStage.capture && !_cameraLive) {
+        unawaited(_initializeCamera());
       }
     }
   }
@@ -149,9 +205,9 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _cameraController?.dispose();
-    _textRecognizer.close();
-    _barcodeScanner.close();
+    // The detectors belong to the providers, which close them; the camera is
+    // released here so the next screen can open it.
+    unawaited(_cameraPort.dispose());
     _discardPhoto();
     super.dispose();
   }
@@ -159,35 +215,18 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   // ── Camera ─────────────────────────────────────────────────
 
   Future<void> _initializeCamera() async {
-    CameraController? controller;
+    final generation = ++_cameraGeneration;
+    _cameraLive = true;
     try {
-      final cameras = await availableCameras();
-      if (!mounted) return;
-      if (cameras.isEmpty) {
+      final ready = await _cameraPort.initialize();
+      // A newer initialisation (or a lifecycle pause) replaced this one.
+      if (!mounted || generation != _cameraGeneration) return;
+      if (!ready) {
+        // No camera on this device: nothing to come back to on resume.
+        _cameraLive = false;
         setState(() => _cameraFailed = true);
         return;
       }
-
-      final backCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-
-      controller = CameraController(
-        backCamera,
-        ResolutionPreset.veryHigh,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      _cameraController = controller;
-      await controller.initialize();
-      if (!mounted || _cameraController != controller) return;
-      try {
-        await controller.setFocusMode(FocusMode.auto);
-      } on CameraException catch (e) {
-        debugPrint('Camera focus mode unsupported: $e');
-      }
-      if (!mounted || _cameraController != controller) return;
       setState(() {
         _isCameraReady = true;
         _cameraFailed = false;
@@ -197,8 +236,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       if (_stage != _ScanStage.capture) await _pausePreview();
     } catch (e) {
       debugPrint('Camera init error: $e');
-      // A newer initialisation (or a lifecycle pause) replaced this one.
-      if (!mounted || _cameraController != controller) return;
+      if (!mounted || generation != _cameraGeneration) return;
       setState(() {
         _isCameraReady = false;
         _cameraFailed = true;
@@ -213,81 +251,74 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     Size viewport,
     Orientation orientation,
   ) async {
-    final controller = _cameraController;
-    final previewSize = controller?.value.previewSize;
-    if (controller == null || !_isCameraReady || previewSize == null) return;
-    final point = BarcodeScannerScreen.focusPointFor(
-      tap: local,
-      viewport: viewport,
-      previewSize: previewSize,
-      orientation: orientation,
+    final previewSize = _cameraPort.previewSize;
+    if (!_isCameraReady || previewSize == null) return;
+    await _cameraPort.setFocusPoint(
+      BarcodeScannerScreen.focusPointFor(
+        tap: local,
+        viewport: viewport,
+        previewSize: previewSize,
+        orientation: orientation,
+      ),
     );
-    try {
-      await controller.setFocusPoint(point);
-    } on CameraException catch (e) {
-      debugPrint('Camera focus point unsupported: $e');
-    }
   }
 
   Future<void> _toggleTorch() async {
-    final controller = _cameraController;
-    if (controller == null) return;
-    try {
-      await controller.setFlashMode(_torchOn ? FlashMode.off : FlashMode.torch);
-      if (mounted) setState(() => _torchOn = !_torchOn);
-    } on CameraException catch (e) {
-      debugPrint('Torch error: $e');
-    }
+    if (!_cameraLive) return;
+    // The indicator only follows a torch that actually switched.
+    if (!await _cameraPort.setTorch(!_torchOn)) return;
+    if (mounted) setState(() => _torchOn = !_torchOn);
   }
 
   Future<void> _pausePreview() async {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-    try {
-      if (_torchOn) {
-        await controller.setFlashMode(FlashMode.off);
-        _torchOn = false;
-      }
-      await controller.pausePreview();
-    } on CameraException catch (e) {
-      debugPrint('Camera pause error: $e');
-    }
+    if (!_cameraPort.isReady) return;
+    // The indicator only follows a torch that actually switched, exactly as
+    // [_toggleTorch] does: a refused flash-off leaves the light on, and a
+    // flag saying otherwise would make the button ask for it to come on.
+    if (_torchOn && await _cameraPort.setTorch(false)) _torchOn = false;
+    // The preview freezes either way; a light that would not go out is no
+    // reason to keep a live preview under the photo being reviewed.
+    await _cameraPort.pausePreview();
   }
 
   Future<void> _resumePreview() async {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
-      _cameraController = null;
+    if (!_cameraLive || !_cameraPort.isReady) {
+      _cameraLive = false;
       await _initializeCamera();
       return;
     }
-    try {
-      await controller.resumePreview();
-    } on CameraException catch (e) {
-      debugPrint('Camera resume error: $e');
-    }
+    await _cameraPort.resumePreview();
   }
 
   // ── Capture → recognize ────────────────────────────────────
 
   Future<void> _takePhoto() async {
-    final controller = _cameraController;
-    if (controller == null ||
-        !_isCameraReady ||
+    if (!_isCameraReady ||
         _stage != _ScanStage.capture ||
-        controller.value.isTakingPicture) {
+        _cameraPort.isTakingPicture) {
       return;
     }
     try {
-      final capture = controller.takePicture();
+      final capture = _cameraPort.takePicture();
       // isTakingPicture is now true: disable gallery and manual entry.
       setState(() {});
-      final file = await capture;
-      if (!mounted) {
-        unawaited(_deleteFile(file.path));
+      final path = await capture;
+      if (path == null) {
+        // No photo was written. The port answers null only when it holds no
+        // controller, which [_isCameraReady] already excludes, so this is
+        // unreachable with the real camera — but a shutter that does
+        // nothing at all is the one outcome the user cannot act on.
+        if (mounted) {
+          setState(() {});
+          _showError();
+        }
         return;
       }
-      await _recognize(file.path, isTemp: true);
+      if (!mounted) {
+        unawaited(_deleteFile(path));
+        return;
+      }
+      await _recognize(path, isTemp: true);
     } catch (e) {
       debugPrint('Take picture error: $e');
       if (mounted) {
@@ -297,21 +328,20 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
-  bool get _isTakingPicture =>
-      _cameraController?.value.isTakingPicture ?? false;
+  bool get _isTakingPicture => _cameraPort.isTakingPicture;
 
   Future<void> _pickFromGallery() async {
     if (_stage != _ScanStage.capture || _picking || _isTakingPicture) return;
     setState(() => _picking = true);
     try {
-      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      final picked = await _galleryPort.pickImage();
       if (picked == null || !mounted) return;
-      final isCacheCopy = await _isInTemporaryDirectory(picked.path);
+      final isCacheCopy = await _isInTemporaryDirectory(picked);
       if (!mounted) {
-        if (isCacheCopy) unawaited(_deleteFile(picked.path));
+        if (isCacheCopy) unawaited(_deleteFile(picked));
         return;
       }
-      await _recognize(picked.path, isTemp: isCacheCopy);
+      await _recognize(picked, isTemp: isCacheCopy);
     } catch (e) {
       debugPrint('Gallery pick error: $e');
       if (mounted) _showError();
@@ -338,14 +368,19 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     if (_photoPath != path) _discardPhoto();
     setState(() {
       _stage = _ScanStage.recognizing;
+      _registerWarningDismissed = false;
       _photoPath = path;
       _photoIsTemp = isTemp;
       _candidates = const [];
+      _photoLines = const [];
+      _extraLines = const [];
+      _barcodes = const [];
+      _selectingArea = false;
     });
     await _pausePreview();
     if (!mounted) return;
     try {
-      final input = InputImage.fromFilePath(path);
+      final input = ScanImageFile(path);
       final (lines, photoBarcodes, size) = await (
         _recognizeText(input),
         _scanBarcodes(input, pass: 'photo'),
@@ -361,6 +396,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         if (!mounted || _photoPath != path) return;
       }
       final photoLines = lines ?? const <OcrLine>[];
+      var regionLines = const <OcrLine>[];
       var candidates = findCodeCandidates(photoLines, barcodes: barcodes);
       if (needsRegionPass(
         lines: photoLines,
@@ -373,21 +409,42 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         ]);
         if (!mounted || _photoPath != path) return;
         if (region != null) {
+          regionLines = region.lines;
           barcodes = [...barcodes, ...region.barcodes];
           candidates = findCodeCandidates(
             photoLines,
-            regionLines: region.lines,
+            regionLines: regionLines,
             barcodes: barcodes,
           );
         }
       }
+      if (barcodes.isEmpty) {
+        final stripes = await _scanBarcodeStripes(path, size, candidates);
+        if (!mounted || _photoPath != path) return;
+        if (stripes.isNotEmpty) {
+          barcodes = [...barcodes, ...stripes];
+          candidates = findCodeCandidates(
+            photoLines,
+            regionLines: regionLines,
+            barcodes: barcodes,
+          );
+        }
+      }
+      candidates = await _resolveAgainstRegister(candidates);
+      if (!mounted || _photoPath != path) return;
+      final freshness = await _loadRegisterFreshness();
+      if (!mounted || _photoPath != path) return;
       scanLog([
         '[scan] image: ${size.width.round()}x${size.height.round()}',
         ...describeCandidates(candidates),
       ]);
       setState(() {
+        _registerFreshness = freshness;
         _imageSize = size;
         _candidates = candidates;
+        _photoLines = photoLines;
+        _extraLines = regionLines;
+        _barcodes = barcodes;
         _stage = _ScanStage.review;
       });
     } catch (e) {
@@ -402,14 +459,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// crop's position in the photo) and [scale] (see [offsetOcrLines]); null (logged) when text recognition fails, so decoded
   /// barcodes can still be offered.
   Future<List<OcrLine>?> _recognizeText(
-    InputImage input, {
+    ScanImage image, {
     Offset offset = Offset.zero,
     double scale = 1.0,
     String? pass,
   }) async {
     try {
       final lines = offsetOcrLines(
-        ocrLinesFrom(await _textRecognizer.processImage(input)),
+        await _textPort.linesIn(image),
         offset,
         scale: scale,
       );
@@ -427,16 +484,15 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// Barcode candidates of [input]; null (logged) when scanning fails, so
   /// OCR results are still offered.
   Future<List<CodeCandidate>?> _scanBarcodes(
-    InputImage input, {
+    ScanImage image, {
     required String pass,
   }) async {
     try {
-      final barcodes = await _barcodeScanner.processImage(input);
-      scanLog([
-        '[scan] barcodes ($pass): ${barcodes.length}',
-        ...describeBarcodes(barcodes),
-      ]);
-      return barcodeCandidatesFrom(barcodes);
+      // The port logs each decoded value, including those that map to no
+      // candidate; the pass is only known here.
+      final candidates = await _barcodePort.candidatesIn(image);
+      scanLog(['[scan] barcodes ($pass): ${candidates.length}']);
+      return candidates;
     } catch (e, stack) {
       debugPrint('[scan] barcode scanning failed ($pass): $e\n$stack');
       return null;
@@ -469,7 +525,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         '[scan] region pass ${region.width.round()}x${region.height.round()} '
             '@ ${region.left.round()},${region.top.round()} scale $scale',
       ]);
-      final input = InputImage.fromFilePath(out);
+      final input = ScanImageFile(out);
       final (lines, found) = await (
         _recognizeText(
           input,
@@ -495,6 +551,159 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
+  /// A barcode pass on the bars above the digits OCR read: for each target
+  /// (see [barcodeStripeTargets]) the crop is written as a PNG under the
+  /// [regionMaxDecodeSide] cap at 0°, 90°, 180° and 270° — all four from a
+  /// single decode of the photo (see [writeImageCropRotations]) — and
+  /// scanned in that order, stopping at the first rotation that decodes.
+  /// Boxes come back in photo pixels. The whole pass, targets included,
+  /// gets [_stripeTimeout]; it also stops when the screen or the photo is
+  /// gone. Empty when nothing decodes, the crop times out or the pass fails
+  /// (logged); the photo's own passes stand.
+  Future<List<CodeCandidate>> _scanBarcodeStripes(
+    String path,
+    Size size,
+    List<CodeCandidate> candidates,
+  ) async {
+    final found = <CodeCandidate>[];
+    final elapsed = Stopwatch()..start();
+    Duration left() => _stripeTimeout - elapsed.elapsed;
+    bool stop() => !mounted || _photoPath != path || left() <= Duration.zero;
+    for (final target in barcodeStripeTargets(candidates)) {
+      if (stop()) break;
+      final crop = barcodeStripeCrop(target, size);
+      if (crop == null) continue;
+      Directory? dir;
+      try {
+        dir = await (await getTemporaryDirectory()).createTemp('scan_stripe_');
+        final rotations = [
+          for (var turns = 0; turns < 4; turns++)
+            (
+              quarterTurns: turns,
+              outPath: p.join(dir.path, 'stripe_$turns.png'),
+            ),
+        ];
+        if (stop()) break;
+        final written = await writeImageCropRotations(
+          path,
+          crop,
+          rotations,
+        ).timeout(left());
+        if (written == null) break;
+        for (final rotation in rotations) {
+          if (stop()) break;
+          final decoded = await _scanBarcodes(
+            ScanImageFile(rotation.outPath),
+            pass: 'stripe ${rotation.quarterTurns * 90}°',
+          );
+          if (decoded == null || decoded.isEmpty) continue;
+          found.addAll(
+            unrotateCandidates(
+              decoded,
+              quarterTurns: rotation.quarterTurns,
+              crop: written.crop,
+              scale: written.scale,
+            ),
+          );
+          break;
+        }
+      } catch (e, stack) {
+        debugPrint('[scan] stripe pass failed: $e\n$stack');
+      } finally {
+        if (dir != null) await _deleteDirectory(dir);
+      }
+      if (found.isNotEmpty) break;
+    }
+    return found;
+  }
+
+  /// Text recognition and barcode scanning on the area the user selected on
+  /// the review photo ([selection] in 0..1 fractions), merged into the
+  /// candidates already found. The crop is a PNG in a fresh `scan_area_`
+  /// directory, deleted when done.
+  Future<void> _rescanArea(Rect selection) async {
+    final path = _photoPath;
+    if (path == null || _isSearching) return;
+    final crop = rescanAreaCrop(selection, _imageSize);
+    if (crop == null) {
+      // Too small to crop: say so instead of doing nothing at all.
+      _showMessage(AppLocalizations.of(context).scanRescanTooSmall);
+      return;
+    }
+    setState(() => _isSearching = true);
+    Directory? dir;
+    final before = candidateKeys(_candidates);
+    try {
+      dir = await (await getTemporaryDirectory()).createTemp('scan_area_');
+      final out = p.join(dir.path, 'area.png');
+      final written = await writeImageCrop(
+        path,
+        crop,
+        out,
+      ).timeout(_areaCropTimeout);
+      if (!mounted || _photoPath != path) return;
+      if (written == null) {
+        // A degenerate or unreadable crop: an error, not a silent no-op.
+        _showError();
+        return;
+      }
+      scanLog([
+        '[scan] area pass ${written.crop.width.round()}x'
+            '${written.crop.height.round()} @ ${written.crop.left.round()},'
+            '${written.crop.top.round()} scale ${written.scale}',
+      ]);
+      final input = ScanImageFile(out);
+      final (lines, found) = await (
+        _recognizeText(
+          input,
+          offset: written.crop.topLeft,
+          scale: written.scale,
+          pass: 'area',
+        ),
+        _scanBarcodes(input, pass: 'area'),
+      ).wait;
+      if (!mounted || _photoPath != path) return;
+      _extraLines = [..._extraLines, ...?lines];
+      _barcodes = [
+        ..._barcodes,
+        ...offsetCandidates(
+          found ?? const [],
+          written.crop.topLeft,
+          scale: written.scale,
+        ),
+      ];
+      var candidates = findCodeCandidates(
+        _photoLines,
+        regionLines: _extraLines,
+        barcodes: _barcodes,
+      );
+      candidates = await _resolveAgainstRegister(candidates);
+      if (!mounted || _photoPath != path) return;
+      setState(() {
+        _candidates = candidates;
+        _selectingArea = false;
+      });
+      // By content, not by count: findCodeCandidates deduplicates by
+      // kind:code and a sharper re-read can replace an earlier one. A rescan
+      // that corrects 023834II8 to 023834118 leaves the count alone but does
+      // add a key, so it no longer claims "nothing new"; one that merges two
+      // readings adds none and rightly says so.
+      if (candidateKeys(candidates).difference(before).isEmpty) {
+        _showMessage(AppLocalizations.of(context).scanRescanNothingNew);
+      }
+    } catch (e, stack) {
+      debugPrint('[scan] area rescan failed: $e\n$stack');
+      if (!mounted) return;
+      // Leave selection mode, which drops the rectangle: a stale box sitting
+      // on the photo over the error reads as if the rescan were still live.
+      setState(() => _selectingArea = false);
+      _showError();
+    } finally {
+      if (dir != null) await _deleteDirectory(dir);
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
   Future<void> _deleteDirectory(Directory dir) async {
     try {
       await dir.delete(recursive: true);
@@ -515,8 +724,8 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       final small = await decodeDownscaledRgba(path, _barcodeRetryMaxSide);
       if (small == null) return const [];
       final found = await _scanBarcodes(
-        InputImage.fromBitmap(
-          bitmap: small.rgba,
+        ScanImageBitmap(
+          rgba: small.rgba,
           width: small.width,
           height: small.height,
         ),
@@ -555,7 +764,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                 MediaQuery.devicePixelRatioOf(context) *
                 2)
             .round();
-    _photoDecodeWidth = width;
+    _photoDecodeWidths.add(width);
     return ResizeImage(FileImage(File(path)), width: width);
   }
 
@@ -563,6 +772,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     _discardPhoto();
     setState(() {
       _candidates = const [];
+      _photoLines = const [];
+      _extraLines = const [];
+      _barcodes = const [];
+      _selectingArea = false;
       _imageSize = Size.zero;
       _stage = _ScanStage.capture;
     });
@@ -576,8 +789,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       // Drop the decoded photo from the image cache.
       final file = FileImage(File(path));
       unawaited(file.evict());
-      final width = _photoDecodeWidth;
-      if (width != null) unawaited(ResizeImage(file, width: width).evict());
+      for (final width in _photoDecodeWidths) {
+        unawaited(ResizeImage(file, width: width).evict());
+      }
+      _photoDecodeWidths.clear();
     }
     if (path != null && _photoIsTemp) unawaited(_deleteFile(path));
     _photoPath = null;
@@ -592,35 +807,143 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
-  void _showError() {
-    final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.genericError)));
+  void _showError() => _showMessage(AppLocalizations.of(context).genericError);
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   // ── Selection ──────────────────────────────────────────────
 
-  void _onCandidateSelected(CodeCandidate candidate) {
+  /// The cabinet first, whatever the code is: a medication remembers both the
+  /// label code and the pack EAN it was scanned with, so a later scan of
+  /// either one opens it instead of adding it twice (`migrations.dart`,
+  /// `MedicationLocalDatasource.getMedicationByBarcode`). Only a code the
+  /// cabinet does not know goes on to the lookup its kind deserves — which
+  /// used to be the only path for everything but an EAN (review I4).
+  Future<void> _onCandidateSelected(CodeCandidate candidate) async {
     if (_isSearching) return;
     if (widget.returnBarcodeOnly) {
-      _handleCode(
+      await _handleCode(
         candidate.code,
         kind: candidate.kind,
         alternatives: candidate.alternatives,
       );
       return;
     }
+    if (await _openFromCabinet(candidate.code)) return;
+    if (!mounted) return;
     switch (candidate.kind) {
       case CodeKind.aic:
-        _handleCode(candidate.code, alternatives: candidate.alternatives);
+        await _handleCode(candidate.code, alternatives: candidate.alternatives);
       case CodeKind.supplement:
-        _openSupplement(candidate);
-      case CodeKind.ean:
-        _openEan(candidate);
-      case CodeKind.other:
-        _leaveAndPush(addMedicationWithBarcode(candidate.code));
+        await _openSupplement(candidate);
+      case CodeKind.ean || CodeKind.other:
+        _leaveAndPush(addMedicationWithBarcode(candidate.code, ean: _bestEan));
     }
+  }
+
+  /// Opens the cabinet medication whose label code or pack EAN is [code], and
+  /// says whether it did.
+  ///
+  /// A lookup that fails is logged and answered as "no match": the kind's own
+  /// lookup is then the best the screen can still offer, and is exactly what
+  /// the user got before the cabinet was consulted at all.
+  Future<bool> _openFromCabinet(String code) async {
+    setState(() => _isSearching = true);
+    final l10n = AppLocalizations.of(context);
+    String? id;
+    try {
+      final result = await ref
+          .read(medicationRepositoryProvider)
+          .getMedicationByBarcode(code);
+      if (result.isFailure) debugPrint('[scan] cabinet lookup failed: $code');
+      id = result.dataOrNull?.id;
+    } catch (e) {
+      debugPrint('[scan] cabinet lookup error: $e');
+    }
+    if (!mounted) return true; // the screen is gone; nothing left to open
+    setState(() => _isSearching = false);
+    if (id == null) return false;
+    _leaveAndPush(
+      AppRoutes.medicationDetail.replaceFirst(':id', id),
+      message: l10n.scanMedicationInCabinet,
+    );
+    return true;
+  }
+
+  /// Supplement chips corrected to the register code that matches them,
+  /// when the register is already on the device. Without it (or on any
+  /// error) the chips stay as read and `_openSupplement` asks the user to
+  /// confirm an alternative at selection time.
+  Future<List<CodeCandidate>> _resolveAgainstRegister(
+    List<CodeCandidate> candidates,
+  ) async {
+    if (!candidates.any((c) => c.kind == CodeKind.supplement)) {
+      return candidates;
+    }
+    try {
+      // Both reads inside the try: a throw here must fall back to the chips
+      // as read, not escape to `_recognize` and discard the photo (M2).
+      if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
+        return candidates;
+      }
+      final service = ref.read(supplementRegistryServiceProvider);
+      if (!await service.hasData()) return candidates;
+      return await resolveSupplementCandidates(candidates, service.findByCode);
+    } catch (e) {
+      debugPrint('[scan] register resolution skipped: $e');
+      return candidates;
+    }
+  }
+
+  /// How old the on-device supplement register is, but only when that is
+  /// worth saying: null when the platform has no register, when nothing is
+  /// cached (the download prompt covers that), when it is still fresh, or
+  /// when the status cannot be read at all.
+  Future<RegisterFreshness?> _loadRegisterFreshness() async {
+    try {
+      if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
+        return null;
+      }
+      final service = ref.read(supplementRegistryServiceProvider);
+      final freshness = registerFreshness(
+        now: ref.read(nowProvider)(),
+        sourceUpdated: await service.sourceUpdated(),
+        lastSync: await service.lastSync(),
+        count: await service.count(),
+      );
+      return freshness.isStale ? freshness : null;
+    } catch (e) {
+      debugPrint('[scan] register freshness unavailable: $e');
+      return null;
+    }
+  }
+
+  /// Downloads the register from the review banner, then re-resolves the
+  /// chips against it: a supplement code read from this photo can become a
+  /// register match without the user having to scan again.
+  Future<void> _updateRegisterFromReview() async {
+    if (_isSearching) return;
+    final service = ref.read(supplementRegistryServiceProvider);
+    final downloaded = await confirmAndDownloadSupplementRegister(
+      context,
+      service,
+    );
+    if (!mounted || downloaded == null) return; // cancelled
+    if (!downloaded) {
+      _showError(); // offline or the download failed
+      return;
+    }
+    setState(() => _isSearching = true);
+    final candidates = await _resolveAgainstRegister(_candidates);
+    final freshness = await _loadRegisterFreshness();
+    if (!mounted) return;
+    setState(() {
+      _candidates = candidates;
+      _registerFreshness = freshness;
+      _isSearching = false;
+    });
   }
 
   /// Looks the code up in the food-supplement register (offering the
@@ -631,7 +954,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   Future<void> _openSupplement(CodeCandidate candidate) async {
     final code = candidate.code;
     if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) {
-      _leaveAndPush(addMedicationWithBarcode(code));
+      _leaveAndPush(addMedicationWithBarcode(code, ean: _bestEan));
       return;
     }
     final l10n = AppLocalizations.of(context);
@@ -667,7 +990,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           entry = await showSupplementPicker(context, entries);
         case SupplementNotFound():
           _leaveAndPush(
-            addMedicationWithBarcode(code),
+            addMedicationWithBarcode(code, ean: _bestEan),
             message: l10n.supplementNotFound,
           );
           return;
@@ -684,7 +1007,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         if (!mounted) return;
         if (!use) {
           _leaveAndPush(
-            addMedicationWithBarcode(code),
+            addMedicationWithBarcode(code, ean: _bestEan),
             message: l10n.supplementNotFound,
           );
           return;
@@ -702,41 +1025,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   void _selectSupplement(SupplementEntry entry, String code) {
     final l10n = AppLocalizations.of(context);
     _leaveAndPush(
-      addMedicationWithBarcode(code),
+      addMedicationWithBarcode(code, ean: _bestEan),
       message: l10n.autoFilledFromBarcode,
       extra: entry,
     );
-  }
-
-  /// The cabinet medication with this barcode, else Add Medication.
-  Future<void> _openEan(CodeCandidate candidate) async {
-    setState(() => _isSearching = true);
-    final l10n = AppLocalizations.of(context);
-    try {
-      final result = await ref
-          .read(medicationRepositoryProvider)
-          .getMedicationByBarcode(candidate.code);
-      if (!mounted) return;
-      setState(() => _isSearching = false);
-      if (result.isFailure) {
-        _showError();
-        return;
-      }
-      final medication = result.dataOrNull;
-      if (medication != null) {
-        _leaveAndPush(
-          AppRoutes.medicationDetail.replaceFirst(':id', medication.id),
-          message: l10n.scanMedicationInCabinet,
-        );
-      } else {
-        _leaveAndPush(addMedicationWithBarcode(candidate.code));
-      }
-    } catch (e) {
-      debugPrint('Cabinet barcode lookup error: $e');
-      if (!mounted) return;
-      setState(() => _isSearching = false);
-      _showError();
-    }
   }
 
   /// Replaces the scanner (its photo is deleted in `dispose`) with
@@ -755,6 +1047,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final busy = _isSearching || _picking || _isTakingPicture;
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.scanBarcodeTitle),
@@ -767,8 +1060,21 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         ],
       ),
       body: switch (_stage) {
-        _ScanStage.capture => _buildCapture(l10n),
-        _ScanStage.recognizing => _buildRecognizing(l10n),
+        _ScanStage.capture => CaptureView(
+          camera: _cameraPort,
+          cameraReady: _isCameraReady,
+          cameraFailed: _cameraFailed,
+          busy: busy,
+          canShoot: _isCameraReady && !busy,
+          searching: _isSearching,
+          onShutter: _takePhoto,
+          onGallery: _pickFromGallery,
+          onManualEntry: () => _showManualEntryDialog(context),
+          onFocus: _focusAt,
+        ),
+        _ScanStage.recognizing => RecognizingView(
+          photo: _photoPath == null ? null : _photoImage(_photoPath!),
+        ),
         _ScanStage.review => SafeArea(
           top: false,
           child: ScanReviewView(
@@ -779,179 +1085,50 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
             onRetake: _retake,
             onManualEntry: () => _showManualEntryDialog(context),
             busy: _isSearching,
+            onRescanArea: _rescanArea,
+            selecting: _selectingArea,
+            onToggleSelecting: () =>
+                setState(() => _selectingArea = !_selectingArea),
+            banner: _buildRegisterBanner(l10n),
           ),
         ),
       },
     );
   }
 
-  Widget _buildCapture(AppLocalizations l10n) {
-    final controller = _cameraController;
-    final previewSize = controller?.value.previewSize;
-    final busy = _isSearching || _picking || _isTakingPicture;
-    final canShoot = _isCameraReady && controller != null && !busy;
-    return ColoredBox(
-      color: Colors.black, // scrim
-      child: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                if (_isCameraReady && controller != null && previewSize != null)
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final orientation = MediaQuery.orientationOf(context);
-                      final child = BarcodeScannerScreen.previewChildSize(
-                        previewSize,
-                        orientation,
-                      );
-                      return GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapUp: (details) => _focusAt(
-                          details.localPosition,
-                          constraints.biggest,
-                          orientation,
-                        ),
-                        child: SizedBox.expand(
-                          child: ClipRect(
-                            child: FittedBox(
-                              fit: BoxFit.cover,
-                              child: SizedBox(
-                                width: child.width,
-                                height: child.height,
-                                child: CameraPreview(controller),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  )
-                else if (!_cameraFailed)
-                  const Center(
-                    child: CircularProgressIndicator(color: _onScrim),
-                  ),
-                Positioned(
-                  bottom: 12,
-                  left: 16,
-                  right: 16,
-                  child: Center(
-                    child: _ScrimLabel(
-                      child: _isSearching
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: _onScrim,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  l10n.lookingUpBarcode,
-                                  style: const TextStyle(
-                                    color: _onScrim,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : Text(
-                              l10n.scanCaptureHint,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: _onScrim,
-                                fontSize: 13,
-                              ),
-                            ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+  /// The stale-register warning above the review list: the age, an update
+  /// action and a close button. Null while the register is fresh, missing
+  /// or the warning was dismissed for this photo.
+  Widget? _buildRegisterBanner(AppLocalizations l10n) {
+    final freshness = _registerFreshness;
+    if (freshness == null || _registerWarningDismissed) return null;
+    final days = freshness.days;
+    return Row(
+      children: [
+        Icon(
+          Icons.warning_amber_rounded,
+          color: context.colors.error,
+          size: 18,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            days == null ? l10n.registerStaleUnknown : l10n.registerStale(days),
+            style: TextStyle(color: context.colors.error),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    iconSize: 28,
-                    color: _onScrim,
-                    tooltip: l10n.scanFromGallery,
-                    onPressed: busy ? null : _pickFromGallery,
-                    icon: const Icon(Icons.photo_library_outlined),
-                  ),
-                  Tooltip(
-                    message: l10n.scanTakePhoto,
-                    child: FilledButton(
-                      onPressed: canShoot ? _takePhoto : null,
-                      style: FilledButton.styleFrom(
-                        shape: const CircleBorder(),
-                        fixedSize: const Size(72, 72),
-                        padding: EdgeInsets.zero,
-                        disabledBackgroundColor: context.colors.onSurface
-                            .withValues(alpha: 0.38),
-                      ),
-                      child: Icon(
-                        Icons.camera_alt,
-                        size: 32,
-                        semanticLabel: l10n.scanTakePhoto,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    iconSize: 28,
-                    color: _onScrim,
-                    tooltip: l10n.enterBarcodeManually,
-                    onPressed: busy
-                        ? null
-                        : () => _showManualEntryDialog(context),
-                    icon: const Icon(Icons.keyboard),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecognizing(AppLocalizations l10n) {
-    final path = _photoPath;
-    return ColoredBox(
-      color: Colors.black, // scrim
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (path != null)
-            Image(
-              image: _photoImage(path),
-              fit: BoxFit.contain,
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-            ),
-          ColoredBox(color: Colors.black.withValues(alpha: 0.54)), // scrim
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(color: _onScrim),
-                const SizedBox(height: 16),
-                Text(
-                  l10n.scanRecognizing,
-                  style: const TextStyle(color: _onScrim, fontSize: 15),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+        TextButton(
+          key: const ValueKey('scanRegisterUpdate'),
+          onPressed: _isSearching ? null : _updateRegisterFromReview,
+          child: Text(l10n.registerUpdateNow),
+        ),
+        IconButton(
+          key: const ValueKey('scanRegisterDismiss'),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          icon: const Icon(Icons.close, size: 18),
+          onPressed: () => setState(() => _registerWarningDismissed = true),
+        ),
+      ],
     );
   }
 
@@ -969,18 +1146,22 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
 
     if (widget.returnBarcodeOnly) {
       if (mounted) {
-        context.pop(ScanResult(rawCode, kind, alternatives: alternatives));
+        context.pop(
+          ScanResult(
+            rawCode,
+            kind,
+            alternatives: alternatives,
+            // The code itself is the EAN: nothing to remember beside it.
+            ean: kind == CodeKind.ean ? null : _bestEan,
+          ),
+        );
       }
       return;
     }
 
     final l10n = AppLocalizations.of(context);
     try {
-      final found = await findByCodes(
-        AifaCacheService.instance.search,
-        rawCode,
-        alternatives,
-      );
+      final found = await findByCodes(_aifaSearch, rawCode, alternatives);
       final results = found.matches;
       if (!mounted) return;
       setState(() => _isSearching = false);
@@ -1150,7 +1331,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       }
     }
     _leaveAndPush(
-      addMedicationWithBarcode(code),
+      addMedicationWithBarcode(code, ean: _bestEan),
       message: l10n.autoFilledFromBarcode,
       extra: result,
     );
@@ -1198,24 +1379,6 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ScrimLabel extends StatelessWidget {
-  const _ScrimLabel({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.54), // scrim
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: child,
     );
   }
 }

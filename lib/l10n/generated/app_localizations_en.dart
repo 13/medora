@@ -524,6 +524,26 @@ class AppLocalizationsEn extends AppLocalizations {
       'No code found. Retake the photo closer, or type the code.';
 
   @override
+  String get scanSelectArea => 'Select area';
+
+  @override
+  String get scanSelectCentre => 'Select the centre';
+
+  @override
+  String get scanRescanArea => 'Scan selection';
+
+  @override
+  String get scanSelectAreaHint =>
+      'Drag a box around the code, then scan the selection.';
+
+  @override
+  String get scanRescanNothingNew => 'No new code found in that area.';
+
+  @override
+  String get scanRescanTooSmall =>
+      'That selection is too small to scan. Draw a bigger box.';
+
+  @override
   String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
 
   @override
@@ -546,6 +566,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get supplementRegisterDownload => 'Download';
+
+  @override
+  String registerStale(int days) {
+    return 'Last updated $days days ago';
+  }
+
+  @override
+  String get registerStaleUnknown => 'Age unknown — update recommended';
+
+  @override
+  String get registerUpdateNow => 'Update now';
 
   @override
   String get supplementRegisterDownloading => 'Downloading register…';
@@ -689,6 +720,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveDoseReminders => 'Receive dose reminders';
 
   @override
+  String get stockAndExpiryReminders => 'Stock and expiry reminders';
+
+  @override
+  String stockAndExpiryRemindersHint(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Notify when a medication runs low or expires within $days days',
+      one: 'Notify when a medication runs low or expires within 1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get cancelAllReminders => 'Cancel All Reminders';
 
   @override
@@ -706,6 +751,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get allRemindersCancelled => 'All reminders cancelled';
+
+  @override
+  String get notificationsBlocked =>
+      'Notifications are blocked. Allow them for Medora in your system settings.';
 
   @override
   String get dataSection => 'Data';
@@ -1237,6 +1286,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchAifaByName => 'Search AIFA Database';
 
   @override
+  String get searchSupplementByName => 'Search the supplement register';
+
+  @override
+  String get supplementSearchHint => 'Product name';
+
+  @override
   String get quantityUnit => 'Unit';
 
   @override
@@ -1374,6 +1429,36 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String notificationReminderBody(String dosage) {
     return '$dosage — Tap to log your dose';
+  }
+
+  @override
+  String get notificationExpiryTitle => 'Expiring soon';
+
+  @override
+  String notificationExpiryBody(String name, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$name expires in $days days',
+      one: '$name expires tomorrow',
+      zero: '$name expires today',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notificationLowStockTitle => 'Running low';
+
+  @override
+  String notificationLowStockBody(String name, int quantity) {
+    String _temp0 = intl.Intl.pluralLogic(
+      quantity,
+      locale: localeName,
+      other: '$name: $quantity left',
+      one: '$name: 1 left',
+      zero: '$name: none left',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1643,6 +1728,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get updateInstallExplainBody =>
       'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.';
+
+  @override
+  String get updateShowMore => 'Show more';
+
+  @override
+  String get updateShowLess => 'Show less';
 
   @override
   String get backupData => 'Back up data';

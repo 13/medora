@@ -1042,6 +1042,42 @@ abstract class AppLocalizations {
   /// **'No code found. Retake the photo closer, or type the code.'**
   String get scanNoCodeFound;
 
+  /// No description provided for @scanSelectArea.
+  ///
+  /// In en, this message translates to:
+  /// **'Select area'**
+  String get scanSelectArea;
+
+  /// No description provided for @scanSelectCentre.
+  ///
+  /// In en, this message translates to:
+  /// **'Select the centre'**
+  String get scanSelectCentre;
+
+  /// No description provided for @scanRescanArea.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan selection'**
+  String get scanRescanArea;
+
+  /// No description provided for @scanSelectAreaHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag a box around the code, then scan the selection.'**
+  String get scanSelectAreaHint;
+
+  /// No description provided for @scanRescanNothingNew.
+  ///
+  /// In en, this message translates to:
+  /// **'No new code found in that area.'**
+  String get scanRescanNothingNew;
+
+  /// No description provided for @scanRescanTooSmall.
+  ///
+  /// In en, this message translates to:
+  /// **'That selection is too small to scan. Draw a bigger box.'**
+  String get scanRescanTooSmall;
+
   /// No description provided for @scanCaptureHint.
   ///
   /// In en, this message translates to:
@@ -1083,6 +1119,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Download'**
   String get supplementRegisterDownload;
+
+  /// Warns that a cached register (supplements or AIFA) is at least 45 days old
+  ///
+  /// In en, this message translates to:
+  /// **'Last updated {days} days ago'**
+  String registerStale(int days);
+
+  /// No description provided for @registerStaleUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Age unknown — update recommended'**
+  String get registerStaleUnknown;
+
+  /// No description provided for @registerUpdateNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Update now'**
+  String get registerUpdateNow;
 
   /// No description provided for @supplementRegisterDownloading.
   ///
@@ -1333,6 +1387,18 @@ abstract class AppLocalizations {
   /// **'Receive dose reminders'**
   String get receiveDoseReminders;
 
+  /// No description provided for @stockAndExpiryReminders.
+  ///
+  /// In en, this message translates to:
+  /// **'Stock and expiry reminders'**
+  String get stockAndExpiryReminders;
+
+  /// No description provided for @stockAndExpiryRemindersHint.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =1{Notify when a medication runs low or expires within 1 day} other{Notify when a medication runs low or expires within {days} days}}'**
+  String stockAndExpiryRemindersHint(int days);
+
   /// No description provided for @cancelAllReminders.
   ///
   /// In en, this message translates to:
@@ -1368,6 +1434,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'All reminders cancelled'**
   String get allRemindersCancelled;
+
+  /// No description provided for @notificationsBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are blocked. Allow them for Medora in your system settings.'**
+  String get notificationsBlocked;
 
   /// No description provided for @dataSection.
   ///
@@ -2365,6 +2437,18 @@ abstract class AppLocalizations {
   /// **'Search AIFA Database'**
   String get searchAifaByName;
 
+  /// No description provided for @searchSupplementByName.
+  ///
+  /// In en, this message translates to:
+  /// **'Search the supplement register'**
+  String get searchSupplementByName;
+
+  /// No description provided for @supplementSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Product name'**
+  String get supplementSearchHint;
+
   /// No description provided for @quantityUnit.
   ///
   /// In en, this message translates to:
@@ -2622,6 +2706,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{dosage} — Tap to log your dose'**
   String notificationReminderBody(String dosage);
+
+  /// No description provided for @notificationExpiryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Expiring soon'**
+  String get notificationExpiryTitle;
+
+  /// No description provided for @notificationExpiryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{{name} expires today} =1{{name} expires tomorrow} other{{name} expires in {days} days}}'**
+  String notificationExpiryBody(String name, int days);
+
+  /// No description provided for @notificationLowStockTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Running low'**
+  String get notificationLowStockTitle;
+
+  /// No description provided for @notificationLowStockBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{quantity, plural, =0{{name}: none left} =1{{name}: 1 left} other{{name}: {quantity} left}}'**
+  String notificationLowStockBody(String name, int quantity);
 
   /// No description provided for @useOnThisDevice.
   ///
@@ -3102,6 +3210,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.'**
   String get updateInstallExplainBody;
+
+  /// No description provided for @updateShowMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Show more'**
+  String get updateShowMore;
+
+  /// No description provided for @updateShowLess.
+  ///
+  /// In en, this message translates to:
+  /// **'Show less'**
+  String get updateShowLess;
 
   /// No description provided for @backupData.
   ///

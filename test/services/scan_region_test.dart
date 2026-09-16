@@ -240,4 +240,201 @@ void main() {
     expect(supplement.code, '707018');
     expect(supplement.alternatives, ['107018']);
   });
+
+  group('barcodeStripeCrop', () {
+    test('grows sideways and mostly upwards from the digits', () {
+      final crop = barcodeStripeCrop(
+        const Rect.fromLTWH(100, 500, 200, 20),
+        const Size(1000, 1000),
+      );
+      // side 0.10*200 = 20, above 2.5*20 = 50, below 0.5*20 = 10
+      expect(crop, const Rect.fromLTRB(80, 450, 320, 530));
+    });
+
+    test('clamps to the image', () {
+      final crop = barcodeStripeCrop(
+        const Rect.fromLTWH(0, 0, 200, 20),
+        const Size(150, 100),
+      );
+      expect(crop, const Rect.fromLTRB(0, 0, 150, 30));
+    });
+
+    test('an empty box has no crop', () {
+      expect(
+        barcodeStripeCrop(
+          const Rect.fromLTWH(10, 10, 0, 0),
+          const Size(100, 100),
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('barcodeStripeTargets', () {
+    test('picks 8- and 13-digit runs, at most the limit, in order', () {
+      CodeCandidate c(String code, CodeKind kind, double top) => CodeCandidate(
+        code: code,
+        kind: kind,
+        sourceText: code,
+        box: Rect.fromLTWH(0, top, 100, 20),
+      );
+      final targets = barcodeStripeTargets([
+        c('COD12', CodeKind.other, 0),
+        c('8057737141836', CodeKind.ean, 100),
+        c('80577371418', CodeKind.other, 200),
+        c('96385074', CodeKind.other, 300),
+        c('12345678', CodeKind.other, 400),
+      ]);
+      expect(targets, [
+        const Rect.fromLTWH(0, 100, 100, 20),
+        const Rect.fromLTWH(0, 300, 100, 20),
+      ]);
+    });
+  });
+
+  group('unrotateBox', () {
+    const crop = Rect.fromLTRB(100, 200, 300, 260); // 200 x 60 photo pixels
+
+    test('no rotation, no scaling, is a shift', () {
+      expect(
+        unrotateBox(
+          const Rect.fromLTWH(10, 5, 20, 8),
+          quarterTurns: 0,
+          crop: crop,
+          scale: 1,
+        ),
+        const Rect.fromLTWH(110, 205, 20, 8),
+      );
+    });
+
+    test('a quarter turn clockwise maps back', () {
+      // PNG is 60 x 200; (x, y) in it came from (y, 60 - x) in the crop.
+      expect(
+        unrotateBox(
+          const Rect.fromLTRB(10, 20, 30, 50),
+          quarterTurns: 1,
+          crop: crop,
+          scale: 1,
+        ),
+        const Rect.fromLTRB(120, 230, 150, 250),
+      );
+    });
+
+    test('a half turn maps back', () {
+      expect(
+        unrotateBox(
+          const Rect.fromLTRB(10, 20, 30, 50),
+          quarterTurns: 2,
+          crop: crop,
+          scale: 1,
+        ),
+        const Rect.fromLTRB(270, 210, 290, 240),
+      );
+    });
+
+    test('three quarter turns map back', () {
+      // PNG is 60 x 200; (x, y) in it came from (200 - y, x) in the crop.
+      expect(
+        unrotateBox(
+          const Rect.fromLTRB(10, 20, 30, 50),
+          quarterTurns: 3,
+          crop: crop,
+          scale: 1,
+        ),
+        const Rect.fromLTRB(250, 210, 280, 230),
+      );
+    });
+
+    test('a downscaled crop divides by the scale first', () {
+      expect(
+        unrotateBox(
+          const Rect.fromLTWH(10, 5, 20, 8),
+          quarterTurns: 0,
+          crop: crop,
+          scale: 0.5,
+        ),
+        const Rect.fromLTWH(120, 210, 40, 16),
+      );
+    });
+
+    test('unrotateCandidates maps every box and keeps the rest', () {
+      final moved = unrotateCandidates(
+        const [
+          CodeCandidate(
+            code: '8057737141836',
+            kind: CodeKind.ean,
+            sourceText: '8057737141836',
+            box: Rect.fromLTRB(10, 20, 30, 50),
+            alternatives: ['1057737141836'],
+          ),
+        ],
+        quarterTurns: 1,
+        crop: crop,
+        scale: 1,
+      );
+      expect(moved.single.code, '8057737141836');
+      expect(moved.single.kind, CodeKind.ean);
+      expect(moved.single.sourceText, '8057737141836');
+      expect(moved.single.alternatives, ['1057737141836']);
+      expect(moved.single.box, const Rect.fromLTRB(120, 230, 150, 250));
+    });
+  });
+
+  group('rescanAreaCrop', () {
+    test('a half-size selection maps to whole photo pixels', () {
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
+          const Size(1000, 800),
+        ),
+        const Rect.fromLTRB(250, 200, 500, 400),
+      );
+    });
+
+    test('a selection under the minimum side has no crop', () {
+      // 1% of 1000x800 is 10x8 pixels, under minRescanSide.
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.10, 0.10, 0.11, 0.11),
+          const Size(1000, 800),
+        ),
+        isNull,
+      );
+    });
+
+    test('a selection beyond the edges clamps to the photo', () {
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(-0.5, -0.25, 1.5, 2.0),
+          const Size(1000, 800),
+        ),
+        const Rect.fromLTRB(0, 0, 1000, 800),
+      );
+    });
+
+    test('fractional pixels round outwards', () {
+      // 0.3001 * 1000 = 300.1 -> 300; 0.6009 * 1000 = 600.9 -> 601.
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.3001, 0.3001, 0.6009, 0.6009),
+          const Size(1000, 1000),
+        ),
+        const Rect.fromLTRB(300, 300, 601, 601),
+      );
+    });
+
+    test('null for an empty photo or a degenerate selection', () {
+      expect(
+        rescanAreaCrop(const Rect.fromLTRB(0, 0, 1, 1), Size.zero),
+        isNull,
+      );
+      expect(
+        rescanAreaCrop(
+          const Rect.fromLTRB(0.5, 0.5, 0.5, 0.5),
+          const Size(1000, 800),
+        ),
+        isNull,
+      );
+    });
+  });
 }

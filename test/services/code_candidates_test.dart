@@ -275,6 +275,114 @@ void main() {
       expect(result.single.box, barcodeBox);
       expect(result.single.sourceText, 'AIC n. 023834118');
     });
+
+    test('a number further along the row is not the labelled code', () {
+      // Review: `30 compresse 450` next to the label produced supplement 450.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 30 compresse 450', 0),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('a partner line must start with its code', () {
+      final result = findCodeCandidates([
+        const OcrLine('COD MINSAN:', Rect.fromLTWH(0, 100, 240, 40)),
+        const OcrLine('30 compresse 450', Rect.fromLTWH(260, 100, 300, 40)),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('an "n." between label and code is allowed', () {
+      for (final text in [
+        'COD MINSAN n. 107018',
+        'COD MINSAN nr 107018',
+        'COD MINSAN N° 107018',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+          '107018',
+        ], reason: text);
+      }
+    });
+
+    test('the code after its own pack quantity is still the code', () {
+      // Review I1: the edge-only rule lost a code printed after a quantity.
+      for (final (text, code) in [
+        ('COD MINSAN: 500 mg 107018', '107018'),
+        ('COD MINSAN: 30 cpr 25601', '25601'),
+        ('COD MINSAN: 20 bust. 107018', '107018'),
+        ('COD MINSAN: 1,5 g 107018', '107018'),
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+          code,
+        ], reason: text);
+      }
+    });
+
+    test('a spelled-out dose form still ends the search', () {
+      // The other side of the same rule: only a unit is stepped over, so a
+      // bare number followed by a plain word keeps the next number a number.
+      for (final text in [
+        'COD MINSAN: 30 compresse 450',
+        'COD MINSAN: 30 compresse 107018',
+        'COD MINSAN: 30 bustine 107018',
+      ]) {
+        final result = findCodeCandidates([_line(text, 0)]);
+        expect(_ofKind(result, CodeKind.supplement), isEmpty, reason: text);
+      }
+    });
+
+    test('only one quantity group is stepped over', () {
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 500 mg 30 cpr 107018', 0),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('the code after an EAN on the label line is still the code', () {
+      // Review I1: the EAN claims the run at the label's edge.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 8057737141836 107018', 0),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+        '107018',
+      ]);
+      expect(_ofKind(result, CodeKind.ean).map((c) => c.code), [
+        '8057737141836',
+      ]);
+    });
+
+    test('a label that holds its own code adopts no neighbour', () {
+      // Review C1: `500 mg 107018` answered "no code", so the number on the
+      // line below was adopted — a lot number shown as the supplement code.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 500 mg 107018', 100),
+        _line('654321', 145),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement).map((c) => c.code), [
+        '107018',
+      ]);
+      expect(_ofKind(result, CodeKind.other).map((c) => c.code), ['654321']);
+    });
+
+    test('a label whose own code was refused adopts no neighbour', () {
+      // Review C1: the label line has had its attempt; the quantity is not a
+      // code and the line below is not the label's code either.
+      final result = findCodeCandidates([
+        _line('COD MINSAN: 500 mg', 100),
+        _line('654321', 145),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('a refused code blocks a same-row partner too', () {
+      final result = findCodeCandidates([
+        const OcrLine('COD MINSAN: 500 mg', Rect.fromLTWH(0, 100, 240, 40)),
+        const OcrLine('654321', Rect.fromLTWH(260, 100, 120, 40)),
+      ]);
+      expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
   });
 
   group('findCodeCandidates: review fixes', () {
@@ -491,6 +599,74 @@ void main() {
         OcrLine('123456', Rect.fromLTWH(0, 900, 120, 40)),
       ]);
       expect(_ofKind(result, CodeKind.supplement), isEmpty);
+    });
+
+    test('first-pass junk the region pass re-read properly is dropped', () {
+      final result = findCodeCandidates(
+        const [OcrLine('8 057737 14183G', Rect.fromLTWH(800, 2000, 1200, 180))],
+        regionLines: const [
+          OcrLine('8 057737 141836', Rect.fromLTWH(810, 2005, 1190, 175)),
+        ],
+      );
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('first-pass junk elsewhere on the pack is kept', () {
+      final result = findCodeCandidates(
+        const [OcrLine('Lotto 14183G7', Rect.fromLTWH(0, 100, 400, 60))],
+        regionLines: const [
+          OcrLine('8 057737 141836', Rect.fromLTWH(810, 2005, 1190, 175)),
+        ],
+      );
+      expect(describe(result), 'ean:8057737141836 other:14183G7');
+    });
+
+    test('a decoded barcode drops the junk read over it', () {
+      final result = findCodeCandidates(
+        const [OcrLine('8 057737 14183G', Rect.fromLTWH(800, 2000, 1200, 180))],
+        barcodes: [
+          CodeCandidate.eanFromBarcode(
+            '8057737141836',
+            const Rect.fromLTWH(820, 2010, 1150, 160),
+          )!,
+        ],
+      );
+      expect(describe(result), 'ean:8057737141836');
+    });
+
+    test('a small token inside a wide region-pass line box survives', () {
+      // Review I2: normalising by the smaller box scored containment 1.0, so
+      // a lot token sitting inside a generous region line box was deleted.
+      final result = findCodeCandidates(
+        const [OcrLine('Lotto 4R5T21', Rect.fromLTWH(100, 100, 120, 20))],
+        regionLines: const [
+          OcrLine('COD MINSAN 107018', Rect.fromLTWH(0, 90, 400, 60)),
+        ],
+      );
+      expect(describe(result), 'supplement:107018 other:4R5T21');
+    });
+
+    test('a small token inside a barcode box survives', () {
+      final result = findCodeCandidates(
+        const [OcrLine('Lotto 4R5T21', Rect.fromLTWH(100, 100, 120, 20))],
+        barcodes: [
+          CodeCandidate.eanFromBarcode(
+            '8057737141836',
+            const Rect.fromLTWH(0, 90, 400, 60),
+          )!,
+        ],
+      );
+      expect(describe(result), 'ean:8057737141836 other:4R5T21');
+    });
+
+    test('two "other" readings of the same area both survive', () {
+      final result = findCodeCandidates(
+        const [OcrLine('Lotto 4R5T21', Rect.fromLTWH(0, 100, 400, 60))],
+        regionLines: const [
+          OcrLine('Lotto 4R5T27', Rect.fromLTWH(5, 102, 395, 58)),
+        ],
+      );
+      expect(describe(result), 'other:4R5T21 other:4R5T27');
     });
   });
 
@@ -713,6 +889,43 @@ void main() {
       final result = findCodeCandidates([_line('Lotto 10T018', 0)]);
       expect(describe(result), 'other:10T018');
     });
+
+    test(
+      'a leading letter before a labelled code is a prefix, not a digit',
+      () {
+        // Review: `IT07O18` repaired whole is 1707018 — a seven-digit code the
+        // register almost never holds. `I` is a prefix; `T07O18` is the code.
+        final result = findCodeCandidates([_line('COD MINSAN: IT07O18', 0)]);
+        expect(describe(result), 'supplement:707018');
+        expect(result.single.alternatives, ['107018', '1707018', '1107018']);
+      },
+    );
+
+    test(
+      'the prefix rule keeps a six-digit reading over a seven-digit one',
+      () {
+        final result = findCodeCandidates([_line('COD MINSAN: I070180', 0)]);
+        expect(describe(result), 'supplement:070180');
+        expect(result.single.alternatives, ['1070180']);
+      },
+    );
+
+    test('an AIC prefix letter is not repaired into a tenth digit', () {
+      final result = findCodeCandidates([_line('AIC n. IO34567891', 0)]);
+      expect(describe(result), 'aic:034567891');
+      expect(result.single.alternatives, isEmpty);
+    });
+
+    test('a token one character too long for the rule is repaired whole', () {
+      // 9 chars: dropping one leaves 8, not 6 — the existing behaviour.
+      final result = findCodeCandidates([_line('COD MINSAN: TlBG12345', 0)]);
+      expect(result.single.code, '718612345');
+    });
+
+    test('a printed seven-digit code is untouched', () {
+      final result = findCodeCandidates([_line('COD MINSAN: 1070180', 0)]);
+      expect(describe(result), 'supplement:1070180');
+    });
   });
 
   group('findCodeCandidates: EAN digit groups with punctuation', () {
@@ -835,5 +1048,34 @@ void main() {
       CodeKind.supplement,
     });
     expect(kinds(['Integratore alimentare', '8 057737141836']), isEmpty);
+  });
+
+  test('candidateKeys identifies a candidate by kind and code', () {
+    const box = Rect.fromLTWH(0, 0, 10, 10);
+    const read = CodeCandidate(
+      code: '023834118',
+      kind: CodeKind.aic,
+      sourceText: 'AIC 023834118',
+      box: box,
+    );
+    const again = CodeCandidate(
+      code: '023834118',
+      kind: CodeKind.aic,
+      sourceText: 'a second line with the same code',
+      box: Rect.fromLTWH(50, 50, 10, 10),
+    );
+    const misread = CodeCandidate(
+      code: '023834II8',
+      kind: CodeKind.aic,
+      sourceText: 'AIC 023834II8',
+      box: box,
+    );
+
+    // The same code twice is one candidate, whatever line it came from.
+    expect(candidateKeys([read, again]), {'aic:023834118'});
+    // A corrected re-read is a different candidate at the very same count,
+    // which is what the count-based "nothing new" check could not see.
+    expect(candidateKeys([misread]), isNot(candidateKeys([read])));
+    expect(candidateKeys(const []), isEmpty);
   });
 }

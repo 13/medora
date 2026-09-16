@@ -1,0 +1,16 @@
+[Unit]
+Description=Periodic refresh of Medora's food-supplement register data
+
+[Timer]
+# Three times a month rather than once: the upload is idempotent (gh
+# release upload --clobber), so an extra run only re-uploads identical or
+# newer data, and this bounds how long one transient failure (network,
+# Ministry site down) can leave the register stale — worst case is a run on
+# the 4th failing and the 11th succeeding, a week later, instead of a whole
+# month. See docs/release.md.
+OnCalendar=*-*-04,11,18 06:00:00
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

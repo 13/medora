@@ -113,7 +113,7 @@ void main() {
       final port = FakePort();
       final count = await make(port).reconcile();
 
-      expect(port.cancelAllCalls, 1);
+      expect(port.cancelAllDosesCalls, 1);
       expect(count, 2);
       expect(port.scheduled.map((d) => d.id).toList(), [soon, later]);
     },
@@ -132,7 +132,11 @@ void main() {
       ReminderScheduler.maxNotifications ~/
           ReminderScheduler.notificationsPerDose,
     );
-    expect(port.scheduled.length, 30);
+    expect(
+      port.scheduled.length,
+      ReminderScheduler.maxNotifications ~/
+          ReminderScheduler.notificationsPerDose,
+    );
     expect(
       port.scheduled.first.scheduledTime,
       now.add(const Duration(hours: 1)),
@@ -151,7 +155,7 @@ void main() {
       );
       final port = FakePort();
       final count = await make(port, enabled: false).reconcile();
-      expect(port.cancelAllCalls, 1);
+      expect(port.cancelAllDosesCalls, 1);
       expect(count, 0);
       expect(port.scheduled, isEmpty);
     },
@@ -200,7 +204,7 @@ void main() {
 
       expect(await first, 2);
       expect(
-        port.cancelAllCalls,
+        port.cancelAllDosesCalls,
         1,
         reason: 'only the first pass does a full cancel',
       );
@@ -262,7 +266,7 @@ void main() {
       final scheduler = make(port);
 
       await scheduler.reconcile();
-      expect(port.cancelAllCalls, 1);
+      expect(port.cancelAllDosesCalls, 1);
       expect(port.scheduled.map((d) => d.id).toList(), [a, b]);
 
       // a is taken, c appears
@@ -281,7 +285,7 @@ void main() {
 
       final count = await scheduler.reconcile();
       expect(
-        port.cancelAllCalls,
+        port.cancelAllDosesCalls,
         1,
         reason: 'no full cancel on incremental run',
       );
@@ -300,7 +304,7 @@ void main() {
     await scheduler.reconcile();
     scheduler.reset();
     await scheduler.reconcile();
-    expect(port.cancelAllCalls, 2);
+    expect(port.cancelAllDosesCalls, 2);
   });
 
   test(
@@ -349,7 +353,7 @@ void main() {
       expect(scheduler.lastError, isNull);
       final count = await scheduler.reconcile();
 
-      expect(port.cancelAllCalls, 0);
+      expect(port.cancelAllDosesCalls, 0);
       expect(port.scheduled, isEmpty);
       expect(count, 0);
       expect(
@@ -441,16 +445,16 @@ void main() {
 
       final scheduler = container.read(reminderSchedulerProvider);
       expect(await scheduler.reconcile(), 1);
-      expect(port.cancelAllCalls, 1);
+      expect(port.cancelAllDosesCalls, 1);
       expect(port.scheduled, hasLength(1));
 
       // The notification body is built at schedule time from the current
       // locale, so the queued reminders have to be rebuilt.
       await container.read(localeProvider.notifier).set(const Locale('de'));
-      await _until(() => port.cancelAllCalls == 2);
+      await _until(() => port.cancelAllDosesCalls == 2);
 
       expect(
-        port.cancelAllCalls,
+        port.cancelAllDosesCalls,
         2,
         reason: 'the snapshot is dropped, so the next run cancels everything',
       );
@@ -485,7 +489,7 @@ void main() {
       await container.read(localeProvider.notifier).set(const Locale('de'));
       await _until(() => false, timeout: const Duration(milliseconds: 100));
 
-      expect(port.cancelAllCalls, 1);
+      expect(port.cancelAllDosesCalls, 1);
       expect(port.scheduled, hasLength(1));
     });
   });

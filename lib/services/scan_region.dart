@@ -5,7 +5,11 @@
 /// pass on the whole photo is incomplete ([needsRegionPass]) the scanner
 /// recognises again on a crop around the text it found ([textRegionCrop])
 /// and maps the results back to photo pixels ([offsetOcrLines],
-/// [offsetCandidates]). Pure Dart, unit-tested directly.
+/// [offsetCandidates]). When still nothing decoded, the bars of a barcode
+/// are looked for right above the digits OCR did read ([barcodeStripeCrop],
+/// [barcodeStripeTargets]) and that crop is scanned in four rotations, with
+/// the boxes mapped back ([unrotateBox], [unrotateCandidates]). Pure Dart,
+/// unit-tested directly.
 library;
 
 import 'dart:math' as math;
@@ -101,3 +105,125 @@ Rect _toPhoto(Rect box, Offset offset, double scale) => scale == 1.0
         offset.dx + box.right / scale,
         offset.dy + box.bottom / scale,
       );
+
+/// Side margin of a stripe crop, as a fraction of the digits' width.
+const double stripeSideFraction = 0.10;
+
+/// How far above the digits the bars are looked for, in digit-line heights.
+const double stripeAboveFactor = 2.5;
+
+/// How far below, for packs that print the digits above the bars.
+const double stripeBelowFactor = 0.5;
+
+/// The crop that should hold the bars of a barcode whose digits OCR read at
+/// [digits] (photo pixels), clamped to [imageSize]; null when [digits] is
+/// empty or the crop degenerates.
+Rect? barcodeStripeCrop(Rect digits, Size imageSize) {
+  if (imageSize.isEmpty || digits.width <= 0 || digits.height <= 0) return null;
+  final dx = digits.width * stripeSideFraction;
+  final left = math.max(0.0, (digits.left - dx).floorToDouble());
+  final right = math.min(imageSize.width, (digits.right + dx).ceilToDouble());
+  final top = math.max(
+    0.0,
+    (digits.top - digits.height * stripeAboveFactor).floorToDouble(),
+  );
+  final bottom = math.min(
+    imageSize.height,
+    (digits.bottom + digits.height * stripeBelowFactor).ceilToDouble(),
+  );
+  if (right <= left || bottom <= top) return null;
+  return Rect.fromLTRB(left, top, right, bottom);
+}
+
+final _digitsOnly = RegExp(r'^[0-9]+$');
+
+/// The boxes worth a stripe pass, best first: candidates whose code is an
+/// 8- or 13-digit run (an EAN read by OCR, or a digit run that failed its
+/// checksum), at most [limit].
+List<Rect> barcodeStripeTargets(
+  List<CodeCandidate> candidates, {
+  int limit = 2,
+}) {
+  final targets = <Rect>[];
+  for (final c in candidates) {
+    if (!_digitsOnly.hasMatch(c.code)) continue;
+    if (c.code.length != 8 && c.code.length != 13) continue;
+    if (c.box.width <= 0 || c.box.height <= 0) continue;
+    targets.add(c.box);
+    if (targets.length == limit) break;
+  }
+  return targets;
+}
+
+/// Maps [box] in a PNG written from [crop] at [scale] with [quarterTurns]
+/// clockwise rotations back to photo pixels.
+Rect unrotateBox(
+  Rect box, {
+  required int quarterTurns,
+  required Rect crop,
+  required double scale,
+}) {
+  final w = crop.width * scale; // PNG width before rotation
+  final h = crop.height * scale; // PNG height before rotation
+  Offset back(Offset p) => switch (quarterTurns % 4) {
+    0 => p,
+    1 => Offset(p.dy, h - p.dx),
+    2 => Offset(w - p.dx, h - p.dy),
+    _ => Offset(w - p.dy, p.dx),
+  };
+  final a = back(box.topLeft);
+  final b = back(box.bottomRight);
+  final unrotated = Rect.fromPoints(a, b);
+  return Rect.fromLTRB(
+    crop.left + unrotated.left / scale,
+    crop.top + unrotated.top / scale,
+    crop.left + unrotated.right / scale,
+    crop.top + unrotated.bottom / scale,
+  );
+}
+
+/// [candidates] with their boxes mapped back by [unrotateBox].
+List<CodeCandidate> unrotateCandidates(
+  List<CodeCandidate> candidates, {
+  required int quarterTurns,
+  required Rect crop,
+  required double scale,
+}) => [
+  for (final c in candidates)
+    CodeCandidate(
+      code: c.code,
+      kind: c.kind,
+      sourceText: c.sourceText,
+      box: unrotateBox(
+        c.box,
+        quarterTurns: quarterTurns,
+        crop: crop,
+        scale: scale,
+      ),
+      alternatives: c.alternatives,
+    ),
+];
+
+/// The smallest useful side of a rescan crop, in photo pixels: a smaller
+/// drag is a stray tap, not a code.
+const double minRescanSide = 24;
+
+/// The photo-pixel crop for a user-selected [selection] (fractions of the
+/// displayed photo, 0..1), rounded outwards to whole pixels and clamped to
+/// [imageSize]; null when the photo is empty or the selection ends up
+/// smaller than [minRescanSide] pixels on a side.
+Rect? rescanAreaCrop(Rect selection, Size imageSize) {
+  if (imageSize.isEmpty) return null;
+  final raw = Rect.fromLTRB(
+    selection.left * imageSize.width,
+    selection.top * imageSize.height,
+    selection.right * imageSize.width,
+    selection.bottom * imageSize.height,
+  );
+  final left = math.max(0.0, raw.left.floorToDouble());
+  final top = math.max(0.0, raw.top.floorToDouble());
+  final right = math.min(imageSize.width, raw.right.ceilToDouble());
+  final bottom = math.min(imageSize.height, raw.bottom.ceilToDouble());
+  if (right - left < minRescanSide || bottom - top < minRescanSide) return null;
+  return Rect.fromLTRB(left, top, right, bottom);
+}

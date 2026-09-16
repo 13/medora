@@ -1,6 +1,8 @@
 /// Medora - Medication Providers
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
@@ -32,11 +34,23 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
     state = await AsyncValue.guard(_fetchMedications);
   }
 
+  /// Re-plans the stock and expiry notifications after a mutation.
+  ///
+  /// They are planned from the cabinet itself, so every write here changes
+  /// them: without this, taking the last dose books no low-stock alert until
+  /// the next cold start, and a deleted medication keeps announcing itself
+  /// for the rest of the session.
+  void _reconcileStockAlerts() =>
+      unawaited(ref.read(stockReminderSchedulerProvider).reconcile());
+
   Future<void> addMedication(Medication medication) async {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.addMedication(medication);
     await result.when(
-      success: (_) => refresh(),
+      success: (_) async {
+        await refresh();
+        _reconcileStockAlerts();
+      },
       failure: (msg) => throw Exception(msg),
     );
   }
@@ -45,7 +59,10 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.updateMedication(medication);
     await result.when(
-      success: (_) => refresh(),
+      success: (_) async {
+        await refresh();
+        _reconcileStockAlerts();
+      },
       failure: (msg) => throw Exception(msg),
     );
   }
@@ -54,7 +71,10 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
     final repo = ref.read(medicationRepositoryProvider);
     final result = await repo.deleteMedication(id);
     await result.when(
-      success: (_) => refresh(),
+      success: (_) async {
+        await refresh();
+        _reconcileStockAlerts();
+      },
       failure: (msg) => throw Exception(msg),
     );
   }
@@ -67,6 +87,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
         await refresh();
         // Also refresh today's doses as they might show stock warnings
         ref.invalidateDoseData();
+        _reconcileStockAlerts();
       },
       failure: (msg) => throw Exception(msg),
     );
@@ -82,6 +103,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
         // Dose lists hide pending doses of archived medications, so they
         // have to be refetched too.
         ref.invalidateDoseData();
+        _reconcileStockAlerts();
       },
       failure: (msg) => throw Exception(msg),
     );
@@ -95,6 +117,7 @@ class MedicationListNotifier extends AsyncNotifier<List<Medication>> {
         await refresh();
         ref.invalidate(archivedMedicationsProvider);
         ref.invalidateDoseData();
+        _reconcileStockAlerts();
       },
       failure: (msg) => throw Exception(msg),
     );

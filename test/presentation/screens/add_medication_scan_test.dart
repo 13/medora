@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme.dart';
+import 'package:medora/data/datasources/medication_local_datasource.dart';
+import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -62,6 +65,7 @@ void main() {
     WidgetTester tester,
     ScanResult result, {
     List<Override> overrides = const [],
+    String? medicationId,
   }) async {
     tester.view.physicalSize = const Size(800, 2400);
     tester.view.devicePixelRatio = 1.0;
@@ -74,7 +78,7 @@ void main() {
       routes: [
         GoRoute(
           path: AppRoutes.addMedication,
-          builder: (_, _) => const AddMedicationScreen(),
+          builder: (_, _) => AddMedicationScreen(medicationId: medicationId),
         ),
         GoRoute(
           path: AppRoutes.scanner,
@@ -387,6 +391,68 @@ void main() {
     expect(find.text(l10n.supplementNotFound), findsOneWidget);
   });
 
+  testWidgets(
+    'a scanned supplement remembers the pack EAN on the saved medication',
+    (tester) async {
+      final registry = _FakeRegistry(const [_zinco]);
+      await pumpWithFakeScanner(
+        tester,
+        const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+        overrides: [
+          supplementRegistryServiceProvider.overrideWithValue(registry),
+        ],
+      );
+
+      await scanWithChip(tester);
+      expect(field('107018'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+      await tester.pumpAndSettle();
+
+      // A later scan of the pack's EAN finds the medication filed under its
+      // label code.
+      final saved = await MedicationLocalDatasource().getMedicationByBarcode(
+        '8057737141836',
+      );
+      expect(saved?.barcode, '107018');
+      expect(saved?.ean, '8057737141836');
+    },
+  );
+
+  testWidgets('a plain EAN scan is the barcode itself, with no second code', (
+    tester,
+  ) async {
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('8057737141836', CodeKind.ean),
+    );
+
+    await scanWithChip(tester);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Medication Name *').first,
+      'Moment',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+    await tester.pumpAndSettle();
+
+    final saved = await MedicationLocalDatasource().getMedicationByBarcode(
+      '8057737141836',
+    );
+    expect(saved?.barcode, '8057737141836');
+    expect(saved?.ean, isNull);
+  });
+
+  test('ScanResult equality includes the pack EAN', () {
+    expect(
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+      isNot(const ScanResult('107018', CodeKind.supplement)),
+    );
+    expect(
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+    );
+  });
+
   test('ScanResult equality includes alternatives', () {
     const plain = ScanResult('707018', CodeKind.supplement);
     expect(plain.alternatives, isEmpty);
@@ -423,6 +489,110 @@ void main() {
     await tester.pumpAndSettle();
     expect(registry.lookups, isEmpty);
     expect(field('107018'), findsOneWidget);
+  });
+
+  /// Tap the scanner icon inside the barcode field and pop the fake result.
+  Future<void> scanWithFieldIcon(WidgetTester tester) async {
+    final fieldScanner = find.descendant(
+      of: find.byType(TextFormField),
+      matching: find.byIcon(Icons.qr_code_scanner),
+    );
+    await tester.ensureVisible(fieldScanner);
+    await tester.tap(fieldScanner);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('fake scan'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a rescan that reads no EAN keeps the remembered one', (
+    tester,
+  ) async {
+    // Review I2: the photo showed only the printed label, so the scan has
+    // no EAN - that must not erase the one already on the medication.
+    await MedicationLocalDatasource().upsert(
+      const MedicationModel(
+        id: 'm1',
+        name: 'Zinco-C',
+        quantity: 1,
+        barcode: '107018',
+        ean: '8057737141836',
+      ),
+      syncStatus: SyncStatus.synced,
+    );
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('107018', CodeKind.other),
+      medicationId: 'm1',
+    );
+
+    await scanWithFieldIcon(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Update Medication'));
+    await tester.pumpAndSettle();
+
+    final saved = await MedicationLocalDatasource().getMedicationById('m1');
+    expect(saved?.barcode, '107018');
+    expect(saved?.ean, '8057737141836');
+  });
+
+  testWidgets('a rescan of a different pack forgets the old EAN', (
+    tester,
+  ) async {
+    await MedicationLocalDatasource().upsert(
+      const MedicationModel(
+        id: 'm1',
+        name: 'Zinco-C',
+        quantity: 1,
+        barcode: '107018',
+        ean: '8057737141836',
+      ),
+      syncStatus: SyncStatus.synced,
+    );
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('999111', CodeKind.other),
+      medicationId: 'm1',
+    );
+
+    await scanWithFieldIcon(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Update Medication'));
+    await tester.pumpAndSettle();
+
+    final saved = await MedicationLocalDatasource().getMedicationById('m1');
+    expect(saved?.barcode, '999111');
+    expect(saved?.ean, isNull);
+  });
+
+  testWidgets('typing another code over the scanned one forgets its EAN', (
+    tester,
+  ) async {
+    // Review M1: pack A's EAN must not ride along on pack B's code.
+    final registry = _FakeRegistry(const [_zinco]);
+    await pumpWithFakeScanner(
+      tester,
+      const ScanResult('107018', CodeKind.supplement, ean: '8057737141836'),
+      overrides: [
+        supplementRegistryServiceProvider.overrideWithValue(registry),
+      ],
+    );
+
+    await scanWithChip(tester);
+    final barcodeField = find.widgetWithText(TextFormField, '107018');
+    await tester.ensureVisible(barcodeField);
+    await tester.enterText(barcodeField, '999111');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Add Medication'));
+    await tester.pumpAndSettle();
+
+    final saved = await MedicationLocalDatasource().getMedicationByBarcode(
+      '999111',
+    );
+    expect(saved, isNotNull);
+    expect(saved?.ean, isNull);
+    expect(
+      await MedicationLocalDatasource().getMedicationByBarcode('8057737141836'),
+      isNull,
+    );
   });
 
   test('every scanner push from Add Medication is return-only', () {

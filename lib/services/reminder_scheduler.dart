@@ -3,7 +3,10 @@
 /// Single owner of "which notifications exist". [reconcile] schedules
 /// pending doses for the next [horizon], earliest first, capped at
 /// [maxNotifications]. The first run (or the first after [reset]) cancels
-/// everything and schedules the desired set; later runs diff against the
+/// every pending *dose* reminder and schedules the desired set — never
+/// `cancelAll()`, which would take the stock and expiry alerts of the other
+/// scheduler with it (see [ReminderPort.cancelAllDoses]); later runs diff
+/// against the
 /// previous run's snapshot and only cancel/schedule the delta. The snapshot
 /// tracks id and scheduled time; a dose whose time changes (e.g. after a
 /// cloud pull) is re-scheduled. When reminders are disabled it cancels
@@ -12,6 +15,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
+import 'package:medora/services/notification_budget.dart';
 import 'package:medora/services/reminder_port.dart';
 
 class ReminderScheduler {
@@ -23,7 +27,10 @@ class ReminderScheduler {
   }) : _now = now ?? DateTime.now;
 
   static const horizon = Duration(days: 7);
-  static const maxNotifications = 60; // iOS allows 64 pending
+
+  /// This scheduler's share of the app-wide pending-notification budget;
+  /// the stock and expiry alerts spend the rest (see notification_budget).
+  static const maxNotifications = kDoseNotificationBudget;
   static const notificationsPerDose = 2;
 
   final ReminderPort _port;
@@ -72,7 +79,7 @@ class ReminderScheduler {
 
   Future<int> _reconcileOnce() async {
     if (!_remindersEnabled()) {
-      await _port.cancelAll();
+      await _port.cancelAllDoses();
       _scheduled = {};
       _lastError = null;
       return 0;
@@ -106,7 +113,7 @@ class ReminderScheduler {
 
     try {
       if (previous == null) {
-        await _port.cancelAll();
+        await _port.cancelAllDoses();
         for (final dose in desired) {
           await _port.scheduleForDose(
             dose: dose,

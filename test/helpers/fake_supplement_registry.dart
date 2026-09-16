@@ -19,6 +19,9 @@ class FakeSupplementRegistry implements SupplementRegistryService {
   List<SupplementEntry> syncedEntries;
   int syncCalls = 0;
 
+  /// Every query [searchByName] was called with.
+  final searches = <String>[];
+
   @override
   Future<int> sync({void Function(double progress)? onProgress}) async {
     syncCalls++;
@@ -56,10 +59,13 @@ class FakeSupplementRegistry implements SupplementRegistryService {
   Future<List<SupplementEntry>> searchByName(
     String query, {
     int limit = 50,
-  }) async => [
-    for (final e in entries)
-      if (e.product.toLowerCase().contains(query.toLowerCase())) e,
-  ].take(limit).toList();
+  }) async {
+    searches.add(query);
+    return [
+      for (final e in entries)
+        if (e.product.toLowerCase().contains(query.toLowerCase())) e,
+    ].take(limit).toList();
+  }
 
   @override
   Future<void> close() async {}

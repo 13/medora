@@ -25,6 +25,10 @@ class UnitDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return DropdownButtonFormField<String>(
+      // The widest label ("Suppositories") is wider than the narrow column
+      // this dropdown sits in on a 360 px phone; without this the button's
+      // row overflows instead of ellipsizing.
+      isExpanded: true,
       initialValue: value,
       decoration: decoration ?? InputDecoration(labelText: label),
       items: AppConstants.quantityUnitKeys.map((key) {

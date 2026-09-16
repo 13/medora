@@ -14,6 +14,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_text.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -145,6 +146,73 @@ class ReminderService implements ReminderPort {
         : strings.notificationReminderInMinutes(medicationName, minutesBefore);
   }
 
+  /// Title for a stock or expiry notification.
+  @visibleForTesting
+  static String stockAlertTitle(StockAlertKind kind, {AppLocalizations? l10n}) {
+    final strings = l10n ?? resolveLocalizations();
+    if (strings == null) {
+      return kind == StockAlertKind.expiry ? 'Expiring soon' : 'Running low';
+    }
+    return kind == StockAlertKind.expiry
+        ? strings.notificationExpiryTitle
+        : strings.notificationLowStockTitle;
+  }
+
+  /// Body for a stock or expiry notification. The English fallbacks mirror
+  /// the ARB plural branches, so an unsupported platform locale still reads
+  /// naturally at 0 and 1.
+  @visibleForTesting
+  static String stockAlertBody(StockAlert alert, {AppLocalizations? l10n}) {
+    final strings = l10n ?? resolveLocalizations();
+    final name = alert.medicationName;
+    if (strings == null) {
+      return switch (alert.kind) {
+        StockAlertKind.expiry => switch (alert.days) {
+          0 => '$name expires today',
+          1 => '$name expires tomorrow',
+          _ => '$name expires in ${alert.days} days',
+        },
+        StockAlertKind.lowStock => switch (alert.quantity) {
+          0 => '$name: none left',
+          1 => '$name: 1 left',
+          _ => '$name: ${alert.quantity} left',
+        },
+      };
+    }
+    return alert.kind == StockAlertKind.expiry
+        ? strings.notificationExpiryBody(name, alert.days)
+        : strings.notificationLowStockBody(name, alert.quantity);
+  }
+
+  @override
+  Future<void> scheduleStockAlert(StockAlert alert) async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    // Deliberately the real clock, not the planner's injected one: this is
+    // the last check before the OS takes over, and by now the slot planned
+    // earlier may have passed — a past zonedSchedule either throws or fires
+    // at once. Injecting a test clock here would silently drop every alert.
+    if (!alert.when.isAfter(DateTime.now())) return;
+    final l10n = resolveLocalizations();
+    await _scheduleNotification(
+      id: alert.id,
+      title: stockAlertTitle(alert.kind, l10n: l10n),
+      body: stockAlertBody(alert, l10n: l10n),
+      scheduledTime: alert.when,
+      // Routed like a dose reminder today; the id is carried so a tap can
+      // open the medication itself later.
+      payload: 'medication:${alert.medicationId}',
+      l10n: l10n,
+    );
+  }
+
+  @override
+  Future<void> cancelStockAlert(int id) async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    await _notifications.cancel(id: id);
+  }
+
   /// Stable 31-bit notification id base for a dose (FNV-1a over the id,
   /// low 4 bits cleared so per-dose offsets never collide).
   static int notificationBaseId(String doseId) {
@@ -158,6 +226,36 @@ class ReminderService implements ReminderPort {
 
   @override
   Future<void> cancelAll() => cancelAllReminders();
+
+  /// Whether [id] belongs to the stock and expiry scheduler.
+  ///
+  /// [stockAlertId] hands out offsets 8 and 9 of the same 16-slot block the
+  /// dose reminders take offsets 0-3 of, so the low nibble says who owns it.
+  static bool _isStockAlertId(int id) => (id & 0xF) == 0x8 || (id & 0xF) == 0x9;
+
+  @override
+  Future<void> cancelAllDoses() async {
+    if (!_supported) return;
+    await _ensureInitialized();
+    // Enumerated rather than cancelled wholesale: `cancelAll()` would take
+    // the stock and expiry alerts with it, and their owner's snapshot would
+    // still claim they are booked — so they would die on every cold start
+    // and never come back.
+    final List<PendingNotificationRequest> pending;
+    try {
+      pending = await _notifications.pendingNotificationRequests();
+    } catch (e) {
+      // Nothing is cancelled, which is the safe half of the trade: the ids
+      // are re-used in place when the doses are scheduled again, so at worst
+      // a stale reminder survives until its own dose is reconciled.
+      debugPrint('Reminders: could not list pending notifications: $e');
+      return;
+    }
+    for (final request in pending) {
+      if (_isStockAlertId(request.id)) continue;
+      await _notifications.cancel(id: request.id);
+    }
+  }
 
   @override
   Future<void> cancelForDose(String doseId) async {
@@ -275,6 +373,9 @@ class ReminderService implements ReminderPort {
     await _notifications.cancelAll();
   }
 
+  @override
+  Future<bool> ensurePermissions() => requestPermissions();
+
   Future<bool> requestPermissions() async {
     if (!_supported) return true;
 
@@ -284,6 +385,22 @@ class ReminderService implements ReminderPort {
         >();
     if (androidPlugin != null) {
       return await androidPlugin.requestNotificationsPermission() ?? false;
+    }
+    // iOS answers from its stored decision after the first prompt, so this
+    // is safe to call on every reconcile. Without it the app would report
+    // "permitted" on the one platform where the answer is most likely to be
+    // no — and the whole pending-notification budget exists for iOS's cap.
+    final iosPlugin = _notifications
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (iosPlugin != null) {
+      return await iosPlugin.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
     }
     return true;
   }

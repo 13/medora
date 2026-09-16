@@ -528,6 +528,26 @@ class AppLocalizationsIt extends AppLocalizations {
       'Nessun codice trovato. Scatta più da vicino o inserisci il codice.';
 
   @override
+  String get scanSelectArea => 'Seleziona area';
+
+  @override
+  String get scanSelectCentre => 'Seleziona il centro';
+
+  @override
+  String get scanRescanArea => 'Scansiona selezione';
+
+  @override
+  String get scanSelectAreaHint =>
+      'Trascina un riquadro attorno al codice, poi scansiona la selezione.';
+
+  @override
+  String get scanRescanNothingNew => 'Nessun nuovo codice in quell\'area.';
+
+  @override
+  String get scanRescanTooSmall =>
+      'Questa selezione è troppo piccola per la scansione. Disegna un riquadro più grande.';
+
+  @override
   String get scanCaptureHint =>
       'Fotografa la confezione con il codice AIC ben leggibile';
 
@@ -551,6 +571,18 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get supplementRegisterDownload => 'Scarica';
+
+  @override
+  String registerStale(int days) {
+    return 'Aggiornato $days giorni fa';
+  }
+
+  @override
+  String get registerStaleUnknown =>
+      'Età sconosciuta — aggiornamento consigliato';
+
+  @override
+  String get registerUpdateNow => 'Aggiorna ora';
 
   @override
   String get supplementRegisterDownloading => 'Download registro in corso…';
@@ -695,6 +727,20 @@ class AppLocalizationsIt extends AppLocalizations {
   String get receiveDoseReminders => 'Ricevi promemoria per le dosi';
 
   @override
+  String get stockAndExpiryReminders => 'Promemoria scorte e scadenza';
+
+  @override
+  String stockAndExpiryRemindersHint(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Avvisa quando un farmaco sta finendo o scade entro $days giorni',
+      one: 'Avvisa quando un farmaco sta finendo o scade entro 1 giorno',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get cancelAllReminders => 'Annulla tutti i promemoria';
 
   @override
@@ -713,6 +759,10 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get allRemindersCancelled => 'Tutti i promemoria annullati';
+
+  @override
+  String get notificationsBlocked =>
+      'Le notifiche sono bloccate. Consentile a Medora nelle impostazioni di sistema.';
 
   @override
   String get dataSection => 'Dati';
@@ -1247,6 +1297,12 @@ class AppLocalizationsIt extends AppLocalizations {
   String get searchAifaByName => 'Cerca nel database AIFA';
 
   @override
+  String get searchSupplementByName => 'Cerca nel registro integratori';
+
+  @override
+  String get supplementSearchHint => 'Nome del prodotto';
+
+  @override
   String get quantityUnit => 'Unità';
 
   @override
@@ -1384,6 +1440,36 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String notificationReminderBody(String dosage) {
     return '$dosage — Tocca per registrare la dose';
+  }
+
+  @override
+  String get notificationExpiryTitle => 'In scadenza';
+
+  @override
+  String notificationExpiryBody(String name, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$name scade tra $days giorni',
+      one: '$name scade domani',
+      zero: '$name scade oggi',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notificationLowStockTitle => 'Scorte in esaurimento';
+
+  @override
+  String notificationLowStockBody(String name, int quantity) {
+    String _temp0 = intl.Intl.pluralLogic(
+      quantity,
+      locale: localeName,
+      other: '$name: ne restano $quantity',
+      one: '$name: ne resta 1',
+      zero: '$name: esaurito',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1657,6 +1743,12 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String get updateInstallExplainBody =>
       'Android ti chiederà di consentire a Medora di installare app, poi aprirà il programma di installazione. I tuoi dati restano sul dispositivo.';
+
+  @override
+  String get updateShowMore => 'Mostra altro';
+
+  @override
+  String get updateShowLess => 'Mostra meno';
 
   @override
   String get backupData => 'Backup dei dati';

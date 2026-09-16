@@ -1,0 +1,192 @@
+/// Medora - Stock and expiry reminder scheduler.
+///
+/// The second scheduler: it owns stock and expiry notifications only, while
+/// [ReminderScheduler] owns the dose reminders. The two never disturb each
+/// other because [stockAlertId] hands out ids in slots (offsets 8 and 9) that
+/// dose reminders never take — which is also why this one never calls
+/// `cancelAll()`, and why the dose scheduler's own full cancel spares those
+/// two offsets. It cancels its own ids one by one, from the snapshot of the
+/// previous run, which is persisted so a restart still knows them.
+///
+/// The snapshot records what each alert *says* ([StockAlert.fingerprint]),
+/// not merely when it fires: the text is baked in at booking time, so a
+/// rename or a changed quantity has to re-book an alert that still fires at
+/// the same moment.
+library;
+
+import 'package:flutter/foundation.dart';
+import 'package:medora/core/clock.dart';
+import 'package:medora/domain/repositories/medication_repository.dart';
+import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/stock_alert_store.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
+
+class StockReminderScheduler {
+  StockReminderScheduler({
+    required this._port,
+    required this._medications,
+    required bool Function() stockRemindersEnabled,
+    Now? now,
+    StockAlertStore? store,
+  }) : _enabled = stockRemindersEnabled,
+       _now = now ?? systemNow,
+       _store = store ?? StockAlertStore.inMemory();
+
+  final ReminderPort _port;
+  final MedicationRepository _medications;
+  final bool Function() _enabled;
+  final Now _now;
+  final StockAlertStore _store;
+
+  /// The previous run's alerts: notification id → what it says
+  /// ([StockAlert.fingerprint]).
+  final Map<int, String> _scheduled = {};
+
+  /// Whether [_scheduled] has been seeded from the store yet. The first run
+  /// of a session inherits the last session's ids, so alerts for medications
+  /// that were restocked or deleted while the app was closed are cancelled
+  /// instead of firing.
+  bool _restored = false;
+
+  bool _running = false;
+  bool _rerunRequested = false;
+
+  /// Forget what the booked alerts say, so the next [reconcile] books them
+  /// all again.
+  ///
+  /// The ids are kept — loaded from the store when this session has not read
+  /// it yet — because they are the only handle on an alert the cabinet no
+  /// longer wants. Only their content is forgotten, which makes every
+  /// surviving alert be re-booked (in place, over the same id) and every
+  /// abandoned one be cancelled.
+  void reset() {
+    if (!_restored) {
+      _restored = true;
+      _scheduled.addAll(_store.load());
+    }
+    for (final id in _scheduled.keys.toList()) {
+      _scheduled[id] = StockAlertStore.unknownFingerprint;
+    }
+  }
+
+  /// Reconciles the scheduled alerts with the ones the cabinet now wants, and
+  /// returns how many are scheduled.
+  ///
+  /// A reconcile requested while one is running is not dropped: the running
+  /// one reruns before returning. Without this, the startup run and the
+  /// Settings switch can interleave and leave the snapshot describing a state
+  /// that was never reached.
+  Future<int> reconcile() async {
+    if (_running) {
+      _rerunRequested = true;
+      return 0;
+    }
+    _running = true;
+    var scheduled = 0;
+    try {
+      do {
+        _rerunRequested = false;
+        scheduled = await _reconcileOnce();
+      } while (_rerunRequested);
+      return scheduled;
+    } finally {
+      _running = false;
+    }
+  }
+
+  Future<int> _reconcileOnce() async {
+    await _restore();
+
+    if (!_enabled()) {
+      await _cancelAllKnown();
+      return 0;
+    }
+
+    final result = await _medications.getMedications();
+    final medications = result.when(
+      success: (m) => m,
+      failure: (message) {
+        debugPrint('Stock reminders: could not load medications: $message');
+        return null;
+      },
+    );
+    // Keep the snapshot: a failed load must not look like "nothing is due"
+    // and cancel every alert already scheduled.
+    if (medications == null) return _scheduled.length;
+
+    final desired = {
+      for (final alert in stockAlertsFor(medications, _now())) alert.id: alert,
+    };
+    final toSchedule = desired.values
+        .where((alert) => _scheduled[alert.id] != alert.fingerprint)
+        .toList();
+
+    // Asked here rather than at startup because this is the first moment the
+    // app actually needs the permission — and only when there is something to
+    // show, so an empty cabinet never raises a dialog. The setting is on by
+    // default, so without this a user who never opens Settings would never be
+    // asked and the alerts would be scheduled into the void.
+    if (toSchedule.isNotEmpty && !await _permitted()) return _scheduled.length;
+
+    try {
+      for (final id in _scheduled.keys.toList()) {
+        // Gone, moved, or saying something else now: the old notification
+        // must go before the replacement is booked.
+        if (desired[id]?.fingerprint != _scheduled[id]) {
+          await _port.cancelStockAlert(id);
+        }
+      }
+      for (final alert in toSchedule) {
+        await _port.scheduleStockAlert(alert);
+      }
+    } catch (e) {
+      // Whatever landed before the failure stands; the snapshot is kept so
+      // the next run still diffs against a state we actually reached.
+      debugPrint('Stock reminders: the notification port failed: $e');
+      return _scheduled.length;
+    }
+
+    _scheduled
+      ..clear()
+      ..addEntries(desired.values.map((a) => MapEntry(a.id, a.fingerprint)));
+    await _store.save(_scheduled);
+    debugPrint('Stock reminders: ${_scheduled.length} alert(s) scheduled');
+    return _scheduled.length;
+  }
+
+  Future<void> _restore() async {
+    if (_restored) return;
+    _restored = true;
+    _scheduled.addAll(_store.load());
+  }
+
+  /// Whether the OS will actually show what we schedule.
+  ///
+  /// A denial is not an error the user needs to see here — the Settings
+  /// switch is where it is explained — so the feature simply goes quiet and
+  /// picks up again on the next reconcile if permission is granted later.
+  Future<bool> _permitted() async {
+    try {
+      final granted = await _port.ensurePermissions();
+      if (!granted) {
+        debugPrint('Stock reminders: notifications are not permitted');
+      }
+      return granted;
+    } catch (e) {
+      debugPrint('Stock reminders: could not check the permission: $e');
+      return false;
+    }
+  }
+
+  Future<void> _cancelAllKnown() async {
+    for (final id in _scheduled.keys.toList()) {
+      try {
+        await _port.cancelStockAlert(id);
+      } catch (e) {
+        debugPrint('Stock reminders: could not cancel $id: $e');
+      }
+    }
+    _scheduled.clear();
+    await _store.save(_scheduled);
+  }
+}

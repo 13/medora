@@ -60,6 +60,12 @@ Future<({String code, List<SupplementEntry> matches})> findSupplementByCodes(
   List<String> alternatives = const [],
 ]) => findByCodes(service.findByCode, code, alternatives);
 
-/// Add Medication with [code] in the barcode field.
-String addMedicationWithBarcode(String code) =>
-    '${AppRoutes.addMedication}?barcode=${Uri.encodeQueryComponent(code)}';
+/// Add Medication with [code] in the barcode field and, when the same photo
+/// carried one, [ean] remembered alongside it. An [ean] equal to [code] is
+/// left out: the code already is the pack's EAN.
+String addMedicationWithBarcode(String code, {String? ean}) {
+  final location =
+      '${AppRoutes.addMedication}?barcode=${Uri.encodeQueryComponent(code)}';
+  if (ean == null || ean == code) return location;
+  return '$location&ean=${Uri.encodeQueryComponent(ean)}';
+}

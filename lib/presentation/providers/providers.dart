@@ -6,9 +6,11 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -39,18 +41,25 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/app_startup_tasks.dart';
 import 'package:medora/services/backup_file_picker.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
 import 'package:medora/services/local_data_wiper.dart';
+import 'package:medora/services/mlkit_scanner_ports.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
+import 'package:medora/services/scan_temp_cleanup.dart';
+import 'package:medora/services/scanner_ports.dart';
+import 'package:medora/services/stock_alert_store.dart';
+import 'package:medora/services/stock_reminder_scheduler.dart';
 import 'package:medora/services/supplement_registry_service.dart';
 import 'package:medora/services/sync_service.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================
@@ -196,6 +205,47 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
   return scheduler;
 });
 
+/// Owns the stock and expiry notifications; the dose reminders are
+/// [reminderSchedulerProvider]'s. Separate schedulers, disjoint id slots.
+final stockReminderSchedulerProvider = Provider<StockReminderScheduler>((ref) {
+  // "Enable notifications" is the master switch: with it off the app
+  // schedules nothing at all, so the stock switch is read through it rather
+  // than beside it. Otherwise the two settings could disagree about what is
+  // booked, and the UI would be the one that is wrong.
+  bool enabled(Ref ref) =>
+      ref.read(remindersEnabledProvider) &&
+      ref.read(stockRemindersEnabledProvider);
+
+  // Same guard as the dose scheduler: reconcile() can still be in flight
+  // after the container is disposed, so cache the last-known value rather
+  // than reading a disposed Ref.
+  var lastEnabled = enabled(ref);
+  final scheduler = StockReminderScheduler(
+    port: ref.watch(reminderPortProvider),
+    medications: ref.watch(medicationRepositoryProvider),
+    stockRemindersEnabled: () {
+      if (ref.mounted) lastEnabled = enabled(ref);
+      return lastEnabled;
+    },
+    now: ref.watch(nowProvider),
+    // Persisted: this scheduler cannot fall back on cancelAll(), so an alert
+    // booked in a previous session can only be cancelled if its id survived
+    // the restart.
+    store: StockAlertStore(ref.watch(sharedPreferencesProvider)),
+  );
+
+  // Notification text is baked in when the alert is scheduled, so a language
+  // change has to rebuild the queued ones. The ids are stable, so this
+  // replaces them in place.
+  ref.listen(localeProvider, (previous, next) {
+    if (previous == next) return;
+    scheduler.reset();
+    unawaited(scheduler.reconcile());
+  });
+
+  return scheduler;
+});
+
 final connectivityServiceProvider = Provider<ConnectivityService>(
   (ref) => ConnectivityService.instance,
 );
@@ -279,6 +329,11 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
       ref.read(todaysDoseLogsProvider.notifier).refresh();
+      // The plain refresh() does not re-plan the stock alerts (only the
+      // mutation methods do), so without this a restock on another device
+      // still announces "0 left" here until the next cold start. The dose
+      // side is covered: todaysDoseLogsProvider.refresh() reconciles.
+      unawaited(ref.read(stockReminderSchedulerProvider).reconcile());
     }
   });
 
@@ -307,6 +362,11 @@ final syncStartupDelayProvider = Provider<Duration>(
 );
 
 final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
+  // Once per process: these tasks re-run on every foreground resume, and
+  // returning from the gallery picker resumes the app exactly as a scan
+  // starts writing its crops. The sweep's own age guard is the second line
+  // of defence; leftovers are picked up on the next launch either way.
+  var sweptScanTemp = false;
   return AppStartupTasks(
     maintenance: () async {
       final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
@@ -317,9 +377,16 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
         await ref.read(todaysDoseLogsProvider.notifier).refresh();
         ref.read(doseDataVersionProvider.notifier).bump();
       }
+      // Crop folders orphaned by a crash mid-scan (see scan_temp_cleanup).
+      if (!kIsWeb && !sweptScanTemp) {
+        sweptScanTemp = true;
+        await cleanScanTempDirs(await getTemporaryDirectory());
+      }
     },
-    reminders: () =>
-        ref.read(reminderSchedulerProvider).reconcile().then((_) {}),
+    reminders: () async {
+      await ref.read(reminderSchedulerProvider).reconcile();
+      await ref.read(stockReminderSchedulerProvider).reconcile();
+    },
     sync: () async {
       if (ref.read(appModeProvider) == AppMode.cloud) {
         await ref.read(syncServiceProvider).syncAll();
@@ -349,3 +416,45 @@ final supplementRegistryServiceProvider = Provider<SupplementRegistryService>((
   ref.onDispose(service.close);
   return service;
 });
+
+// ============================================================
+// Scanner ports (camera, gallery, ML Kit)
+// ============================================================
+// The scanner screen reads these instead of constructing the plugins, so a
+// widget test can pump it with fakes (see `scanner_ports.dart`). The
+// detectors are closed with the container, which is what the screen used to
+// do in `dispose`.
+
+final textRecognitionPortProvider = Provider<TextRecognitionPort>((ref) {
+  final port = MlKitTextRecognitionPort();
+  ref.onDispose(port.close);
+  return port;
+});
+
+final barcodeScanPortProvider = Provider<BarcodeScanPort>((ref) {
+  final port = MlKitBarcodeScanPort();
+  ref.onDispose(port.close);
+  return port;
+});
+
+/// One camera for the whole container, which is what the routes allow:
+/// the scanner is the only screen that opens one and it always leaves by
+/// `pushReplacement`, so two live scanners never share it. Two would fight
+/// over this instance — the second's `initialize` takes the camera, the
+/// first's `dispose` closes it.
+final cameraPortProvider = Provider<CameraPort>((ref) {
+  final port = CameraControllerPort();
+  ref.onDispose(port.dispose);
+  return port;
+});
+
+final galleryPortProvider = Provider<GalleryPort>(
+  (ref) => ImagePickerGalleryPort(),
+);
+
+/// AIFA lookup by code, behind a function so widget tests can answer it
+/// without the on-device cache (a singleton over `sqflite`) or the network.
+final aifaSearchProvider =
+    Provider<Future<List<AifaSearchResult>> Function(String code)>(
+      (ref) => AifaCacheService.instance.search,
+    );

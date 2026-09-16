@@ -9,7 +9,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
-import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -18,12 +17,15 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/medication/aifa_search_sheet.dart';
+import 'package:medora/presentation/screens/medication/supplement_search_sheet.dart';
+import 'package:medora/presentation/screens/medication/widgets/medication_details_section.dart';
+import 'package:medora/presentation/screens/medication/widgets/medication_photo_section.dart';
+import 'package:medora/presentation/screens/medication/widgets/medication_stock_section.dart';
 import 'package:medora/presentation/screens/scanner/scan_result.dart';
 import 'package:medora/presentation/screens/scanner/supplement_register_dialogs.dart';
 import 'package:medora/presentation/screens/scanner/supplement_routing.dart';
 import 'package:medora/presentation/widgets/forms/date_picker_field.dart';
 import 'package:medora/presentation/widgets/forms/form_section.dart';
-import 'package:medora/presentation/widgets/forms/tag_input_field.dart';
 import 'package:medora/presentation/widgets/forms/unit_dropdown.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/code_candidates.dart';
@@ -35,11 +37,17 @@ class AddMedicationScreen extends ConsumerStatefulWidget {
     super.key,
     this.medicationId,
     this.initialBarcode,
+    this.initialEan,
     this.lookupResult,
   });
 
   final String? medicationId;
   final String? initialBarcode;
+
+  /// The pack's EAN, when the scan that opened this screen read one next
+  /// to the label code in [initialBarcode].
+  final String? initialEan;
+
   final Object? lookupResult;
 
   @override
@@ -81,6 +89,14 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   DateTime? _expiryDate;
   bool _isLoading = false;
   bool _isEditMode = false;
+
+  /// The pack's EAN, remembered next to the barcode field's label code.
+  String? _ean;
+
+  /// The label code [_ean] was read with. A scan or a hand edit that moves
+  /// the barcode field to another code drops the remembered EAN with it,
+  /// because that EAN belongs to the pack the old code came from.
+  String? _eanCode;
   Medication? _existingMedication;
   String? _imagePath;
 
@@ -98,6 +114,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
     _storageLocationController = TextEditingController();
     _barcodeController = TextEditingController(text: widget.initialBarcode);
+    _ean = widget.initialEan;
+    _eanCode = widget.initialBarcode;
     _notesController = TextEditingController();
 
     _isEditMode = widget.medicationId != null;
@@ -213,6 +231,8 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
           _minStockController.text = med.minimumStockLevel.toString();
           _storageLocationController.text = med.storageLocation ?? '';
           _barcodeController.text = med.barcode ?? '';
+          _ean = med.ean;
+          _eanCode = med.barcode;
           _notesController.text = med.notes ?? '';
           _imagePath = med.imagePath;
         });
@@ -234,7 +254,19 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
   Future<void> _openScanner() async {
     final result = await context.push<ScanResult>(AppRoutes.scannerReturnOnly);
     if (result == null || !mounted) return;
-    setState(() => _barcodeController.text = result.code);
+    setState(() {
+      _barcodeController.text = result.code;
+      // A rescan of the same pack whose photo showed no barcode stripe
+      // carries no EAN: keep the one already remembered. A scan that read
+      // a different code is a different pack, so the old EAN goes.
+      if (result.ean != null) {
+        _ean = result.ean;
+        _eanCode = result.code;
+      } else if (result.code != _eanCode) {
+        _ean = null;
+        _eanCode = null;
+      }
+    });
     // The barcode field lives in Stock & storage: show what was filled.
     _stockExpanded.value = true;
     switch (result.kind) {
@@ -423,6 +455,42 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     }
   }
 
+  /// Search the food-supplement register by product name (offering the
+  /// first download) and prefill from the chosen product, exactly like a
+  /// scanned supplement code does.
+  Future<void> _showSupplementSearch() async {
+    if (!ref.read(platformCapabilitiesProvider).hasSupplementRegister) return;
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final service = ref.read(supplementRegistryServiceProvider);
+    try {
+      if (!await service.hasData()) {
+        if (!mounted) return;
+        final downloaded = await confirmAndDownloadSupplementRegister(
+          context,
+          service,
+        );
+        if (!mounted || downloaded == null) return; // cancelled
+        if (!downloaded) {
+          messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+          return;
+        }
+      }
+      if (!mounted) return;
+      final entry = await showSupplementSearchSheet(context, service);
+      if (entry == null || !mounted) return;
+      setState(() => _applySupplementEntry(entry));
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.autoFilledFromBarcode)),
+      );
+    } catch (e) {
+      debugPrint('Supplement register search error: $e');
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(l10n.genericError)));
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -508,6 +576,12 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
                       label: Text(l10n.searchAifaByName),
                       onPressed: () => _showAifaTextSearch(context),
                     ),
+                    if (caps.hasSupplementRegister)
+                      ActionChip(
+                        avatar: const Icon(Icons.eco_outlined, size: 18),
+                        label: Text(l10n.searchSupplementByName),
+                        onPressed: _showSupplementSearch,
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -595,182 +669,64 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
               const SizedBox(height: 12),
 
               // ── Stock & storage ──
-              FormSection(
-                title: l10n.sectionStock,
-                icon: Icons.inventory_2,
-                initiallyExpanded: false,
-                controller: _stockExpanded,
+              MedicationStockSection(
+                minStockController: _minStockController,
+                storageLocationController: _storageLocationController,
+                barcodeController: _barcodeController,
+                expanded: _stockExpanded,
                 summary: _stockSummary(l10n),
-                children: [
-                  TextFormField(
-                    controller: _minStockController,
-                    decoration: InputDecoration(
-                      labelText: l10n.minStock,
-                      prefixIcon: const Icon(Icons.low_priority),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('loc_${_storageLocationController.text}'),
-                    initialValue:
-                        AppConstants.storageLocationKeys.contains(
-                          _storageLocationController.text,
-                        )
-                        ? _storageLocationController.text
-                        : null,
-                    decoration: InputDecoration(
-                      labelText: l10n.storageLocation,
-                      prefixIcon: const Icon(Icons.place),
-                    ),
-                    items: AppConstants.storageLocationKeys.map((key) {
-                      return DropdownMenuItem(
-                        value: key,
-                        child: Text(AppConstants.storageLabel(l10n, key)),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(
-                        () => _storageLocationController.text = value ?? '',
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  DatePickerField(
-                    label: l10n.purchaseDate,
-                    icon: Icons.shopping_cart,
-                    date: _purchaseDate,
-                    now: now,
-                    onDateSelected: (date) =>
-                        setState(() => _purchaseDate = date),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _barcodeController,
-                    decoration: InputDecoration(
-                      labelText: l10n.barcode,
-                      prefixIcon: const Icon(Icons.qr_code),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Search MyHealthBox by barcode text
-                          IconButton(
-                            icon: const Icon(Icons.search),
-                            tooltip: l10n.searchByBarcode,
-                            onPressed: _barcodeController.text.trim().isNotEmpty
-                                ? () => _searchBarcode(
-                                    _barcodeController.text.trim(),
-                                  )
-                                : null,
-                          ),
-                          // Open camera scanner
-                          if (caps.hasCamera)
-                            IconButton(
-                              icon: const Icon(Icons.qr_code_scanner),
-                              tooltip: l10n.scanBarcodeTooltip,
-                              onPressed: _openScanner,
-                            ),
-                        ],
-                      ),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    onFieldSubmitted: (value) {
-                      if (value.trim().isNotEmpty) {
-                        _searchBarcode(value.trim());
-                      }
-                    },
-                  ),
-                ],
+                purchaseDate: _purchaseDate,
+                now: now,
+                hasCamera: caps.hasCamera,
+                onMinStockChanged: () => setState(() {}),
+                onStorageChanged: (value) => setState(
+                  () => _storageLocationController.text = value ?? '',
+                ),
+                onPurchaseDateSelected: (date) =>
+                    setState(() => _purchaseDate = date),
+                onSearchBarcode: _searchBarcode,
+                onScan: _openScanner,
+                onBarcodeChanged: (value) => setState(() {
+                  // Typed over the scanned code: the remembered EAN
+                  // belongs to the pack that carried the old code.
+                  if (value.trim() != _eanCode) {
+                    _ean = null;
+                    _eanCode = null;
+                  }
+                }),
+                onBarcodeSubmitted: (value) {
+                  if (value.trim().isNotEmpty) {
+                    _searchBarcode(value.trim());
+                  }
+                },
               ),
               const SizedBox(height: 12),
 
               // ── Details ──
-              FormSection(
-                title: l10n.sectionDetails,
-                icon: Icons.notes,
-                initiallyExpanded: false,
-                controller: _detailsExpanded,
-                children: [
-                  TextFormField(
-                    controller: _descriptionController,
-                    decoration: InputDecoration(
-                      labelText: l10n.medicationDescription,
-                      prefixIcon: const Icon(Icons.description),
-                    ),
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 16),
-                  TagInputField(
-                    label: l10n.activeIngredients,
-                    icon: Icons.science,
-                    tags: _activeIngredients,
-                    onChanged: (tags) =>
-                        setState(() => _activeIngredients = tags),
-                  ),
-                  const SizedBox(height: 16),
-                  TagInputField(
-                    label: l10n.symptomsField,
-                    icon: Icons.local_hospital,
-                    tags: _symptoms,
-                    onChanged: (tags) => setState(() => _symptoms = tags),
-                  ),
-                  const SizedBox(height: 16),
-                  TagInputField(
-                    label: l10n.patientTagsField,
-                    icon: Icons.person,
-                    tags: _patientTags,
-                    onChanged: (tags) => setState(() => _patientTags = tags),
-                    isUserTag: true,
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('cat_$_selectedCategory'),
-                    initialValue: _selectedCategory,
-                    decoration: InputDecoration(
-                      labelText: l10n.category,
-                      prefixIcon: const Icon(Icons.category),
-                    ),
-                    items: AppConstants.medicationCategoryKeys.map((key) {
-                      return DropdownMenuItem(
-                        value: key,
-                        child: Text(AppConstants.categoryLabel(l10n, key)),
-                      );
-                    }).toList(),
-                    onChanged: (value) =>
-                        setState(() => _selectedCategory = value),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _manufacturerController,
-                    decoration: InputDecoration(
-                      labelText: l10n.manufacturerLabel,
-                      prefixIcon: const Icon(Icons.factory),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _atcCodeController,
-                    decoration: InputDecoration(
-                      labelText: l10n.atcCodeLabel,
-                      prefixIcon: const Icon(Icons.code),
-                    ),
-                    textCapitalization: TextCapitalization.characters,
-                  ),
-                  if (!kIsWeb) ...[
-                    const SizedBox(height: 16),
-                    _buildPhotoSection(l10n),
-                  ],
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _notesController,
-                    decoration: InputDecoration(
-                      labelText: l10n.notes,
-                      prefixIcon: const Icon(Icons.notes),
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
+              MedicationDetailsSection(
+                descriptionController: _descriptionController,
+                manufacturerController: _manufacturerController,
+                atcCodeController: _atcCodeController,
+                notesController: _notesController,
+                expanded: _detailsExpanded,
+                activeIngredients: _activeIngredients,
+                onActiveIngredientsChanged: (tags) =>
+                    setState(() => _activeIngredients = tags),
+                symptoms: _symptoms,
+                onSymptomsChanged: (tags) => setState(() => _symptoms = tags),
+                patientTags: _patientTags,
+                onPatientTagsChanged: (tags) =>
+                    setState(() => _patientTags = tags),
+                category: _selectedCategory,
+                onCategoryChanged: (value) =>
+                    setState(() => _selectedCategory = value),
+                photo: kIsWeb
+                    ? null
+                    : MedicationPhotoSection(
+                        imagePath: _imagePath,
+                        onPick: _pickImage,
+                        onDelete: _deletePhoto,
+                      ),
               ),
               const SizedBox(height: 16),
             ],
@@ -803,76 +759,14 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     );
   }
 
-  Widget _buildPhotoSection(AppLocalizations l10n) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l10n.medicationPhoto,
-          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-        ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _pickImage,
-          child: Container(
-            height: 150,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.colors.outlineVariant),
-            ),
-            child: _imagePath == null || kIsWeb
-                ? _photoPlaceholder(l10n)
-                : ref
-                      .watch(resolvedPhotoProvider(_imagePath))
-                      .maybeWhen(
-                        data: (file) {
-                          if (file == null) return _photoPlaceholder(l10n);
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              file,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                            ),
-                          );
-                        },
-                        orElse: () => _photoPlaceholder(l10n),
-                      ),
-          ),
-        ),
-        if (_imagePath != null) ...[
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () async {
-                if (!_isEditMode ||
-                    _imagePath != _existingMedication?.imagePath) {
-                  await ref.read(photoStorageProvider).delete(_imagePath);
-                }
-                if (!mounted) return;
-                setState(() => _imagePath = null);
-              },
-              icon: const Icon(Icons.delete_outline, size: 18),
-              label: Text(l10n.delete),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _photoPlaceholder(AppLocalizations l10n) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(Icons.add_a_photo, size: 40, color: context.colors.outline),
-        const SizedBox(height: 8),
-        Text(l10n.addPhoto, style: TextStyle(color: context.colors.outline)),
-      ],
-    );
+  /// Drops the picked photo, deleting the file unless it is the one the
+  /// saved medication still points at.
+  Future<void> _deletePhoto() async {
+    if (!_isEditMode || _imagePath != _existingMedication?.imagePath) {
+      await ref.read(photoStorageProvider).delete(_imagePath);
+    }
+    if (!mounted) return;
+    setState(() => _imagePath = null);
   }
 
   Future<void> _pickImage() async {
@@ -959,6 +853,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       barcode: _barcodeController.text.trim().isEmpty
           ? null
           : _barcodeController.text.trim(),
+      ean: _ean,
       imagePath: _imagePath,
       notes: _notesController.text.trim().isEmpty
           ? null

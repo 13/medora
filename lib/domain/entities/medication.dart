@@ -26,6 +26,7 @@ class Medication {
     this.minimumStockLevel = AppConstants.defaultMinimumStock,
     this.storageLocation,
     this.barcode,
+    this.ean,
     this.imagePath,
     this.notes,
     this.isArchived = false,
@@ -51,6 +52,11 @@ class Medication {
   final int minimumStockLevel;
   final String? storageLocation;
   final String? barcode;
+
+  /// The EAN barcode printed on the pack, when a scan saw one next to the
+  /// label code in [barcode]. Matching a scanned code checks both.
+  final String? ean;
+
   final String? imagePath;
   final String? notes;
   final bool isArchived;
@@ -116,6 +122,7 @@ class Medication {
     int? minimumStockLevel,
     String? storageLocation,
     String? barcode,
+    String? ean,
     String? imagePath,
     String? notes,
     bool? isArchived,
@@ -141,6 +148,7 @@ class Medication {
       minimumStockLevel: minimumStockLevel ?? this.minimumStockLevel,
       storageLocation: storageLocation ?? this.storageLocation,
       barcode: barcode ?? this.barcode,
+      ean: ean ?? this.ean,
       imagePath: imagePath ?? this.imagePath,
       notes: notes ?? this.notes,
       isArchived: isArchived ?? this.isArchived,
