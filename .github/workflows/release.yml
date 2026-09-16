@@ -59,8 +59,10 @@ jobs:
           (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - name: Build release notes
         run: |
+          # No fallback for an empty file: release_notes.sh always prints a
+          # header (and its own "See the commit log" line when nothing is
+          # grouped), and a non-zero exit fails this step before any of it.
           tools/release_notes.sh "$GITHUB_REF_NAME" > dist-notes.md
-          test -s dist-notes.md || echo "See the commit log." > dist-notes.md
           cat dist-notes.md
       - name: Create GitHub release
         env: { GH_TOKEN: "${{ github.token }}", V: "${{ steps.ver.outputs.version }}", B: "${{ steps.ver.outputs.build }}" }

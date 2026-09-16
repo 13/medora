@@ -85,9 +85,18 @@ $A shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 |
 
 echo "-- starting [scan] log capture --"
 $A logcat -c
-$A logcat -v time | grep --line-buffered '\[scan\]' >"$OUT/scan.log" &
+# Not `adb logcat | grep &`: $! is then the *grep*, so killing it left the
+# adb logcat behind for the rest of the session. Capture raw and filter after.
+$A logcat -v time >"$OUT/logcat-raw.log" &
 LOGCAT_PID=$!
-cleanup() { kill "$LOGCAT_PID" >/dev/null 2>&1 || true; }
+cleanup() {
+  kill "$LOGCAT_PID" >/dev/null 2>&1 || true
+  # Leave the phone as it was found: the pushed test label is not the user's
+  # photo, and it stays at the top of the gallery until it is removed.
+  $A shell rm -f /sdcard/Pictures/medora-test-label.png >/dev/null 2>&1 || true
+  $A shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE \
+    -d file:///sdcard/Pictures/medora-test-label.png >/dev/null 2>&1 || true
+}
 trap cleanup EXIT
 
 echo "-- launching $PKG --"
@@ -124,6 +133,7 @@ cleanup
 trap - EXIT
 sleep 1 # let the last buffered log lines land
 
+grep '\[scan\]' "$OUT/logcat-raw.log" >"$OUT/scan.log" || true
 CANDIDATE_COUNT="$(grep -c '\[scan\] candidate:' "$OUT/scan.log" || true)"
 echo "== output: $OUT =="
 echo "[scan] candidate: lines: $CANDIDATE_COUNT"
