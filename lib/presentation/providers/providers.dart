@@ -329,6 +329,11 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
       ref.read(todaysDoseLogsProvider.notifier).refresh();
+      // The plain refresh() does not re-plan the stock alerts (only the
+      // mutation methods do), so without this a restock on another device
+      // still announces "0 left" here until the next cold start. The dose
+      // side is covered: todaysDoseLogsProvider.refresh() reconciles.
+      unawaited(ref.read(stockReminderSchedulerProvider).reconcile());
     }
   });
 
