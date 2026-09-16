@@ -730,8 +730,15 @@ class AppLocalizationsIt extends AppLocalizations {
   String get stockAndExpiryReminders => 'Promemoria scorte e scadenza';
 
   @override
-  String get stockAndExpiryRemindersHint =>
-      'Avvisa quando un farmaco sta finendo o scade entro 30 giorni';
+  String stockAndExpiryRemindersHint(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Avvisa quando un farmaco sta finendo o scade entro $days giorni',
+      one: 'Avvisa quando un farmaco sta finendo o scade entro 1 giorno',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get cancelAllReminders => 'Annulla tutti i promemoria';

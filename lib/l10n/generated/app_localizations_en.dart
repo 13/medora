@@ -723,8 +723,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get stockAndExpiryReminders => 'Stock and expiry reminders';
 
   @override
-  String get stockAndExpiryRemindersHint =>
-      'Notify when a medication runs low or expires within 30 days';
+  String stockAndExpiryRemindersHint(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Notify when a medication runs low or expires within $days days',
+      one: 'Notify when a medication runs low or expires within 1 day',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get cancelAllReminders => 'Cancel All Reminders';

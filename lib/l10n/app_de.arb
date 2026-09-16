@@ -239,7 +239,7 @@
   "enableNotifications": "Benachrichtigungen aktivieren",
   "receiveDoseReminders": "Erinnerungen an Einnahmen erhalten",
   "stockAndExpiryReminders": "Bestands- und Ablauferinnerungen",
-  "stockAndExpiryRemindersHint": "Benachrichtigen, wenn ein Medikament zur Neige geht oder in 30 Tagen abläuft",
+  "stockAndExpiryRemindersHint": "{days, plural, =1{Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft} other{Benachrichtigen, wenn ein Medikament zur Neige geht oder in {days} Tagen abläuft}}",
   "cancelAllReminders": "Alle Erinnerungen abbrechen",
   "removePendingNotifications": "Alle ausstehenden Benachrichtigungen entfernen",
   "cancelAllRemindersConfirm": "Möchten Sie wirklich alle ausstehenden Erinnerungen abbrechen?",

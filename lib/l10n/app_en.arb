@@ -350,7 +350,10 @@
   "enableNotifications": "Enable Notifications",
   "receiveDoseReminders": "Receive dose reminders",
   "stockAndExpiryReminders": "Stock and expiry reminders",
-  "stockAndExpiryRemindersHint": "Notify when a medication runs low or expires within 30 days",
+  "stockAndExpiryRemindersHint": "{days, plural, =1{Notify when a medication runs low or expires within 1 day} other{Notify when a medication runs low or expires within {days} days}}",
+  "@stockAndExpiryRemindersHint": {
+    "placeholders": { "days": { "type": "int" } }
+  },
   "cancelAllReminders": "Cancel All Reminders",
   "removePendingNotifications": "Remove all pending notifications",
   "cancelAllRemindersConfirm": "Are you sure you want to cancel all pending reminders?",

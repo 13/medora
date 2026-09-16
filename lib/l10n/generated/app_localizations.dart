@@ -1396,8 +1396,8 @@ abstract class AppLocalizations {
   /// No description provided for @stockAndExpiryRemindersHint.
   ///
   /// In en, this message translates to:
-  /// **'Notify when a medication runs low or expires within 30 days'**
-  String get stockAndExpiryRemindersHint;
+  /// **'{days, plural, =1{Notify when a medication runs low or expires within 1 day} other{Notify when a medication runs low or expires within {days} days}}'**
+  String stockAndExpiryRemindersHint(int days);
 
   /// No description provided for @cancelAllReminders.
   ///

@@ -733,8 +733,17 @@ class AppLocalizationsDe extends AppLocalizations {
   String get stockAndExpiryReminders => 'Bestands- und Ablauferinnerungen';
 
   @override
-  String get stockAndExpiryRemindersHint =>
-      'Benachrichtigen, wenn ein Medikament zur Neige geht oder in 30 Tagen abläuft';
+  String stockAndExpiryRemindersHint(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other:
+          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in $days Tagen abläuft',
+      one:
+          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft',
+    );
+    return '$_temp0';
+  }
 
   @override
   String get cancelAllReminders => 'Alle Erinnerungen abbrechen';

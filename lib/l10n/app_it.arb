@@ -239,7 +239,7 @@
   "enableNotifications": "Abilita notifiche",
   "receiveDoseReminders": "Ricevi promemoria per le dosi",
   "stockAndExpiryReminders": "Promemoria scorte e scadenza",
-  "stockAndExpiryRemindersHint": "Avvisa quando un farmaco sta finendo o scade entro 30 giorni",
+  "stockAndExpiryRemindersHint": "{days, plural, =1{Avvisa quando un farmaco sta finendo o scade entro 1 giorno} other{Avvisa quando un farmaco sta finendo o scade entro {days} giorni}}",
   "cancelAllReminders": "Annulla tutti i promemoria",
   "removePendingNotifications": "Rimuovi tutte le notifiche in sospeso",
   "cancelAllRemindersConfirm": "Sei sicuro di voler annullare tutti i promemoria in sospeso?",

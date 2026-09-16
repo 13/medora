@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
@@ -143,7 +144,14 @@ class SettingsScreen extends ConsumerWidget {
                 SwitchListTile(
                   secondary: const Icon(Icons.inventory_2_outlined),
                   title: Text(l10n.stockAndExpiryReminders),
-                  subtitle: Text(l10n.stockAndExpiryRemindersHint),
+                  // The lead time is a constant, not prose: hardcoding "30
+                  // days" in three locales makes all three lie the day it
+                  // changes.
+                  subtitle: Text(
+                    l10n.stockAndExpiryRemindersHint(
+                      AppConstants.expiryWarningDays,
+                    ),
+                  ),
                   // Nested under the master switch, like the cancel tile
                   // below: with notifications off nothing here is scheduled,
                   // so the switch must not claim otherwise.
