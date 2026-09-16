@@ -231,7 +231,16 @@ class _NowCardState extends ConsumerState<_NowCard> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
+        // Wrap, not Row. "Einnehmen" beside "Überspringen" already overflows
+        // this card by 2.3 dp on a 360 dp phone at a 1.0x text scale, and by
+        // 83 dp at 1.6x - a striped overflow bar across the only two actions
+        // the dashboard offers. A Wrap places the two buttons exactly where
+        // the Row did while they fit, and moves Skip onto its own line when
+        // they stop fitting.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             FilledButton.icon(
               onPressed: _busy
@@ -240,7 +249,6 @@ class _NowCardState extends ConsumerState<_NowCard> {
               icon: const Icon(Icons.check),
               label: Text(l10n.take),
             ),
-            const SizedBox(width: 8),
             TextButton(
               onPressed: _busy
                   ? null
@@ -667,26 +675,35 @@ class _LowStockCard extends ConsumerWidget {
                     ],
                   ],
                 ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${med.quantity}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: context.medora.warning,
+                // Shrink to fit. A ListTile gives its trailing slot the
+                // tile's own height, and the count stacked over "Left"
+                // overflows that by 12 dp from a 1.6x text scale. The stat
+                // tiles already solve the same problem the same way:
+                // BoxFit.scaleDown only ever shrinks, so at every ordinary
+                // text scale this paints what it painted before.
+                trailing: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${med.quantity}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: context.medora.warning,
+                        ),
                       ),
-                    ),
-                    Text(
-                      l10n.leftLabel,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: context.colors.onSurfaceVariant,
+                      Text(
+                        l10n.leftLabel,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: context.colors.onSurfaceVariant,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 dense: true,
                 onTap: () => context.push('/medications/${med.id}'),
