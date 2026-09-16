@@ -20,6 +20,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/code_candidates.dart';
+import 'package:medora/services/scan_region.dart';
 
 class ScanReviewView extends StatefulWidget {
   const ScanReviewView({
@@ -89,6 +90,12 @@ class _ScanReviewViewState extends State<ScanReviewView> {
     final theme = Theme.of(context);
     final rescan = widget.onRescanArea;
     final selection = _selection;
+    // Below minRescanSide photo pixels there is nothing to crop, so the
+    // button must not offer what pressing it cannot deliver - and the hint
+    // says why instead of leaving the user pressing a dead button.
+    final tooSmall =
+        selection != null &&
+        rescanAreaCrop(selection, widget.imageSize) == null;
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxPhotoHeight = constraints.maxHeight.isFinite
@@ -145,7 +152,7 @@ class _ScanReviewViewState extends State<ScanReviewView> {
                         if (widget.selecting && selection != null)
                           FilledButton.icon(
                             key: const ValueKey('scanRescanArea'),
-                            onPressed: widget.busy
+                            onPressed: widget.busy || tooSmall
                                 ? null
                                 : () => rescan(selection),
                             icon: const Icon(Icons.search),
@@ -157,7 +164,9 @@ class _ScanReviewViewState extends State<ScanReviewView> {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          l10n.scanSelectAreaHint,
+                          tooSmall
+                              ? l10n.scanRescanTooSmall
+                              : l10n.scanSelectAreaHint,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),

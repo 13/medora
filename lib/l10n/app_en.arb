@@ -262,6 +262,7 @@
   "scanRescanArea": "Scan selection",
   "scanSelectAreaHint": "Drag a box around the code, then scan the selection.",
   "scanRescanNothingNew": "No new code found in that area.",
+  "scanRescanTooSmall": "That selection is too small to scan. Draw a bigger box.",
   "scanCaptureHint": "Photograph the pack so the AIC code is sharp",
   "scanMedicationInCabinet": "Already in your cabinet",
   "supplementRegister": "Food supplement register",

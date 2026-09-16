@@ -180,6 +180,7 @@
   "scanRescanArea": "Scansiona selezione",
   "scanSelectAreaHint": "Trascina un riquadro attorno al codice, poi scansiona la selezione.",
   "scanRescanNothingNew": "Nessun nuovo codice in quell'area.",
+  "scanRescanTooSmall": "Questa selezione è troppo piccola per la scansione. Disegna un riquadro più grande.",
   "scanCaptureHint": "Fotografa la confezione con il codice AIC ben leggibile",
   "scanMedicationInCabinet": "Già nel tuo armadietto",
   "supplementRegister": "Registro integratori",

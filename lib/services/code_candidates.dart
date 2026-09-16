@@ -864,3 +864,14 @@ List<_Span?> _elementSpans(OcrLine line) {
   }
   return spans;
 }
+
+/// The identity of each candidate, `kind:code`.
+///
+/// [findCodeCandidates] deduplicates by exactly this key and a
+/// higher-resolution re-read can replace an earlier one, so the size of the
+/// list says nothing about whether a pass changed it: use these keys to tell
+/// "nothing new" from "the same count, corrected".
+Set<String> candidateKeys(Iterable<CodeCandidate> candidates) => {
+  for (final candidate in candidates)
+    '${candidate.kind.name}:${candidate.code}',
+};

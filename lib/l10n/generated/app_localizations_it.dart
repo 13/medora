@@ -541,6 +541,10 @@ class AppLocalizationsIt extends AppLocalizations {
   String get scanRescanNothingNew => 'Nessun nuovo codice in quell\'area.';
 
   @override
+  String get scanRescanTooSmall =>
+      'Questa selezione è troppo piccola per la scansione. Disegna un riquadro più grande.';
+
+  @override
   String get scanCaptureHint =>
       'Fotografa la confezione con il codice AIC ben leggibile';
 

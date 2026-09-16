@@ -544,6 +544,10 @@ class AppLocalizationsDe extends AppLocalizations {
       'In diesem Bereich wurde kein neuer Code gefunden.';
 
   @override
+  String get scanRescanTooSmall =>
+      'Diese Auswahl ist zu klein zum Scannen. Ziehe einen größeren Rahmen.';
+
+  @override
   String get scanCaptureHint =>
       'Fotografiere die Packung so, dass der AIC-Code scharf ist';
 

@@ -626,10 +626,14 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     final path = _photoPath;
     if (path == null || _isSearching) return;
     final crop = rescanAreaCrop(selection, _imageSize);
-    if (crop == null) return;
+    if (crop == null) {
+      // Too small to crop: say so instead of doing nothing at all.
+      _showMessage(AppLocalizations.of(context).scanRescanTooSmall);
+      return;
+    }
     setState(() => _isSearching = true);
     Directory? dir;
-    final before = _candidates.length;
+    final before = candidateKeys(_candidates);
     try {
       dir = await (await getTemporaryDirectory()).createTemp('scan_area_');
       final out = p.join(dir.path, 'area.png');
@@ -638,7 +642,12 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         crop,
         out,
       ).timeout(_areaCropTimeout);
-      if (written == null || !mounted || _photoPath != path) return;
+      if (!mounted || _photoPath != path) return;
+      if (written == null) {
+        // A degenerate or unreadable crop: an error, not a silent no-op.
+        _showError();
+        return;
+      }
       scanLog([
         '[scan] area pass ${written.crop.width.round()}x'
             '${written.crop.height.round()} @ ${written.crop.left.round()},'
@@ -675,15 +684,21 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
         _candidates = candidates;
         _selectingArea = false;
       });
-      if (candidates.length == before) {
-        final l10n = AppLocalizations.of(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.scanRescanNothingNew)));
+      // By content, not by count: findCodeCandidates deduplicates by
+      // kind:code and a sharper re-read can replace an earlier one. A rescan
+      // that corrects 023834II8 to 023834118 leaves the count alone but does
+      // add a key, so it no longer claims "nothing new"; one that merges two
+      // readings adds none and rightly says so.
+      if (candidateKeys(candidates).difference(before).isEmpty) {
+        _showMessage(AppLocalizations.of(context).scanRescanNothingNew);
       }
     } catch (e, stack) {
       debugPrint('[scan] area rescan failed: $e\n$stack');
-      if (mounted) _showError();
+      if (!mounted) return;
+      // Leave selection mode, which drops the rectangle: a stale box sitting
+      // on the photo over the error reads as if the rescan were still live.
+      setState(() => _selectingArea = false);
+      _showError();
     } finally {
       if (dir != null) await _deleteDirectory(dir);
       if (mounted) setState(() => _isSearching = false);
@@ -791,11 +806,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
     }
   }
 
-  void _showError() {
-    final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.genericError)));
+  void _showError() => _showMessage(AppLocalizations.of(context).genericError);
+
+  void _showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   // ── Selection ──────────────────────────────────────────────

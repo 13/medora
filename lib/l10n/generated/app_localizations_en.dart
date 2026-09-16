@@ -537,6 +537,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get scanRescanNothingNew => 'No new code found in that area.';
 
   @override
+  String get scanRescanTooSmall =>
+      'That selection is too small to scan. Draw a bigger box.';
+
+  @override
   String get scanCaptureHint => 'Photograph the pack so the AIC code is sharp';
 
   @override

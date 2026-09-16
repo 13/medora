@@ -1066,6 +1066,12 @@ abstract class AppLocalizations {
   /// **'No new code found in that area.'**
   String get scanRescanNothingNew;
 
+  /// No description provided for @scanRescanTooSmall.
+  ///
+  /// In en, this message translates to:
+  /// **'That selection is too small to scan. Draw a bigger box.'**
+  String get scanRescanTooSmall;
+
   /// No description provided for @scanCaptureHint.
   ///
   /// In en, this message translates to:

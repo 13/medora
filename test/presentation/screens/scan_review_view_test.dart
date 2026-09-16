@@ -572,4 +572,36 @@ void main() {
     expect(selected!.right, closeTo(0.5, 0.02));
     expect(selected!.bottom, closeTo(0.5, 0.02));
   });
+
+  testWidgets('a selection too small to scan disables the rescan button', (
+    tester,
+  ) async {
+    _setSurface(tester, const Size(800, 1600));
+    await _pumpRescan(tester, imageSize: const Size(200, 200));
+    final box = tester.getRect(find.byKey(const ValueKey('scanPhoto')));
+
+    // 30 dp of the 720 dp box is 8 px of a 200 px photo - under
+    // minRescanSide, so pressing the button could only do nothing.
+    await tester.timedDragFrom(
+      box.topLeft + Offset(box.width / 4, box.height / 4),
+      const Offset(30, 30),
+      const Duration(milliseconds: 200),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<ButtonStyleButton>(
+            find.byKey(const ValueKey('scanRescanArea')),
+          )
+          .enabled,
+      isFalse,
+    );
+    expect(
+      find.text(
+        'Diese Auswahl ist zu klein zum Scannen. Ziehe einen größeren Rahmen.',
+      ),
+      findsOneWidget,
+    );
+  });
 }

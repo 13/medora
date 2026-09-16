@@ -1049,4 +1049,33 @@ void main() {
     });
     expect(kinds(['Integratore alimentare', '8 057737141836']), isEmpty);
   });
+
+  test('candidateKeys identifies a candidate by kind and code', () {
+    const box = Rect.fromLTWH(0, 0, 10, 10);
+    const read = CodeCandidate(
+      code: '023834118',
+      kind: CodeKind.aic,
+      sourceText: 'AIC 023834118',
+      box: box,
+    );
+    const again = CodeCandidate(
+      code: '023834118',
+      kind: CodeKind.aic,
+      sourceText: 'a second line with the same code',
+      box: Rect.fromLTWH(50, 50, 10, 10),
+    );
+    const misread = CodeCandidate(
+      code: '023834II8',
+      kind: CodeKind.aic,
+      sourceText: 'AIC 023834II8',
+      box: box,
+    );
+
+    // The same code twice is one candidate, whatever line it came from.
+    expect(candidateKeys([read, again]), {'aic:023834118'});
+    // A corrected re-read is a different candidate at the very same count,
+    // which is what the count-based "nothing new" check could not see.
+    expect(candidateKeys([misread]), isNot(candidateKeys([read])));
+    expect(candidateKeys(const []), isEmpty);
+  });
 }

@@ -180,6 +180,7 @@
   "scanRescanArea": "Auswahl scannen",
   "scanSelectAreaHint": "Ziehe einen Rahmen um den Code und scanne die Auswahl.",
   "scanRescanNothingNew": "In diesem Bereich wurde kein neuer Code gefunden.",
+  "scanRescanTooSmall": "Diese Auswahl ist zu klein zum Scannen. Ziehe einen größeren Rahmen.",
   "scanCaptureHint": "Fotografiere die Packung so, dass der AIC-Code scharf ist",
   "scanMedicationInCabinet": "Bereits in deiner Hausapotheke",
   "supplementRegister": "Nahrungsergänzungsmittel-Register",
