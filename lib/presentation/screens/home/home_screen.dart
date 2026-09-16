@@ -781,7 +781,10 @@ class _ActiveTreatmentTile extends StatelessWidget {
             l10n.startedOn(treatment.startDate.formatted),
             style: const TextStyle(fontSize: 12),
           ),
-          if (treatment.isSickLeaveOpen) ...[
+          // Only a leave that is running today: one planned for next week
+          // would read as if the user were off work now.
+          if (treatment.isSickLeaveOpen &&
+              treatment.sickLeaveDaysAt(now) != null) ...[
             const SizedBox(height: 4),
             SickLeaveBadge(
               key: const Key('sickLeaveBadge'),

@@ -109,13 +109,25 @@ void main() {
     expect(badgeOf('Influenza'), findsNothing);
   });
 
-  testWidgets('an open leave that has not started shows the bare label', (
+  testWidgets('a leave that has not started yet shows no badge', (
     tester,
   ) async {
+    // The dashboard is about today: a leave planned for next week would
+    // read as if the user were off work now. The list still shows it.
     await seed('t1', 'OP-Nachsorge', from: DateTime(2026, 3, 10));
     await pump(tester);
     expect(tester.takeException(), isNull);
-    expect(tester.widget<Text>(badgeTextOf('OP-Nachsorge')).data, 'Sick leave');
+    expect(find.text('OP-Nachsorge'), findsOneWidget);
+    expect(badgeOf('OP-Nachsorge'), findsNothing);
+  });
+
+  testWidgets('a leave that starts today shows day 1', (tester) async {
+    await seed('t1', 'OP-Nachsorge', from: DateTime(2026, 3, 5));
+    await pump(tester);
+    expect(
+      tester.widget<Text>(badgeTextOf('OP-Nachsorge')).data,
+      'Sick leave · Day 1',
+    );
   });
 
   group('layout at 360 dp', () {
