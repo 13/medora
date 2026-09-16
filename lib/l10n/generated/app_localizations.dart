@@ -3157,6 +3157,18 @@ abstract class AppLocalizations {
   /// **'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.'**
   String get updateInstallExplainBody;
 
+  /// No description provided for @updateShowMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Show more'**
+  String get updateShowMore;
+
+  /// No description provided for @updateShowLess.
+  ///
+  /// In en, this message translates to:
+  /// **'Show less'**
+  String get updateShowLess;
+
   /// No description provided for @backupData.
   ///
   /// In en, this message translates to:

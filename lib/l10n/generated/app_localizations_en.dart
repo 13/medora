@@ -1676,6 +1676,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.';
 
   @override
+  String get updateShowMore => 'Show more';
+
+  @override
+  String get updateShowLess => 'Show less';
+
+  @override
   String get backupData => 'Back up data';
 
   @override

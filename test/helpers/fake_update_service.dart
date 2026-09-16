@@ -84,11 +84,14 @@ ReleaseAsset fakeApkAsset(String name) => ReleaseAsset(
   url: Uri.parse('https://example.test/$name'),
 );
 
-ReleaseInfo fakeRelease(ReleaseVersion version) => ReleaseInfo(
+ReleaseInfo fakeRelease(
+  ReleaseVersion version, {
+  String notes = 'Fixed the thing.',
+}) => ReleaseInfo(
   tag: 'v${version.version}+${version.build}',
   version: version,
   title: 'Medora ${version.label}',
-  notes: 'Fixed the thing.',
+  notes: notes,
   publishedAt: DateTime.utc(2026, 3),
   assets: [
     fakeApkAsset('medora-${version.version}-${version.build}-arm64-v8a.apk'),

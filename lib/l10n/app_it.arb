@@ -567,6 +567,8 @@
   "updateCancel": "Annulla il download",
   "updateInstallExplainTitle": "Installa l'aggiornamento",
   "updateInstallExplainBody": "Android ti chiederà di consentire a Medora di installare app, poi aprirà il programma di installazione. I tuoi dati restano sul dispositivo.",
+  "updateShowMore": "Mostra altro",
+  "updateShowLess": "Mostra meno",
   "backupData": "Backup dei dati",
   "backupDataHint": "Salva tutto in un file JSON non cifrato — conservalo in un luogo sicuro",
   "backupAction": "Esegui backup",

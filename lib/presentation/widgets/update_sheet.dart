@@ -14,6 +14,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/services/app_update_service.dart';
+import 'package:medora/services/release_notes.dart';
 
 /// Opens [UpdateSheet] as a modal bottom sheet.
 Future<void> showUpdateSheet(BuildContext context) {
@@ -100,20 +101,7 @@ class UpdateSheet extends ConsumerWidget {
                   ),
                 ),
               ],
-              if (release.notes.trim().isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(l10n.updateReleaseNotes, style: context.text.titleSmall),
-                const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      release.notes.trim(),
-                      style: context.text.bodyMedium,
-                    ),
-                  ),
-                ),
-              ],
+              _WhatsNew(notes: release.notes),
             ],
             if (status is UpdateFailed) ...[
               const SizedBox(height: 16),
@@ -133,6 +121,66 @@ class UpdateSheet extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The release body, made readable.
+///
+/// A GitHub body is markdown, and a grouped changelog runs to dozens of
+/// lines - printed raw it is both unreadable and long enough to push the
+/// Download button off the sheet. [releaseNotesToPlainText] drops the syntax,
+/// and only the first [releaseNotesCollapsedChars] are shown until the reader
+/// asks for the rest, so the actions stay in view either way.
+class _WhatsNew extends StatefulWidget {
+  const _WhatsNew({required this.notes});
+
+  final String notes;
+
+  @override
+  State<_WhatsNew> createState() => _WhatsNewState();
+}
+
+class _WhatsNewState extends State<_WhatsNew> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final text = releaseNotesToPlainText(widget.notes);
+    // A release with no body (or one that was nothing but markup) says
+    // nothing worth a heading.
+    if (text.isEmpty) return const SizedBox.shrink();
+
+    final collapsible = text.length > releaseNotesCollapsedChars;
+    final shown = !collapsible || _expanded
+        ? text
+        : '${text.substring(0, releaseNotesCollapsedChars).trimRight()}\u2026';
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        Text(l10n.updateReleaseNotes, style: context.text.titleSmall),
+        const SizedBox(height: 8),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 220),
+          child: SingleChildScrollView(
+            child: Text(shown, style: context.text.bodyMedium),
+          ),
+        ),
+        if (collapsible)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => setState(() => _expanded = !_expanded),
+              child: Text(
+                _expanded ? l10n.updateShowLess : l10n.updateShowMore,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

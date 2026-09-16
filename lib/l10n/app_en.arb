@@ -727,6 +727,8 @@
   "updateCancel": "Cancel download",
   "updateInstallExplainTitle": "Install update",
   "updateInstallExplainBody": "Android will ask you to allow Medora to install apps, then open the installer. Your data stays on the device.",
+  "updateShowMore": "Show more",
+  "updateShowLess": "Show less",
   "backupData": "Back up data",
   "backupDataHint": "Save everything as one unencrypted JSON file — keep it somewhere private",
   "backupAction": "Back up",
