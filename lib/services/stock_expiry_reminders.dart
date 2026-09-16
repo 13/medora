@@ -54,6 +54,17 @@ class StockAlert {
 
   /// Stock left for [StockAlertKind.lowStock], else 0.
   final int quantity;
+
+  /// Everything the delivered notification will say, in one value.
+  ///
+  /// The scheduler diffs on this rather than on [when] alone: the title and
+  /// body are baked in when the alert is booked, so a rename or a changed
+  /// quantity has to re-book it even though it still fires at the same
+  /// moment. Without that, taking the last two tablets at 11:00 leaves
+  /// tomorrow's notification saying "2 left" for an empty box.
+  String get fingerprint =>
+      '${when.millisecondsSinceEpoch}|${kind.index}|$days|$quantity|'
+      '$medicationName';
 }
 
 /// Notification id for one medication and kind.
@@ -158,6 +169,13 @@ List<StockAlert> stockAlertsFor(
       );
     }
   }
-  alerts.sort((a, b) => a.when.compareTo(b.when));
+  // The id is a tie-break, not decoration: every low-stock alert carries the
+  // same `when`, which is a total tie, and `List.sort` is not stable — so
+  // without it the order the cabinet happened to return would decide which
+  // medication silently loses its alert to the limit below.
+  alerts.sort((a, b) {
+    final byTime = a.when.compareTo(b.when);
+    return byTime != 0 ? byTime : a.id.compareTo(b.id);
+  });
   return alerts.length > limit ? alerts.sublist(0, limit) : alerts;
 }

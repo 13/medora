@@ -163,6 +163,30 @@ void main() {
     expect(stockAlertsFor(many, now), hasLength(kStockNotificationBudget));
   });
 
+  test('a tie on time is broken by id, so the cabinet order cannot drop an '
+      'arbitrary alert', () {
+    // Every low-stock alert carries the same `when`, which is a total tie:
+    // with more of them than the budget, an unstable sort would let the
+    // order the rows came back in decide whose alert is silently dropped.
+    final many = [
+      for (var i = 0; i < kStockNotificationBudget + 3; i++)
+        _med(id: 'm$i', name: 'M$i', quantity: 0),
+    ];
+
+    final asListed = stockAlertsFor(many, now).map((a) => a.id).toList();
+    final reversed = stockAlertsFor(
+      many.reversed.toList(),
+      now,
+    ).map((a) => a.id).toList();
+
+    expect(asListed, hasLength(kStockNotificationBudget));
+    expect(
+      reversed,
+      asListed,
+      reason: 'renaming one medication must not cost another its alert',
+    );
+  });
+
   test('the next alert keeps 09:00 across a daylight-saving change', () {
     final spring = _springForwardDay(2026) ?? DateTime(2026, 3, 29);
     // The day *before* the transition: "tomorrow at 09:00" is where 24 exact

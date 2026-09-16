@@ -4,8 +4,14 @@
 /// [ReminderScheduler] owns the dose reminders. The two never disturb each
 /// other because [stockAlertId] hands out ids in slots (offsets 8 and 9) that
 /// dose reminders never take — which is also why this one never calls
-/// `cancelAll()`. It cancels its own ids one by one, from the snapshot of the
+/// `cancelAll()`, and why the dose scheduler's own full cancel spares those
+/// two offsets. It cancels its own ids one by one, from the snapshot of the
 /// previous run, which is persisted so a restart still knows them.
+///
+/// The snapshot records what each alert *says* ([StockAlert.fingerprint]),
+/// not merely when it fires: the text is baked in at booking time, so a
+/// rename or a changed quantity has to re-book an alert that still fires at
+/// the same moment.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -32,8 +38,9 @@ class StockReminderScheduler {
   final Now _now;
   final StockAlertStore _store;
 
-  /// The previous run's alerts: notification id → the time it fires.
-  final Map<int, DateTime> _scheduled = {};
+  /// The previous run's alerts: notification id → what it says
+  /// ([StockAlert.fingerprint]).
+  final Map<int, String> _scheduled = {};
 
   /// Whether [_scheduled] has been seeded from the store yet. The first run
   /// of a session inherits the last session's ids, so alerts for medications
@@ -44,15 +51,22 @@ class StockReminderScheduler {
   bool _running = false;
   bool _rerunRequested = false;
 
-  /// Forget the snapshot, so the next [reconcile] schedules everything again.
+  /// Forget what the booked alerts say, so the next [reconcile] books them
+  /// all again.
   ///
-  /// Re-scheduling reuses the same ids, so the notifications are replaced
-  /// rather than duplicated — no cancel pass is needed first.
+  /// The ids are kept — loaded from the store when this session has not read
+  /// it yet — because they are the only handle on an alert the cabinet no
+  /// longer wants. Only their content is forgotten, which makes every
+  /// surviving alert be re-booked (in place, over the same id) and every
+  /// abandoned one be cancelled.
   void reset() {
-    _scheduled.clear();
-    // Deliberately not reloading the stored snapshot afterwards: the point of
-    // a reset is to re-book everything, which overwrites the same ids.
-    _restored = true;
+    if (!_restored) {
+      _restored = true;
+      _scheduled.addAll(_store.load());
+    }
+    for (final id in _scheduled.keys.toList()) {
+      _scheduled[id] = StockAlertStore.unknownFingerprint;
+    }
   }
 
   /// Reconciles the scheduled alerts with the ones the cabinet now wants, and
@@ -104,7 +118,7 @@ class StockReminderScheduler {
       for (final alert in stockAlertsFor(medications, _now())) alert.id: alert,
     };
     final toSchedule = desired.values
-        .where((alert) => _scheduled[alert.id] != alert.when)
+        .where((alert) => _scheduled[alert.id] != alert.fingerprint)
         .toList();
 
     // Asked here rather than at startup because this is the first moment the
@@ -116,8 +130,9 @@ class StockReminderScheduler {
 
     try {
       for (final id in _scheduled.keys.toList()) {
-        // Gone, or moved to another time: the old notification must go.
-        if (desired[id]?.when != _scheduled[id]) {
+        // Gone, moved, or saying something else now: the old notification
+        // must go before the replacement is booked.
+        if (desired[id]?.fingerprint != _scheduled[id]) {
           await _port.cancelStockAlert(id);
         }
       }
@@ -133,7 +148,7 @@ class StockReminderScheduler {
 
     _scheduled
       ..clear()
-      ..addEntries(desired.values.map((a) => MapEntry(a.id, a.when)));
+      ..addEntries(desired.values.map((a) => MapEntry(a.id, a.fingerprint)));
     await _store.save(_scheduled);
     debugPrint('Stock reminders: ${_scheduled.length} alert(s) scheduled');
     return _scheduled.length;

@@ -225,6 +225,98 @@ void main() {
     expect(port.stockAlerts.single.when, DateTime(2026, 11, 20, 9));
   });
 
+  test('a changed quantity re-books the alert at the same time', () async {
+    final db = await AppDatabase.instance.database;
+    final id = await _seedMed(db, quantity: 1);
+
+    final port = FakePort();
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+    );
+    await scheduler.reconcile();
+    expect(port.stockAlerts.single.quantity, 1);
+    port.stockAlerts.clear();
+
+    // The last two tablets are taken. The alert still fires at 09:00
+    // tomorrow, but its text was baked in when it was booked, so leaving it
+    // alone means the phone says "1 left" for an empty box.
+    await db.update(
+      'medications',
+      {'quantity': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    expect(await scheduler.reconcile(), 1);
+    expect(port.stockAlerts.single.quantity, 0);
+  });
+
+  test('a renamed medication re-books the alert', () async {
+    final db = await AppDatabase.instance.database;
+    final id = await _seedMed(db, quantity: 1);
+
+    final port = FakePort();
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+    );
+    await scheduler.reconcile();
+    port.stockAlerts.clear();
+
+    await db.update(
+      'medications',
+      {'name': 'Aspirina'},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    expect(await scheduler.reconcile(), 1);
+    expect(port.stockAlerts.single.medicationName, 'Aspirina');
+  });
+
+  test('reset() still knows last session\'s ids', () async {
+    final db = await AppDatabase.instance.database;
+    final id = await _seedMed(db, quantity: 1);
+    final store = StockAlertStore.inMemory();
+    final port = FakePort();
+
+    await StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+      store: store,
+    ).reconcile();
+
+    await db.update(
+      'medications',
+      {'quantity': 20},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    // A reset before this session's first reconcile (the locale listener, a
+    // restore, "Cancel All Reminders") must not throw away the stored ids:
+    // they are the only handle on an alert the cabinet no longer wants.
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+      store: store,
+    )..reset();
+
+    expect(await scheduler.reconcile(), 0);
+    expect(port.cancelledStockAlerts, [
+      stockAlertId(id, StockAlertKind.lowStock),
+    ]);
+  });
+
   test('reset() forgets the snapshot and schedules everything again', () async {
     final db = await AppDatabase.instance.database;
     await _seedMed(db, quantity: 1);
