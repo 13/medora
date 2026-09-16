@@ -526,5 +526,40 @@ void main() {
       expect(rows[1][8], ref);
       expect(rows[1][9], doctor);
     });
+
+    test('a cell a spreadsheet would run as a formula is written as text', () {
+      final csv = encodeCsv([
+        ['=HYPERLINK("http://x")', '+1', '-2 Tabletten', '@SUM(A1)', 'ok'],
+        ['\t=1', '\r=1', 'a=b', '', 3],
+        [-4, 'Dr. -Rossi'],
+      ]);
+      final rows = const CsvDecoder().convert(csv);
+      expect(rows[0], [
+        "'=HYPERLINK(\"http://x\")",
+        "'+1",
+        "'-2 Tabletten",
+        "'@SUM(A1)",
+        'ok',
+      ]);
+      expect(rows[1], ["'\t=1", "'\r=1", 'a=b', '', '3']);
+      // A number is a value, not text a spreadsheet would run.
+      expect(rows[2], ['-4', 'Dr. -Rossi']);
+      expect(csv, endsWith('\r\n-4,Dr. -Rossi'));
+    });
+
+    test('the treatment CSV neutralises a formula in any text column', () {
+      final table = treatmentCsvTable([
+        Treatment(
+          id: 't1',
+          name: 'Sinusitis',
+          startDate: DateTime(2026, 3, 2),
+          notes: '- besser',
+          doctor: '=HYPERLINK("http://x")',
+        ),
+      ], labels);
+      final rows = const CsvDecoder().convert(encodeCsv(table));
+      expect(rows[1][5], "'- besser");
+      expect(rows[1][9], "'=HYPERLINK(\"http://x\")");
+    });
   });
 }

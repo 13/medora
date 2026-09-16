@@ -184,8 +184,21 @@ List<List<String>> treatmentCsvTable(
 /// [rows] as CSV text. A field holding a comma, a quote or a line break is
 /// quoted, with its quotes doubled (RFC 4180), so free text such as a
 /// doctor's "Dr. Rossi, Bolzano" stays in its column.
+///
+/// Every export goes through here, so this is where text a spreadsheet
+/// would run as a formula is disarmed: a text cell that starts with `=`,
+/// `+`, `-`, `@`, a tab or a carriage return gets a leading `'` (the OWASP
+/// rule), so `=HYPERLINK(…)` pasted into a doctor's name or a note opens as
+/// text. Numbers are left alone.
 @visibleForTesting
-String encodeCsv(List<List<dynamic>> rows) => const CsvEncoder().convert(rows);
+String encodeCsv(List<List<dynamic>> rows) => const CsvEncoder().convert([
+  for (final row in rows) [for (final cell in row) _inertCell(cell)],
+]);
+
+dynamic _inertCell(dynamic cell) =>
+    cell is String && cell.startsWith(_formulaStart) ? "'$cell" : cell;
+
+final _formulaStart = RegExp(r'[=+\-@\t\r]');
 
 /// Localized labels for the one-episode text share, mirroring
 /// [ExportLabels.fromL10n] so this service stays free of [BuildContext].
