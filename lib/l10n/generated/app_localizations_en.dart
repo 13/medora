@@ -393,7 +393,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get sickLeaveEndToday => 'Also end sick leave today';
+  String sickLeaveEndToday(String date) {
+    return 'Also end sick leave today (until $date)';
+  }
 
   @override
   String get doctorLabel => 'Doctor';

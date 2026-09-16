@@ -126,7 +126,7 @@
   "sickLeaveRefHint": "z.B. 1234567890",
   "sickLeaveToBeforeFrom": "\"{to}\" darf nicht vor \"{from}\" liegen",
   "sickLeaveFromMissing": "Bitte auch \"{from}\" angeben",
-  "sickLeaveEndToday": "Krankenstand ebenfalls heute beenden",
+  "sickLeaveEndToday": "Krankenstand heute ebenfalls beenden (bis {date})",
   "doctorLabel": "Ärztin/Arzt",
   "doctorHint": "z.B. Dr. Rossi, Bozen",
   "prescriptions": "Verschreibungen",

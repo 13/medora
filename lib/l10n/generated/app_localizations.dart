@@ -766,11 +766,11 @@ abstract class AppLocalizations {
   /// **'Please also enter \"{from}\"'**
   String sickLeaveFromMissing(String from);
 
-  /// No description provided for @sickLeaveEndToday.
+  /// End-treatment dialog checkbox. {date} is the formatted end date that will be stored; today counts as a day of the leave.
   ///
   /// In en, this message translates to:
-  /// **'Also end sick leave today'**
-  String get sickLeaveEndToday;
+  /// **'Also end sick leave today (until {date})'**
+  String sickLeaveEndToday(String date);
 
   /// No description provided for @doctorLabel.
   ///

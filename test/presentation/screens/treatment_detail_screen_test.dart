@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -228,36 +230,47 @@ void main() {
     Future<TreatmentModel> stored() async =>
         (await TreatmentLocalDatasource().getTreatmentById('t1'))!;
 
-    testWidgets('an open leave is offered, ticked, and closed today', (
-      tester,
-    ) async {
+    testWidgets('an open leave is offered unticked, with the date it would '
+        'end on; ticking it closes the leave today', (tester) async {
       await seedAndPump(tester, from: DateTime(2026, 3, 3));
+      // The date the dialog promises is the one the domain rule stores.
+      final endsOn = Treatment(
+        id: 't1',
+        name: 'Sinusitis',
+        startDate: DateTime(2026, 3, 3),
+        sickLeaveFrom: DateTime(2026, 3, 3),
+      ).sickLeaveEndAt(now);
+      expect(endsOn, DateTime(2026, 3, 5));
       await openEndDialog(tester);
 
+      // "until" and the date: today still counts as a day of the leave.
       expect(
         find.descendant(
           of: dialog,
-          matching: find.text('Also end sick leave today'),
+          matching: find.text('Also end sick leave today (until Mar 5, 2026)'),
         ),
         findsOneWidget,
       );
+      expect(tester.widget<CheckboxListTile>(checkbox).value, isFalse);
+      await tester.tap(checkbox);
+      await tester.pump();
       expect(tester.widget<CheckboxListTile>(checkbox).value, isTrue);
 
       await confirm(tester);
       final t = await stored();
       expect(t.isActive, isFalse);
-      expect(t.sickLeaveTo, DateTime(2026, 3, 5));
+      expect(t.sickLeaveTo, endsOn);
       // The screen shows the closed leave straight away.
       expect(inBlock(find.text('Ongoing')), findsNothing);
       expect(inBlock(find.text('Mar 5, 2026')), findsOneWidget);
     });
 
-    testWidgets('unticking the box ends the treatment and keeps the leave '
-        'open', (tester) async {
+    testWidgets('left unticked, the box ends the treatment and keeps the '
+        'leave open', (tester) async {
+      // A leave closed by mistake would change the record silently; one
+      // left open stays visible, since its badge keeps counting.
       await seedAndPump(tester, from: DateTime(2026, 3, 3));
       await openEndDialog(tester);
-      await tester.tap(checkbox);
-      await tester.pump();
       expect(tester.widget<CheckboxListTile>(checkbox).value, isFalse);
 
       await confirm(tester);
@@ -286,7 +299,7 @@ void main() {
       await seedAndPump(tester);
       await openEndDialog(tester);
       expect(checkbox, findsNothing);
-      expect(find.text('Also end sick leave today'), findsNothing);
+      expect(find.textContaining('Also end sick leave'), findsNothing);
       expect(
         find.descendant(
           of: dialog,
@@ -332,9 +345,8 @@ void main() {
       expect(t.sickLeaveTo, isNull);
     });
 
-    testWidgets('German reads "Krankenstand ebenfalls heute beenden"', (
-      tester,
-    ) async {
+    testWidgets('German reads "Krankenstand heute ebenfalls beenden (bis '
+        '5. März 2026)"', (tester) async {
       await seedAndPump(
         tester,
         from: DateTime(2026, 3, 3),
@@ -344,10 +356,14 @@ void main() {
       expect(
         find.descendant(
           of: dialog,
-          matching: find.text('Krankenstand ebenfalls heute beenden'),
+          matching: find.text(
+            'Krankenstand heute ebenfalls beenden (bis 5. März 2026)',
+          ),
         ),
         findsOneWidget,
       );
+      await tester.tap(checkbox);
+      await tester.pump();
       await confirm(tester, label: 'Behandlung beenden');
       expect((await stored()).sickLeaveTo, DateTime(2026, 3, 5));
     });
@@ -415,7 +431,10 @@ void main() {
         final dialogBox = tester.getRect(
           find.descendant(of: dialog, matching: find.byType(Material)).first,
         );
-        final label = find.text(l10n.sickLeaveEndToday);
+        // Intl.defaultLocale is the test's locale here, as in the app.
+        final label = find.text(
+          l10n.sickLeaveEndToday(DateTime(2026, 3, 5).formatted),
+        );
         expect(label, findsOneWidget);
         final texts = find.descendant(of: dialog, matching: find.byType(Text));
         final count = texts.evaluate().length;
@@ -448,7 +467,9 @@ void main() {
             reason: '"$data" at $rect lies outside the dialog $dialogBox',
           );
         }
-        // The confirm button is still reachable.
+        // The box and the confirm button are still reachable.
+        await tester.tap(find.byKey(const Key('endSickLeaveCheckbox')));
+        await tester.pump();
         await tester.tap(
           find.descendant(
             of: dialog,
@@ -489,7 +510,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(checkbox);
       await tester.pump();
-      expect(tester.widget<CheckboxListTile>(checkbox).value, isFalse);
+      expect(tester.widget<CheckboxListTile>(checkbox).value, isTrue);
     });
   });
 }

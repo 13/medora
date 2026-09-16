@@ -205,7 +205,13 @@
       "from": { "type": "String" }
     }
   },
-  "sickLeaveEndToday": "Also end sick leave today",
+  "sickLeaveEndToday": "Also end sick leave today (until {date})",
+  "@sickLeaveEndToday": {
+    "description": "End-treatment dialog checkbox. {date} is the formatted end date that will be stored; today counts as a day of the leave.",
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
   "doctorLabel": "Doctor",
   "doctorHint": "e.g. Dr. Rossi, Bolzano",
   "prescriptions": "Prescriptions",

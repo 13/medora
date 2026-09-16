@@ -396,7 +396,9 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
-  String get sickLeaveEndToday => 'Termina oggi anche il periodo di malattia';
+  String sickLeaveEndToday(String date) {
+    return 'Termina oggi anche il periodo di malattia (fino al $date)';
+  }
 
   @override
   String get doctorLabel => 'Medico';

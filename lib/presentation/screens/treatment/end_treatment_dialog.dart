@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:medora/core/extensions.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
@@ -15,18 +16,19 @@ import 'package:medora/presentation/providers/treatment_providers.dart';
 /// Confirms, then ends [treatment]. Returns true when it was ended.
 ///
 /// When the sick leave can be ended today ([Treatment.sickLeaveEndAt]), the
-/// dialog carries one extra checkbox, ticked by default. A treatment with no
-/// leave, a closed leave or a leave that has not started yet gets the plain
-/// dialog.
+/// dialog carries one extra checkbox naming the end date it would store
+/// (inclusive, so today still counts). It starts unticked: a leave closed by
+/// mistake changes the record silently, while one left open stays visible
+/// because its badge keeps counting. A treatment with no leave, a closed
+/// leave or a leave that has not started yet gets the plain dialog.
 Future<bool> confirmAndEndTreatment(
   BuildContext context,
   WidgetRef ref,
   Treatment treatment,
 ) async {
   final l10n = AppLocalizations.of(context);
-  final offerSickLeave =
-      treatment.sickLeaveEndAt(ref.read(nowProvider)()) != null;
-  var endSickLeave = offerSickLeave;
+  final sickLeaveEnd = treatment.sickLeaveEndAt(ref.read(nowProvider)());
+  var endSickLeave = false;
 
   final confirmed = await showDialog<bool>(
     context: context,
@@ -40,7 +42,7 @@ Future<bool> confirmAndEndTreatment(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(l10n.endTreatmentConfirm(treatment.name)),
-            if (offerSickLeave)
+            if (sickLeaveEnd != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: CheckboxListTile(
@@ -49,7 +51,7 @@ Future<bool> confirmAndEndTreatment(
                   controlAffinity: ListTileControlAffinity.leading,
                   value: endSickLeave,
                   onChanged: (v) => setState(() => endSickLeave = v ?? false),
-                  title: Text(l10n.sickLeaveEndToday),
+                  title: Text(l10n.sickLeaveEndToday(sickLeaveEnd.formatted)),
                 ),
               ),
           ],

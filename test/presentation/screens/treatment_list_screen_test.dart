@@ -178,10 +178,13 @@ void main() {
       expect(
         find.descendant(
           of: dialog,
-          matching: find.text('Also end sick leave today'),
+          matching: find.text('Also end sick leave today (until Mar 5, 2026)'),
         ),
         findsOneWidget,
       );
+      expect(tester.widget<CheckboxListTile>(checkbox).value, isFalse);
+      await tester.tap(checkbox);
+      await tester.pump();
 
       await tester.tap(
         find.descendant(

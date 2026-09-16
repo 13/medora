@@ -126,7 +126,7 @@
   "sickLeaveRefHint": "es. 1234567890",
   "sickLeaveToBeforeFrom": "\"{to}\" non può precedere \"{from}\"",
   "sickLeaveFromMissing": "Indica anche \"{from}\"",
-  "sickLeaveEndToday": "Termina oggi anche il periodo di malattia",
+  "sickLeaveEndToday": "Termina oggi anche il periodo di malattia (fino al {date})",
   "doctorLabel": "Medico",
   "doctorHint": "es. Dott. Rossi, Bolzano",
   "prescriptions": "Prescrizioni",
