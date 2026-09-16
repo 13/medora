@@ -208,15 +208,23 @@ final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
 /// Owns the stock and expiry notifications; the dose reminders are
 /// [reminderSchedulerProvider]'s. Separate schedulers, disjoint id slots.
 final stockReminderSchedulerProvider = Provider<StockReminderScheduler>((ref) {
+  // "Enable notifications" is the master switch: with it off the app
+  // schedules nothing at all, so the stock switch is read through it rather
+  // than beside it. Otherwise the two settings could disagree about what is
+  // booked, and the UI would be the one that is wrong.
+  bool enabled(Ref ref) =>
+      ref.read(remindersEnabledProvider) &&
+      ref.read(stockRemindersEnabledProvider);
+
   // Same guard as the dose scheduler: reconcile() can still be in flight
   // after the container is disposed, so cache the last-known value rather
   // than reading a disposed Ref.
-  var lastEnabled = ref.read(stockRemindersEnabledProvider);
+  var lastEnabled = enabled(ref);
   final scheduler = StockReminderScheduler(
     port: ref.watch(reminderPortProvider),
     medications: ref.watch(medicationRepositoryProvider),
     stockRemindersEnabled: () {
-      if (ref.mounted) lastEnabled = ref.read(stockRemindersEnabledProvider);
+      if (ref.mounted) lastEnabled = enabled(ref);
       return lastEnabled;
     },
     now: ref.watch(nowProvider),

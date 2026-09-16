@@ -205,6 +205,10 @@ VoidCallback _showRestoreProgress(BuildContext context, AppLocalizations l10n) {
 Future<void> _afterRestore(WidgetRef ref, {required bool isCloud}) async {
   ref.read(reminderSchedulerProvider).reset();
   await ref.read(reminderSchedulerProvider).reconcile();
+  // The restore replaced the cabinet as well, so the stock and expiry
+  // alerts describe medications that may no longer exist.
+  ref.read(stockReminderSchedulerProvider).reset();
+  await ref.read(stockReminderSchedulerProvider).reconcile();
   await ref.read(medicationListProvider.notifier).refresh();
   await ref.read(treatmentListProvider.notifier).refresh();
   ref.invalidateDoseData();

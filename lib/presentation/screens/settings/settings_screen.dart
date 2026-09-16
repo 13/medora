@@ -129,24 +129,42 @@ class SettingsScreen extends ConsumerWidget {
                     await ref
                         .read(remindersEnabledProvider.notifier)
                         .set(value);
-                    if (value) ref.read(reminderSchedulerProvider).reset();
+                    // Both schedulers: this is the master switch, so the
+                    // stock and expiry alerts go off with it — and have to
+                    // come back when it goes on again.
+                    if (value) {
+                      ref.read(reminderSchedulerProvider).reset();
+                      ref.read(stockReminderSchedulerProvider).reset();
+                    }
                     await ref.read(reminderSchedulerProvider).reconcile();
+                    await ref.read(stockReminderSchedulerProvider).reconcile();
                   },
                 ),
                 SwitchListTile(
                   secondary: const Icon(Icons.inventory_2_outlined),
                   title: Text(l10n.stockAndExpiryReminders),
                   subtitle: Text(l10n.stockAndExpiryRemindersHint),
-                  value: ref.watch(stockRemindersEnabledProvider),
-                  onChanged: (value) async {
-                    if (value && !await _permitted(context, ref, l10n)) return;
-                    await ref
-                        .read(stockRemindersEnabledProvider.notifier)
-                        .set(value);
-                    unawaited(
-                      ref.read(stockReminderSchedulerProvider).reconcile(),
-                    );
-                  },
+                  // Nested under the master switch, like the cancel tile
+                  // below: with notifications off nothing here is scheduled,
+                  // so the switch must not claim otherwise.
+                  value:
+                      remindersEnabled &&
+                      ref.watch(stockRemindersEnabledProvider),
+                  onChanged: remindersEnabled
+                      ? (value) async {
+                          if (value && !await _permitted(context, ref, l10n)) {
+                            return;
+                          }
+                          await ref
+                              .read(stockRemindersEnabledProvider.notifier)
+                              .set(value);
+                          unawaited(
+                            ref
+                                .read(stockReminderSchedulerProvider)
+                                .reconcile(),
+                          );
+                        }
+                      : null,
                 ),
                 ListTile(
                   leading: const Icon(Icons.cancel_outlined),
@@ -173,7 +191,13 @@ class SettingsScreen extends ConsumerWidget {
                     );
                     if (confirm == true && context.mounted) {
                       await ref.read(reminderPortProvider).cancelAll();
+                      // cancelAll() takes every kind of notification with
+                      // it, so both schedulers have to forget their
+                      // snapshots — otherwise the stock and expiry alerts
+                      // are gone from the OS while the snapshot still says
+                      // they are booked, and nothing ever re-books them.
                       ref.read(reminderSchedulerProvider).reset();
+                      ref.read(stockReminderSchedulerProvider).reset();
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(l10n.allRemindersCancelled)),

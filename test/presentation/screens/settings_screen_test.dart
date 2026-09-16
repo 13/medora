@@ -431,4 +431,88 @@ void main() {
     );
     expect(port.stockAlerts, isEmpty);
   });
+
+  testWidgets('the master switch owns the stock alerts too', (tester) async {
+    final port = FakePort();
+    final container = await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await notificationOverrides(port),
+    );
+    await tester.pumpAndSettle();
+
+    // Off and on again: that is what books the alert in the first place.
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    final lowStockId = stockAlertId('x', StockAlertKind.lowStock);
+    expect(port.pendingStockAlertIds, {lowStockId});
+
+    await tester.tap(find.text('Enable Notifications'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(remindersEnabledProvider), isFalse);
+    expect(
+      port.pendingStockAlertIds,
+      isEmpty,
+      reason: 'the master switch is off, so nothing may stay booked',
+    );
+    final stockSwitch = tester.widget<SwitchListTile>(
+      find.ancestor(
+        of: find.text('Stock and expiry reminders'),
+        matching: find.byType(SwitchListTile),
+      ),
+    );
+    expect(
+      stockSwitch.onChanged,
+      isNull,
+      reason: 'a switch under an off master must not read as live',
+    );
+
+    await tester.tap(find.text('Enable Notifications'));
+    await tester.pumpAndSettle();
+
+    expect(
+      port.pendingStockAlertIds,
+      {lowStockId},
+      reason: 'what turning notifications off destroyed, turning them on restores',
+    );
+  });
+
+  testWidgets('Cancel All Reminders leaves the stock alerts re-bookable', (
+    tester,
+  ) async {
+    final port = FakePort();
+    final container = await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: await notificationOverrides(port),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stock and expiry reminders'));
+    await tester.pumpAndSettle();
+    final lowStockId = stockAlertId('x', StockAlertKind.lowStock);
+    expect(port.pendingStockAlertIds, {lowStockId});
+
+    await tester.tap(find.text('Cancel All Reminders'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+
+    expect(port.pendingStockAlertIds, isEmpty);
+
+    // The next reconcile — a resume, a cabinet edit, the next launch — has
+    // to book them again rather than believe a snapshot that says they are
+    // still there.
+    await container.read(stockReminderSchedulerProvider).reconcile();
+    expect(
+      port.pendingStockAlertIds,
+      {lowStockId},
+      reason: 'the cancelled alerts were never re-booked',
+    );
+  });
 }
