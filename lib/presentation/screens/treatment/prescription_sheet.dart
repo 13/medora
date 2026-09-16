@@ -179,6 +179,21 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
   String _formatTimeOfDay(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+  /// When the saved schedule starts.
+  ///
+  /// New prescriptions use `_roundedNow`, captured when the sheet was
+  /// opened, so the fixed-interval preview matches what is saved. So does an
+  /// as-needed prescription that is switched to a schedule: it had no
+  /// schedule, and its stored start is only when it was created, possibly
+  /// weeks ago. Starting there would put the whole new schedule in the past,
+  /// to be marked missed at once, when the user means "from now on".
+  DateTime _startTime(Prescription? existing) {
+    if (existing == null) return _roundedNow;
+    final leavesAsNeeded =
+        existing.scheduleType == 'as_needed' && _scheduleType != 'as_needed';
+    return leavesAsNeeded ? _roundedNow : existing.startTime;
+  }
+
   /// Builds a throwaway [Prescription] from the current fixed-interval
   /// inputs, purely to compute the first-day preview.
   Prescription _previewPrescription() {
@@ -191,7 +206,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       dosage: '',
       intervalHours: interval,
       durationDays: duration,
-      startTime: widget.existing?.startTime ?? _roundedNow,
+      startTime: _startTime(widget.existing),
     );
   }
 
@@ -714,9 +729,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       durationDays: asNeeded
           ? 0
           : int.tryParse(_durationController.text.trim()) ?? 7,
-      // New prescriptions use `_roundedNow`, captured when the sheet was
-      // opened, so the fixed-interval preview above matches what is saved.
-      startTime: existing?.startTime ?? _roundedNow,
+      startTime: _startTime(existing),
       autoDiminish: _autoDiminish,
       notes: _notesController.text.trim().isEmpty
           ? null

@@ -494,6 +494,68 @@ void main() {
       expect(doses.map((d) => d['id']), [taken]);
     });
 
+    testWidgets('switching back to a schedule starts it now, for a duration '
+        'the user enters', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final db = await AppDatabase.instance.database;
+      final monthAgo = DateTime.now().subtract(const Duration(days: 30));
+      final seeded = await seedPrescription(
+        db,
+        startTime: monthAgo,
+        durationDays: 0,
+        scheduleType: 'as_needed',
+      );
+      final before = DateTime.now().subtract(const Duration(minutes: 1));
+
+      await openSheet(
+        tester,
+        seeded.treatmentId,
+        existingPrescriptionId: seeded.prescriptionId,
+      );
+      await tester.tap(find.text('Fixed Interval'));
+      await tester.pumpAndSettle();
+
+      // The stored zero is no duration: the user has to enter one.
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Update'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Duration must be between 1 and 365 days'),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byKey(const Key('durationDaysField')), '7');
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Update'));
+      await tester.pumpAndSettle();
+
+      final p = (await db.query(
+        'prescriptions',
+        where: 'id = ?',
+        whereArgs: [seeded.prescriptionId],
+      )).single;
+      expect(p['schedule_type'], 'fixed_interval');
+      expect(p['duration_days'], 7);
+      expect(
+        DateTime.parse(p['start_time']! as String).isBefore(before),
+        isFalse,
+      );
+      final doses = await db.query(
+        'dose_logs',
+        where: 'prescription_id = ?',
+        whereArgs: [seeded.prescriptionId],
+      );
+      expect(doses, hasLength(21));
+      for (final dose in doses) {
+        expect(
+          DateTime.parse(dose['scheduled_time']! as String).isBefore(before),
+          isFalse,
+          reason: 'no dose before the switch',
+        );
+      }
+    });
+
     group('layout at 360 dp', () {
       setUpAll(loadAppFonts);
 
