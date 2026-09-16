@@ -265,32 +265,37 @@ publish when the download is not a PDF (the site blocked the request) or when
 fewer than `--min-rows` (default 50,000) rows were parsed (layout change). Do
 not commit the generated files.
 
-Optional automation (documented only, nothing is installed): a user crontab
-entry on the 3rd of each month,
+### Monthly refresh on a developer machine
 
-```cron
-0 9 3 * * cd ~/repo/medora && tools/build_supplements_data.py --publish >> ~/.cache/medora-supplements.log 2>&1
+`tools/refresh_supplements_data.sh` runs `tools/build_supplements_data.py
+--publish`, appends to `~/.local/state/medora/refresh-supplements.log` and
+exits non-zero when `pdftotext`, `gh`, the download or the row guard fails.
+`tools/systemd/` holds a **user** service and timer for it (4th of each month,
+06:00, `Persistent=true` so a machine that was off catches up):
+
+```bash
+mkdir -p ~/.config/systemd/user
+ln -sf ~/repo/medora/tools/systemd/medora-supplements.service ~/.config/systemd/user/
+ln -sf ~/repo/medora/tools/systemd/medora-supplements.timer   ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now medora-supplements.timer
+systemctl --user list-timers medora-supplements.timer   # check the next run
+systemctl --user start medora-supplements.service       # run it once now
+journalctl --user -u medora-supplements.service -n 50   # or the log file above
 ```
 
-or a user systemd timer:
+The units assume the repository is at `~/repo/medora`; edit `ExecStart` if it
+is elsewhere. Uninstall:
 
-```ini
-# ~/.config/systemd/user/medora-supplements.service
-[Service]
-Type=oneshot
-WorkingDirectory=%h/repo/medora
-ExecStart=%h/repo/medora/tools/build_supplements_data.py --publish
-
-# ~/.config/systemd/user/medora-supplements.timer
-[Timer]
-OnCalendar=*-*-03 09:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
+```bash
+systemctl --user disable --now medora-supplements.timer
+rm ~/.config/systemd/user/medora-supplements.{service,timer}
+systemctl --user daemon-reload
 ```
 
-enabled with `systemctl --user enable --now medora-supplements.timer`.
+Enable lingering (`sudo loginctl enable-linger $USER`) if the timer should
+run while nobody is logged in. The app warns when the register it holds is
+45 days old or older (Settings → Data, and on the scan review).
 
 ## Dependency deferrals
 

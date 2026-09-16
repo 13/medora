@@ -1,0 +1,10 @@
+[Unit]
+Description=Monthly refresh of Medora's food-supplement register data
+
+[Timer]
+OnCalendar=*-*-04 06:00:00
+Persistent=true
+RandomizedDelaySec=1800
+
+[Install]
+WantedBy=timers.target

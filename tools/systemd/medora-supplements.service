@@ -1,0 +1,10 @@
+[Unit]
+Description=Rebuild and publish Medora's food-supplement register data
+Documentation=https://github.com/13/medora/blob/main/docs/release.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/repo/medora/tools/refresh_supplements_data.sh
+# The Ministry site can be slow; the PDF is ~4,100 pages.
+TimeoutStartSec=3600
