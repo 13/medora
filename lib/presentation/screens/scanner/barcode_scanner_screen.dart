@@ -159,8 +159,11 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
   /// Whether the user closed the staleness banner for this photo.
   bool _registerWarningDismissed = false;
 
-  /// The width the photo is decoded at for display (see [_photoImage]).
-  int? _photoDecodeWidth;
+  /// Every width the photo has been decoded at for display (see
+  /// [_photoImage]): MediaQuery can change between builds (a rotation, a
+  /// split screen), and each width is a separate image-cache entry that
+  /// [_discardPhoto] has to evict.
+  final Set<int> _photoDecodeWidths = {};
 
   /// Longer side of the downscaled copy for the second barcode pass.
   static const int _barcodeRetryMaxSide = 1600;
@@ -761,7 +764,7 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
                 MediaQuery.devicePixelRatioOf(context) *
                 2)
             .round();
-    _photoDecodeWidth = width;
+    _photoDecodeWidths.add(width);
     return ResizeImage(FileImage(File(path)), width: width);
   }
 
@@ -786,8 +789,10 @@ class _BarcodeScannerScreenState extends ConsumerState<BarcodeScannerScreen>
       // Drop the decoded photo from the image cache.
       final file = FileImage(File(path));
       unawaited(file.evict());
-      final width = _photoDecodeWidth;
-      if (width != null) unawaited(ResizeImage(file, width: width).evict());
+      for (final width in _photoDecodeWidths) {
+        unawaited(ResizeImage(file, width: width).evict());
+      }
+      _photoDecodeWidths.clear();
     }
     if (path != null && _photoIsTemp) unawaited(_deleteFile(path));
     _photoPath = null;
