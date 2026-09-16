@@ -7,7 +7,7 @@ void main() {
   test('the source date wins over the sync date', () {
     final f = registerFreshness(
       now: now,
-      sourceUpdated: DateTime(2026, 9, 1),
+      sourceUpdated: DateTime.parse('2026-09-01'),
       lastSync: DateTime(2026, 9, 15),
       count: 100,
     );
@@ -19,7 +19,7 @@ void main() {
   test('without a source date the sync date is used', () {
     final f = registerFreshness(
       now: now,
-      lastSync: DateTime(2026, 7, 1),
+      lastSync: DateTime.parse('2026-07-01'),
       count: 100,
     );
     expect(f.days, 77);
