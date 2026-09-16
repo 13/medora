@@ -74,14 +74,14 @@ class TreatmentRemoteDatasource {
   }
 
   /// Upsert a treatment (insert or update). Returns the `updated_at` the
-  /// server gave this write (see `settlePushedRow`), or null when the
-  /// response carries none.
+  /// server gave this write (see `settlePushedRow`). An answer without
+  /// the written row is an error, so the row stays pending.
   Future<DateTime?> upsertTreatment(TreatmentModel model) async {
     final response = await _client
         .from(AppConstants.treatmentsTable)
         .upsert(model.toJson())
         .select('updated_at')
-        .maybeSingle();
+        .single();
     return serverStampOf(response);
   }
 

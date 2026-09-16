@@ -6,7 +6,9 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:sqflite/sqflite.dart';
 
 /// The server's `updated_at` from an upsert's `select('updated_at')` response,
-/// or null when the response has none.
+/// or null when the response has none. The upserts ask for exactly one row
+/// (`single()`), so a response that lacks the written row fails the push
+/// instead of reaching here.
 DateTime? serverStampOf(Map<String, dynamic>? response) {
   final raw = response?['updated_at'] as String?;
   return raw == null ? null : DateTime.tryParse(raw)?.toUtc();
