@@ -173,9 +173,14 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   @override
   Future<void> addTreatment(TreatmentModel model) async =>
       table.upsert(model.toJson());
+
+  /// A plain `update().eq('id', …)`: matches nothing, and so writes nothing,
+  /// when the server has no such row. Only [upsertTreatment] creates one.
   @override
-  Future<void> updateTreatment(TreatmentModel model) async =>
-      table.upsert(model.toJson());
+  Future<void> updateTreatment(TreatmentModel model) async {
+    if (table.rows.containsKey(model.id)) await table.upsert(model.toJson());
+  }
+
   @override
   Future<void> upsertTreatment(TreatmentModel model) async =>
       table.upsert(model.toJson());

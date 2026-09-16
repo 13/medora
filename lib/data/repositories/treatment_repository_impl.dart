@@ -4,6 +4,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
+import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -11,15 +12,32 @@ import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/sync_service.dart';
 
 class TreatmentRepositoryImpl implements TreatmentRepository {
   TreatmentRepositoryImpl({
     required this.localDatasource,
     required this.remoteDatasource,
-  });
+    String? Function()? currentUserId,
+  }) : _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId);
 
   final TreatmentLocalDatasource localDatasource;
   final TreatmentRemoteDatasource? remoteDatasource;
+
+  /// The signed-in user every push is stamped with, as [SyncService] does.
+  final String? Function() _currentUserId;
+
+  /// The background push chain per row id. Pushes of one row run one after
+  /// another, so an older copy can never land after a newer one.
+  final Map<String, Future<void>> _pushChains = {};
+
+  /// Completes once every background push started so far has finished.
+  @visibleForTesting
+  Future<void> get backgroundSyncIdle async {
+    while (_pushChains.isNotEmpty) {
+      await Future.wait(_pushChains.values.toList());
+    }
+  }
 
   @override
   Future<Result<List<Treatment>>> getTreatments() async {
@@ -62,7 +80,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
-      _syncInBackground((r) => r.addTreatment(model), model.id);
+      _pushInBackground(model.id);
       return Result.success(treatment);
     } catch (e, st) {
       return Result.failure('Failed to add treatment: $e', st);
@@ -79,7 +97,7 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
-      _syncInBackground((r) => r.updateTreatment(model), model.id);
+      _pushInBackground(model.id);
       return Result.success(treatment);
     } catch (e, st) {
       return Result.failure('Failed to update treatment: $e', st);
@@ -90,10 +108,10 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   Future<Result<void>> deleteTreatment(String id) async {
     try {
       await localDatasource.markDeleted(id);
-      _syncInBackground((r) async {
-        await r.deleteTreatment(id);
+      _syncInBackground(id, (remote, _) async {
+        await remote.deleteTreatment(id);
         await localDatasource.hardDelete(id);
-      }, id);
+      });
       return const Result.success(null);
     } catch (e, st) {
       return Result.failure('Failed to delete treatment: $e', st);
@@ -115,31 +133,97 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
         updatedAt: nextUpdatedAt(existing.updatedAt, now),
       );
       await localDatasource.upsert(ended, syncStatus: SyncStatus.pendingUpdate);
-      // Push the WHOLE row. _syncInBackground marks the row synced on
-      // success, so a partial remote update would strand every column it
-      // omitted.
-      _syncInBackground((r) => r.upsertTreatment(ended), id);
+      // The push sends the WHOLE row with an upsert; see [_pushLatest].
+      _pushInBackground(id);
       return Result.success(ended.toDomain());
     } catch (e, st) {
       return Result.failure('Failed to end treatment: $e', st);
     }
   }
 
-  /// Fire-and-forget remote sync. No-op in local-only mode.
+  /// Fire-and-forget push of the row's current local copy; see
+  /// [_pushLatest].
+  void _pushInBackground(String id) => _syncInBackground(
+    id,
+    (remote, userId) => _pushLatest(remote, id, userId),
+  );
+
+  /// Fire-and-forget remote sync, queued behind any earlier push of the same
+  /// row. No-op in local-only mode, offline, or while nobody is signed in
+  /// (the sync cycle pushes the row later). A failure only logs: the row
+  /// stays pending and the sync cycle retries it with backoff.
   void _syncInBackground(
-    Future<dynamic> Function(TreatmentRemoteDatasource remote) remoteFn,
     String id,
+    Future<void> Function(TreatmentRemoteDatasource remote, String userId) job,
   ) {
     final remote = remoteDatasource;
     if (remote == null) return;
     if (!ConnectivityService.instance.isOnline) return;
-    Future(() async {
-      try {
-        await remoteFn(remote);
-        await localDatasource.markSynced(id);
-      } catch (e) {
-        debugPrint('⚠ Background sync failed for treatment $id: $e');
-      }
-    });
+    final userId = _currentUserId();
+    if (userId == null) return;
+    final previous = _pushChains[id] ?? Future<void>.value();
+    late final Future<void> next;
+    next = previous
+        .then((_) async {
+          try {
+            await job(remote, userId);
+          } catch (e) {
+            debugPrint('⚠ Background sync failed for treatment $id: $e');
+          }
+        })
+        .whenComplete(() {
+          if (identical(_pushChains[id], next)) _pushChains.remove(id);
+        });
+    _pushChains[id] = next;
   }
+
+  /// Pushes the row's current local copy the way [SyncService] pushes a
+  /// pending row, so the immediate push cannot lose data the sync cycle
+  /// would keep:
+  ///
+  /// - the whole row goes up with an upsert (a plain update would match
+  ///   nothing for a row the server has never seen, and marking that row
+  ///   synced would strand it locally for good), stamped with the signed-in
+  ///   user;
+  /// - a `pending_update` is checked with [SyncService.staleAgainstRemote]
+  ///   first: when the server copy is strictly newer the row is left pending
+  ///   and the sync cycle pulls the winner;
+  /// - the row is marked synced only if it is still the copy that was pushed
+  ///   ([TreatmentLocalDatasource.markSyncedIfUnchanged]).
+  ///
+  /// When the row was edited while the push was in flight, the server now
+  /// holds the older copy with a server-side `updated_at` that is later than
+  /// the edit. That stamp is this push's own, not another device's edit, so
+  /// the newer local copy is pushed again instead of losing to it.
+  Future<void> _pushLatest(
+    TreatmentRemoteDatasource remote,
+    String id,
+    String userId,
+  ) async {
+    DateTime? ownStamp;
+    for (var attempt = 0; attempt < _maxPushAttempts; attempt++) {
+      final row = await localDatasource.getUnsyncedRow(id);
+      // Synced already, gone, or a delete the delete push owns.
+      if (row == null || row['sync_status'] == SyncStatus.pendingDelete) {
+        return;
+      }
+      final staleAt = await SyncService.staleAgainstRemote(
+        row,
+        remote.getUpdatedAt,
+        force: false,
+      );
+      if (staleAt != null && staleAt != ownStamp) return;
+      await remote.upsertTreatment(
+        TreatmentModel.fromLocalMap({...row, 'user_id': userId}),
+      );
+      final pushedAt = row['updated_at'] as String?;
+      if (pushedAt == null) return; // cannot compare; the sync cycle decides
+      if (await localDatasource.markSyncedIfUnchanged(id, pushedAt)) return;
+      ownStamp = await remote.getUpdatedAt(id);
+    }
+  }
+
+  /// Bounds [_pushLatest] when the row keeps changing under it; whatever is
+  /// still pending after that is left to the sync cycle.
+  static const _maxPushAttempts = 3;
 }

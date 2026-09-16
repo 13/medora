@@ -6,7 +6,7 @@
 /// **last write wins by `updated_at`**, on both sides:
 ///
 /// - On the **push** side a `pending_update` is compared against the remote
-///   row's `updated_at` first ([_staleAgainstRemote]); a strictly newer
+///   row's `updated_at` first ([staleAgainstRemote]); a strictly newer
 ///   remote row is left alone and the local row stays pending, so the pull
 ///   phase overwrites it — the pull cursor is rewound far enough to guarantee
 ///   that ([_skipStale]). The skip is counted in [SyncReport.skippedStale],
@@ -377,7 +377,7 @@ class SyncService {
         await medicationRemote!.deleteMedication(model.id);
         await medicationLocal.hardDelete(model.id);
       } else {
-        final staleAt = await _staleAgainstRemote(
+        final staleAt = await staleAgainstRemote(
           row,
           medicationRemote!.getUpdatedAt,
           force: forceAll,
@@ -398,7 +398,7 @@ class SyncService {
         await treatmentRemote!.deleteTreatment(model.id);
         await treatmentLocal.hardDelete(model.id);
       } else {
-        final staleAt = await _staleAgainstRemote(
+        final staleAt = await staleAgainstRemote(
           row,
           treatmentRemote!.getUpdatedAt,
           force: forceAll,
@@ -419,7 +419,7 @@ class SyncService {
         await prescriptionRemote!.deletePrescription(model.id);
         await prescriptionLocal.hardDelete(model.id);
       } else {
-        final staleAt = await _staleAgainstRemote(
+        final staleAt = await staleAgainstRemote(
           row,
           prescriptionRemote!.getUpdatedAt,
           force: forceAll,
@@ -440,7 +440,7 @@ class SyncService {
         await doseLogRemote!.deleteDoseLog(model.id);
         await doseLogLocal.hardDelete(model.id);
       } else {
-        final staleAt = await _staleAgainstRemote(
+        final staleAt = await staleAgainstRemote(
           row,
           doseLogRemote!.getUpdatedAt,
           force: forceAll,
@@ -465,7 +465,10 @@ class SyncService {
   /// push ([forcePush]) is an explicit "my copy is the truth" request. When
   /// either side has no usable `updated_at`, or the remote row is gone, the
   /// push goes ahead.
-  Future<DateTime?> _staleAgainstRemote(
+  ///
+  /// Static and public so a repository's immediate background push applies
+  /// exactly the same rule as the sync cycle.
+  static Future<DateTime?> staleAgainstRemote(
     Map<String, dynamic> row,
     Future<DateTime?> Function(String id) remoteUpdatedAt, {
     required bool force,
