@@ -156,9 +156,14 @@ class RejectingDoseRemote extends FakeDoseLogRemote {
   /// The ids sent with a plain upsert, in order.
   final List<String> upserted = [];
 
+  /// When set, a plain upsert gets no answer.
+  Object? upsertError;
+
   @override
   Future<DateTime?> upsertDoseLog(DoseLogModel model) {
     upserted.add(model.id);
+    final error = upsertError;
+    if (error != null) throw error;
     return super.upsertDoseLog(model);
   }
 
@@ -1956,6 +1961,81 @@ void main() {
         isTrue,
       );
       expect(h.doses.table.updatedAt(ids.first), recordedAt.toUtc());
+    });
+
+    test('a recorded dose whose second send fails stays pending and is sent '
+        'again', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final recordedAt = h.clock.now().subtract(const Duration(hours: 1));
+      final intake = await seedDoseLog(
+        db,
+        seeded.prescriptionId,
+        recordedAt,
+        id: 'intake',
+        status: 'taken',
+        takenTime: recordedAt,
+      );
+      await db.update('dose_logs', {
+        'updated_at': recordedAt.toIso8601String(),
+        'sync_status': SyncStatus.pendingCreate,
+      });
+      remote.upsertError = TimeoutException('no answer');
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => f.id), [intake]);
+      final row = (await localRow('dose_logs', intake))!;
+      expect(row['sync_status'], SyncStatus.pendingCreate);
+
+      remote.upsertError = null;
+      h.clock.advance(const Duration(hours: 1));
+      await h.service.syncAll();
+      expect(
+        (await localRow('dose_logs', intake))!['sync_status'],
+        SyncStatus.synced,
+      );
+      expect(h.doses.table.updatedAt(intake), h.clock.now());
+    });
+
+    test('a recorded dose the server holds in a newer copy is adopted, not '
+        'sent again', () async {
+      final h = rejecting();
+      final remote = h.doses as RejectingDoseRemote;
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final recordedAt = h.clock.now().subtract(const Duration(hours: 1));
+      final intake = await seedDoseLog(
+        db,
+        seeded.prescriptionId,
+        recordedAt,
+        id: 'intake',
+        status: 'taken',
+        takenTime: recordedAt,
+      );
+      await db.update('dose_logs', {
+        'updated_at': recordedAt.toIso8601String(),
+        'sync_status': SyncStatus.pendingCreate,
+      });
+      // An earlier push landed without an answer, and another device has
+      // since added a note.
+      final local = DoseLogModel.fromLocalMap(
+        (await localRow('dose_logs', intake))!,
+      );
+      h.doses.table.seed({
+        ...local.toJson(),
+        'notes': 'with food',
+      }, updatedAt: h.clock.now().subtract(const Duration(minutes: 5)));
+
+      await h.service.syncAll();
+
+      expect(remote.upserted, isEmpty);
+      expect(h.doses.table.rows[intake]!['notes'], 'with food');
+      final row = (await localRow('dose_logs', intake))!;
+      expect(row['notes'], 'with food');
+      expect(row['sync_status'], SyncStatus.synced);
     });
 
     test('a batch that fails does not stop the batches after it', () async {
