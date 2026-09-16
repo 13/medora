@@ -292,69 +292,17 @@ class TodaysDoseLogsNotifier extends AsyncNotifier<List<DoseLog>> {
     );
   }
 
-  /// Ensure dose logs exist for all active prescriptions.
-  /// Runs in background to avoid blocking app startup.
+  /// Generates the doses any active prescription lacks (see
+  /// [DoseScheduleService.ensureScheduled]) and, if it did, refetches.
+  /// Runs in the background to keep app startup snappy.
   Future<void> _ensureDoseLogsExistInBackground() async {
     try {
-      final prescRepo = ref.read(prescriptionRepositoryProvider);
-      final doseRepo = ref.read(doseLogRepositoryProvider);
-
-      final prescResult = await prescRepo.getActivePrescriptions();
-      final prescriptions = prescResult.dataOrNull ?? [];
-
-      if (prescriptions.isEmpty) return;
-
-      final now = ref.read(nowProvider)();
-      final today = DateTime(now.year, now.month, now.day);
-      final tomorrow = today.add(const Duration(days: 1));
-
-      // Get ALL dose logs for today in one query instead of looping
-      final logsResult = await doseRepo.getTodaysDoseLogs();
-      final allTodayLogs = logsResult.dataOrNull ?? [];
-
-      // Build a map for O(1) lookup instead of filtering repeatedly
-      final logsByPrescription = <String, List<dynamic>>{};
-      for (final log in allTodayLogs) {
-        logsByPrescription.putIfAbsent(log.prescriptionId, () => []).add(log);
-      }
-
-      // Collect prescriptions that need dose generation
-      final needsGeneration = <String>[];
-
-      for (final p in prescriptions) {
-        // Skip prescriptions that ended before today
-        if (p.endTime.isBefore(today)) continue;
-
-        // Check how many doses SHOULD exist today
-        final scheduledToday = p.scheduledDoseTimes
-            .where((t) => !t.isBefore(today) && t.isBefore(tomorrow))
-            .toList();
-
-        if (scheduledToday.isEmpty) continue;
-
-        // O(1) lookup using map
-        final todayLogs = logsByPrescription[p.id] ?? [];
-
-        if (todayLogs.length < scheduledToday.length) {
-          debugPrint(
-            '⚠ Missing dose logs for prescription ${p.id} '
-            '(${p.medicationName ?? "unknown"}): '
-            'has ${todayLogs.length}, expected ${scheduledToday.length}. Generating missing...',
-          );
-          needsGeneration.add(p.id);
-        }
-      }
-
-      // Generate all missing dose logs in parallel
-      if (needsGeneration.isNotEmpty) {
-        await Future.wait(
-          needsGeneration.map(doseRepo.generateDoseLogsForPrescription),
-        );
-
-        // Refresh the state after generation
-        state = await AsyncValue.guard(_fetchTodaysDoses);
-        unawaited(ref.read(reminderSchedulerProvider).reconcile());
-      }
+      final regenerated = await ref
+          .read(doseScheduleServiceProvider)
+          .ensureScheduled();
+      if (regenerated == 0 || !ref.mounted) return;
+      state = await AsyncValue.guard(_fetchTodaysDoses);
+      unawaited(ref.read(reminderSchedulerProvider).reconcile());
     } catch (e) {
       debugPrint('⚠ _ensureDoseLogsExist error: $e');
     }

@@ -24,11 +24,17 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
+import 'package:medora/data/repositories/prescription_repository_impl.dart';
+import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/dose_slot.dart';
+import 'package:medora/services/dose_schedule_service.dart';
+import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../helpers/fake_reminder_port.dart';
 import '../helpers/fake_remotes.dart';
 import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
@@ -46,6 +52,32 @@ class _Server {
       .rows
       .values
       .where((r) => r['prescription_id'] == prescriptionId);
+}
+
+/// A notification port that knows which dose reminders are still pending.
+class _LivePort extends FakePort {
+  final live = <String, DateTime>{};
+
+  @override
+  Future<void> scheduleForDose({
+    required DoseLog dose,
+    required String medicationName,
+  }) async {
+    await super.scheduleForDose(dose: dose, medicationName: medicationName);
+    live[dose.id] = dose.scheduledTime;
+  }
+
+  @override
+  Future<void> cancelForDose(String doseId) async {
+    await super.cancelForDose(doseId);
+    live.remove(doseId);
+  }
+
+  @override
+  Future<void> cancelAllDoses() async {
+    await super.cancelAllDoses();
+    live.clear();
+  }
 }
 
 class _Device {
@@ -66,11 +98,25 @@ class _Device {
       onlineStream: const Stream<bool>.empty(),
       cursors: cursors,
       failures: failures,
+      onPrescriptionsPulled: (pulled) async {
+        if (pullHook) await schedule.applyPulled(pulled);
+      },
     );
     doses = DoseLogRepositoryImpl(
       localDatasource: doseLogLocal,
       prescriptionLocal: prescriptionLocal,
       requestSync: _requestSync,
+    );
+    schedule = DoseScheduleService(
+      prescriptions: PrescriptionRepositoryImpl(
+        localDatasource: prescriptionLocal,
+      ),
+      doses: doses,
+    );
+    reminders = ReminderScheduler(
+      port: port,
+      doses: doses,
+      remindersEnabled: () => true,
     );
   }
 
@@ -84,7 +130,13 @@ class _Device {
   final doseLogLocal = DoseLogLocalDatasource();
   late final SyncService service;
   late final DoseLogRepositoryImpl doses;
+  late final DoseScheduleService schedule;
+  final port = _LivePort();
+  late final ReminderScheduler reminders;
   final List<Future<void>> _requests = [];
+
+  /// Whether a pull hands its prescriptions to [schedule], as the app does.
+  bool pullHook = true;
 
   Future<void> _requestSync() {
     final cycle = service.syncAll();
@@ -111,6 +163,46 @@ class _Device {
   }
 
   Future<void> sync() => run((_) async => service.syncAll());
+
+  /// A sync as the app runs it: the cycle, then what the app does once it
+  /// succeeded (`_afterSync` in providers.dart) unless [ensure] is false.
+  Future<void> appSync({bool ensure = true}) async {
+    await sync();
+    await run((_) async {
+      if (ensure) await schedule.ensureScheduled();
+      await reminders.reconcile();
+    });
+  }
+
+  /// A start or a resume: the app's maintenance step, then the reminders.
+  Future<void> resume() => run((_) async {
+    await schedule.ensureScheduled();
+    await reminders.reconcile();
+  });
+
+  /// This device's pending doses of [prescriptionId] from now on, by id.
+  Future<Map<String, DateTime>> upcoming(String prescriptionId) => run((
+    db,
+  ) async {
+    final now = DateTime.now();
+    final rows = await doseLogLocal.getDoseLogsByPrescription(prescriptionId);
+    return {
+      for (final d in rows)
+        if (d.status == DoseStatus.pending && d.scheduledTime.isAfter(now))
+          d.id: d.scheduledTime,
+    };
+  });
+
+  /// The reminders this device holds for [prescriptionId]'s doses.
+  Future<Map<String, DateTime>> remindersFor(String prescriptionId) async {
+    final ids = (await slots(
+      prescriptionId,
+    )).map((s) => s.split('@').first).toSet();
+    return {
+      for (final e in port.live.entries)
+        if (ids.contains(e.key)) e.key: e.value,
+    };
+  }
 
   /// This device's live doses of [prescriptionId], as `id@local time`.
   Future<Set<String>> slots(String prescriptionId) => run((db) async {
@@ -277,6 +369,249 @@ void main() {
       );
       expect(pulled!.startTime, start, reason: '${row['start_time']}');
       expect(pulled.startTime.isUtc, isFalse);
+    });
+  });
+
+  group('a prescription made or changed on the other device', () {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    /// B's doses and reminders of [p] match A's schedule exactly.
+    Future<void> expectBMatchesA(String prescriptionId) async {
+      final onA = await h.a.slots(prescriptionId);
+      expect(onA, isNotEmpty);
+      expect(await h.b.slots(prescriptionId), onA, reason: 'doses on B');
+      final upcoming = await h.a.upcoming(prescriptionId);
+      expect(upcoming, isNotEmpty);
+      expect(await h.b.remindersFor(prescriptionId), upcoming);
+      // Every dose reached the server once; a schedule change leaves the
+      // old pending rows there, at other times.
+      final onServer = h.server.dosesOf(prescriptionId).toList();
+      final serverIds = {for (final r in onServer) r['id']};
+      expect(serverIds, containsAll(onA.map((s) => s.split('@').first)));
+      final times = [for (final r in onServer) r['scheduled_time']];
+      expect(times.toSet(), hasLength(times.length), reason: 'duplicates');
+    }
+
+    test('created on A for tomorrow: B gets its doses and reminders on the '
+        'sync that pulls it', () async {
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1, 8),
+        durationDays: 3,
+      );
+      await h.b.appSync(ensure: false);
+      await expectBMatchesA(p.prescriptionId);
+    });
+
+    test('created on A starting today, while B is running', () async {
+      await h.b.resume();
+      final p = await h.createOnA(start: today, durationDays: 2);
+      await h.b.appSync(ensure: false);
+      await expectBMatchesA(p.prescriptionId);
+    });
+
+    test('times changed on A: B drops the old times and reminds at the new '
+        'ones', () async {
+      final p = await h.createOnA(
+        start: today,
+        durationDays: 3,
+        scheduleType: 'times_per_day',
+        times: '["08:00","20:00"]',
+      );
+      await h.b.appSync();
+      expect(await h.b.remindersFor(p.prescriptionId), isNotEmpty);
+      // B takes a dose of it; the take reaches A.
+      final takenId = scheduledDoseId(
+        p.prescriptionId,
+        DateTime(today.year, today.month, today.day, 8),
+      );
+      await h.b.run((_) => h.b.doses.markDoseTaken(takenId));
+      await h.a.sync();
+
+      await h.a.run((db) async {
+        await db.update(
+          'prescriptions',
+          {
+            'schedule_times': '["09:00","21:00"]',
+            'sync_status': SyncStatus.pendingUpdate,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [p.prescriptionId],
+        );
+        await h.a.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+        await h.a.service.syncAll();
+      });
+      await h.b.appSync(ensure: false);
+
+      await expectBMatchesA(p.prescriptionId);
+      final hours = (await h.b.remindersFor(
+        p.prescriptionId,
+      )).values.map((t) => t.hour).toSet();
+      expect(hours.difference({9, 21}), isEmpty);
+      // The take made on B survived the change on both devices.
+      for (final device in [h.a, h.b]) {
+        expect(
+          (await device.row('dose_logs', takenId))['status'],
+          'taken',
+          reason: device.name,
+        );
+      }
+      // The old times are only left on the server, as A left them.
+      expect(await h.b.slots(p.prescriptionId), contains(startsWith(takenId)));
+    });
+
+    test('extended on A: B gets the extra days', () async {
+      final p = await h.createOnA(start: today, durationDays: 1);
+      await h.b.appSync(ensure: false);
+      await h.a.run((db) async {
+        await db.update(
+          'prescriptions',
+          {
+            'duration_days': 3,
+            'sync_status': SyncStatus.pendingUpdate,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [p.prescriptionId],
+        );
+        await h.a.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+        await h.a.service.syncAll();
+      });
+      await h.b.appSync(ensure: false);
+      expect(await h.a.slots(p.prescriptionId), hasLength(9));
+      await expectBMatchesA(p.prescriptionId);
+    });
+
+    test('switched to as-needed on A: B drops its pending doses and '
+        'reminders', () async {
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1, 8),
+        durationDays: 2,
+      );
+      await h.b.appSync();
+      expect(await h.b.remindersFor(p.prescriptionId), hasLength(6));
+      await h.a.run((db) async {
+        await db.update(
+          'prescriptions',
+          {
+            'schedule_type': 'as_needed',
+            'sync_status': SyncStatus.pendingUpdate,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [p.prescriptionId],
+        );
+        await h.a.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+        await h.a.service.syncAll();
+      });
+      await h.b.appSync(ensure: false);
+      expect(await h.a.slots(p.prescriptionId), isEmpty);
+      expect(await h.b.slots(p.prescriptionId), isEmpty);
+      expect(await h.b.remindersFor(p.prescriptionId), isEmpty);
+    });
+
+    test('a prescription B holds without doses gets them on resume', () async {
+      // B pulled it with a build that generated nothing.
+      h.b.pullHook = false;
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1, 8),
+        durationDays: 3,
+      );
+      await h.b.appSync(ensure: false);
+      expect(await h.b.slots(p.prescriptionId), isEmpty);
+      h.b.pullHook = true;
+
+      await h.b.resume();
+      await h.b.appSync(ensure: false);
+      await expectBMatchesA(p.prescriptionId);
+    });
+
+    test('a schedule B holds at other times, with as many doses a day, is '
+        'regenerated on resume', () async {
+      h.b.pullHook = false;
+      final p = await h.createOnA(
+        start: today,
+        durationDays: 3,
+        scheduleType: 'times_per_day',
+        times: '["08:00","20:00"]',
+      );
+      await h.b.appSync(ensure: false);
+      // B generated the schedule, then pulled a change of its times with a
+      // build that did not regenerate.
+      await h.b.run((_) async {
+        await h.b.doses.generateDoseLogsForPrescription(p.prescriptionId);
+      });
+      await h.a.run((db) async {
+        await db.update(
+          'prescriptions',
+          {
+            'schedule_times': '["09:00","21:00"]',
+            'sync_status': SyncStatus.pendingUpdate,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [p.prescriptionId],
+        );
+        await h.a.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+        await h.a.service.syncAll();
+      });
+      await h.b.appSync(ensure: false);
+      h.b.pullHook = true;
+      expect(await h.b.slots(p.prescriptionId), hasLength(6));
+
+      await h.b.resume();
+      await h.b.appSync(ensure: false);
+      await expectBMatchesA(p.prescriptionId);
+    });
+
+    test('pending doses at times the schedule no longer has are dropped on '
+        'resume', () async {
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1, 8),
+        durationDays: 1,
+      );
+      await h.b.appSync(ensure: false);
+      // A full pull brought a dose A dropped from an earlier schedule.
+      final leftover = await h.b.run(
+        (db) => seedDoseLog(
+          db,
+          p.prescriptionId,
+          DateTime(today.year, today.month, today.day + 1, 11),
+        ),
+      );
+      await h.b.run((_) => h.b.reminders.reconcile());
+      expect(await h.b.remindersFor(p.prescriptionId), contains(leftover));
+
+      await h.b.resume();
+      await expectBMatchesA(p.prescriptionId);
+    });
+
+    test('a slot the server holds a tombstone for is not generated again '
+        'after every sync', () async {
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1, 8),
+        durationDays: 1,
+      );
+      final gone = scheduledDoseId(
+        p.prescriptionId,
+        DateTime(today.year, today.month, today.day + 1, 8),
+      );
+      h.server.doses.table.tombstone(gone);
+      await h.a.run((db) async {
+        await db.delete('dose_logs', where: 'id = ?', whereArgs: [gone]);
+      });
+      h.b.pullHook = false;
+      await h.b.appSync(ensure: false);
+      h.b.pullHook = true;
+
+      final before = h.server.doses.table.insertBatches.length;
+      for (var i = 0; i < 4; i++) {
+        await h.b.appSync();
+      }
+      expect(await h.b.slots(p.prescriptionId), hasLength(2));
+      // One attempt that brought the tombstone back, then nothing.
+      expect(h.server.doses.table.insertBatches.length - before, 1);
     });
   });
 }

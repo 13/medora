@@ -282,16 +282,29 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final prescription = await prescriptionLocal.getPrescriptionById(
         prescriptionId,
       );
-      final stillScheduled = prescription == null
-          ? const <String>{}
-          : prescription.toDomain().scheduledDoseTimes.map(doseSlotKey).toSet();
+      final times = prescription == null
+          ? const <DateTime>[]
+          : prescription.toDomain().scheduledDoseTimes;
+      final stillScheduled = times.map(doseSlotKey).toSet();
       final existing = await localDatasource.getDoseLogsByPrescription(
         prescriptionId,
       );
+      // A pending dose stored under a slot's id at another time (an older
+      // build wrote some slots hours off) is that slot: generating it again
+      // would only bring the same row back from the server.
+      final storedKeys = {
+        for (final d in existing) doseSlotKey(d.scheduledTime),
+      };
+      final unmatchedIds = {
+        for (final t in times)
+          if (!storedKeys.contains(doseSlotKey(t)))
+            scheduledDoseId(prescriptionId, t),
+      };
       final keepIds = {
         for (final dose in existing)
           if (dose.status == DoseStatus.pending &&
-              stillScheduled.contains(doseSlotKey(dose.scheduledTime)))
+              (stillScheduled.contains(doseSlotKey(dose.scheduledTime)) ||
+                  unmatchedIds.contains(dose.id)))
             dose.id,
       };
       // Delete only pending (not yet taken/skipped/missed) dose logs

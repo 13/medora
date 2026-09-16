@@ -48,6 +48,7 @@ import 'package:medora/services/backup_file_picker.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_maintenance_service.dart';
+import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/mlkit_scanner_ports.dart';
 import 'package:medora/services/photo_storage.dart';
@@ -323,6 +324,12 @@ final syncServiceProvider = Provider<SyncService>((ref) {
       final marker = ref.read(localUploadMarkerProvider);
       if (marker.ownerUserId == null) await marker.setOwner(userId);
     },
+    // A prescription made or rescheduled on another device: its doses (and
+    // so its reminders) are generated here; the listener in
+    // [syncStateStreamProvider] reconciles the reminders once the cycle ends.
+    onPrescriptionsPulled: (pulled) async {
+      await ref.read(doseScheduleServiceProvider).applyPulled(pulled);
+    },
   );
   if (service.isAvailable) service.startAutoSync();
   ref.onDispose(service.dispose);
@@ -347,11 +354,10 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
       // cycle still applied every row that did not fail.
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
-      ref.read(todaysDoseLogsProvider.notifier).refresh();
+      unawaited(_afterSync(ref));
       // The plain refresh() does not re-plan the stock alerts (only the
       // mutation methods do), so without this a restock on another device
-      // still announces "0 left" here until the next cold start. The dose
-      // side is covered: todaysDoseLogsProvider.refresh() reconciles.
+      // still announces "0 left" here until the next cold start.
       unawaited(ref.read(stockReminderSchedulerProvider).reconcile());
     }
   });
@@ -360,6 +366,20 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
 
   return syncService.stateStream;
 });
+
+/// After a sync: generate what the pulled data still lacks (see
+/// [DoseScheduleService.ensureScheduled]), then refetch every dose view and
+/// re-plan the reminders from the result.
+Future<void> _afterSync(Ref ref) async {
+  try {
+    await ref.read(doseScheduleServiceProvider).ensureScheduled();
+    if (!ref.mounted) return;
+    ref.invalidateDoseData();
+    await ref.read(reminderSchedulerProvider).reconcile();
+  } catch (e) {
+    debugPrint('Sync: refreshing doses after the sync failed: $e');
+  }
+}
 
 /// The report of the most recent sync cycle; re-evaluated on every state change.
 final syncLastReportProvider = Provider<SyncReport?>((ref) {
@@ -375,6 +395,16 @@ final doseMaintenanceProvider = Provider<DoseMaintenanceService>(
   (ref) => DoseMaintenanceService(doses: ref.watch(doseLogRepositoryProvider)),
 );
 
+/// Keeps every prescription's doses in line with its schedule, whichever
+/// device changed it.
+final doseScheduleServiceProvider = Provider<DoseScheduleService>(
+  (ref) => DoseScheduleService(
+    prescriptions: ref.watch(prescriptionRepositoryProvider),
+    doses: ref.watch(doseLogRepositoryProvider),
+    now: ref.watch(nowProvider),
+  ),
+);
+
 /// Delay before the startup sync; tests override this with Duration.zero.
 final syncStartupDelayProvider = Provider<Duration>(
   (_) => const Duration(seconds: 2),
@@ -388,11 +418,16 @@ final appStartupTasksProvider = Provider<AppStartupTasks>((ref) {
   var sweptScanTemp = false;
   return AppStartupTasks(
     maintenance: () async {
+      // Doses a pull or an older build left out come first, so the sweep
+      // and the reminders below see them.
+      final regenerated = await ref
+          .read(doseScheduleServiceProvider)
+          .ensureScheduled();
       final grace = Duration(minutes: ref.read(missedGraceMinutesProvider));
       final changed = await ref
           .read(doseMaintenanceProvider)
           .markOverdueAsMissed(grace: grace);
-      if (changed > 0) {
+      if (changed > 0 || regenerated > 0) {
         await ref.read(todaysDoseLogsProvider.notifier).refresh();
         ref.read(doseDataVersionProvider.notifier).bump();
       }

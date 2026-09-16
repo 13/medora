@@ -63,6 +63,7 @@ import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
 import 'package:medora/services/connectivity_service.dart';
+import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_report.dart';
@@ -91,6 +92,7 @@ class SyncService {
     Stream<bool>? onlineStream,
     DateTime Function()? now,
     this.onFirstSuccessfulSync,
+    this.onPrescriptionsPulled,
     this.requestTimeout = const Duration(seconds: 30),
     this.capRetryDelay = const Duration(seconds: 15),
   }) : _cursors = cursors ?? SyncCursorStore.inMemory(),
@@ -118,6 +120,15 @@ class SyncService {
   /// clean sync records it. The callback itself decides whether an owner is
   /// already stored.
   final Future<void> Function(String userId)? onFirstSuccessfulSync;
+
+  /// Called once per pull that stored a prescription new to this device or
+  /// one whose schedule changed, after the dose logs were pulled. The doses
+  /// the other device generated for it carry the 1970 stamp and never come
+  /// with a delta pull, so this device generates its own copies (see
+  /// `DoseScheduleService.applyPulled`); the sync they ask for runs as this
+  /// cycle's re-run and adopts the server's copies. A failure only logs.
+  final Future<void> Function(PulledPrescriptions pulled)?
+  onPrescriptionsPulled;
 
   /// How long one request to the server may take before the cycle gives up
   /// on it. A timed-out request counts as a network failure: the row stays
@@ -861,6 +872,7 @@ class SyncService {
   // ── Pull ───────────────────────────────────────────────────
 
   Future<void> _pullAll(SyncReport report, {required bool force}) async {
+    final pulled = PulledPrescriptions();
     await _pullFamilies(report, failFast: force);
     await Future.wait([
       _pullTable<MedicationModel>(
@@ -896,7 +908,7 @@ class SyncService {
       updatedAtOf: (p) => p.updatedAt,
       deletedAtOf: (p) => p.deletedAt,
       delete: prescriptionLocal.hardDelete,
-      upsert: (p) => _safeUpsertPrescription(p, force: force),
+      upsert: (p) => _safeUpsertPrescription(p, pulled, force: force),
     );
     await _pullTable<DoseLogModel>(
       table: 'dose_logs',
@@ -909,6 +921,14 @@ class SyncService {
       delete: doseLogLocal.hardDelete,
       upsert: (d) => _safeUpsertDoseLog(d, force: force),
     );
+    final hook = onPrescriptionsPulled;
+    if (hook != null && !pulled.isEmpty) {
+      try {
+        await hook(pulled);
+      } catch (e) {
+        debugPrint('Sync: generating doses for pulled prescriptions: $e');
+      }
+    }
   }
 
   /// Delta pull for one table: asks the remote only for rows newer than the
@@ -1035,16 +1055,37 @@ class SyncService {
     await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
   }
 
+  /// Also records in [pulled] whether the row is new here or its schedule
+  /// changed.
   Future<void> _safeUpsertPrescription(
-    PrescriptionModel p, {
+    PrescriptionModel p,
+    PulledPrescriptions pulled, {
     bool force = false,
   }) async {
     if (!force &&
         await _localPendingIsNewer('prescriptions', p.id, p.updatedAt)) {
       return;
     }
+    final before = await prescriptionLocal.getPrescriptionById(p.id);
     await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
+    if (before == null) {
+      pulled.added.add(p.id);
+    } else if (_scheduleChanged(before, p)) {
+      pulled.changed.add(p.id);
+    }
   }
+
+  /// True when [after] generates other doses than [before] would.
+  static bool _scheduleChanged(
+    PrescriptionModel before,
+    PrescriptionModel after,
+  ) =>
+      before.scheduleType != after.scheduleType ||
+      before.intervalHours != after.intervalHours ||
+      before.durationDays != after.durationDays ||
+      before.startTime != after.startTime ||
+      before.isActive != after.isActive ||
+      !listEquals(before.scheduleTimes, after.scheduleTimes);
 
   Future<void> _safeUpsertDoseLog(DoseLogModel d, {bool force = false}) async {
     if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) {

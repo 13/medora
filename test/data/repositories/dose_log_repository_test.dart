@@ -101,6 +101,31 @@ void main() {
     expect(await db.query('dose_logs'), hasLength(3));
   });
 
+  test('regenerating keeps a pending dose stored under a slot\'s id at '
+      'another time', () async {
+    final db = await AppDatabase.instance.database;
+    final seeded = await seedPrescription(db, durationDays: 1);
+    final slot = DateTime(2026, 3, 1, 16);
+    final id = await seedDoseLog(
+      db,
+      seeded.prescriptionId,
+      DateTime(2026, 3, 1, 18),
+      id: scheduledDoseId(seeded.prescriptionId, slot),
+    );
+    final other = await seedDoseLog(
+      db,
+      seeded.prescriptionId,
+      DateTime(2026, 3, 1, 19),
+    );
+
+    await makeRepo().regenerateDoseLogsForPrescription(seeded.prescriptionId);
+
+    final ids = [for (final r in await db.query('dose_logs')) r['id']];
+    expect(ids, contains(id));
+    expect(ids, isNot(contains(other)));
+    expect(ids, hasLength(3));
+  });
+
   test('a scheduled dose id depends on the prescription and the minute', () {
     expect(
       scheduledDoseId('p1', DateTime(2026, 3, 1, 8, 0, 30)),
