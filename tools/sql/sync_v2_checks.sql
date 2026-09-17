@@ -39,6 +39,38 @@ begin
     'fill: bookkeeping and the stock have no edit time ' || m::text;
 end $$;
 
+-- The fill never uses a time later than the update's arrival, even when
+-- the row carries one from a clock far ahead.
+update medications set notes = 'x' where id = 'pre-migration-future';
+do $$
+declare m jsonb;
+begin
+  select field_edited_at into m from medications where id = 'pre-migration-future';
+  assert (m->'name'->>'at')::timestamptz <= now(),
+    'fill: a future row time is capped at arrival ' || m::text;
+end $$;
+
+-- A 0.4.0 write with a write id and no edit time, on a row that has none
+-- (apply_stock_change writes like this): the row's updated_at stands in.
+update medications set notes = 'y', write_id = 'e0000000-0000-0000-0000-000000000001'
+ where id = 'pre-migration-3';
+do $$ begin
+  assert (select edited_at = timestamptz '2026-01-01T00:00:00Z'
+            from medications where id = 'pre-migration-3'),
+    'update: a write id without an edit time takes the old updated_at';
+end $$;
+
+-- The migration deleted the live dose it found under a deleted
+-- prescription, as the app's own change.
+do $$ begin
+  assert (select deleted_at = timestamptz '2026-01-02T00:00:00Z'
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and write_id is not null
+              and updated_at = timestamptz '2026-01-03T08:00:00Z'
+            from dose_logs where id = 'pre-orphan-d'),
+    'repair: a live dose under a deleted prescription is deleted by the migration';
+end $$;
+
 -- A 0.3.0 update of that row (a later transaction) stamps it.
 update medications set name = 'Old' where id = 'pre-migration';
 do $$ begin
@@ -147,6 +179,9 @@ begin
               and updated_at = timestamptz '1970-01-01T00:00:00Z'
               and edited_at = timestamptz '1970-01-01T00:00:00Z'
             from dose_logs where id = 'd1'), 'automatic change: updated_at kept, edit time normalised';
+  assert (select field_edited_at->'scheduled_time' = '{"at": "1970-01-01T00:00:00+00:00", "auto": true}'
+            from dose_logs where id = 'd1'),
+    'fill: a row whose time is automatic fills its columns as automatic';
   update dose_logs set status = 'taken', taken_time = now(),
          write_id = '55555555-5555-5555-5555-555555555555', edited_at = now() - interval '1 minute'
    where id = 'd1' and row_version = 2;
@@ -596,7 +631,9 @@ do $$ begin
   update treatments set deleted_at = now(), write_id = '88888888-8888-8888-8888-888888888888',
          edited_at = now() where id = 't1';
   assert (select deleted_at is not null and write_id is null and row_version = 2
-            from prescriptions where id = 'p1'), 'cascade: child tombstoned as a legacy write';
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+            from prescriptions where id = 'p1'),
+    'cascade: child tombstoned as the app''s own change, with no write id';
   assert (select not (field_edited_at ? 'deleted_at') and field_edited_at ? 'dosage'
             from prescriptions where id = 'p1'), 'cascade: a tombstone has no edit time of its own';
   insert into treatments (id, user_id, name, start_date) values ('t2', auth.uid(), 'Cold', '2026-09-10');
@@ -608,6 +645,145 @@ update treatments set deleted_at = now(), write_id = '89898989-8989-8989-8989-89
        edited_at = now() where id = 't2';
 do $$ begin
   assert pg_temp.moved('p2'), 'cascade: the child''s sync_xid moves';
+end $$;
+
+-- Children follow their parents (review C-1): the server never holds a
+-- live row under a deleted parent, whoever writes it and in what order.
+-- `oc` rows: a prescription with two generated doses, one of them dropped
+-- from the schedule (an automatic tombstone).
+insert into treatments (id, user_id, name, start_date) values ('oc-t', auth.uid(), 'Kids', '2026-09-10');
+insert into medications (id, user_id, name) values ('oc-m', auth.uid(), 'Syrup');
+insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
+  values ('oc-p', 'oc-t', 'oc-m', '1', '2026-09-10T08:00:00Z');
+insert into dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at)
+  values ('oc-d1', 'oc-p', '2026-09-11T08:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000001', '1970-01-01T00:00:00Z'),
+         ('oc-d2', 'oc-p', '2026-09-11T20:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000002', '1970-01-01T00:00:00Z');
+update dose_logs set deleted_at = now(), write_id = 'c0000000-0000-0000-0000-000000000003',
+       edited_at = '1970-01-01T00:00:00Z'
+ where id = 'oc-d2' and status = 'pending' and deleted_at is null;
+-- A person deletes the prescription.
+update prescriptions set deleted_at = now(), write_id = 'c0000000-0000-0000-0000-000000000004',
+       edited_at = now() where id = 'oc-p';
+do $$ begin
+  assert (select deleted_at is not null and write_id is null
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and updated_at > timestamptz '1970-01-02T00:00:00Z'
+            from dose_logs where id = 'oc-d1'),
+    'orphans: the cascade deletes a live dose as the app''s own change, which 0.3.0 sees';
+  assert (select edited_at = timestamptz '1970-01-01T00:00:00Z' from dose_logs where id = 'oc-d2'),
+    'orphans: a dose deleted before keeps its own tombstone';
+end $$;
+-- A device that has not heard of it yet sends a generated dose, and a
+-- person's take of the dropped one: both land, deleted.
+insert into dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at)
+  values ('oc-d3', 'oc-p', '2026-09-12T08:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000005', '1970-01-01T00:00:00Z')
+  on conflict (id) do nothing;
+update dose_logs set deleted_at = null, status = 'taken', taken_time = now(),
+       write_id = 'c0000000-0000-0000-0000-000000000006', edited_at = now() - interval '1 minute',
+       field_edited_at = jsonb_build_object('status', pg_temp.entry(now() - interval '1 minute'))
+ where id = 'oc-d2';
+do $$ begin
+  assert (select count(*) from dose_logs where prescription_id = 'oc-p' and deleted_at is null) = 0,
+    'orphans: no live dose under a deleted prescription';
+  assert (select d.deleted_at = p.deleted_at and d.edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and d.write_id = 'c0000000-0000-0000-0000-000000000005'
+            from dose_logs d join prescriptions p on p.id = d.prescription_id where d.id = 'oc-d3'),
+    'orphans: an insert under a deleted parent is stored deleted, automatic, with its write id';
+  assert (select status = 'taken' and deleted_at is not null
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and write_id = 'c0000000-0000-0000-0000-000000000006'
+              and field_edited_at->'status'->>'auto' = 'false'
+            from dose_logs where id = 'oc-d2'),
+    'orphans: a take under a deleted prescription lands deleted: the person''s delete wins';
+end $$;
+-- 0.3.0 sends a take of a dose under the deleted prescription (whole row).
+insert into dose_logs (id, prescription_id, scheduled_time, taken_time, status, notes, updated_at)
+  values ('oc-d1', 'oc-p', '2026-09-11T08:00:00Z', now(), 'taken', null, now())
+  on conflict (id) do update set prescription_id = excluded.prescription_id,
+    scheduled_time = excluded.scheduled_time, taken_time = excluded.taken_time,
+    status = excluded.status, notes = excluded.notes, updated_at = excluded.updated_at;
+insert into dose_logs (id, prescription_id, scheduled_time, status, updated_at)
+  values ('oc-d4', 'oc-p', '2026-09-12T20:00:00Z', 'taken', now())
+  on conflict (id) do nothing;
+do $$ begin
+  assert (select bool_and(deleted_at is not null and write_id is null
+                          and edited_at = timestamptz '1970-01-01T00:00:00Z'
+                          and updated_at > now() - interval '1 minute')
+            from dose_logs where id in ('oc-d1', 'oc-d4')),
+    'orphans: a 0.3.0 write under a deleted parent is stored deleted, and 0.3.0 sees it';
+end $$;
+-- The same for a prescription: under a deleted treatment, under a deleted
+-- medication, and one brought back under a deleted treatment.
+insert into treatments (id, user_id, name, start_date) values ('oc-t2', auth.uid(), 'Live', '2026-09-10');
+insert into medications (id, user_id, name, deleted_at) values ('oc-m2', auth.uid(), 'Gone', now());
+insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
+  values ('oc-p2', 'oc-t', 'oc-m', '1', '2026-09-10T08:00:00Z'),
+         ('oc-p3', 'oc-t2', 'oc-m2', '1', '2026-09-10T08:00:00Z'),
+         ('oc-p4', 'oc-t2', 'oc-m', '1', '2026-09-10T08:00:00Z');
+update treatments set deleted_at = now(), write_id = 'c0000000-0000-0000-0000-000000000007',
+       edited_at = now() where id = 'oc-t';
+do $$ begin
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+            from prescriptions where id = 'oc-p2'),
+    'orphans: a treatment''s delete cascades to its prescription as the app''s own';
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+            from prescriptions where id = 'oc-p3'),
+    'orphans: a prescription under a deleted medication is stored deleted';
+end $$;
+update prescriptions set deleted_at = null, notes = 'back', write_id = 'c0000000-0000-0000-0000-000000000008',
+       edited_at = now() where id in ('oc-p2', 'oc-p4');
+do $$ begin
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and notes = 'back'
+            from prescriptions where id = 'oc-p2'),
+    'orphans: a prescription brought back under a deleted treatment stays deleted';
+  assert (select deleted_at is null and notes = 'back' from prescriptions where id = 'oc-p4'),
+    'orphans: a live row under live parents is written as sent';
+end $$;
+
+-- A 0.3.0 take of a dose 0.4.0 dropped brings it back (review I-2); a
+-- 0.3.0 write that leaves its status alone does not, and the tombstone
+-- stays the app's own.
+insert into dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at)
+  values ('lg-d1', 'oc-p4', '2026-09-13T08:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000011', '1970-01-01T00:00:00Z'),
+         ('lg-d2', 'oc-p4', '2026-09-13T20:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000012', '1970-01-01T00:00:00Z'),
+         ('lg-d3', 'oc-p4', '2026-09-14T08:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000013', '1970-01-01T00:00:00Z');
+update dose_logs set deleted_at = now(), write_id = gen_random_uuid(), edited_at = '1970-01-01T00:00:00Z'
+ where id in ('lg-d1', 'lg-d2', 'lg-d3') and status = 'pending' and deleted_at is null;
+insert into dose_logs (id, prescription_id, scheduled_time, taken_time, status, notes, updated_at)
+  values ('lg-d1', 'oc-p4', '2026-09-13T08:00:00Z', now(), 'taken', null, now()),
+         ('lg-d2', 'oc-p4', '2026-09-13T20:00:00Z', null, 'pending', 'note', now()),
+         ('lg-d3', 'oc-p4', '2026-09-14T08:00:00Z', null, 'missed', null, now())
+  on conflict (id) do update set prescription_id = excluded.prescription_id,
+    scheduled_time = excluded.scheduled_time, taken_time = excluded.taken_time,
+    status = excluded.status, notes = excluded.notes, updated_at = excluded.updated_at;
+do $$ begin
+  assert (select deleted_at is null and status = 'taken' and write_id is null
+              and edited_at > now() - interval '1 minute'
+              and updated_at = edited_at
+            from dose_logs where id = 'lg-d1'),
+    'legacy take: a dose the app dropped comes back as a person''s change';
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and notes = 'note' and field_edited_at->'notes'->>'auto' = 'false'
+            from dose_logs where id = 'lg-d2'),
+    'legacy take: a write that leaves the status alone keeps the app''s tombstone';
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+            from dose_logs where id = 'lg-d3'),
+    'legacy take: 0.3.0''s own "missed" does not bring a dropped dose back';
+end $$;
+-- A person's 0.3.0 delete of a dose the app dropped is a person's.
+update dose_logs set deleted_at = now() where id = 'lg-d2';
+update dose_logs set status = 'taken' where id = 'lg-d2';
+do $$ begin
+  assert (select deleted_at is not null and edited_at > now() - interval '1 minute'
+            from dose_logs where id = 'lg-d2'),
+    'legacy take: a dose a person deleted stays deleted';
 end $$;
 
 -- Families, as the app uses them (family_remote_datasource.dart).

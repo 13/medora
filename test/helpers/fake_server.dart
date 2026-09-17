@@ -2,8 +2,10 @@
 /// `20260918000000_sync_v2.sql`: one xid per request, a horizon held back
 /// by transactions still open, `row_version`, the write-id rule, edit-time
 /// normalisation, the edit times per column (`field_edited_at`), the
-/// `updated_at` rules, guarded updates, the tombstone
-/// cascade, hard deletes with their foreign-key cascade, the stock ledger
+/// `updated_at` rules, guarded updates, the tombstone cascade and the
+/// children of deleted parents (stored deleted), a 0.3.0 take bringing
+/// back a dose the app deleted, hard deletes with their foreign-key
+/// cascade, the stock ledger
 /// and an answer cap ([FakeServerCore.rowCap], 1000 by default; a real
 /// project may be set lower).
 ///
@@ -236,11 +238,16 @@ class FakeServerCore {
 
   // ── The trigger ────────────────────────────────────────────
 
+  /// `medora_sync_stamp()` and `update_updated_at()` for a write of [row]
+  /// over [old] (null: an insert). [cascade] marks the tombstone cascade, a
+  /// write another trigger makes.
   Map<String, dynamic> _stamp(
+    String table,
     Map<String, dynamic>? old,
     Map<String, dynamic> row,
-    int xid,
-  ) {
+    int xid, {
+    bool cascade = false,
+  }) {
     final now = clock().toUtc();
     row['sync_xid'] = xid;
     var edited = _time(row['edited_at']);
@@ -261,20 +268,55 @@ class FakeServerCore {
     }
     final weak = edited.isBefore(_weakCeiling);
     edited = weak ? _epoch : (edited.isAfter(now) ? now : edited);
+    // The row stays or becomes the app's own tombstone.
+    var appDelete = false;
+    if (old != null &&
+        legacy &&
+        !cascade &&
+        old['deleted_at'] != null &&
+        (_time(old['edited_at'])?.isBefore(_weakCeiling) ?? false) &&
+        _same(row['deleted_at'], old['deleted_at'])) {
+      // A 0.3.0 take of a dose the app deleted brings it back.
+      if (table == 'dose_logs' &&
+          const {'taken', 'skipped'}.contains(row['status']) &&
+          !_same(row['status'], old['status'])) {
+        row['deleted_at'] = null;
+      } else {
+        appDelete = true;
+      }
+    }
     row['edited_at'] = _iso(edited);
     row['field_edited_at'] = _fieldTimes(old, row, legacy, edited, now);
-    if (old == null) {
-      if (!weak) {
-        row['updated_at'] = _iso(now);
-      } else if (!row.containsKey('updated_at')) {
-        row['updated_at'] = _iso(now);
+    if (old == null && !weak) row['updated_at'] = _iso(now);
+    // A live child under a deleted parent is stored deleted.
+    if (row['deleted_at'] == null) {
+      final parentDeleted = _parentDeleted(table, row);
+      if (parentDeleted != null) {
+        row['deleted_at'] = parentDeleted;
+        appDelete = true;
       }
-    } else {
-      row['updated_at'] = row['write_id'] != null && weak
-          ? old['updated_at']
-          : _iso(now);
+    }
+    if (cascade || appDelete) row['edited_at'] = _iso(_epoch);
+    if (old != null) {
+      final automatic =
+          row['write_id'] != null && row['edited_at'] == _iso(_epoch);
+      row['updated_at'] = automatic ? old['updated_at'] : _iso(now);
     }
     return row;
+  }
+
+  /// The `deleted_at` of a deleted parent of [row], a row of [table]; null
+  /// when every parent it names is live or not here.
+  Object? _parentDeleted(String table, Map<String, dynamic> row) {
+    Object? deletedAt(String parent, Object? id) =>
+        rowsOf(parent)[id]?['deleted_at'];
+    return switch (table) {
+      'prescriptions' =>
+        deletedAt('treatments', row['treatment_id']) ??
+            deletedAt('medications', row['medication_id']),
+      'dose_logs' => deletedAt('prescriptions', row['prescription_id']),
+      _ => null,
+    };
   }
 
   /// The trigger's edit times per column: sent entries for the columns a
@@ -346,7 +388,7 @@ class FakeServerCore {
     for (final json in jsons) {
       final id = json['id'] as String;
       if (rows.containsKey(id)) continue;
-      rows[id] = _stamp(null, {..._defaults(table, json), ...json}, xid);
+      rows[id] = _stamp(table, null, {..._defaults(table, json), ...json}, xid);
       inserted++;
     }
     return inserted;
@@ -372,7 +414,12 @@ class FakeServerCore {
   Map<String, dynamic> _defaults(String table, Map<String, dynamic> json) {
     final columns =
         serverColumns[table] ??
-        const {'created_at': _nowDefault, 'deleted_at': null, 'write_id': null};
+        const {
+          'created_at': _nowDefault,
+          'updated_at': _nowDefault,
+          'deleted_at': null,
+          'write_id': null,
+        };
     final now = _iso(clock());
     return {
       for (final MapEntry(:key, :value) in columns.entries)
@@ -408,16 +455,23 @@ class FakeServerCore {
     String table,
     Map<String, dynamic> old,
     Map<String, dynamic> changes,
-    int xid,
-  ) {
+    int xid, {
+    bool cascade = false,
+  }) {
     final id = old['id'] as String;
-    final row = _stamp(old, {
-      ...old,
-      // A client that sends no write id leaves the column as it was; the
-      // trigger then clears it.
-      'write_id': old['write_id'],
-      ...changes,
-    }, xid);
+    final row = _stamp(
+      table,
+      old,
+      {
+        ...old,
+        // A client that sends no write id leaves the column as it was; the
+        // trigger then clears it.
+        'write_id': old['write_id'],
+        ...changes,
+      },
+      xid,
+      cascade: cascade,
+    );
     rowsOf(table)[id] = row;
     final child = _cascade[table];
     if (child != null &&
@@ -425,7 +479,13 @@ class FakeServerCore {
         row['deleted_at'] != null) {
       for (final c in rowsOf(child.$1).values.toList()) {
         if (c[child.$2] == id && c['deleted_at'] == null) {
-          _update(child.$1, c, {'deleted_at': row['deleted_at']}, xid);
+          _update(
+            child.$1,
+            c,
+            {'deleted_at': row['deleted_at']},
+            xid,
+            cascade: true,
+          );
         }
       }
     }

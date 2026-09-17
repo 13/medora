@@ -53,6 +53,15 @@ test -f "$sync_v2" || { echo "missing $sync_v2" >&2; exit 1; }
       echo "insert into medications (id, user_id, name) values ('pre-migration', '00000000-0000-0000-0000-0000000000cc', 'Old');"
       # One with a known stamp: its first update fills the edit-time map.
       echo "insert into medications (id, user_id, name, notes, updated_at) values ('pre-migration-2', '00000000-0000-0000-0000-0000000000cc', 'Old', 'n', '2026-01-01T00:00:00Z');"
+      # One a 0.4.0 write without an edit time reaches first, and one
+      # stamped by a clock far ahead.
+      echo "insert into medications (id, user_id, name, updated_at) values ('pre-migration-3', '00000000-0000-0000-0000-0000000000cc', 'Old', '2026-01-01T00:00:00Z');"
+      echo "insert into medications (id, user_id, name, updated_at) values ('pre-migration-future', '00000000-0000-0000-0000-0000000000cc', 'Ahead', '2099-01-01T00:00:00Z');"
+      # A live dose under a deleted prescription, as 0.3.0 could leave it:
+      # the migration deletes it.
+      echo "insert into treatments (id, user_id, name, start_date) values ('pre-orphan-t', '00000000-0000-0000-0000-0000000000cc', 'Old', '2026-01-01');"
+      echo "insert into prescriptions (id, treatment_id, medication_id, dosage, start_time, deleted_at) values ('pre-orphan-p', 'pre-orphan-t', 'pre-migration', '1', '2026-01-01T08:00:00Z', '2026-01-02T00:00:00Z');"
+      echo "insert into dose_logs (id, prescription_id, scheduled_time, status, updated_at) values ('pre-orphan-d', 'pre-orphan-p', '2026-01-03T08:00:00Z', 'taken', '2026-01-03T08:00:00Z');"
       printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'
       # Re-runnable: apply it a second time.
       printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'

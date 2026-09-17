@@ -252,17 +252,102 @@ final parityScript = <ParityStep>[
     {'quantity': 9, 'write_id': _uuid(10)},
   ),
   ParityStep.update(
+    'the schedule drops the second dose: the app\'s own tombstone',
+    'dose_logs',
+    'par-d2',
+    {'deleted_at': _apr, 'write_id': _uuid(11), 'edited_at': _epoch},
+  ),
+  const ParityStep.upsert(
+    '0.3.0 re-sends the dropped dose with a note: still the app\'s tombstone',
+    'dose_logs',
+    {
+      'id': 'par-d2',
+      'prescription_id': 'par-p1',
+      'scheduled_time': '2020-01-01T16:00:00.000Z',
+      'status': 'pending',
+      'notes': 'n',
+      'updated_at': _apr,
+    },
+  ),
+  const ParityStep.upsert(
+    '0.3.0 takes the dropped dose: it comes back as a person\'s change',
+    'dose_logs',
+    {
+      'id': 'par-d2',
+      'prescription_id': 'par-p1',
+      'scheduled_time': '2020-01-01T16:00:00.000Z',
+      'status': 'taken',
+      'taken_time': _apr,
+      'notes': 'n',
+      'updated_at': _apr,
+    },
+  ),
+  ParityStep.update(
     'a person deletes the treatment: the tombstone cascades to the '
-        'prescription and its live dose',
+        'prescription and its doses as the app\'s own change',
     'treatments',
     'par-t1',
-    {'deleted_at': _may, 'write_id': _uuid(11), 'edited_at': _may},
+    {'deleted_at': _may, 'write_id': _uuid(12), 'edited_at': _may},
     check: const [
       ('treatments', 'par-t1'),
       ('prescriptions', 'par-p1'),
       ('dose_logs', 'par-d1'),
       ('dose_logs', 'par-d2'),
     ],
+  ),
+  ParityStep.insert(
+    'a device that has not heard of it sends a generated dose: stored '
+        'deleted',
+    'dose_logs',
+    {
+      'id': 'par-d3',
+      'prescription_id': 'par-p1',
+      'scheduled_time': '2020-01-02T08:00:00.000Z',
+      'status': 'pending',
+      'updated_at': _epoch,
+      'write_id': _uuid(13),
+      'edited_at': _epoch,
+      'field_edited_at': <String, Object?>{},
+    },
+  ),
+  ParityStep.update(
+    'and brings the cascaded dose back with a note: stored deleted',
+    'dose_logs',
+    'par-d1',
+    {
+      'deleted_at': null,
+      'notes': 'after food',
+      'write_id': _uuid(14),
+      'edited_at': _may,
+      'field_edited_at': {'notes': _at(_may)},
+    },
+  ),
+  const ParityStep.upsert(
+    '0.3.0 skips a cascaded dose: brought back, then deleted with its '
+        'parent again',
+    'dose_logs',
+    {
+      'id': 'par-d2',
+      'prescription_id': 'par-p1',
+      'scheduled_time': '2020-01-01T16:00:00.000Z',
+      'status': 'skipped',
+      'notes': 'n',
+      'updated_at': _may,
+    },
+  ),
+  ParityStep.insert(
+    'a prescription sent under the deleted treatment: stored deleted',
+    'prescriptions',
+    {
+      'id': 'par-p2',
+      'treatment_id': 'par-t1',
+      'medication_id': 'par-m1',
+      'dosage': '2 tablets',
+      'start_time': '2020-05-02T08:00:00.000Z',
+      'write_id': _uuid(15),
+      'edited_at': _may,
+      'field_edited_at': <String, Object?>{},
+    },
   ),
 ];
 
@@ -478,5 +563,24 @@ void main() {
     expect(inserted.keys, ['doctor', 'name', 'notes']);
     expect(inserted['notes'], {'at': '@5', 'auto': false});
     expect(inserted['doctor'], {'at': _epoch, 'auto': true});
+
+    final noted = after('0.3.0 re-sends the dropped dose');
+    expect([noted['deleted'], noted['edited_at']], [true, _epoch]);
+    expect(after('0.3.0 takes the dropped dose')['deleted'], isFalse);
+    final cascade = parityScript.indexWhere(
+      (s) => s.label.startsWith('a person deletes the treatment'),
+    );
+    for (final row in results[cascade].skip(1)) {
+      expect([row['deleted'], row['edited_at']], [true, _epoch]);
+    }
+    for (final label in [
+      'a device that has not heard of it',
+      'and brings the cascaded dose back',
+      '0.3.0 skips a cascaded dose',
+      'a prescription sent under the deleted treatment',
+    ]) {
+      expect(after(label)['deleted'], isTrue, reason: label);
+      expect(after(label)['edited_at'], _epoch, reason: label);
+    }
   });
 }

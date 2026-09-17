@@ -10,7 +10,9 @@
 --
 -- No backfill UPDATE: every new column is added with a constant default
 -- (no table rewrite, no trigger fires), so no row changes `updated_at`
--- and no 0.3.0 device sees its pending edit turn stale.
+-- and no 0.3.0 device sees its pending edit turn stale. The one UPDATE
+-- (section 7) deletes the live rows it finds under a deleted parent, as
+-- the app's own change.
 --
 -- Run it in one transaction (`supabase db push` and the SQL editor do).
 -- Every statement can be run again, so a failed run can simply be
@@ -98,6 +100,23 @@ create index if not exists idx_dose_sync  on public.dose_logs     (sync_xid, id)
 -- Runs BEFORE the `<table>_updated_at` trigger: Postgres fires BEFORE
 -- triggers of one event in name order, and `_sync_stamp` sorts before
 -- `_updated_at`. update_updated_at() below relies on that order.
+--
+-- Deletes. A tombstone whose edited_at is 1970 is the app's own delete:
+-- a dose dropped from a changed schedule, a child deleted with its
+-- parent. A 0.4.0 device lets a person's change still waiting beat it,
+-- and lets the schedule generate the dose again. Every other tombstone
+-- is a person's delete and always wins. Around that:
+-- - a child written live under a deleted parent (prescriptions under a
+--   treatment or medication, doses under a prescription) is stored
+--   deleted, with the parent's deleted_at, as the app's own delete. The
+--   write still lands (its columns, its write id), so the device that
+--   sent it learns the row is gone. With the tombstone cascade below, the
+--   server never holds a live row under a deleted parent;
+-- - the cascade (a write made by another trigger) deletes as the app's own
+--   change, but still moves updated_at, so 0.3.0 sees it as before;
+-- - a 0.3.0 write that sets a dose the app deleted to taken or skipped
+--   brings it back (a person's take beats the app's delete). Any other
+--   0.3.0 write to such a row leaves it deleted, still as the app's own.
 
 create or replace function public.medora_sync_stamp()
 returns trigger
@@ -114,6 +133,11 @@ declare
     'field_edited_at', 'quantity'];
   v_now    timestamptz := now();
   v_legacy boolean := false;
+  -- A write made by another trigger: the tombstone cascade.
+  v_cascade boolean := pg_trigger_depth() > 1;
+  -- The row stays or becomes the app's own tombstone.
+  v_app_delete boolean := false;
+  v_parent_deleted timestamptz;
   v_new    jsonb;
   v_old    jsonb;
   v_sent   jsonb;
@@ -152,15 +176,31 @@ begin
     end if;
   end if;
 
+  v_new := to_jsonb(new);
+  if tg_op = 'UPDATE' then
+    v_old := to_jsonb(old);
+    -- A legacy write to a row the app deleted, that does not delete it
+    -- itself.
+    if v_legacy and not v_cascade and old.deleted_at is not null
+       and old.edited_at < c_ceiling
+       and new.deleted_at is not distinct from old.deleted_at then
+      if tg_table_name = 'dose_logs'
+         and v_new->>'status' in ('taken', 'skipped')
+         and (v_new->'status') is distinct from (v_old->'status') then
+        new.deleted_at := null;
+      else
+        v_app_delete := true;
+      end if;
+    end if;
+  end if;
+
   -- Edit times per column. A 0.4.0 client sends an entry for each column
   -- it writes; the entries are read only for the columns the write really
   -- changes (an insert: the columns it names), and never for a legacy
   -- write.
-  v_new := to_jsonb(new);
   if tg_op = 'INSERT' then
     v_sent := new.field_edited_at;
   else
-    v_old := to_jsonb(old);
     v_map := old.field_edited_at;
     if not v_legacy and new.field_edited_at is distinct from old.field_edited_at then
       v_sent := new.field_edited_at;
@@ -196,6 +236,27 @@ begin
     v_map := v_map || jsonb_build_object(v_key, jsonb_build_object('at', v_at, 'auto', v_auto));
   end loop;
   new.field_edited_at := v_map;
+
+  -- A live child under a deleted parent is stored deleted.
+  if new.deleted_at is null then
+    if tg_table_name = 'prescriptions' then
+      select coalesce(
+               (select t.deleted_at from public.treatments t where t.id = v_new->>'treatment_id'),
+               (select m.deleted_at from public.medications m where m.id = v_new->>'medication_id'))
+        into v_parent_deleted;
+    elsif tg_table_name = 'dose_logs' then
+      select p.deleted_at into v_parent_deleted
+        from public.prescriptions p where p.id = v_new->>'prescription_id';
+    end if;
+    if v_parent_deleted is not null then
+      new.deleted_at := v_parent_deleted;
+      v_app_delete := true;
+    end if;
+  end if;
+  if v_cascade or v_app_delete then
+    -- After the column times: the columns a write changes keep its time.
+    new.edited_at := c_epoch;
+  end if;
   return new;
 end;
 $$;
@@ -225,7 +286,9 @@ create trigger dose_logs_sync_stamp
 -- Medora 0.3.0 pulls by updated_at and skips its own pending edit when the
 -- server's updated_at is newer. A change the app made on its own must lose
 -- to that edit, so it leaves updated_at alone (0.3.0 neither pulls it nor
--- counts it as newer). Every other update is stamped now(), as before.
+-- counts it as newer). Every other update is stamped now(), as before,
+-- including the tombstone cascade and a 0.3.0 write (they send no write
+-- id).
 
 create or replace function public.update_updated_at()
 returns trigger
@@ -418,3 +481,33 @@ $$;
 
 revoke all on function public.apply_stock_change(uuid, text, integer, integer) from public, anon;
 grant execute on function public.apply_stock_change(uuid, text, integer, integer) to authenticated;
+
+-- 7. Live rows under deleted parents ---------------------------------------
+--
+-- Before this migration a device could leave a live child under a parent
+-- deleted elsewhere (a dose generated offline, pushed after the
+-- prescription was deleted). Every device would fail to store such a row.
+-- They are deleted here as the app's own change (the trigger above keeps
+-- it so from now on): prescriptions first, whose own tombstones cascade
+-- to their doses, then the doses left. updated_at stays, like any other
+-- change the app makes; 0.3.0 devices already dropped these rows with
+-- their parent. Running this again finds nothing.
+
+update public.prescriptions c
+   set deleted_at = coalesce(t.deleted_at, m.deleted_at),
+       write_id = gen_random_uuid(),
+       edited_at = timestamptz '1970-01-01 00:00:00+00'
+  from public.treatments t, public.medications m
+ where t.id = c.treatment_id
+   and m.id = c.medication_id
+   and c.deleted_at is null
+   and (t.deleted_at is not null or m.deleted_at is not null);
+
+update public.dose_logs c
+   set deleted_at = p.deleted_at,
+       write_id = gen_random_uuid(),
+       edited_at = timestamptz '1970-01-01 00:00:00+00'
+  from public.prescriptions p
+ where p.id = c.prescription_id
+   and c.deleted_at is null
+   and p.deleted_at is not null;

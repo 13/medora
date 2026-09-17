@@ -433,17 +433,239 @@ void main() {
     expect(after, PullKey(horizon));
   });
 
-  test('a tombstone cascades to the children as a 0.3.0 write', () {
+  test('a tombstone cascades to the children as the app\'s own change that '
+      '0.3.0 still sees', () {
     core.legacyUpsert('treatments', {'id': 't1', 'name': 'Flu'});
     core.legacyUpsert('prescriptions', {'id': 'p1', 'treatment_id': 't1'});
+    now = now.add(const Duration(minutes: 1));
     core.patch('treatments', 't1', {
       'deleted_at': '2026-09-16T12:00:00.000Z',
       'write_id': 'w',
+      'edited_at': _iso(now),
     });
     final p = core.rowsOf('prescriptions')['p1']!;
     expect(p['deleted_at'], '2026-09-16T12:00:00.000Z');
     expect(p['write_id'], isNull);
     expect(p['row_version'], 2);
+    expect(p['edited_at'], _iso(DateTime.utc(1970)));
+    expect(p['updated_at'], _iso(now));
+  });
+
+  group('children follow their parents (review C-1), as '
+      '`tools/sql/sync_v2_checks.sql` checks them', () {
+    Map<String, dynamic> dose(String id) => core.rowsOf('dose_logs')[id]!;
+    Map<String, dynamic> generated(String id) => {
+      'id': id,
+      'prescription_id': 'p1',
+      'scheduled_time': '2026-09-17T08:00:00.000Z',
+      'status': 'pending',
+      'updated_at': '1970-01-01T00:00:00.000Z',
+      'write_id': 'gen-$id',
+      'edited_at': '1970-01-01T00:00:00.000Z',
+    };
+    const epoch = '1970-01-01T00:00:00.000Z';
+    final deletedAt = _iso(DateTime.utc(2026, 9, 16, 11));
+
+    setUp(() {
+      core.legacyUpsert('treatments', {'id': 't1', 'name': 'Kids'});
+      core.legacyUpsert('medications', {'id': 'm1', 'name': 'Syrup'});
+      core.legacyUpsert('prescriptions', {
+        'id': 'p1',
+        'treatment_id': 't1',
+        'medication_id': 'm1',
+      });
+      core.insertIfAbsent('dose_logs', [generated('d1'), generated('d2')]);
+      // d2 was dropped from the schedule.
+      core.patch(
+        'dose_logs',
+        'd2',
+        {'deleted_at': deletedAt, 'write_id': 'drop', 'edited_at': epoch},
+        ifStatus: 'pending',
+        ifLive: true,
+      );
+      now = now.add(const Duration(minutes: 1));
+      core.patch('prescriptions', 'p1', {
+        'deleted_at': deletedAt,
+        'write_id': 'person',
+        'edited_at': _iso(now),
+      });
+    });
+
+    test('the cascade deletes the live dose as the app\'s own change; the '
+        'dropped one keeps its tombstone', () {
+      expect(
+        [dose('d1')['deleted_at'], dose('d1')['edited_at']],
+        [deletedAt, epoch],
+      );
+      expect(dose('d1')['updated_at'], _iso(now));
+      expect(dose('d2')['row_version'], 2);
+    });
+
+    test('a generated dose and a take sent under the deleted prescription '
+        'land deleted, with their write ids', () {
+      core.insertIfAbsent('dose_logs', [generated('d3')]);
+      core.patch('dose_logs', 'd2', {
+        'deleted_at': null,
+        'status': 'taken',
+        'taken_time': _iso(now),
+        'write_id': 'take',
+        'edited_at': _iso(now),
+        'field_edited_at': {
+          'status': {'at': _iso(now), 'auto': false},
+        },
+      });
+      expect(
+        core.rowsOf('dose_logs').values.where((d) => d['deleted_at'] == null),
+        isEmpty,
+      );
+      expect(
+        [dose('d3')['deleted_at'], dose('d3')['edited_at']],
+        [deletedAt, epoch],
+      );
+      expect(dose('d3')['write_id'], 'gen-d3');
+      expect(dose('d2')['status'], 'taken');
+      expect(dose('d2')['write_id'], 'take');
+      expect(
+        [dose('d2')['deleted_at'], dose('d2')['edited_at']],
+        [deletedAt, epoch],
+      );
+      expect((dose('d2')['field_edited_at'] as Map)['status'], {
+        'at': _iso(now),
+        'auto': false,
+      });
+    });
+
+    test('a 0.3.0 take under the deleted prescription lands deleted, and '
+        '0.3.0 sees it', () {
+      now = now.add(const Duration(minutes: 1));
+      core.legacyUpsert('dose_logs', {
+        'id': 'd1',
+        'prescription_id': 'p1',
+        'status': 'taken',
+        'updated_at': _iso(now),
+      });
+      core.legacyUpsert('dose_logs', {
+        'id': 'd4',
+        'prescription_id': 'p1',
+        'status': 'taken',
+        'updated_at': _iso(now),
+      });
+      for (final id in ['d1', 'd4']) {
+        expect(
+          [
+            dose(id)['deleted_at'] != null,
+            dose(id)['write_id'],
+            dose(id)['edited_at'],
+            dose(id)['updated_at'],
+          ],
+          [true, null, epoch, _iso(now)],
+          reason: id,
+        );
+      }
+    });
+
+    test('a prescription under a deleted treatment or medication is stored '
+        'deleted, and one brought back stays deleted', () {
+      core.legacyUpsert('treatments', {'id': 't2', 'name': 'Live'});
+      core.legacyUpsert('medications', {
+        'id': 'm2',
+        'name': 'Gone',
+        'deleted_at': deletedAt,
+      });
+      core.insertIfAbsent('prescriptions', [
+        {'id': 'p3', 'treatment_id': 't2', 'medication_id': 'm2'},
+        {'id': 'p4', 'treatment_id': 't2', 'medication_id': 'm1'},
+      ]);
+      Map<String, dynamic> p(String id) => core.rowsOf('prescriptions')[id]!;
+      expect([p('p3')['deleted_at'], p('p3')['edited_at']], [deletedAt, epoch]);
+      expect(p('p4')['deleted_at'], isNull);
+      core.patch('treatments', 't1', {
+        'deleted_at': deletedAt,
+        'write_id': 'x',
+      });
+      core.patch('prescriptions', 'p1', {
+        'deleted_at': null,
+        'notes': 'back',
+        'write_id': 'back',
+        'edited_at': _iso(now),
+      });
+      expect([p('p1')['deleted_at'], p('p1')['notes']], [deletedAt, 'back']);
+      expect(p('p1')['edited_at'], epoch);
+    });
+  });
+
+  group('a 0.3.0 take of a dose 0.4.0 dropped (review I-2), as '
+      '`tools/sql/sync_v2_checks.sql` checks it', () {
+    Map<String, dynamic> dose(String id) => core.rowsOf('dose_logs')[id]!;
+    const epoch = '1970-01-01T00:00:00.000Z';
+
+    setUp(() {
+      core.legacyUpsert('prescriptions', {'id': 'p1'});
+      for (final id in ['d1', 'd2', 'd3']) {
+        core.insertIfAbsent('dose_logs', [
+          {
+            'id': id,
+            'prescription_id': 'p1',
+            'status': 'pending',
+            'updated_at': epoch,
+            'write_id': 'gen-$id',
+            'edited_at': epoch,
+          },
+        ]);
+        core.patch(
+          'dose_logs',
+          id,
+          {'deleted_at': _iso(now), 'write_id': 'drop-$id', 'edited_at': epoch},
+          ifStatus: 'pending',
+          ifLive: true,
+        );
+      }
+      now = now.add(const Duration(minutes: 1));
+    });
+
+    Map<String, dynamic> send(String id, Map<String, dynamic> values) =>
+        core.legacyUpsert('dose_logs', {
+          'id': id,
+          'prescription_id': 'p1',
+          'taken_time': null,
+          'notes': null,
+          'updated_at': _iso(now),
+          ...values,
+        });
+
+    test('a take brings the dose back as a person\'s change', () {
+      send('d1', {'status': 'taken', 'taken_time': _iso(now)});
+      expect(
+        [
+          dose('d1')['deleted_at'],
+          dose('d1')['status'],
+          dose('d1')['edited_at'],
+          dose('d1')['updated_at'],
+        ],
+        [null, 'taken', _iso(now), _iso(now)],
+      );
+    });
+
+    test('a write that leaves the status alone, or sets 0.3.0\'s own '
+        '"missed", keeps the app\'s tombstone', () {
+      send('d2', {'status': 'pending', 'notes': 'note'});
+      send('d3', {'status': 'missed'});
+      for (final id in ['d2', 'd3']) {
+        expect(dose(id)['deleted_at'], isNotNull, reason: id);
+        expect(dose(id)['edited_at'], epoch, reason: id);
+      }
+      expect((dose('d2')['field_edited_at'] as Map)['notes'], {
+        'at': _iso(now),
+        'auto': false,
+      });
+    });
+
+    test('a dose a person deleted with 0.3.0 stays deleted', () {
+      core.patch('dose_logs', 'd2', {'deleted_at': _iso(now)});
+      send('d2', {'status': 'taken'});
+      expect(dose('d2')['deleted_at'], isNotNull);
+      expect(dose('d2')['edited_at'], _iso(now));
+    });
   });
 
   group('edit times per column (field_edited_at), as '
