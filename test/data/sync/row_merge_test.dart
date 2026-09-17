@@ -498,6 +498,53 @@ void main() {
       expect(result.conflicts.single.keptLocal, isTrue);
     });
 
+    test(
+      '... and the same holds for this side: an older person\'s time on '
+      'a column it left alone does not make the app\'s change a person\'s',
+      () {
+        // Here: only the app's missed; taken_time carries an undo from 11:00.
+        // There: a person skipped the dose at 09:00.
+        final result = mergeRows(
+          base: dose0,
+          local: {...dose0, 'status': 'missed'},
+          remote: {...dose0, 'status': 'skipped'},
+          localTimes: FieldTimes({
+            'status': FieldTime.automaticChange,
+            'taken_time': FieldTime(DateTime.utc(2026, 3, 5, 11)),
+          }),
+          remoteTimes: FieldTimes({
+            'status': FieldTime(nine),
+            'taken_time': FieldTime(nine),
+          }),
+          policy: doseLogMerge,
+        );
+        expect(result.row['status'], 'skipped');
+        expect(result.conflicts.single.keptLocal, isFalse);
+      },
+    );
+
+    test('a column taken from here with no known time carries none', () {
+      final result = mergeRows(
+        base: cBase,
+        local: {...cBase, 'notes': 'here'},
+        remote: cBase,
+        // A filled map without notes: its time is unknown.
+        localTimes: FieldTimes({'sick_leave_ref': FieldTime(nine)}),
+        remoteTimes: FieldTimes({
+          'notes': FieldTime(DateTime.utc(2026, 3, 2)),
+          'sick_leave_ref': FieldTime(DateTime.utc(2026, 3, 2)),
+        }),
+        policy: treatmentMerge,
+      );
+      expect(result.row['notes'], 'here');
+      expect(result.times.entries.containsKey('notes'), isFalse);
+      expect(result.times.of('notes'), isNull);
+      expect(
+        result.times.entries['sick_leave_ref'],
+        FieldTime(DateTime.utc(2026, 3, 2)),
+      );
+    });
+
     test('a column missing from a filled map is unknown: a person\'s change '
         'beats it, the app\'s own does not', () {
       final remote = {...cBase, 'notes': 'server', 'sick_leave_ref': 'S'};

@@ -791,6 +791,20 @@ void main() {
       expect(localFieldTimes(row).entries, after.entries);
     });
 
+    test('a settled row holds the server\'s times, capped when they '
+        'arrived, not the ones this device sent', () async {
+      await warmUp();
+      // This device's clock runs a day ahead.
+      final ahead = now.add(const Duration(days: 1));
+      await edit('t1', {'notes': 'from the future'}, ahead);
+      expect(localFieldTimes(await local('t1')).of('notes'), FieldTime(ahead));
+      await sync.pushRow(await local('t1'), userId: 'u');
+      final row = await local('t1');
+      expect(row['sync_status'], 'synced');
+      expect(localFieldTimes(row).of('notes'), FieldTime(now));
+      expect(localFieldTimes(row).entries, serverTimes('t1').entries);
+    });
+
     test('a pulled row stores the server\'s map; a merged one the server\'s '
         'with this device\'s for what it kept', () async {
       await warmUp();
