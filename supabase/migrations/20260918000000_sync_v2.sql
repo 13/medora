@@ -116,7 +116,7 @@ declare
   v_legacy boolean := false;
   v_new    jsonb;
   v_old    jsonb;
-  v_sent   jsonb := '{}';
+  v_sent   jsonb;
   v_map    jsonb := '{}';
   v_key    text;
   v_entry  jsonb;
@@ -164,7 +164,7 @@ begin
     if not v_legacy and new.field_edited_at is distinct from old.field_edited_at then
       v_sent := new.field_edited_at;
     end if;
-    if v_map is null or jsonb_typeof(v_map) <> 'object' or v_map = '{}' then
+    if v_map = '{}' then
       -- The first update since the row was written: every column was last
       -- changed at the row's own time.
       v_map := '{}';
@@ -176,9 +176,6 @@ begin
           'at', case when v_auto then c_epoch else v_at end, 'auto', v_auto));
       end loop;
     end if;
-  end if;
-  if v_sent is null or jsonb_typeof(v_sent) <> 'object' then
-    v_sent := '{}';
   end if;
   for v_key in select jsonb_object_keys(v_new) loop
     continue when v_key = any(c_untimed);
