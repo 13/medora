@@ -205,16 +205,16 @@ do $$
 declare j jsonb;
 begin
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000001', 'm1', -3, null);
-  assert j->>'status' = 'applied' and (j->>'quantity')::int = 7, 'stock: applied ' || j;
+  assert j->>'status' = 'applied' and (j->>'quantity')::int = 7, 'stock: applied ' || j::text;
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000001', 'm1', -3, null);
-  assert j->>'status' = 'duplicate' and (j->>'quantity')::int = 7, 'stock: duplicate ' || j;
+  assert j->>'status' = 'duplicate' and (j->>'quantity')::int = 7, 'stock: duplicate ' || j::text;
   assert (select quantity from medications where id = 'm1') = 7, 'stock: a retry is not counted twice';
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000002', 'm1', -100, null);
   assert (j->>'quantity')::int = 0, 'stock: never below zero';
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000003', 'm1', null, 20);
   assert (j->>'quantity')::int = 20, 'stock: counted quantity';
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000004', 'nope', -1, null);
-  assert j->>'status' = 'gone', 'stock: a medication the server does not have is gone ' || j;
+  assert j->>'status' = 'gone', 'stock: a medication the server does not have is gone ' || j::text;
   assert (select count(*) from stock_changes) = 3, 'stock: ledger holds the three applied changes';
   begin
     perform apply_stock_change('aaaaaaaa-0000-0000-0000-000000000006', 'm1', -1, 1);
@@ -236,20 +236,20 @@ do $$
 declare j jsonb;
 begin
   j := apply_stock_change('abababab-0000-0000-0000-000000000001', 'm1', null, -1);
-  assert j->>'status' = 'applied' and (j->>'quantity')::int = 0, 'range: set_to -1 counts as 0 ' || j;
+  assert j->>'status' = 'applied' and (j->>'quantity')::int = 0, 'range: set_to -1 counts as 0 ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000002', 'm1', null, 1000000);
-  assert (j->>'quantity')::int = 999999, 'range: set_to 1000000 counts as 999999 ' || j;
+  assert (j->>'quantity')::int = 999999, 'range: set_to 1000000 counts as 999999 ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000003', 'm1', null, 2147483647);
-  assert (j->>'quantity')::int = 999999, 'range: the largest set_to counts as 999999 ' || j;
+  assert (j->>'quantity')::int = 999999, 'range: the largest set_to counts as 999999 ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000004', 'm1', 2147483647, null);
-  assert j->>'status' = 'applied' and (j->>'quantity')::int = 999999, 'range: the largest delta ' || j;
+  assert j->>'status' = 'applied' and (j->>'quantity')::int = 999999, 'range: the largest delta ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000005', 'm1', -2147483648, null);
-  assert (j->>'quantity')::int = 0, 'range: the smallest delta ' || j;
+  assert (j->>'quantity')::int = 0, 'range: the smallest delta ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000006', 'm1', null, 5);
   j := apply_stock_change('abababab-0000-0000-0000-000000000007', 'm1', 1000000, null);
-  assert (j->>'quantity')::int = 999999, 'range: a delta above the limit ' || j;
+  assert (j->>'quantity')::int = 999999, 'range: a delta above the limit ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000007', 'm1', 1000000, null);
-  assert j->>'status' = 'duplicate' and (j->>'quantity')::int = 999999, 'range: its retry is a duplicate ' || j;
+  assert j->>'status' = 'duplicate' and (j->>'quantity')::int = 999999, 'range: its retry is a duplicate ' || j::text;
   assert (select delta = 999999 and set_to is null and quantity_after = 999999
             from stock_changes where op_id = 'abababab-0000-0000-0000-000000000007'),
     'range: the ledger records the value in range';
@@ -258,12 +258,12 @@ begin
   -- A quantity out of range stored by an older client.
   update medications set quantity = -5 where id = 'm1';
   j := apply_stock_change('abababab-0000-0000-0000-000000000008', 'm1', 3, null);
-  assert (j->>'quantity')::int = 0, 'range: -5 plus 3 is 0 ' || j;
+  assert (j->>'quantity')::int = 0, 'range: -5 plus 3 is 0 ' || j::text;
   update medications set quantity = 2000000 where id = 'm1';
   j := apply_stock_change('abababab-0000-0000-0000-000000000009', 'm1', -2000000, null);
-  assert (j->>'quantity')::int = 999999, 'range: 2000000 minus at most 999999, capped ' || j;
+  assert (j->>'quantity')::int = 999999, 'range: 2000000 minus at most 999999, capped ' || j::text;
   j := apply_stock_change('abababab-0000-0000-0000-000000000010', 'm1', null, 20);
-  assert (j->>'quantity')::int = 20, 'range: back to 20 ' || j;
+  assert (j->>'quantity')::int = 20, 'range: back to 20 ' || j::text;
 end $$;
 
 -- A stock change moves sync_xid and the version.
@@ -281,7 +281,7 @@ declare j jsonb;
 begin
   insert into medications (id, user_id, name, quantity) values ('purged', auth.uid(), 'Purged', 5);
   j := apply_stock_change('adadadad-0000-0000-0000-000000000001', 'purged', -1, null);
-  assert j->>'status' = 'applied', 'purge: applied first ' || j;
+  assert j->>'status' = 'applied', 'purge: applied first ' || j::text;
 end $$;
 delete from medications where id = 'purged';
 do $$
@@ -290,9 +290,9 @@ begin
   assert (select count(*) from stock_changes where medication_id = 'purged') = 0,
     'purge: the ledger follows the medication';
   j := apply_stock_change('adadadad-0000-0000-0000-000000000001', 'purged', -1, null);
-  assert j = '{"status": "gone"}', 'purge: a retry is gone ' || j;
+  assert j = '{"status": "gone"}', 'purge: a retry is gone ' || j::text;
   j := apply_stock_change('adadadad-0000-0000-0000-000000000002', 'purged', null, 3);
-  assert j = '{"status": "gone"}', 'purge: a new change is gone ' || j;
+  assert j = '{"status": "gone"}', 'purge: a new change is gone ' || j::text;
 end $$;
 
 do $$
@@ -300,7 +300,7 @@ declare j jsonb;
 begin
   update medications set deleted_at = now(), write_id = '77777777-7777-7777-7777-777777777777' where id = 'm1';
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000005', 'm1', -1, null);
-  assert j = '{"status": "gone"}', 'stock: deleted medication is gone ' || j;
+  assert j = '{"status": "gone"}', 'stock: deleted medication is gone ' || j::text;
 
   insert into medications (id, user_id, name, quantity) values ('m2', auth.uid(), 'Paracetamol', 5);
   insert into medications (id, user_id, name, quantity) values ('lock-med', auth.uid(), 'Lock', 10);
@@ -313,7 +313,7 @@ declare j jsonb;
 begin
   assert (select count(*) from stock_changes) = 0, 'rls: B sees none of A''s ledger';
   j := apply_stock_change('bbbbbbbb-0000-0000-0000-000000000001', 'm2', -1, null);
-  assert j = '{"status": "gone"}', 'rls: B cannot change A''s stock, and learns nothing ' || j;
+  assert j = '{"status": "gone"}', 'rls: B cannot change A''s stock, and learns nothing ' || j::text;
   begin
     insert into stock_changes (op_id, medication_id, delta, quantity_after)
       values ('bbbbbbbb-0000-0000-0000-000000000002', 'm2', -1, 0);
@@ -395,7 +395,7 @@ do $$
 declare j json;
 begin
   j := join_family('INVITE1', 'Bea');
-  assert j->'family'->>'id' = 'f1' and j->'member'->>'display_name' = 'Bea', 'family: B joins ' || j;
+  assert j->'family'->>'id' = 'f1' and j->'member'->>'display_name' = 'Bea', 'family: B joins ' || j::text;
   assert (select count(*) from families where id = 'f1') = 1, 'family: B sees the family';
   update family_members set display_name = 'Bee' where user_id = auth.uid();
   delete from family_members where user_id = auth.uid();
@@ -437,8 +437,15 @@ do $$ begin
     'delete all: A''s rows untouched';
 end $$;
 
--- anon may call neither function.
+-- Seen without row-level security: the removed medications' ledger rows
+-- are really gone ("delete all data" leaves nothing behind).
 reset role;
+do $$ begin
+  assert (select count(*) from stock_changes where medication_id in ('purged', 'b-med')) = 0,
+    'purge: no ledger row outlives its medication';
+end $$;
+
+-- anon may call neither function.
 set role anon;
 do $$ begin
   begin
