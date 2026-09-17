@@ -103,9 +103,10 @@ create index if not exists idx_dose_sync  on public.dose_logs     (sync_xid, id)
 --
 -- Deletes. A tombstone whose edited_at is 1970 is the app's own delete:
 -- a dose dropped from a changed schedule, a child deleted with its
--- parent. A 0.4.0 device lets a person's change still waiting beat it,
--- and lets the schedule generate the dose again. Every other tombstone
--- is a person's delete and always wins. Around that:
+-- parent. On a dose, a 0.4.0 device lets a person's change still waiting
+-- beat it, and lets the schedule generate the dose again, but only under
+-- a live prescription. Every other tombstone is a person's delete and
+-- always wins. Around that:
 -- - a child written live under a deleted parent (prescriptions under a
 --   treatment or medication, doses under a prescription) is stored
 --   deleted, with the parent's deleted_at, as the app's own delete. The

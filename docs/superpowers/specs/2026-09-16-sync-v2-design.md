@@ -3,6 +3,7 @@
 **Date:** 2026-09-16. **Status:** proposed. **Branch:** `sync-v2-settings`, based on release v0.3.0+18 (`35bb1f5`).
 Open questions for the user are in §14; everything else is decided.
 **Revised 2026-09-17:** edit times are kept per column (`field_edited_at`, §4.4), not only per row; §4.1, §4.4, §4.5, §5, §6, §7, §9.2 and §12 follow.
+**Revised 2026-09-17 (engine review):** the server never holds a live row under a deleted parent, and the app's own tombstones are told apart from a person's everywhere (§4.6); a column changed back to its old value counts as changed (§4.5); §5, §6, §7.2–§7.6, §9.2 and §12 follow.
 
 ## 1. What the user asked for
 
@@ -288,6 +289,7 @@ The server's times are already capped at arrival. A local change has not arrived
 
 **The merge rule** (`lib/data/sync/row_merge.dart`, pure, unit-tested; the probe run is in the scratchpad):
 
+- **What changed since the base:** a column whose value differs from the base, or whose time on that side is a person's change later than the base's own time for it. The second case is a change back to the old value (A sets Y, B sets Z, A sets the old value again: A's is the latest edit). `sync_base` keeps the server's column times of the base for this (§6). A base stored without them counts values only.
 - **Per group, by what changed since the base:**
   - a group only the local side changed takes the local values;
   - a group only the server changed, or neither, takes the server values;
@@ -325,6 +327,13 @@ The merge runs on the canonical wire form (`Model.fromJson(row).toJson()`), so a
 
 ### 4.6 Deletes
 
+**Two kinds of tombstone.** A tombstone whose row `edited_at` is `1970` is the **app's own delete**. Every other tombstone is a **person's delete**, and it always wins.
+
+The app's own deletes are:
+- a dose dropped from a changed schedule (below);
+- a child deleted with its parent: the tombstone cascade (a prescription with its treatment or medication, a dose with its prescription);
+- a child written live under a deleted parent (below).
+
 - **A person's delete.** An unconditional `PATCH {deleted_at, write_id, edited_at}`; the local row is then hard-deleted.
   - If the server has no such row and the row still carries an unresolved `sync_write_id` (its create may land late), the client inserts a **tombstone row** (the full row with `deleted_at`, insert-if-absent). A late insert then does nothing, which fixes hardening m-3.
 - **An automatic dose delete** (a dose dropped by a schedule change, S-6):
@@ -332,11 +341,29 @@ The merge runs on the canonical wire form (`Model.fromJson(row).toJson()`), so a
   - If a row matched, the local row is hard-deleted.
   - If none matched, the client fetches the row:
     - gone or already deleted: the local row is hard-deleted;
-    - no longer pending (taken or skipped elsewhere): the server copy replaces the local row, stored as `synced`. It is a historical fact and is shown.
+    - no longer pending (taken or skipped elsewhere): the server copy replaces the local row, stored as `synced`. It is a historical fact and is shown;
+    - still live and pending (the row changed and changed back meanwhile): the push fails, the row stays `pending_delete` and is tried again after its backoff.
+  - A dropped dose that never reached a server, and whose create got no answer, sends nothing in its place.
   - Locally this is `sync_status = pending_delete` with `delete_guard = 'if_pending'`.
 - **A pulled tombstone:**
-  - it deletes the local row, as today;
-  - **exception:** if the tombstone is automatic (`edited_at` = 1970) and the local row has a real pending change, the local change wins and is pushed. `deleted_at` goes back to null, which is safe for a dose because it has no children.
+  - it deletes the local row;
+  - **exception:** the app's own tombstone of a **dose** loses to a change still waiting here, which is then pushed with `deleted_at: null`:
+    - a person's change to a column (a changed value, not a change back);
+    - the schedule generating the same slot again here (`pending_create`) after the delete: its `created_at` is later than the tombstone's `deleted_at`, or unknown. Two changes the app made: the newer wins. A slot generated before the drop stays dropped;
+  - the exception never applies under a prescription that is deleted or missing here, nor when the tombstone carries this device's own write id (the server deleted what this device sent), nor to any table but doses (a dose has no children).
+
+**Rows under a deleted parent (review C-1).** A live dose under a deleted prescription, or a live prescription under a deleted treatment or medication, would fail every device's local foreign key for good. So neither side keeps one:
+
+- **Server** (`medora_sync_stamp`, §5):
+  - a prescription or dose written live under a deleted parent is stored deleted, with the parent's `deleted_at`, as the app's own delete. The write still lands (its columns, its write id), so the sending device learns the row is gone. This covers a late insert, a 0.3.0 upsert, and a row brought back by a take or a force push;
+  - the tombstone cascade deletes live children as the app's own change; it still moves `updated_at`, so 0.3.0 sees it as before;
+  - the migration deletes, once, the live children it finds under deleted parents (as the app's own change).
+  - With these, the server never holds a live row under a deleted parent. A parent that is not there at all is refused by the foreign key (23503), as before.
+- **Device, pull:** a live row under a parent that is `pending_delete` here goes with that parent (deleted here, or not stored). A live row whose parent this device does not hold is reported as `orphaned`, never thrown: the cycle fetches the parent, stores it and then the row when the server has it live, and otherwise passes the row over. Either way the pull key moves on.
+- **Device, push:** a row under a parent that is `pending_delete` here (its delete could not be sent yet) is deleted here and never sent, in the batch of new doses as well. A row the server answers deleted is deleted here when it settles. A force push that the server answers deleted fails and keeps the row, since the parent's own force push failed.
+- **Decision:** a person's take of a dose whose prescription a person deleted on another device loses. The take reaches the server, stored deleted; the delete wins on every device, because the user deleted the prescription on purpose.
+
+**A 0.3.0 take of a dose 0.4.0 dropped (review I-2).** 0.3.0 never sees the drop (it keeps `updated_at`) and sends its take as a whole-row upsert without `deleted_at`. The trigger brings the dose back when such a legacy write sets the status of a row the app deleted to `taken` or `skipped`: a person's take beats the app's delete. Any other legacy write to that row (a note, the same values again, 0.3.0's own `missed`) leaves it deleted, still as the app's own delete. A 0.4.0 write decides for itself by sending `deleted_at: null`.
 
 ### 4.7 Doses: automatic "missed", shifted times, dropped slots
 
@@ -358,6 +385,7 @@ The merge runs on the canonical wire form (`Model.fromJson(row).toJson()`), so a
   - `regenerateDoseLogsForPrescription` marks pending doses the schedule no longer has as `pending_delete` + `delete_guard = 'if_pending'` + `edited_at = 1970`, instead of hard-deleting them.
   - A row with no `sync_version` and no `sync_write_id` has never reached a server (a generated dose not sent yet, or any dose in local-only mode) and is still hard-deleted.
   - Generation treats `pending_delete` rows as present, so it never re-creates a dose that is being deleted (follow-up m-6).
+  - A schedule changed back generates the same slot ids again. They meet their own automatic tombstones on the server and bring them back (§4.6), on the create path and in the batch of new doses. A slot a person deleted stays deleted; `DoseScheduleService` then stops generating it for the life of the process.
 
 ### 4.8 Stock as idempotent changes (S-2)
 
@@ -401,6 +429,8 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 - all five migrations also apply on a local `supabase start` (CLI 2.117.0), where the 0.4.0 integration scenarios pass and the unchanged v0.3.0 integration suite still passes;
 - after the Task 3 review (fix round) the checks also cover: no TRUNCATE, TRIGGER or REFERENCES for clients on any synced or family table, every kind of update moving `sync_xid`, stock values out of range, a medication removed from the server, a retry racing its original, and the app's family and "delete all data" flows. They pass on the real `supabase/postgres:15.8.1.085` image as well.
 - after the per-column revision (2026-09-17), the checks also fail when a column time goes back, when the cap at arrival is missing, when an older time overwrites an entry, when an unchanged column is stamped, when a legacy write's map is read, when a sent map is ignored or replaces the stored one, when the fill is missing or uses the arrival time, and when the stock or `deleted_at` gets an entry (14 mutants, all caught). The revision was checked on `postgres:15-alpine` only.
+- after the engine review (2026-09-17), the checks also cover: children stored deleted under a deleted treatment, medication or prescription (inserts, 0.4.0 updates that bring a row back, 0.3.0 upserts); the cascade as the app's own change; the one-time repair of live children; a 0.3.0 take bringing a dropped dose back, and every legacy write that must not; the fill capped at arrival, a write id without an edit time, and the automatic fill. 15 mutants of these rules, all caught, on `postgres:15-alpine`.
+- `tools/sql/fake_server_parity.sql`, which `test/helpers/fake_server_parity_test.dart` writes, runs the fake server's script of writes against the migration and fails on any row where Postgres answers differently (§12).
 
 ```sql
 -- ============================================================
@@ -415,7 +445,9 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 --
 -- No backfill UPDATE: every new column is added with a constant default
 -- (no table rewrite, no trigger fires), so no row changes `updated_at`
--- and no 0.3.0 device sees its pending edit turn stale.
+-- and no 0.3.0 device sees its pending edit turn stale. The one UPDATE
+-- (section 7) deletes the live rows it finds under a deleted parent, as
+-- the app's own change.
 --
 -- Run it in one transaction (`supabase db push` and the SQL editor do).
 -- Every statement can be run again, so a failed run can simply be
@@ -503,6 +535,24 @@ create index if not exists idx_dose_sync  on public.dose_logs     (sync_xid, id)
 -- Runs BEFORE the `<table>_updated_at` trigger: Postgres fires BEFORE
 -- triggers of one event in name order, and `_sync_stamp` sorts before
 -- `_updated_at`. update_updated_at() below relies on that order.
+--
+-- Deletes. A tombstone whose edited_at is 1970 is the app's own delete:
+-- a dose dropped from a changed schedule, a child deleted with its
+-- parent. On a dose, a 0.4.0 device lets a person's change still waiting
+-- beat it, and lets the schedule generate the dose again, but only under
+-- a live prescription. Every other tombstone is a person's delete and
+-- always wins. Around that:
+-- - a child written live under a deleted parent (prescriptions under a
+--   treatment or medication, doses under a prescription) is stored
+--   deleted, with the parent's deleted_at, as the app's own delete. The
+--   write still lands (its columns, its write id), so the device that
+--   sent it learns the row is gone. With the tombstone cascade below, the
+--   server never holds a live row under a deleted parent;
+-- - the cascade (a write made by another trigger) deletes as the app's own
+--   change, but still moves updated_at, so 0.3.0 sees it as before;
+-- - a 0.3.0 write that sets a dose the app deleted to taken or skipped
+--   brings it back (a person's take beats the app's delete). Any other
+--   0.3.0 write to such a row leaves it deleted, still as the app's own.
 
 create or replace function public.medora_sync_stamp()
 returns trigger
@@ -519,6 +569,11 @@ declare
     'field_edited_at', 'quantity'];
   v_now    timestamptz := now();
   v_legacy boolean := false;
+  -- A write made by another trigger: the tombstone cascade.
+  v_cascade boolean := pg_trigger_depth() > 1;
+  -- The row stays or becomes the app's own tombstone.
+  v_app_delete boolean := false;
+  v_parent_deleted timestamptz;
   v_new    jsonb;
   v_old    jsonb;
   v_sent   jsonb;
@@ -557,15 +612,31 @@ begin
     end if;
   end if;
 
+  v_new := to_jsonb(new);
+  if tg_op = 'UPDATE' then
+    v_old := to_jsonb(old);
+    -- A legacy write to a row the app deleted, that does not delete it
+    -- itself.
+    if v_legacy and not v_cascade and old.deleted_at is not null
+       and old.edited_at < c_ceiling
+       and new.deleted_at is not distinct from old.deleted_at then
+      if tg_table_name = 'dose_logs'
+         and v_new->>'status' in ('taken', 'skipped')
+         and (v_new->'status') is distinct from (v_old->'status') then
+        new.deleted_at := null;
+      else
+        v_app_delete := true;
+      end if;
+    end if;
+  end if;
+
   -- Edit times per column. A 0.4.0 client sends an entry for each column
   -- it writes; the entries are read only for the columns the write really
   -- changes (an insert: the columns it names), and never for a legacy
   -- write.
-  v_new := to_jsonb(new);
   if tg_op = 'INSERT' then
     v_sent := new.field_edited_at;
   else
-    v_old := to_jsonb(old);
     v_map := old.field_edited_at;
     if not v_legacy and new.field_edited_at is distinct from old.field_edited_at then
       v_sent := new.field_edited_at;
@@ -601,6 +672,27 @@ begin
     v_map := v_map || jsonb_build_object(v_key, jsonb_build_object('at', v_at, 'auto', v_auto));
   end loop;
   new.field_edited_at := v_map;
+
+  -- A live child under a deleted parent is stored deleted.
+  if new.deleted_at is null then
+    if tg_table_name = 'prescriptions' then
+      select coalesce(
+               (select t.deleted_at from public.treatments t where t.id = v_new->>'treatment_id'),
+               (select m.deleted_at from public.medications m where m.id = v_new->>'medication_id'))
+        into v_parent_deleted;
+    elsif tg_table_name = 'dose_logs' then
+      select p.deleted_at into v_parent_deleted
+        from public.prescriptions p where p.id = v_new->>'prescription_id';
+    end if;
+    if v_parent_deleted is not null then
+      new.deleted_at := v_parent_deleted;
+      v_app_delete := true;
+    end if;
+  end if;
+  if v_cascade or v_app_delete then
+    -- After the column times: the columns a write changes keep its time.
+    new.edited_at := c_epoch;
+  end if;
   return new;
 end;
 $$;
@@ -630,7 +722,9 @@ create trigger dose_logs_sync_stamp
 -- Medora 0.3.0 pulls by updated_at and skips its own pending edit when the
 -- server's updated_at is newer. A change the app made on its own must lose
 -- to that edit, so it leaves updated_at alone (0.3.0 neither pulls it nor
--- counts it as newer). Every other update is stamped now(), as before.
+-- counts it as newer). Every other update is stamped now(), as before,
+-- including the tombstone cascade and a 0.3.0 write (they send no write
+-- id).
 
 create or replace function public.update_updated_at()
 returns trigger
@@ -823,6 +917,36 @@ $$;
 
 revoke all on function public.apply_stock_change(uuid, text, integer, integer) from public, anon;
 grant execute on function public.apply_stock_change(uuid, text, integer, integer) to authenticated;
+
+-- 7. Live rows under deleted parents ---------------------------------------
+--
+-- Before this migration a device could leave a live child under a parent
+-- deleted elsewhere (a dose generated offline, pushed after the
+-- prescription was deleted). Every device would fail to store such a row.
+-- They are deleted here as the app's own change (the trigger above keeps
+-- it so from now on): prescriptions first, whose own tombstones cascade
+-- to their doses, then the doses left. updated_at stays, like any other
+-- change the app makes; 0.3.0 devices already dropped these rows with
+-- their parent. Running this again finds nothing.
+
+update public.prescriptions c
+   set deleted_at = coalesce(t.deleted_at, m.deleted_at),
+       write_id = gen_random_uuid(),
+       edited_at = timestamptz '1970-01-01 00:00:00+00'
+  from public.treatments t, public.medications m
+ where t.id = c.treatment_id
+   and m.id = c.medication_id
+   and c.deleted_at is null
+   and (t.deleted_at is not null or m.deleted_at is not null);
+
+update public.dose_logs c
+   set deleted_at = p.deleted_at,
+       write_id = gen_random_uuid(),
+       edited_at = timestamptz '1970-01-01 00:00:00+00'
+  from public.prescriptions p
+ where p.id = c.prescription_id
+   and c.deleted_at is null
+   and p.deleted_at is not null;
 ```
 
 **Notes on the SQL:**
@@ -844,6 +968,8 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 - **After this migration** never run `20260901000000_initial_schema.sql` again (it would restore the old `update_updated_at()`), and do not enable read replicas (a page could come from a replica that has not yet replayed rows below the primary's horizon).
 - **Locks.** `CREATE INDEX` without `CONCURRENTLY` blocks writes to that table while it builds. That takes milliseconds at household sizes, and `CONCURRENTLY` cannot run inside the CLI's migration transaction.
 - **Edit times per column.** The trigger compares `to_jsonb(new)` with `to_jsonb(old)`, so it needs no list of each table's columns; a column a later migration adds gets entries from its first change on. A malformed `at` in a sent map fails the write (SQLSTATE 22007); only the app writes the map.
+- **Rows under a deleted parent** (§4.6). The trigger looks the parents up with the caller's rights: the insert and update policies already require the caller to see them. It tells the tombstone cascade from every other writer by `pg_trigger_depth() > 1` (the cascade's update runs inside another trigger; `apply_stock_change` is a function, not a trigger). The app's own delete is marked by setting `edited_at` to 1970 after the column times are stamped, so the columns a write changes keep that write's time. The one-time repair (section 7) is the only UPDATE in the migration: it touches only live rows under deleted parents, which no device can store anyway, and keeps their `updated_at` (0.3.0 dropped them with their parent).
+- **A 0.3.0 take of a dropped dose** (§4.6). Only a legacy write (no new write id) that does not set `deleted_at` itself, on a row whose tombstone is the app's own, and that changes `status` to `taken` or `skipped`, clears `deleted_at`. The trigger reads `status` through `to_jsonb`, so the one function serves every table.
 - **Trigger order.** Postgres runs `BEFORE` triggers of one event in name order. `<table>_sync_stamp` sorts before `<table>_updated_at`, and `update_updated_at()` reads the `write_id` and `edited_at` the stamp trigger has just settled.
 - **No down migration.** Every change is additive, and 0.3.0 runs against it (§9.2). Rolling the app back does not need the schema rolled back.
 
@@ -856,7 +982,7 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 ALTER TABLE <t> ADD COLUMN edited_at TEXT;       -- when the row's last change was made here (UTC ISO); 1970 = automatic
 ALTER TABLE <t> ADD COLUMN field_edited_at TEXT; -- JSON: column -> {at, auto} (§4.4); NULL = edited_at for every column
 ALTER TABLE <t> ADD COLUMN sync_version INTEGER; -- server row_version the base belongs to; NULL = unknown
-ALTER TABLE <t> ADD COLUMN sync_base TEXT;       -- JSON: canonical wire copy of that server row
+ALTER TABLE <t> ADD COLUMN sync_base TEXT;       -- JSON: canonical wire copy of that server row, with its column times under "@field_edited_at"
 ALTER TABLE <t> ADD COLUMN sync_write_id TEXT;   -- write attempt whose outcome is unknown
 -- then, in Dart, for rows that are not synced: edited_at = updated_at read
 -- as an instant in this zone, capped at now (lib/data/local/migrations.dart)
@@ -891,7 +1017,7 @@ CREATE INDEX idx_local_stock_outbox_med ON stock_outbox(medication_id, seq);
 - a synced write (a pull) stores the server's map;
 - `markDeleted` changes no column that has a time, so it leaves the map alone. A row waiting for its delete never merges (§7.2).
 
-**Pull writes.** A pull stores the server's `edited_at`, `field_edited_at`, `row_version` and canonical wire copy.
+**Pull writes.** A pull stores the server's `edited_at`, `field_edited_at`, `row_version` and canonical wire copy. The base keeps the server's column times (and the row time that stands for them while the map is empty) under the key `@field_edited_at`, which no column has; `LocalSyncMeta` reads them as `baseTimes`. A base stored without them counts changed values only.
 
 **Backups.**
 
@@ -941,21 +1067,26 @@ It also gains `newWriteId`, which defaults to `const Uuid().v4()`; tests inject 
 - The key is stored after every fully applied page, as the last row's `(sync_xid, id)`.
 - Only an **empty** page ends the table, and the key `(horizon, null)` is stored (`afterPullPage` in `sync_page.dart`). A short page is not the end: the project's "Max rows" setting may be below 1000, and PostgREST does not say it cut an answer short. This costs one request per table per cycle.
 - A row that fails to apply holds the key where it was for the rest of the cycle, as today.
+- A live row whose parent this device does not hold is not a failure (`orphaned`, §4.6): the cycle fetches each missing parent; a live one is stored first (up to the treatment and medication above a dose), then the row again. A parent the server lacks or holds deleted means the row can never be stored: it is passed over, and the key moves on.
 - A stored key above the horizon resets that table to a full pull.
 
 **Per incoming row R** (canonical wire `W`, meta `M`), inside one local transaction:
 
 | Local row L | Action |
 |---|---|
+| R live, and a parent it names is `pending_delete` here | delete L if there is one (the parent's delete wins) |
+| R live, and a parent it names is not here | nothing; `orphaned` (see above) |
 | none, and R is a tombstone | nothing |
-| none | insert R as `synced`, base = W, version = M.rowVersion, `edited_at` = M.editedAt, `field_edited_at` = R's map |
-| any, and R is a person's tombstone | hard-delete L (its outbox rows cascade) |
+| none | insert R as `synced`, base = W (with R's column times), version = M.rowVersion, `edited_at` = M.editedAt, `field_edited_at` = R's map |
+| any, and R is a tombstone that does not lose (below) | hard-delete L (its outbox rows and its children cascade) |
 | `pending_delete` with `delete_guard = if_pending`, and R is not pending | replace with R as `synced` |
 | `pending_delete` otherwise | keep L (a delete wins) |
 | `synced` | if M.rowVersion > L.version (or L.version is null): replace with R as `synced`, base = W; otherwise keep L |
-| pending, and M.writeId = L.sync_write_id | own write: base = W, version = M.rowVersion, write id cleared; `synced` if L equals W in content, else stays `pending_update` |
+| pending, and M.writeId = L.sync_write_id | own write: base = W, version = M.rowVersion, write id cleared; `synced` if L equals W in content, else stays `pending_update`, with R's column times for the columns L shares with W |
 | pending, and M.rowVersion ≤ L.version | ignore (already merged) |
-| pending, otherwise (including an automatic tombstone against a local person's change to a column) | `mergeRows(base, L, W)` with both sides' column times → store as `pending_update` with base = W, version = M.rowVersion and the merged times, or as `synced` (with R's map) if the result equals W; count conflicts in `report.overwritten` |
+| pending, otherwise (including a dose tombstone that loses, below) | `mergeRows(base, L, W)` with both sides' column times and the base's → store as `pending_update` with base = W, version = M.rowVersion and the merged times, or as `synced` (with R's map) if the result equals W; count conflicts in `report.overwritten` |
+
+A tombstone **loses** only when all of these hold (§4.6): the table is `dose_logs`; R's `edited_at` is 1970; L is pending; R does not carry L's `sync_write_id`; L has a person's changed value, or L is `pending_create` with a `created_at` after R's `deleted_at` (or none); and L's prescription is here and not `pending_delete`.
 
 - **Synced rows** (replaced) store R's map, as they store R's `edited_at`.
 - **Medications:** the stored quantity is `applyStockOps(W.quantity, outbox ops)`.
@@ -965,6 +1096,8 @@ It also gains `newWriteId`, which defaults to `const Uuid().v4()`; tests inject 
 
 Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or** `pending_update` with a failure record; sick-branch m-3), and the stock ops of a medication the server lacks.
 
+Dropped: a prescription or dose whose parent is `pending_delete` here (its delete failed or waits for its backoff) is deleted here and never sent, before any other check, in the batch of new doses too (§4.6).
+
 **First, resolve an unknown outcome.** If L has `sync_write_id`, fetch R.
 
 - If R's write id equals it: adopt R as the base, then continue with whatever still differs, or settle as `synced`.
@@ -973,21 +1106,21 @@ Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or
 **Then, by status:**
 
 - **`pending_create`** (non-dose tables): insert-if-absent the full wire row plus `user_id`, `write_id`, `edited_at` and the local `field_edited_at` (empty when no column changed since the row was made), then fetch it.
-  - Our write id: settle (§7.4).
-  - Another copy: merge with no base, store it as `pending_update` with base = R, and retry once.
+  - Our write id: settle (§7.4). A copy the server stored deleted (its parent is deleted there) is deleted here.
+  - Another copy: merge with no base, store it as `pending_update` with base = R, and retry once. When that copy is the app's own tombstone of a dose and the local row is a slot generated after it, the merge brings it back and the retry sends `deleted_at: null` with the automatic edit time (§4.6).
   - No row: failure with backoff.
 - **`pending_create` doses:** the existing batch path (100 per request, row-by-row fallback, read-back), now with a write id and `edited_at` per row, adopted through §7.4.
 - **`pending_update`:**
   1. If base is null: fetch R. If there is no row, go through the create path. Otherwise merge with no base and take R as the base.
-  2. `changes = changedColumns(base, L)`. If empty, settle as `synced`.
+  2. `changes = changedColumns(base, L)`, with the local and the base's column times (a change back to the base's value is sent). If empty, settle as `synced`.
   3. `PATCH changes + {write_id, edited_at, field_edited_at}` if `row_version = version`.
      - `field_edited_at` holds the local time of each sent column that has one.
-     - `edited_at` is the latest person's time among them; `1970` when all of them are automatic; otherwise `L.edited_at ?? L.updated_at`.
+     - `edited_at` is the latest person's time among them; `1970` when all of them are automatic and every one has a known time; otherwise `L.edited_at ?? L.updated_at` (a column of unknown time is never sent as the app's own change).
   4. If a row came back, settle.
   5. If none came back: fetch R. Our write id: settle with R. No row: create path. Otherwise merge, store, and repeat from step 2 once. After the second failure, leave the row pending and request a re-run.
 - **`pending_delete`:** §4.6.
 
-**Force push:** every row is sent as `PATCH` of every column with no version condition, a fresh write id and `edited_at = now`. A row the server lacks is inserted. Every medication quantity is queued as `set_to`.
+**Force push:** every row is sent as `PATCH` of every column with no version condition, a fresh write id and `edited_at = now`. A row the server lacks is inserted. Every medication quantity is queued as `set_to`. Parents go first, so their children are brought back under live parents; a child the server still stores deleted (its parent's own force push failed) fails and stays as it is here.
 
 ### 7.4 Settle (`lib/data/sync/row_settle.dart`, which replaces `push_settle.dart`)
 
@@ -997,9 +1130,11 @@ Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or
   - `sync_status = synced`;
   - base = canonical(server), version = server.rowVersion, `sync_write_id = NULL`;
   - `updated_at`, `edited_at` and `field_edited_at` = the server's (its times are the capped ones, and a backup carries them into a later restore).
+- **The server stored it deleted** (a parent is deleted there, §4.6): the local row is deleted.
 - **It changed** (an edit landed in flight):
   - base, version and write id as above;
-  - status stays `pending_update`, and the next push sends only the newer difference.
+  - status stays `pending_update`, and the next push sends only the newer difference;
+  - the columns it shares with the server copy take the server's (capped) times, so a clock ahead does not make them look changed since the base.
   - For a medication that was `pending_create`: if the local quantity differs from the pushed one, queue `delta = current − pushed`.
 - **Row gone, or `pending_delete`:** left alone. A `pending_delete` still returns "still pending".
 
@@ -1018,7 +1153,7 @@ For each op, oldest first:
 ### 7.6 Force pull and discard
 
 - **Force pull:** clears the cursors (both key families), the failure store, local data and the outbox, then pulls everything with meta and records the repair as done.
-- **`discardFailedRow`:** fetches the server row and stores it with meta (base, version, `edited_at`), clearing `sync_write_id`, or deletes the local row.
+- **`discardFailedRow`:** fetches the server row and stores it with meta (base, version, `edited_at`), clearing `sync_write_id`, or deletes the local row. Deleting the local row takes its children with it, and a pull may have passed over children of a parent that was being deleted here, so discarding a medication, treatment or prescription also resets the pull keys of the tables below it: the next cycle pulls them again from the start.
 
 ### 7.7 The one-time repair, version 2
 
@@ -1068,7 +1203,11 @@ For each op, oldest first:
 | Pushes stock as an absolute `quantity` | Still overwrites whatever the ledger applied in between (arrival order, as today). **Known limitation until every device is updated.** |
 | Inserts new doses if absent, then reads them back | Unchanged. Generated rows keep 1970 and get `edited_at = 1970`. |
 | Takes a dose whose time a 0.4.0 device corrected | Its whole-row upsert sends the shifted time back. The take wins as a real edit. The correction is not retried, because the row is no longer pending. |
-| Tombstone cascade | Unchanged; children become legacy writes. `deleted_at` has no edit time, so the cascade adds no entry (it only fills an empty map). |
+| Takes (or skips) a dose a 0.4.0 device dropped from its schedule | 0.3.0 never saw the drop. Its upsert brings the dose back as a person's change, so the take reaches every device (§4.6). A 0.3.0 write that leaves the status alone, or sets its own "missed", leaves the dose deleted, still as the app's own delete. |
+| Writes a dose or prescription under a parent deleted elsewhere | Accepted, and stored deleted (§4.6); `updated_at` moves, so 0.3.0 pulls the tombstone and drops its copy. |
+| Sends a whole row it last pulled before a 0.4.0 device changed a column | Its stale value for that column is a real change on the server: it overwrites the newer 0.4.0 edit and is stamped with its arrival time, as the newest person's change. v1 behaved the same; the server cannot tell a stale value from a new one. |
+| Restores a backup whose `updated_at` falls in the repeated autumn hour | The wall-clock stamp is read as the first of the two instants. The row can lose or win against a change made in that hour by up to one hour of difference. |
+| Tombstone cascade | Children are deleted as the app's own change (`edited_at` 1970, no write id), and `updated_at` still moves, so 0.3.0 pulls them as before. `deleted_at` has no edit time, so the cascade adds no entry (it only fills an empty map). |
 
 **Medora 0.2.5 and older** are outside this table. The v0.3.0 notes already said to update every device.
 
@@ -1135,7 +1274,10 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
 ## 12. Testing
 
 - **SQL.** `tools/check_supabase_sql.sh` runs every migration and `tools/sql/sync_v2_checks.sql` in a throwaway Postgres 15, plus the horizon race. A new CI job, `supabase-sql`, runs it with a `postgres:15` service container (`USE_DOCKER=0`).
+- **Fake against SQL.** `test/helpers/fake_server_parity_test.dart` runs a script of 0.3.0 and 0.4.0 writes (inserts, updates, whole-row upserts, drops, cascades, children under deleted parents, a 0.3.0 take of a dropped dose) through the fake and writes the same writes, with the fake's answers, to `tools/sql/fake_server_parity.sql`. The SQL check runs that file against the migration: every step asserts `row_version`, the write id, `edited_at`, `updated_at`, the tombstone and the whole column map. A changed fake or script fails the Dart test until the file is written again (`MEDORA_WRITE_PARITY_SQL=1`); a changed migration fails the SQL check.
 - **Fake server.** `test/helpers/fake_server.dart` holds one `FakeServerCore` that models the migration exactly:
+  - every column of each synced table, with its default, on every row (the fill reads them all, as the trigger does); a write naming another column is refused (PGRST204); foreign keys are not checked;
+  - children of deleted parents stored deleted, the cascade as the app's own change, and a 0.3.0 take bringing a dropped dose back;
   - a global xid counter;
   - open transactions that hold the horizon back;
   - `row_version`, the write-id rule, `edited_at` normalisation and capping;
@@ -1165,7 +1307,11 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - a clock a day ahead and a clock two hours behind;
   - the app's missed against a person's take, and against a person's note;
   - a 0.3.0 write in between;
-  - a row restored without a map.
+  - a row restored without a map;
+  - an edit back to the old value, and an undone take;
+  - deletes and the rows under them: a slot dropped and generated again (on either device, before or after the drop, and after a person's delete), a take and a generated dose under a prescription deleted elsewhere, a dose pulled under a prescription deleted here, a live orphan on the server, and a 0.3.0 take of a dropped dose. Each ends with a round that changes nothing on the server.
+
+  `test/services/multi_device_schedule_sync_test.dart` runs the same through the whole cycle: a schedule changed and changed back (doses and reminders on both devices), and a prescription deleted while the other device, offline, takes a dose or generates more.
 - **Existing suites.** `multi_device_*`, `treatment_sync_test` and `sync_service_test` keep their behavioural expectations. Tests that pin removed v1 mechanics (the stale skip, the create re-send, the 1970 floor, the `updated_at` cursor) are replaced by their v2 equivalents, listed per task.
 - **Whole suite.** It runs under `TZ=UTC` and `TZ=Europe/Rome`.
 - **Integration.** `test/integration/sync_convergence_test.dart` gains the S1 and stock scenarios against a local `supabase start`. It runs in the manual `integration` CI job and is never pointed at a real project.
