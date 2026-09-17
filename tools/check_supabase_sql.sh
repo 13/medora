@@ -63,6 +63,9 @@ test -f "$sync_v2" || { echo "missing $sync_v2" >&2; exit 1; }
 } | psql_run >/dev/null
 
 psql_run < tools/sql/sync_v2_checks.sql
+# The fake server's answers to the same writes
+# (test/helpers/fake_server_parity_test.dart writes this file).
+psql_run < tools/sql/fake_server_parity.sql
 
 # The horizon holds back a row whose transaction is still open.
 psql_run -c "insert into medications (id, user_id, name) values ('slow-owner', '00000000-0000-0000-0000-00000000000a', 'x');" >/dev/null

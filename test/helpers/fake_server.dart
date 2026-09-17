@@ -7,10 +7,14 @@
 /// and an answer cap ([FakeServerCore.rowCap], 1000 by default; a real
 /// project may be set lower).
 ///
-/// The Dart-level fakes (`fake_remotes.dart`) and the HTTP fake
-/// (`fake_postgrest.dart`) are both views of one [FakeServerCore], so the
-/// server rules live in one place. Keep it in step with
-/// `tools/sql/sync_v2_checks.sql`.
+/// Rows hold every column of their table ([serverColumns]), with its
+/// default, as Postgres rows do; a write naming any other column is refused
+/// (PGRST204). Foreign keys are not checked.
+///
+/// The Dart-level fakes (`fake_remotes.dart`) are views of one
+/// [FakeServerCore], so the server rules live in one place. Keep it in step
+/// with `tools/sql/sync_v2_checks.sql`; `fake_server_parity_test.dart`
+/// checks the same writes against the migration itself.
 library;
 
 import 'dart:async';
@@ -30,7 +34,7 @@ DateTime? _time(Object? raw) =>
     raw is String ? DateTime.tryParse(raw)?.toUtc() : null;
 
 /// Columns with no edit time of their own (`c_untimed` in the trigger).
-const _untimed = {
+const serverUntimedColumns = {
   'id',
   'user_id',
   'created_at',
@@ -42,6 +46,107 @@ const _untimed = {
   'edited_at',
   'field_edited_at',
   'quantity',
+};
+
+/// The sync bookkeeping `20260918000000_sync_v2.sql` adds to every table,
+/// with its defaults.
+const _syncColumns = <String, Object?>{
+  'sync_xid': 0,
+  'row_version': 1,
+  'write_id': null,
+  'edited_at': null,
+  'field_edited_at': <String, Object?>{},
+};
+
+/// `now()`: a default the insert fills with the server's clock.
+const _nowDefault = #now;
+
+/// Every column of the four synced tables after all migrations, with its
+/// default (null when it has none). An inserted row holds all of them, as a
+/// Postgres row does, so the trigger's fill (which reads every column of
+/// the old row) and PostgREST's answers match the real server.
+const serverColumns = <String, Map<String, Object?>>{
+  'medications': {
+    'id': null,
+    'user_id': null,
+    'family_id': null,
+    'name': null,
+    'description': null,
+    'active_ingredients': null,
+    'category': null,
+    'manufacturer': null,
+    'form': null,
+    'atc_code': null,
+    'symptoms': null,
+    'patient_tags': null,
+    'purchase_date': null,
+    'expiry_date': null,
+    'quantity': 0,
+    'quantity_unit': null,
+    'minimum_stock_level': 0,
+    'storage_location': null,
+    'barcode': null,
+    'image_path': null,
+    'notes': null,
+    'is_archived': false,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    'ean': null,
+    ..._syncColumns,
+  },
+  'treatments': {
+    'id': null,
+    'user_id': null,
+    'family_id': null,
+    'name': null,
+    'patient_tags': null,
+    'symptom_tags': null,
+    'start_date': null,
+    'end_date': null,
+    'is_active': true,
+    'notes': null,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    'sick_leave_from': null,
+    'sick_leave_to': null,
+    'sick_leave_ref': null,
+    'doctor': null,
+    ..._syncColumns,
+  },
+  'prescriptions': {
+    'id': null,
+    'treatment_id': null,
+    'medication_id': null,
+    'dosage': null,
+    'dosage_amount': null,
+    'dosage_unit': null,
+    'interval_hours': 8,
+    'duration_days': 7,
+    'start_time': null,
+    'is_active': true,
+    'auto_diminish': false,
+    'notes': null,
+    'schedule_type': 'fixed_interval',
+    'schedule_times': null,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    ..._syncColumns,
+  },
+  'dose_logs': {
+    'id': null,
+    'prescription_id': null,
+    'scheduled_time': null,
+    'taken_time': null,
+    'status': 'pending',
+    'notes': null,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    ..._syncColumns,
+  },
 };
 
 Map<String, Object?> _entry(DateTime at, bool auto) => {
@@ -199,14 +304,14 @@ class FakeServerCore {
         if (at.isAfter(now)) at = now;
         final auto = at.isBefore(_weakCeiling);
         for (final key in old.keys) {
-          if (_untimed.contains(key)) continue;
+          if (serverUntimedColumns.contains(key)) continue;
           map[key] = _entry(auto ? _epoch : at, auto);
         }
       }
     }
     final entries = sent is Map ? sent : const <String, Object?>{};
     for (final key in row.keys) {
-      if (_untimed.contains(key)) continue;
+      if (serverUntimedColumns.contains(key)) continue;
       final entry = entries[key];
       if (old == null) {
         if (entry == null) continue;
@@ -234,19 +339,50 @@ class FakeServerCore {
 
   int _insert(String table, List<Map<String, dynamic>> jsons, int xid) {
     final rows = rowsOf(table);
+    for (final json in jsons) {
+      _knownColumns(table, json.keys);
+    }
     var inserted = 0;
     for (final json in jsons) {
       final id = json['id'] as String;
       if (rows.containsKey(id)) continue;
-      rows[id] = _stamp(null, {
-        'created_at': _iso(clock()),
-        'deleted_at': null,
-        'write_id': null,
-        ...json,
-      }, xid);
+      rows[id] = _stamp(null, {..._defaults(table, json), ...json}, xid);
       inserted++;
     }
     return inserted;
+  }
+
+  /// PostgREST refuses a write that names a column the table does not have
+  /// (PGRST204), before anything is written.
+  static void _knownColumns(String table, Iterable<String> keys) {
+    final columns = serverColumns[table];
+    if (columns == null) return;
+    for (final key in keys) {
+      if (!columns.containsKey(key)) {
+        throw PostgrestException(
+          message: "Could not find the '$key' column of '$table'",
+          code: 'PGRST204',
+        );
+      }
+    }
+  }
+
+  /// The columns [json] leaves out, with the table's defaults. A table the
+  /// fake does not know gets the bookkeeping only.
+  Map<String, dynamic> _defaults(String table, Map<String, dynamic> json) {
+    final columns =
+        serverColumns[table] ??
+        const {'created_at': _nowDefault, 'deleted_at': null, 'write_id': null};
+    final now = _iso(clock());
+    return {
+      for (final MapEntry(:key, :value) in columns.entries)
+        if (!json.containsKey(key))
+          key: switch (value) {
+            _nowDefault => now,
+            final Map<String, Object?> map => Map<String, dynamic>.of(map),
+            _ => value,
+          },
+    };
   }
 
   /// `update … where id = [id] [and row_version = ifVersion] [and status =
@@ -259,6 +395,7 @@ class FakeServerCore {
     String? ifStatus,
     bool ifLive = false,
   }) => _request('$table:patch', (xid) {
+    _knownColumns(table, changes.keys);
     final old = rowsOf(table)[id];
     if (old == null) return null;
     if (ifVersion != null && old['row_version'] != ifVersion) return null;
@@ -299,6 +436,7 @@ class FakeServerCore {
   /// time; only the payload's columns are set on conflict.
   Map<String, dynamic> legacyUpsert(String table, Map<String, dynamic> json) =>
       _request('$table:legacy', (xid) {
+        _knownColumns(table, json.keys);
         final old = rowsOf(table)[json['id']];
         if (old == null) {
           _insert(table, [json], xid);

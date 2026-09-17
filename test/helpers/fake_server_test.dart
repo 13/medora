@@ -657,6 +657,66 @@ void main() {
       expect(t()['write_id'], isNull);
     });
 
+    test('an insert holds every column of the table, and the first update '
+        'fills a column the insert never named, as the SQL does', () {
+      core.legacyUpsert('treatments', {
+        'id': 't9',
+        'name': 'X',
+        'start_date': '2026-03-06',
+        'updated_at': '2026-03-06T09:00:00.000Z',
+      });
+      final inserted = core.fetch('treatments', 't9')!;
+      // PostgREST answers every column, with the table's defaults.
+      expect(inserted.keys, containsAll(serverColumns['treatments']!.keys));
+      expect(inserted.keys.toSet(), serverColumns['treatments']!.keys.toSet());
+      expect(
+        [inserted['notes'], inserted['is_active'], inserted['family_id']],
+        [null, true, null],
+      );
+      core.patch('treatments', 't9', {
+        'doctor': 'D',
+        'write_id': 'w',
+        'edited_at': _iso(now),
+      });
+      final m = core.rowsOf('treatments')['t9']!['field_edited_at'] as Map;
+      final nineOClock = {'at': '2026-03-06T09:00:00.000Z', 'auto': false};
+      expect(m['notes'], nineOClock);
+      expect(m['sick_leave_ref'], nineOClock);
+      expect(m['doctor'], {'at': _iso(now), 'auto': false});
+      expect(
+        m.keys.toSet(),
+        serverColumns['treatments']!.keys.toSet().difference(
+          serverUntimedColumns,
+        ),
+      );
+    });
+
+    test('a write naming a column the table lacks is refused whole, as '
+        'PostgREST refuses it (PGRST204)', () {
+      Matcher refused(String column) => throwsA(
+        isA<PostgrestException>()
+            .having((e) => e.code, 'code', 'PGRST204')
+            .having((e) => e.message, 'message', contains(column)),
+      );
+      expect(
+        () => core.insertIfAbsent('treatments', [
+          {'id': 'ok', 'name': 'A', 'start_date': '2026-03-06'},
+          {'id': 'bad', 'name': 'B', 'colour': 'red'},
+        ]),
+        refused('colour'),
+      );
+      expect(core.rowsOf('treatments').keys, ['ft']);
+      expect(
+        () => core.patch('treatments', 'ft', {'colour': 'red'}),
+        refused('colour'),
+      );
+      expect(
+        () => core.legacyUpsert('treatments', {'id': 'ft', 'colour': 'red'}),
+        refused('colour'),
+      );
+      expect(t()['row_version'], 1);
+    });
+
     test('a row from before the migration is filled by its first update', () {
       core.legacyUpsert('medications', {
         'id': 'old',
