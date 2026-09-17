@@ -313,7 +313,7 @@ String? intakeText(IntakeCount count, EpisodeLabels labels) {
   return labels.takenOfDue(count.taken, count.due);
 }
 
-/// The illness period of [treatment]: "Mar 2, 2026 – Ongoing".
+/// The illness period of [treatment]: "Mar 2, 2026 – ongoing".
 String _illnessPeriod(Treatment treatment, EpisodeLabels labels) {
   final end = treatment.endDate;
   return '${labels.date(treatment.startDate)} – '
