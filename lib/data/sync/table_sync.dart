@@ -188,7 +188,11 @@ class TableSync {
 
     if (status == SyncStatus.pendingDelete) {
       final guarded = local['delete_guard'] == 'if_pending';
-      if (guarded && json['status'] != 'pending') {
+      // Taken or skipped elsewhere: that copy is shown, unless a person
+      // here undid it later; the push then sends the undo and the drop.
+      if (guarded &&
+          json['status'] != 'pending' &&
+          !_droppedUndoWins(local, json)) {
         await _storeServer(txn, json, meta, SyncStatus.synced, exists: true);
         return const PullApplied(PullOutcome.replaced);
       }
@@ -636,22 +640,105 @@ class TableSync {
           // Still live and still pending: the delete is tried again later.
           throw StateError('$table/$id: the server refused the delete');
         }
-        // Taken or skipped elsewhere meanwhile: keep that copy.
-        final db = await _db;
-        await db.transaction((txn) async {
-          await txn.update(
-            table,
-            {'sync_status': SyncStatus.synced, 'delete_guard': null},
-            where: 'id = ?',
-            whereArgs: [id],
-          );
-          await _applyPulled(txn, server);
-        });
-        return;
+        if (!_droppedUndoWins(row, server)) {
+          // Taken or skipped elsewhere meanwhile: keep that copy.
+          final db = await _db;
+          await db.transaction((txn) async {
+            await txn.update(
+              table,
+              {'sync_status': SyncStatus.synced, 'delete_guard': null},
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+            await _applyPulled(txn, server);
+          });
+          return;
+        }
+        // A person here made the dose pending again after the change that
+        // made it taken or skipped there: that undo goes out first, then
+        // the drop applies to it.
+        await _sendDroppedUndo(row, server);
+        final again = await remote.patch(
+          id,
+          {
+            'deleted_at': deletedAt,
+            'write_id': await _beginWrite(row),
+            'edited_at': editedAt,
+            'field_edited_at': const <String, Object?>{},
+          },
+          ifStatus: 'pending',
+          ifLive: true,
+        );
+        if (again == null) {
+          throw StateError('$table/$id changed again; the drop is tried later');
+        }
       }
     }
     final db = await _db;
     await db.delete(table, where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// True when the dose [local], dropped from its schedule here, carries a
+  /// change to its status that beats the server copy [server]'s: a
+  /// person's undo here, later than the take or skip there (cycle review
+  /// I-2). The drop only fills the column times, so the undo's time is
+  /// still the row's.
+  bool _droppedUndoWins(
+    Map<String, Object?> local,
+    Map<String, dynamic> server,
+  ) {
+    if (local['status'] != 'pending') return false;
+    final meta = LocalSyncMeta.fromRow(local);
+    final merged = mergeRows(
+      base: meta.base,
+      baseTimes: meta.baseTimes,
+      local: localWire(table, local),
+      remote: canonicalWire(table, server),
+      localTimes: localFieldTimes(local),
+      remoteTimes: RemoteMeta.fromJson(server).fieldTimes,
+      policy: policy,
+    );
+    return merged.row['status'] == 'pending';
+  }
+
+  /// Sends the undo [local] carries (its status group) to the server copy
+  /// [server], at that copy's version, and moves the base to the answer.
+  /// Throws when the copy moved meanwhile: the drop is tried later.
+  Future<void> _sendDroppedUndo(
+    Map<String, Object?> local,
+    Map<String, dynamic> server,
+  ) async {
+    final id = local['id']! as String;
+    final wire = localWire(table, local);
+    const group = ['status', 'taken_time'];
+    final times = _sentTimes(local, group);
+    final updatedAt = local['updated_at'];
+    final written = await remote.patch(id, {
+      for (final column in group) column: wire[column],
+      'write_id': await _beginWrite(local),
+      // The drop set the row's own time to the automatic one; the undo
+      // is a person's change, made when the row was last stamped.
+      'edited_at': _wireTime(
+        writeTime(times.values, complete: group.every(times.containsKey)) ??
+            (updatedAt is String ? DateTime.tryParse(updatedAt) : null) ??
+            now(),
+      ),
+      'field_edited_at': {
+        for (final MapEntry(:key, :value) in times.entries) key: value.toJson(),
+      },
+    }, ifVersion: RemoteMeta.fromJson(server).rowVersion);
+    if (written == null) {
+      throw StateError('$table/$id changed again; the drop is tried later');
+    }
+    final meta = RemoteMeta.fromJson(written);
+    await _update(
+      id,
+      syncMetaValues(
+        version: meta.rowVersion,
+        base: canonicalWire(table, written),
+        baseTimes: meta.fieldTimes,
+      ),
+    );
   }
 
   // ── Helpers ────────────────────────────────────────────────

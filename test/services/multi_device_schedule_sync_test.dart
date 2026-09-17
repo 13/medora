@@ -949,6 +949,151 @@ void main() {
       }
     });
 
+    group('an undo made offline, then the slot dropped on the same device '
+        '(cycle review I-2)', () {
+      late SeededPrescription p;
+      late String evening;
+
+      /// A takes tomorrow evening's dose; B pulls it, then, offline, undoes
+      /// the take and moves the evening dose to 21:00.
+      Future<void> undoThenMove() async {
+        p = await h.createOnA(
+          start: DateTime(today.year, today.month, today.day + 1),
+          durationDays: 2,
+          scheduleType: 'times_per_day',
+          times: '["08:00","20:00"]',
+        );
+        await h.b.appSync();
+        evening = scheduledDoseId(
+          p.prescriptionId,
+          DateTime(today.year, today.month, today.day + 1, 20),
+        );
+        await h.a.run((_) => h.a.doses.markDoseTaken(evening));
+        await h.b.appSync();
+        expect((await h.b.row('dose_logs', evening))['status'], 'taken');
+        h.b.online = false;
+        await h.b.run((db) async {
+          await h.b.doses.markDosePending(evening);
+          await db.update(
+            'prescriptions',
+            {
+              'schedule_times': '["08:00","21:00"]',
+              'sync_status': SyncStatus.pendingUpdate,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [p.prescriptionId],
+          );
+          await h.b.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+        });
+      }
+
+      /// The evening dose at 20:00 is gone from the server and from both
+      /// devices, with no reminder, and later rounds move nothing.
+      Future<void> expectDroppedEverywhere() async {
+        final server = h.server.doses.table.rows[evening]!;
+        expect(server['deleted_at'], isNotNull, reason: 'server');
+        expect(server['status'], 'pending', reason: 'the undo went out');
+        for (final device in [h.a, h.b]) {
+          expect(
+            await device.slots(p.prescriptionId),
+            isNot(contains(startsWith(evening))),
+            reason: device.name,
+          );
+          expect(
+            await device.remindersFor(p.prescriptionId),
+            isNot(contains(evening)),
+            reason: device.name,
+          );
+          expect(
+            (await device.remindersFor(
+              p.prescriptionId,
+            )).values.map((t) => t.hour).toSet().difference({8, 21}),
+            isEmpty,
+            reason: device.name,
+          );
+        }
+        final versions = {
+          for (final r in h.server.dosesOf(p.prescriptionId))
+            r['id']: r['row_version'],
+        };
+        for (var i = 0; i < 2; i++) {
+          await h.a.appSync();
+          await h.b.appSync();
+        }
+        expect({
+          for (final r in h.server.dosesOf(p.prescriptionId))
+            r['id']: r['row_version'],
+        }, versions);
+        for (final device in [h.a, h.b]) {
+          await device.run((db) async {
+            expect(
+              await db.query(
+                'dose_logs',
+                where: 'sync_status != ?',
+                whereArgs: [SyncStatus.synced],
+              ),
+              isEmpty,
+              reason: device.name,
+            );
+          });
+        }
+      }
+
+      test('the undo beats the earlier take, and the slot is dropped '
+          'everywhere', () async {
+        await undoThenMove();
+        h.b.online = true;
+        await h.b.appSync();
+        await h.a.appSync();
+        await expectDroppedEverywhere();
+      });
+
+      test('the slot is gone on B at once, even when B starts again before '
+          'it is online', () async {
+        await undoThenMove();
+        await h.b.resume();
+        expect(
+          await h.b.slots(p.prescriptionId),
+          isNot(contains(startsWith(evening))),
+          reason: 'B, offline',
+        );
+        expect(
+          await h.b.remindersFor(p.prescriptionId),
+          isNot(contains(evening)),
+          reason: 'B, offline',
+        );
+        h.b.online = true;
+        await h.b.appSync();
+        await h.a.appSync();
+        await expectDroppedEverywhere();
+      });
+
+      test('a take on A after the undo still wins', () async {
+        await undoThenMove();
+        // A took the dose again after B's undo (and after its first take).
+        await h.a.run((_) => h.a.doses.markDosePending(evening));
+        await h.a.run((_) => h.a.doses.markDoseTaken(evening));
+        h.b.online = true;
+        await h.b.appSync();
+        await h.a.appSync();
+        expect(h.server.doses.table.rows[evening]!['status'], 'taken');
+        expect(h.server.doses.table.rows[evening]!['deleted_at'], isNull);
+        for (final device in [h.a, h.b]) {
+          expect(
+            (await device.row('dose_logs', evening))['status'],
+            'taken',
+            reason: device.name,
+          );
+          expect(
+            (await device.row('dose_logs', evening))['sync_status'],
+            SyncStatus.synced,
+            reason: device.name,
+          );
+        }
+      });
+    });
+
     for (final bTakes in [false, true]) {
       test('a prescription deleted on A while B, offline, '
           '${bTakes ? 'takes a dose' : 'generates the next days'}: the '

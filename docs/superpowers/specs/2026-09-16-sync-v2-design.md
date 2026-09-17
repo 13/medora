@@ -342,9 +342,10 @@ The app's own deletes are:
   - If none matched, the client fetches the row:
     - gone or already deleted: the local row is hard-deleted;
     - no longer pending (taken or skipped elsewhere): the server copy replaces the local row, stored as `synced`. It is a historical fact and is shown;
+    - no longer pending, but a person here made the dose pending again later than that take or skip (an undo made offline before the schedule changed; cycle review I-2): the undo is sent first (its status group, with its own times, at the fetched version), then the guarded delete again. The undo is a person's change, so `updated_at` moves and 0.3.0 sees it; the delete stays the app's own. If the copy moved meanwhile, the push fails and is tried again after its backoff. "Later" is the three-way merge of §4.5 on the status group, with the base the device last held: the drop only fills the column times, so the undo's time is still the row's;
     - still live and pending (the row changed and changed back meanwhile): the push fails, the row stays `pending_delete` and is tried again after its backoff.
   - A dropped dose that never reached a server, and whose create got no answer, sends nothing in its place.
-  - Locally this is `sync_status = pending_delete` with `delete_guard = 'if_pending'`.
+  - Locally this is `sync_status = pending_delete` with `delete_guard = 'if_pending'`. A dose with a change still waiting (`pending_update`, such as that undo) is dropped the same way: it disappears here at once, with its reminder, and keeps its base and column times for the push. (The review's alternative, leaving `pending_update` doses out of the drop, kept the undo but left the dose shown and reminded at the old time until the next regeneration, and `DoseScheduleService` does not regenerate the same doses twice in one process, so it stayed until the app was restarted.)
 - **A pulled tombstone:**
   - it deletes the local row;
   - **exception:** the app's own tombstone of a **dose** loses to a change still waiting here, which is then pushed with `deleted_at: null`:
@@ -1096,7 +1097,7 @@ It also gains `newWriteId`, which defaults to `const Uuid().v4()`; tests inject 
 | none, and R is a tombstone | nothing |
 | none | insert R as `synced`, base = W (with R's column times), version = M.rowVersion, `edited_at` = M.editedAt, `field_edited_at` = R's map |
 | any, and R is a tombstone that does not lose (below) | hard-delete L (its outbox rows and its children cascade) |
-| `pending_delete` with `delete_guard = if_pending`, and R is not pending | replace with R as `synced` |
+| `pending_delete` with `delete_guard = if_pending`, and R is not pending | replace with R as `synced`, unless L carries a person's undo that beats R's status (§4.6): then keep L, and the push sends the undo and the drop |
 | `pending_delete` otherwise | keep L (a delete wins) |
 | `synced` | if M.rowVersion > L.version (or L.version is null): replace with R as `synced`, base = W; otherwise keep L |
 | pending, and M.writeId = L.sync_write_id | own write: base = W, version = M.rowVersion, write id cleared; `synced` if L equals W in content, else stays `pending_update`, with R's column times for the columns L shares with W |

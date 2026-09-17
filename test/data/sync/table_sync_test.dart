@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -809,6 +810,119 @@ void main() {
       );
     });
 
+    group('a take pulled here, undone by a person here, then the slot '
+        'dropped here (cycle review I-2)', () {
+      final local = DoseLogLocalDatasource(now: () => now);
+
+      Future<void> takenElsewhereUndoneHereThenDropped() async {
+        final since = core.horizon;
+        doses.editFromOtherDevice(
+          'd1',
+          {'status': 'taken', 'taken_time': '2026-03-01T07:05:00.000Z'},
+          editedAt: DateTime.utc(2026, 3, 1, 7, 5),
+          fieldTimes: {
+            'status': {'at': '2026-03-01T07:05:00.000Z', 'auto': false},
+            'taken_time': {'at': '2026-03-01T07:05:00.000Z', 'auto': false},
+          },
+        );
+        await pullDoses(since);
+        expect((await dose())['status'], 'taken');
+        now = DateTime.utc(2026, 3, 1, 7, 10);
+        await local.updateStatus(
+          'd1',
+          'pending',
+          clearTakenTime: true,
+          syncStatus: 'pending_update',
+        );
+        now = DateTime.utc(2026, 3, 1, 7, 12);
+        expect(await local.dropPendingByPrescription('p1'), 1);
+        expect(
+          [(await dose())['sync_status'], (await dose())['delete_guard']],
+          ['pending_delete', 'if_pending'],
+        );
+      }
+
+      test('a pull of a later copy that did not touch the status keeps the '
+          'drop; the push sends the undo, then the drop', () async {
+        await takenElsewhereUndoneHereThenDropped();
+        final since = core.horizon;
+        doses.editFromOtherDevice('d1', {
+          'notes': 'with food',
+        }, editedAt: DateTime.utc(2026, 3, 1, 7, 11));
+        expect((await pullDoses(since)).single.outcome, PullOutcome.kept);
+        expect((await dose())['sync_status'], 'pending_delete');
+
+        final before = core.requests.length;
+        await doseSync.pushRow(await dose(), userId: 'u');
+        expect(core.requests.sublist(before), [
+          'dose_logs:patch', // the drop: no longer pending there
+          'dose_logs:fetch',
+          'dose_logs:patch', // the undo, at the fetched version
+          'dose_logs:patch', // the drop again
+        ]);
+        final server = doses.get('d1')!;
+        expect(
+          [server['status'], server['taken_time'], server['notes']],
+          ['pending', null, 'with food'],
+        );
+        expect(server['deleted_at'], isNotNull);
+        expect(server['edited_at'], startsWith('1970-01-01'));
+        expect((server['field_edited_at'] as Map)['status'], {
+          'at': '2026-03-01T07:10:00.000Z',
+          'auto': false,
+        });
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+      });
+
+      test('a take there after the undo wins: the take is stored', () async {
+        await takenElsewhereUndoneHereThenDropped();
+        final since = core.horizon;
+        doses.editFromOtherDevice('d1', {
+          'status': 'pending',
+          'taken_time': null,
+        }, editedAt: DateTime.utc(2026, 3, 1, 7, 14));
+        doses.editFromOtherDevice('d1', {
+          'status': 'taken',
+          'taken_time': '2026-03-01T07:15:00.000Z',
+        }, editedAt: DateTime.utc(2026, 3, 1, 7, 15));
+        await doseSync.pushRow(await dose(), userId: 'u');
+        final server = doses.get('d1')!;
+        expect([server['status'], server['deleted_at']], ['taken', null]);
+        final row = await dose();
+        expect(
+          [row['status'], row['sync_status'], row['delete_guard']],
+          ['taken', 'synced', null],
+        );
+        expect((await pullDoses(since)).map((a) => a.outcome), [
+          PullOutcome.kept,
+        ]);
+      });
+
+      test('the drop sent while the server copy moves again fails and is '
+          'tried again later', () async {
+        await takenElsewhereUndoneHereThenDropped();
+        final moving = _MovingTable(core, 'dose_logs');
+        final raced = TableSync(
+          table: 'dose_logs',
+          remote: moving,
+          newWriteId: () => 'd${ids++}',
+          now: () => now,
+        );
+        await expectLater(
+          raced.pushRow(await dose(), userId: 'u'),
+          throwsStateError,
+        );
+        expect((await dose())['sync_status'], 'pending_delete');
+        await doseSync.pushRow(await dose(), userId: 'u');
+        final server = doses.get('d1')!;
+        expect(
+          [server['status'], server['deleted_at'] != null],
+          ['pending', true],
+        );
+      });
+    });
+
     test('a dropped slot whose create never got an answer, and that the '
         'server lacks: nothing is sent in its place', () async {
       final db = await AppDatabase.instance.database;
@@ -1591,6 +1705,37 @@ class _MissingPatchTable extends FakeSyncTable {
     if (ifStatus != null && !_missed) {
       _missed = true;
       return null;
+    }
+    return super.patch(
+      id,
+      changes,
+      ifVersion: ifVersion,
+      ifStatus: ifStatus,
+      ifLive: ifLive,
+    );
+  }
+}
+
+/// Another device writes to the row just before this device's first
+/// versioned patch reaches the server.
+class _MovingTable extends FakeSyncTable {
+  _MovingTable(super.core, super.table);
+
+  var _moved = false;
+
+  @override
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    if (ifVersion != null && !_moved) {
+      _moved = true;
+      editFromOtherDevice(id, {
+        'notes': 'moved',
+      }, editedAt: DateTime.utc(2026, 3, 1, 7, 13));
     }
     return super.patch(
       id,
