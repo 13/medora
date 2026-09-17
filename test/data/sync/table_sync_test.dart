@@ -498,6 +498,23 @@ void main() {
       expect((await dose())['sync_status'], 'synced');
     });
 
+    test('a row with nothing left to send does not bring back a dose '
+        'another device dropped', () async {
+      final since = core.horizon;
+      core.patch('dose_logs', 'd1', {
+        'deleted_at': '2026-03-01T06:00:00.000Z',
+        'write_id': 'other-drop',
+        'edited_at': automaticEditedAt.toIso8601String(),
+      }, ifStatus: 'pending');
+      // Pending, but a person's change was undone: it equals its base.
+      await localChange({
+        'edited_at': '2026-03-01T06:30:00.000Z',
+        'field_edited_at':
+            '{"status":{"at":"2026-03-01T06:30:00.000Z","auto":false}}',
+      });
+      expect((await pullDoses(since)).single.outcome, PullOutcome.deleted);
+    });
+
     test('an automatic missed here and an automatic drop elsewhere: the '
         'drop wins', () async {
       final since = core.horizon;
@@ -629,8 +646,18 @@ void main() {
       expect(server['updated_at'], isNot(before));
     });
 
-    test('a push of the app\'s change alone is sent as automatic', () async {
+    test('a push of the app\'s change alone is sent as automatic, whatever '
+        'time the row itself carries', () async {
       final db = await AppDatabase.instance.database;
+      // A person changed this dose once (its map records that), then the
+      // app marked it missed: the sweep leaves the row's edited_at alone.
+      await writeLocalChange(db, 'dose_logs', 'd1', {
+        'notes': 'n',
+        'edited_at': '2026-03-01T06:00:00.000Z',
+        'sync_status': 'pending_update',
+      }, at: DateTime.utc(2026, 3, 1, 6));
+      await doseSync.pushRow(await dose(), userId: 'u');
+      expect((await dose())['sync_status'], 'synced');
       await writeLocalChange(db, 'dose_logs', 'd1', {
         'status': 'missed',
         'sync_status': 'pending_update',

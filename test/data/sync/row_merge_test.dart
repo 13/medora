@@ -275,6 +275,11 @@ void main() {
       'sick_leave_ref': null,
     };
     final nineThirty = DateTime.utc(2026, 3, 5, 9, 30);
+    const dose0 = <String, Object?>{
+      'id': 'd1',
+      'status': 'pending',
+      'taken_time': null,
+    };
 
     test('A/B/C: an older change to another column does not lower the '
         'time the notes carry', () {
@@ -461,6 +466,36 @@ void main() {
           ['missed', '2026-03-05T07:30:00.000Z'],
         );
       });
+    });
+
+    test('a side\'s change is the one it made to the group, not an older '
+        'time on a column it left alone', () {
+      // There: only the app's missed. Its taken_time entry is an older
+      // person's change (an undo at 11:00), untouched since the base.
+      // Here: a person took the dose at 09:00.
+      final result = mergeRows(
+        base: dose0,
+        local: {
+          ...dose0,
+          'status': 'taken',
+          'taken_time': '2026-03-05T09:00:00.000Z',
+        },
+        remote: {...dose0, 'status': 'missed'},
+        localTimes: FieldTimes({
+          'status': FieldTime(nine),
+          'taken_time': FieldTime(nine),
+        }),
+        remoteTimes: FieldTimes({
+          'status': FieldTime.automaticChange,
+          'taken_time': FieldTime(DateTime.utc(2026, 3, 5, 11)),
+        }),
+        policy: doseLogMerge,
+      );
+      expect(
+        [result.row['status'], result.row['taken_time']],
+        ['taken', '2026-03-05T09:00:00.000Z'],
+      );
+      expect(result.conflicts.single.keptLocal, isTrue);
     });
 
     test('a column missing from a filled map is unknown: a person\'s change '
