@@ -777,6 +777,20 @@ do $$ begin
             from dose_logs where id = 'lg-d3'),
     'legacy take: 0.3.0''s own "missed" does not bring a dropped dose back';
 end $$;
+-- A 0.4.0 write decides for itself: without deleted_at it leaves the
+-- tombstone as it is, and its own edit time.
+insert into dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at)
+  values ('lg-d4', 'oc-p4', '2026-09-14T20:00:00Z', 'pending', '1970-01-01T00:00:00Z',
+          'c0000000-0000-0000-0000-000000000014', '1970-01-01T00:00:00Z');
+update dose_logs set deleted_at = now(), write_id = gen_random_uuid(), edited_at = '1970-01-01T00:00:00Z'
+ where id = 'lg-d4';
+update dose_logs set status = 'taken', write_id = 'c0000000-0000-0000-0000-000000000015',
+       edited_at = '2026-09-14T20:05:00Z' where id = 'lg-d4';
+do $$ begin
+  assert (select deleted_at is not null and edited_at = timestamptz '2026-09-14T20:05:00Z'
+            from dose_logs where id = 'lg-d4'),
+    'legacy take: only a 0.3.0 write brings a dropped dose back by its status';
+end $$;
 -- A person's 0.3.0 delete of a dose the app dropped is a person's.
 update dose_logs set deleted_at = now() where id = 'lg-d2';
 update dose_logs set status = 'taken' where id = 'lg-d2';

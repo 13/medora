@@ -621,6 +621,71 @@ void main() {
         }, where: "id = 'p1'");
       }
 
+      test('only doses come back: a prescription deleted with its '
+          'treatment elsewhere stays deleted, whatever waits here', () async {
+        final prescriptions = TableSync(
+          table: 'prescriptions',
+          remote: FakeSyncTable(core, 'prescriptions'),
+          newWriteId: () => 'p${ids++}',
+          now: () => now,
+        );
+        core.legacyUpsert('treatments', {
+          'id': 't1',
+          'name': 'Flu',
+          'start_date': '2026-03-01',
+        });
+        core.legacyUpsert('prescriptions', {
+          'id': 'p1',
+          'treatment_id': 't1',
+          'medication_id': 'm1',
+          'dosage': '1',
+          'start_time': '2026-03-01T08:00:00.000Z',
+        });
+        core.patch('treatments', 't1', {
+          'deleted_at': '2026-03-01T06:00:00.000Z',
+          'write_id': 'other',
+          'edited_at': '2026-03-01T06:00:00.000Z',
+        });
+        final server = core.fetch('prescriptions', 'p1')!;
+        expect(
+          isAutomaticEdit(DateTime.parse(server['edited_at'] as String)),
+          isTrue,
+        );
+        // A person's change to it waits here; the treatment is still live
+        // here.
+        final db = await AppDatabase.instance.database;
+        await db.update('prescriptions', {
+          'dosage': '2',
+          'sync_status': 'pending_update',
+          'edited_at': '2026-03-01T07:00:00.000Z',
+        }, where: "id = 'p1'");
+        final applied = await prescriptions.applyPulled(server);
+        expect(applied.outcome, PullOutcome.deleted);
+        expect(await db.query('prescriptions', where: "id = 'p1'"), isEmpty);
+      });
+
+      test('a forced push of a dose whose prescription is deleted on the '
+          'server fails and keeps the dose here', () async {
+        core.legacyUpsert('prescriptions', {
+          'id': 'p1',
+          'treatment_id': 't1',
+          'medication_id': 'm1',
+          'dosage': '1',
+          'start_time': '2026-03-01T08:00:00.000Z',
+          'deleted_at': '2026-03-01T06:00:00.000Z',
+        });
+        await takeHere(DateTime.utc(2026, 3, 1, 7, 5));
+        await expectLater(
+          doseSync.pushRow(await dose(), userId: 'u', force: true),
+          throwsStateError,
+        );
+        expect(doses.get('d1')!['deleted_at'], isNotNull);
+        expect(
+          [(await dose())['status'], (await dose())['sync_status']],
+          ['taken', 'pending_update'],
+        );
+      });
+
       test('a take here does not bring back a dropped dose whose '
           'prescription is deleted here', () async {
         final since = core.horizon;

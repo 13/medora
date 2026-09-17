@@ -515,9 +515,7 @@ void main() {
       a.skew = const Duration(hours: 2);
       serverNow = DateTime.utc(2026, 3, 5, 9);
       await a.edit('treatments', 't1', {'notes': 'Y'});
-      await a.edit('treatments', 't1', {'doctor': 'Dr. A'});
-      // A's first push lands, but A only learns of it on the next cycle,
-      // after another edit of its own.
+      // A's push lands, but its answer is lost: the row backs off.
       final db = await a.open();
       final engine = TableSync(
         table: 'treatments',
@@ -532,9 +530,16 @@ void main() {
         ),
         throwsA(anything),
       );
+      expect(core.rowsOf('treatments')['t1']!['notes'], 'Y');
+      // A changes the doctor, and pulls while that row waits: the pull
+      // finds A's own write.
       serverNow = DateTime.utc(2026, 3, 5, 9, 1);
       await a.edit('treatments', 't1', {'doctor': 'Dr. B'});
-      await a.push();
+      await a.pull();
+      expect(
+        (await a.row('treatments', 't1'))!['sync_status'],
+        SyncStatus.pendingUpdate,
+      );
       // B changes the notes after A's arrived.
       serverNow = DateTime.utc(2026, 3, 5, 9, 30);
       await b.sync();

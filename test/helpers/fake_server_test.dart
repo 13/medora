@@ -660,6 +660,19 @@ void main() {
       });
     });
 
+    test('a 0.4.0 write that leaves deleted_at alone leaves the tombstone '
+        'and keeps its own edit time', () {
+      core.patch('dose_logs', 'd1', {
+        'status': 'taken',
+        'write_id': 'mine',
+        'edited_at': _iso(now),
+      });
+      expect(
+        [dose('d1')['deleted_at'] != null, dose('d1')['edited_at']],
+        [true, _iso(now)],
+      );
+    });
+
     test('a dose a person deleted with 0.3.0 stays deleted', () {
       core.patch('dose_logs', 'd2', {'deleted_at': _iso(now)});
       send('d2', {'status': 'taken'});
