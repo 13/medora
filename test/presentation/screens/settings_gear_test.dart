@@ -111,6 +111,41 @@ void main() {
     });
   }
 
+  // Search is a short-lived mode whose only exit is the close button; the
+  // gear took 48 dp from the field and cut the German hints from 1.1x.
+  for (final (index, tab) in const [(1, 'Medications'), (2, 'Treatments')]) {
+    testWidgets('$tab: searching hides the gear and closing brings it back', (
+      tester,
+    ) async {
+      await pumpShell(tester);
+      await openTab(tester, index);
+      final bar = find.byType(AppBar).last;
+
+      await tester.tap(find.byTooltip('Search'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: bar, matching: find.byType(TextField)),
+        findsOneWidget,
+      );
+      expect(find.byKey(SettingsAction.buttonKey), findsNothing);
+      // Only the search's own action is left, and it is labelled.
+      expect(
+        find.descendant(of: bar, matching: find.byType(IconButton)),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Close'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: bar, matching: find.byType(TextField)),
+        findsNothing,
+      );
+      expect(find.byKey(SettingsAction.buttonKey), findsOneWidget);
+      expect(find.byTooltip('Search'), findsOneWidget);
+    });
+  }
+
   testWidgets('no gear on forms, detail screens and the scanner', (
     tester,
   ) async {

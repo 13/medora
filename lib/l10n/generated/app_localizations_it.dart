@@ -117,7 +117,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get medications => 'Farmaci';
 
   @override
-  String get searchMedications => 'Cerca farmaci...';
+  String get searchMedications => 'Cerca farmaci…';
 
   @override
   String get noMedicationsYet => 'Nessun farmaco ancora';

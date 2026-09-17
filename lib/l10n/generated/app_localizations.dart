@@ -283,7 +283,7 @@ abstract class AppLocalizations {
   /// No description provided for @searchMedications.
   ///
   /// In en, this message translates to:
-  /// **'Search medications...'**
+  /// **'Search medications…'**
   String get searchMedications;
 
   /// No description provided for @noMedicationsYet.

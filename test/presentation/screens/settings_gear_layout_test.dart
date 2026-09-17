@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -41,13 +42,21 @@ void main() {
   tearDown(tearDownTestDatabase);
 
   /// Every label in the visible app bar fits on its one line, whole.
-  void expectAppBarTextFits(WidgetTester tester, String where) {
+  void expectAppBarTextFits(
+    WidgetTester tester,
+    String where, {
+    int minLabels = 3,
+  }) {
     final labels = find.descendant(
       of: find.byType(AppBar).last,
       matching: find.byType(RichText),
     );
     // The title plus at least one icon glyph per action.
-    expect(labels.evaluate().length, greaterThanOrEqualTo(3), reason: where);
+    expect(
+      labels.evaluate().length,
+      greaterThanOrEqualTo(minLabels),
+      reason: where,
+    );
     for (final element in labels.evaluate()) {
       final label = find.byElementPredicate((e) => e == element);
       final text = (element.widget as RichText).text.toPlainText();
@@ -86,6 +95,57 @@ void main() {
         });
         expect(find.byKey(SettingsAction.buttonKey), findsOneWidget);
         expectAppBarTextFits(tester, '$tab ($locale, ${scale}x)');
+      });
+    }
+  }
+
+  // In search mode the app bar holds the search field and its close button
+  // only, so the hint keeps the gear's 48 dp. The app bar clamps its title's
+  // text scale, so 1.6x and 2.0x are the same width here as the clamp.
+  for (final (locale, scale) in const [
+    ('de', 1.0),
+    ('de', 1.1),
+    ('de', 1.6),
+    ('it', 1.6),
+    ('en', 1.6),
+    ('de', 2.0),
+  ]) {
+    for (final (index, tab) in const [(1, 'Medications'), (2, 'Treatments')]) {
+      testWidgets('$tab search at 360 dp, $locale, ${scale}x: the hint fits '
+          'and the gear is hidden', (tester) async {
+        await collectFlutterErrors(() async {
+          await pumpShell(
+            tester,
+            size: const Size(360, 800),
+            locale: Locale(locale),
+            textScale: scale,
+          );
+          await openTab(tester, index);
+        });
+        final bar = find.byType(AppBar).last;
+        await tester.tap(
+          find.descendant(of: bar, matching: find.byType(IconButton)).first,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(of: bar, matching: find.byType(TextField)),
+          findsOneWidget,
+        );
+        expect(find.byKey(SettingsAction.buttonKey), findsNothing);
+        final l10n = lookupAppLocalizations(Locale(locale));
+        final hint = index == 1
+            ? l10n.searchMedications
+            : l10n.searchTreatments;
+        expect(
+          find.descendant(of: bar, matching: find.text(hint)),
+          findsOneWidget,
+        );
+        // The hint and the close icon.
+        expectAppBarTextFits(
+          tester,
+          '$tab search ($locale, ${scale}x)',
+          minLabels: 2,
+        );
       });
     }
   }

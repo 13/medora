@@ -107,6 +107,10 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                   hintText: l10n.searchMedications,
                   border: InputBorder.none,
                   filled: false,
+                  // No side padding: the toolbar already insets the title,
+                  // and the theme's 16 dp each side cut the German hint at
+                  // the app bar's largest title scale.
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 onChanged: (_) => setState(() {}),
               )
@@ -114,6 +118,9 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
+            tooltip: _isSearching
+                ? MaterialLocalizations.of(context).closeButtonTooltip
+                : MaterialLocalizations.of(context).searchFieldLabel,
             onPressed: () {
               setState(() {
                 _isSearching = !_isSearching;
@@ -121,7 +128,10 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
               });
             },
           ),
-          const SettingsAction(),
+          // Search is a short mode whose only exit is the close button, so
+          // its app bar holds the field and that button only: the gear's
+          // 48 dp cut the German hint from a 1.1x text scale.
+          if (!_isSearching) const SettingsAction(),
         ],
       ),
       body: Column(

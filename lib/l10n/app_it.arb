@@ -37,7 +37,7 @@
   "startedOn": "Iniziato il {date}",
 
   "medications": "Farmaci",
-  "searchMedications": "Cerca farmaci...",
+  "searchMedications": "Cerca farmaci…",
   "noMedicationsYet": "Nessun farmaco ancora",
   "addFirstMedication": "Aggiungi il tuo primo farmaco per iniziare",
   "addMedicationButton": "Aggiungi farmaco",
