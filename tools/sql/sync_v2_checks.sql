@@ -2,9 +2,13 @@
 -- Run by tools/check_supabase_sql.sh against a throwaway Postgres 15 with
 -- tools/sql/auth_shim.sql and every migration applied. Any failed ASSERT
 -- stops the script with a non-zero exit.
+--
+-- psql runs every top-level statement in a transaction of its own. A DO
+-- block is one transaction, so every write inside it shares one xid: a
+-- check that a write moves sync_xid needs the write in a later statement.
 \set ON_ERROR_STOP on
 
-insert into auth.users values
+insert into auth.users (id) values
   ('00000000-0000-0000-0000-00000000000a'),
   ('00000000-0000-0000-0000-00000000000b');
 
@@ -15,8 +19,42 @@ do $$ begin
     'a row from before the migration keeps sync_xid 0, row_version 1';
 end $$;
 
+-- A 0.3.0 update of that row (a later transaction) stamps it.
+update medications set name = 'Old' where id = 'pre-migration';
+do $$ begin
+  assert (select sync_xid > 0 and row_version = 2 and write_id is null
+              and edited_at > now() - interval '1 minute'
+            from medications where id = 'pre-migration'),
+    'update: a row from before the migration is stamped by its first update';
+end $$;
+
+-- Clients never truncate, add triggers or add foreign keys, on any table.
+-- Row-level security does not cover TRUNCATE, and Supabase grants all three.
+do $$
+declare t text; r text; p text;
+begin
+  foreach t in array array['medications', 'treatments', 'prescriptions', 'dose_logs',
+                           'families', 'family_members', 'stock_changes'] loop
+    foreach r in array array['anon', 'authenticated'] loop
+      foreach p in array array['TRUNCATE', 'TRIGGER', 'REFERENCES'] loop
+        assert not has_table_privilege(r, 'public.' || t, p),
+          format('grants: %s must not hold %s on %s', r, p, t);
+      end loop;
+    end loop;
+  end loop;
+  -- Trigger functions run as triggers only.
+  foreach t in array array['medora_sync_stamp()', 'update_updated_at()',
+                           'cascade_tombstone_treatment()', 'cascade_tombstone_medication()',
+                           'cascade_tombstone_prescription()'] loop
+    foreach r in array array['anon', 'authenticated'] loop
+      assert not has_function_privilege(r, 'public.' || t, 'EXECUTE'),
+        format('grants: %s must not execute %s', r, t);
+    end loop;
+  end loop;
+end $$;
+
 set role authenticated;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 
 do $$
 declare r medications%rowtype; n int;
@@ -29,7 +67,14 @@ begin
   assert r.write_id is null, 'insert: no write id';
   assert r.edited_at = timestamptz '2026-09-01T08:00:00Z', 'insert: edited_at falls back to updated_at';
   assert r.updated_at = now(), 'insert: a created row is stamped on arrival';
-  assert r.sync_xid > 0, 'insert: sync_xid set';
+  assert r.sync_xid = pg_current_xact_id()::text::bigint, 'insert: sync_xid is the writing transaction';
+
+  -- A client cannot choose its own bookkeeping on insert.
+  insert into medications (id, user_id, name, row_version, sync_xid)
+    values ('forged', auth.uid(), 'Forged', 99, 1);
+  select * into r from medications where id = 'forged';
+  assert r.row_version = 1 and r.sync_xid = pg_current_xact_id()::text::bigint,
+    'insert: a sent row_version and sync_xid are overwritten';
 
   -- 0.3.0 upsert (ON CONFLICT DO UPDATE with the payload columns only).
   insert into medications (id, user_id, name, quantity, updated_at)
@@ -96,6 +141,56 @@ begin
   assert n = 0, 'guarded tombstone skips a taken dose';
 end $$;
 
+-- Every update moves sync_xid: the pull finds a changed row only by it.
+-- `seen` holds the cursor each row had before the next write.
+create temp table seen (id text primary key, xid bigint, version bigint);
+create function pg_temp.remember(p_id text) returns void language sql as $$
+  insert into seen
+    select id, sync_xid, row_version from medications where id = p_id
+    union all select id, sync_xid, row_version from dose_logs where id = p_id
+    union all select id, sync_xid, row_version from prescriptions where id = p_id
+  on conflict (id) do update set xid = excluded.xid, version = excluded.version
+$$;
+create function pg_temp.moved(p_id text) returns boolean language sql as $$
+  select coalesce(
+    (select m.sync_xid > s.xid and m.row_version = s.version + 1
+       from (select id, sync_xid, row_version from medications
+             union all select id, sync_xid, row_version from dose_logs
+             union all select id, sync_xid, row_version from prescriptions) m
+       join seen s using (id)
+      where m.id = p_id),
+    false)
+$$;
+
+select pg_temp.remember('m1') \g /dev/null
+update medications set name = name where id = 'm1';
+do $$ begin
+  assert pg_temp.moved('m1'), 'update: a no-change update moves sync_xid';
+end $$;
+
+select pg_temp.remember('m1') \g /dev/null
+insert into medications (id, user_id, name, quantity, updated_at)
+  values ('m1', auth.uid(), 'Ibuprofen 400', 10, '2026-09-01T09:00:00Z')
+  on conflict (id) do update
+    set name = excluded.name, quantity = excluded.quantity, updated_at = excluded.updated_at;
+do $$ begin
+  assert pg_temp.moved('m1'), 'update: a 0.3.0 upsert moves sync_xid';
+end $$;
+
+select pg_temp.remember('m1') \g /dev/null
+update medications set notes = 'v2', write_id = '12121212-1212-1212-1212-121212121212',
+       edited_at = now() where id = 'm1';
+do $$ begin
+  assert pg_temp.moved('m1'), 'update: a 0.4.0 update moves sync_xid';
+end $$;
+
+select pg_temp.remember('d1') \g /dev/null
+update dose_logs set notes = 'auto', write_id = '13131313-1313-1313-1313-131313131313',
+       edited_at = '1970-01-01T00:00:00Z' where id = 'd1';
+do $$ begin
+  assert pg_temp.moved('d1'), 'update: an automatic change moves sync_xid (updated_at does not)';
+end $$;
+
 -- The horizon, read in a transaction of its own (as PostgREST does), is
 -- above every finished write. Inside the writing transaction it would not
 -- be: a transaction's own rows are not finished yet.
@@ -119,28 +214,106 @@ begin
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000003', 'm1', null, 20);
   assert (j->>'quantity')::int = 20, 'stock: counted quantity';
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000004', 'nope', -1, null);
-  assert j->>'status' = 'missing', 'stock: unknown medication is missing';
+  assert j->>'status' = 'gone', 'stock: a medication the server does not have is gone ' || j;
   assert (select count(*) from stock_changes) = 3, 'stock: ledger holds the three applied changes';
   begin
     perform apply_stock_change('aaaaaaaa-0000-0000-0000-000000000006', 'm1', -1, 1);
     assert false, 'stock: both kinds must be refused';
   exception when sqlstate '22023' then null;
   end;
+  begin
+    insert into stock_changes (op_id, medication_id, delta, quantity_after)
+      values ('aaaaaaaa-0000-0000-0000-000000000007', 'm1', -1, -500);
+    assert false, 'stock: a ledger row never holds a quantity out of range';
+  exception when check_violation then null;
+  end;
+end $$;
+
+-- Values out of range are brought into range before they are recorded, so
+-- a change is never refused for good (the same table is in
+-- test/helpers/fake_server_test.dart).
+do $$
+declare j jsonb;
+begin
+  j := apply_stock_change('abababab-0000-0000-0000-000000000001', 'm1', null, -1);
+  assert j->>'status' = 'applied' and (j->>'quantity')::int = 0, 'range: set_to -1 counts as 0 ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000002', 'm1', null, 1000000);
+  assert (j->>'quantity')::int = 999999, 'range: set_to 1000000 counts as 999999 ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000003', 'm1', null, 2147483647);
+  assert (j->>'quantity')::int = 999999, 'range: the largest set_to counts as 999999 ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000004', 'm1', 2147483647, null);
+  assert j->>'status' = 'applied' and (j->>'quantity')::int = 999999, 'range: the largest delta ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000005', 'm1', -2147483648, null);
+  assert (j->>'quantity')::int = 0, 'range: the smallest delta ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000006', 'm1', null, 5);
+  j := apply_stock_change('abababab-0000-0000-0000-000000000007', 'm1', 1000000, null);
+  assert (j->>'quantity')::int = 999999, 'range: a delta above the limit ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000007', 'm1', 1000000, null);
+  assert j->>'status' = 'duplicate' and (j->>'quantity')::int = 999999, 'range: its retry is a duplicate ' || j;
+  assert (select delta = 999999 and set_to is null and quantity_after = 999999
+            from stock_changes where op_id = 'abababab-0000-0000-0000-000000000007'),
+    'range: the ledger records the value in range';
+  assert (select set_to = 0 from stock_changes where op_id = 'abababab-0000-0000-0000-000000000001'),
+    'range: the ledger records set_to in range';
+  -- A quantity out of range stored by an older client.
+  update medications set quantity = -5 where id = 'm1';
+  j := apply_stock_change('abababab-0000-0000-0000-000000000008', 'm1', 3, null);
+  assert (j->>'quantity')::int = 0, 'range: -5 plus 3 is 0 ' || j;
+  update medications set quantity = 2000000 where id = 'm1';
+  j := apply_stock_change('abababab-0000-0000-0000-000000000009', 'm1', -2000000, null);
+  assert (j->>'quantity')::int = 999999, 'range: 2000000 minus at most 999999, capped ' || j;
+  j := apply_stock_change('abababab-0000-0000-0000-000000000010', 'm1', null, 20);
+  assert (j->>'quantity')::int = 20, 'range: back to 20 ' || j;
+end $$;
+
+-- A stock change moves sync_xid and the version.
+select pg_temp.remember('m1') \g /dev/null
+select apply_stock_change('acacacac-0000-0000-0000-000000000001', 'm1', -1, null) \g /dev/null
+do $$ begin
+  assert pg_temp.moved('m1'), 'stock: a change moves sync_xid';
+  assert (select quantity from medications where id = 'm1') = 19, 'stock: 20 minus 1';
+end $$;
+
+-- A medication removed from the server (a purge, or "delete all data")
+-- answers gone for ever: a retry and any new change are dropped.
+do $$
+declare j jsonb;
+begin
+  insert into medications (id, user_id, name, quantity) values ('purged', auth.uid(), 'Purged', 5);
+  j := apply_stock_change('adadadad-0000-0000-0000-000000000001', 'purged', -1, null);
+  assert j->>'status' = 'applied', 'purge: applied first ' || j;
+end $$;
+delete from medications where id = 'purged';
+do $$
+declare j jsonb;
+begin
+  assert (select count(*) from stock_changes where medication_id = 'purged') = 0,
+    'purge: the ledger follows the medication';
+  j := apply_stock_change('adadadad-0000-0000-0000-000000000001', 'purged', -1, null);
+  assert j = '{"status": "gone"}', 'purge: a retry is gone ' || j;
+  j := apply_stock_change('adadadad-0000-0000-0000-000000000002', 'purged', null, 3);
+  assert j = '{"status": "gone"}', 'purge: a new change is gone ' || j;
+end $$;
+
+do $$
+declare j jsonb;
+begin
   update medications set deleted_at = now(), write_id = '77777777-7777-7777-7777-777777777777' where id = 'm1';
   j := apply_stock_change('aaaaaaaa-0000-0000-0000-000000000005', 'm1', -1, null);
-  assert j->>'status' = 'gone', 'stock: deleted medication is gone';
+  assert j = '{"status": "gone"}', 'stock: deleted medication is gone ' || j;
 
   insert into medications (id, user_id, name, quantity) values ('m2', auth.uid(), 'Paracetamol', 5);
+  insert into medications (id, user_id, name, quantity) values ('lock-med', auth.uid(), 'Lock', 10);
 end $$;
 
 -- Row-level security: user B.
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000b', false);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
 do $$
 declare j jsonb;
 begin
   assert (select count(*) from stock_changes) = 0, 'rls: B sees none of A''s ledger';
   j := apply_stock_change('bbbbbbbb-0000-0000-0000-000000000001', 'm2', -1, null);
-  assert j->>'status' = 'missing', 'rls: B cannot change A''s stock';
+  assert j = '{"status": "gone"}', 'rls: B cannot change A''s stock, and learns nothing ' || j;
   begin
     insert into stock_changes (op_id, medication_id, delta, quantity_after)
       values ('bbbbbbbb-0000-0000-0000-000000000002', 'm2', -1, 0);
@@ -164,15 +337,104 @@ begin
     assert false, 'grants: a client must not delete from the ledger';
   exception when insufficient_privilege then null;
   end;
+  -- The same for the data tables: TRUNCATE would wipe every user's rows.
+  begin
+    truncate dose_logs;
+    assert false, 'grants: a client must not truncate dose_logs';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    truncate prescriptions cascade;
+    assert false, 'grants: a client must not truncate prescriptions';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    create trigger b_trigger before update on medications
+      for each row execute function cascade_tombstone_medication();
+    assert false, 'grants: a client must not add a trigger';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
-select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin
   assert (select quantity from medications where id = 'm2') = 5, 'rls: A''s stock untouched';
-  -- The tombstone cascade still runs and counts as a real change.
+end $$;
+
+-- The tombstone cascade still runs (m1's delete above already tombstoned
+-- p1), counts as a real change and moves the child's sync_xid.
+do $$ begin
   update treatments set deleted_at = now(), write_id = '88888888-8888-8888-8888-888888888888',
          edited_at = now() where id = 't1';
   assert (select deleted_at is not null and write_id is null and row_version = 2
             from prescriptions where id = 'p1'), 'cascade: child tombstoned as a legacy write';
+  insert into treatments (id, user_id, name, start_date) values ('t2', auth.uid(), 'Cold', '2026-09-10');
+  insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
+    values ('p2', 't2', 'm2', '1', '2026-09-10T08:00:00');
+end $$;
+select pg_temp.remember('p2') \g /dev/null
+update treatments set deleted_at = now(), write_id = '89898989-8989-8989-8989-898989898989',
+       edited_at = now() where id = 't2';
+do $$ begin
+  assert pg_temp.moved('p2'), 'cascade: the child''s sync_xid moves';
+end $$;
+
+-- Families, as the app uses them (family_remote_datasource.dart).
+insert into families (id, name, invite_code, owner_id)
+  values ('f1', 'Home', 'INVITE1', auth.uid())
+  on conflict (id) do update set name = excluded.name, invite_code = excluded.invite_code;
+insert into families (id, name, invite_code, owner_id)
+  values ('f1', 'Home 2', 'INVITE1', auth.uid())
+  on conflict (id) do update set name = excluded.name, invite_code = excluded.invite_code;
+insert into family_members (id, family_id, user_id, display_name, role)
+  values ('fm-a', 'f1', auth.uid(), 'A', 'owner')
+  on conflict (id) do update set display_name = excluded.display_name, role = excluded.role;
+update family_members set display_name = 'Anna' where id = 'fm-a';
+update families set name = 'Home 3' where id = 'f1';
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+do $$
+declare j json;
+begin
+  j := join_family('INVITE1', 'Bea');
+  assert j->'family'->>'id' = 'f1' and j->'member'->>'display_name' = 'Bea', 'family: B joins ' || j;
+  assert (select count(*) from families where id = 'f1') = 1, 'family: B sees the family';
+  update family_members set display_name = 'Bee' where user_id = auth.uid();
+  delete from family_members where user_id = auth.uid();
+  assert (select count(*) from family_members where user_id = auth.uid()) = 0, 'family: B leaves';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+delete from family_members where id = 'fm-a';
+delete from families where id = 'f1';
+do $$ begin
+  assert (select count(*) from families) = 0, 'family: A deletes the family';
+end $$;
+
+-- A retry racing its original is checked by tools/check_supabase_sql.sh;
+-- it needs lock-med, so "delete all data" below is B's.
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000b';
+do $$ begin
+  insert into medications (id, user_id, name, quantity) values ('b-med', auth.uid(), 'B', 3);
+  insert into treatments (id, user_id, name, start_date) values ('b-t', auth.uid(), 'B', '2026-09-10');
+  insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
+    values ('b-p', 'b-t', 'b-med', '1', '2026-09-10T08:00:00');
+  insert into dose_logs (id, prescription_id, scheduled_time) values ('b-d', 'b-p', '2026-09-10T08:00:00Z');
+  perform apply_stock_change('bdbdbdbd-0000-0000-0000-000000000001', 'b-med', -1, null);
+end $$;
+-- "Delete all data" (settings_dialogs.dart): hard deletes in FK order.
+delete from dose_logs where id <> '';
+delete from prescriptions where id <> '';
+delete from treatments where id <> '';
+delete from medications where id <> '';
+do $$ begin
+  assert (select count(*) from medications) + (select count(*) from treatments)
+       + (select count(*) from prescriptions) + (select count(*) from dose_logs)
+       + (select count(*) from stock_changes) = 0, 'delete all: B has nothing left';
+  assert apply_stock_change('bdbdbdbd-0000-0000-0000-000000000001', 'b-med', -1, null)
+       = '{"status": "gone"}', 'delete all: a queued change is gone';
+end $$;
+set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
+do $$ begin
+  assert (select count(*) from medications where id in ('m1', 'm2', 'lock-med')) = 3,
+    'delete all: A''s rows untouched';
 end $$;
 
 -- anon may call neither function.

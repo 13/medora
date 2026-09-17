@@ -8,6 +8,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 use_docker="${USE_DOCKER:-1}"
+# Only warnings and errors: no NOTICE lines from IF NOT EXISTS.
+quiet="-c client_min_messages=warning"
 container=""
 cleanup() { [[ -n "$container" ]] && docker stop "$container" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -29,27 +31,31 @@ if [[ "$use_docker" == 1 ]]; then
     echo "postgres did not start" >&2
     exit 1
   fi
-  psql_run() { docker exec -i "$container" psql -v ON_ERROR_STOP=1 -U postgres -q "$@"; }
+  psql_run() { docker exec -i -e PGOPTIONS="$quiet" "$container" psql -v ON_ERROR_STOP=1 -U postgres -q "$@"; }
+  # A second session that keeps running while the script goes on.
+  psql_bg() { docker exec -d -e PGOPTIONS="$quiet" "$container" psql -U postgres -q "$@"; }
 else
-  psql_run() { psql -v ON_ERROR_STOP=1 -q "$@"; }
+  psql_run() { PGOPTIONS="$quiet" psql -v ON_ERROR_STOP=1 -q "$@"; }
+  psql_bg() { PGOPTIONS="$quiet" psql -q "$@" >/dev/null 2>&1 & }
 fi
 
 sync_v2=supabase/migrations/20260918000000_sync_v2.sql
 test -f "$sync_v2" || { echo "missing $sync_v2" >&2; exit 1; }
 
-# Every migration in file-name order (the order Supabase applies them).
+# Every migration in file-name order (the order Supabase applies them),
+# each in a transaction of its own, as `supabase db push` runs them.
 {
   cat tools/sql/auth_shim.sql
   for f in supabase/migrations/*.sql; do
     if [[ "$f" == "$sync_v2" ]]; then
       # A row from before sync v2.
-      echo "insert into auth.users values ('00000000-0000-0000-0000-0000000000cc');"
+      echo "insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000cc');"
       echo "insert into medications (id, user_id, name) values ('pre-migration', '00000000-0000-0000-0000-0000000000cc', 'Old');"
-      cat "$f"
+      printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'
       # Re-runnable: apply it a second time.
-      cat "$f"
+      printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'
     else
-      cat "$f"
+      printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'
     fi
   done
 } | psql_run >/dev/null
@@ -58,11 +64,7 @@ psql_run < tools/sql/sync_v2_checks.sql
 
 # The horizon holds back a row whose transaction is still open.
 psql_run -c "insert into medications (id, user_id, name) values ('slow-owner', '00000000-0000-0000-0000-00000000000a', 'x');" >/dev/null
-if [[ "$use_docker" == 1 ]]; then
-  docker exec -d "$container" psql -U postgres -c "begin; insert into medications (id, user_id, name) values ('slow', '00000000-0000-0000-0000-00000000000a', 'Slow'); select pg_sleep(4); commit;"
-else
-  psql -q -c "begin; insert into medications (id, user_id, name) values ('slow', '00000000-0000-0000-0000-00000000000a', 'Slow'); select pg_sleep(4); commit;" >/dev/null &
-fi
+psql_bg -c "begin; insert into medications (id, user_id, name) values ('slow', '00000000-0000-0000-0000-00000000000a', 'Slow'); select pg_sleep(4); commit;"
 sleep 1.5
 psql_run -c "insert into medications (id, user_id, name) values ('fast', '00000000-0000-0000-0000-00000000000a', 'Fast');" >/dev/null
 during=$(psql_run -At -c "select count(*) from medications where id in ('slow','fast') and sync_xid < (medora_sync_state()->>'horizon')::bigint;")
@@ -74,3 +76,19 @@ if [[ "$during" != 0 || "$after" != 2 ]]; then
   exit 1
 fi
 echo "horizon check passed"
+
+# A retry that races its original (the answer was lost, the request is
+# still running) waits for it and is answered duplicate; the stock moves
+# once. Without the advisory lock the retry fails on the ledger's key.
+as_a=(-c "set role authenticated" -c "set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a'")
+op="select apply_stock_change('dededede-0000-0000-0000-000000000001', 'lock-med', -1, null)"
+psql_bg "${as_a[@]}" -c "begin" -c "$op" -c "select pg_sleep(4)" -c "commit"
+sleep 1.5
+retry=$(psql_run -At "${as_a[@]}" -c "$op ->> 'status'" 2>&1) || true
+wait || true
+quantity=$(psql_run -At -c "select quantity from medications where id = 'lock-med';")
+if [[ "$retry" != duplicate || "$quantity" != 9 ]]; then
+  echo "retry race check failed: retry=$retry (want duplicate), quantity=$quantity (want 9)" >&2
+  exit 1
+fi
+echo "retry race check passed"

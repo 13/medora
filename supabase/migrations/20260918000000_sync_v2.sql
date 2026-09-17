@@ -11,7 +11,22 @@
 -- No backfill UPDATE: every new column is added with a constant default
 -- (no table rewrite, no trigger fires), so no row changes `updated_at`
 -- and no 0.3.0 device sees its pending edit turn stale.
+--
+-- Run it in one transaction (`supabase db push` and the SQL editor do).
+-- Every statement can be run again, so a failed run can simply be
+-- retried.
+--
+-- After this migration:
+-- - never run 20260901000000_initial_schema.sql again: it would put back
+--   the old update_updated_at() and break the rule in section 4;
+-- - do not enable read replicas for this project: a pull reads its pages
+--   below a horizon taken on the primary, and a lagging replica would
+--   answer without rows that are already below it.
 -- ============================================================
+
+-- The ALTER TABLEs wait for every open transaction on these tables, and
+-- every API request on them would queue behind that wait. Give up instead.
+set local lock_timeout = '5s';
 
 -- 1. Columns ---------------------------------------------------------------
 --
@@ -147,6 +162,23 @@ begin
 end;
 $$;
 
+-- Trigger functions run as triggers only (a trigger does not need EXECUTE).
+revoke all on function public.medora_sync_stamp() from public, anon, authenticated;
+revoke all on function public.update_updated_at() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_treatment() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_medication() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_prescription() from public, anon, authenticated;
+
+-- Clients never truncate, add triggers or add foreign keys. Row-level
+-- security does not cover TRUNCATE, and Supabase grants all three by
+-- default, so one signed-in user could otherwise empty every user's rows
+-- through any SQL surface. Hard DELETE ("delete all data") stays, under the
+-- tables' policies.
+revoke truncate, trigger, references
+  on public.medications, public.treatments, public.prescriptions,
+     public.dose_logs, public.families, public.family_members
+  from anon, authenticated;
+
 -- 5. The pull horizon -------------------------------------------------------
 --
 -- Every transaction with an id below `horizon` has finished, so every row
@@ -187,7 +219,8 @@ create table if not exists public.stock_changes (
   applied_at     timestamptz not null default now(),
   constraint stock_changes_one_kind check ((delta is null) <> (set_to is null)),
   constraint stock_changes_delta_range check (delta is null or delta between -999999 and 999999),
-  constraint stock_changes_set_to_range check (set_to is null or set_to between 0 and 999999)
+  constraint stock_changes_set_to_range check (set_to is null or set_to between 0 and 999999),
+  constraint stock_changes_quantity_range check (quantity_after between 0 and 999999)
 );
 
 create index if not exists idx_stock_changes_med on public.stock_changes (medication_id);
@@ -221,8 +254,24 @@ grant select, insert on public.stock_changes to authenticated;
 -- Applies one stock change once. Returns
 --   {"status":"applied",   "quantity":q, "row_version":v}
 --   {"status":"duplicate", "quantity":q}   (this op_id was applied before)
---   {"status":"gone"}      (the medication is deleted: drop the change)
---   {"status":"missing"}   (no such medication yet: keep the change)
+--   {"status":"gone"}      (no live medication with this id for the caller:
+--                           deleted, removed from the server, or never
+--                           there. The change can never apply: drop it.)
+-- A client sends a change only for a medication whose create has reached
+-- the server, so "never there" means removed. The ledger rows of a removed
+-- medication go with it, so a retry after the removal is gone as well.
+--
+-- Values out of range are brought into range before anything else, so a
+-- change is never refused for good: set_to to 0..999999, delta to
+-- -999999..999999; the new quantity is set_to, or quantity + delta
+-- (computed without overflow) capped to 0..999999. The ledger records the
+-- values in range. lib/data/datasources/stock_remote.dart (stockAfter) and
+-- test/helpers/fake_server.dart follow the same rule.
+--
+-- The medication keeps its edit time (a stock change is not a field edit
+-- that the merge compares). Medications never carry the 1970 edit time of
+-- an automatic change, so updated_at moves and 0.3.0 pulls the change.
+--
 -- Runs with the caller's rights, so row-level security applies throughout.
 create or replace function public.apply_stock_change(
   p_op_id         uuid,
@@ -236,6 +285,8 @@ security invoker
 set search_path = public, pg_temp
 as $$
 declare
+  v_delta   integer;
+  v_set_to  integer;
   v_after   integer;
   v_qty     integer;
   v_version bigint;
@@ -247,6 +298,9 @@ begin
     raise exception 'pass exactly one of p_delta and p_set_to'
       using errcode = '22023';
   end if;
+  -- (greatest and least skip NULLs, so keep a NULL as it is.)
+  v_delta := case when p_delta is not null then greatest(-999999, least(999999, p_delta)) end;
+  v_set_to := case when p_set_to is not null then greatest(0, least(999999, p_set_to)) end;
 
   -- Two attempts with one op id (a retry racing the original) run one
   -- after the other.
@@ -259,24 +313,21 @@ begin
   end if;
 
   update public.medications m
-     set quantity = case
-           when p_set_to is not null then greatest(0, least(999999, p_set_to))
-           else greatest(0, least(999999, m.quantity + p_delta))
-         end,
+     set quantity = coalesce(
+           v_set_to,
+           greatest(0, least(999999, m.quantity::bigint + v_delta))::integer
+         ),
          write_id = p_op_id
    where m.id = p_medication_id
      and m.deleted_at is null
   returning m.quantity, m.row_version into v_qty, v_version;
 
   if not found then
-    if exists (select 1 from public.medications m where m.id = p_medication_id) then
-      return jsonb_build_object('status', 'gone');
-    end if;
-    return jsonb_build_object('status', 'missing');
+    return jsonb_build_object('status', 'gone');
   end if;
 
   insert into public.stock_changes (op_id, medication_id, delta, set_to, quantity_after)
-    values (p_op_id, p_medication_id, p_delta, p_set_to, v_qty);
+    values (p_op_id, p_medication_id, v_delta, v_set_to, v_qty);
 
   return jsonb_build_object(
     'status', 'applied', 'quantity', v_qty, 'row_version', v_version
