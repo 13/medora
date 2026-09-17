@@ -27,6 +27,16 @@ class _SettingsActionState extends State<SettingsAction> {
   /// in the same frame would otherwise stack a second Settings screen.
   bool _open = false;
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The push future completes only on a pop. A go() that replaces the
+    // stack (a reminder tap does `go('/doses')`) drops Settings without
+    // completing it, so the flag is also cleared once this tab's route is
+    // the current one again; otherwise the gear would ignore every tap.
+    if (ModalRoute.isCurrentOf(context) ?? false) _open = false;
+  }
+
   Future<void> _openSettings() async {
     if (_open) return;
     _open = true;

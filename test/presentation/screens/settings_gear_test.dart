@@ -71,6 +71,46 @@ void main() {
     });
   }
 
+  // A reminder tap calls router.go('/doses'). go() drops a pushed Settings
+  // without completing its push future, so a guard reset only on that future
+  // left the gear dead until the next tab switch.
+  for (final location in const [AppRoutes.doses, AppRoutes.home]) {
+    testWidgets('the gear works again after go($location) closed Settings', (
+      tester,
+    ) async {
+      final container = await pumpShell(tester);
+      final router = container.read(appRouterProvider);
+      router.go(location);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(SettingsAction.buttonKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+
+      router.go(location);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsNothing);
+
+      await tester.tap(find.byKey(SettingsAction.buttonKey));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+
+      // And the guard still holds against a double tap afterwards.
+      router.pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(SettingsAction.buttonKey));
+      await tester.tap(
+        find.byKey(SettingsAction.buttonKey),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      router.pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsNothing);
+    });
+  }
+
   testWidgets('no gear on forms, detail screens and the scanner', (
     tester,
   ) async {
