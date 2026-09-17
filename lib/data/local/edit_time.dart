@@ -15,4 +15,8 @@ library;
 /// time is never later than [now], so such a change cannot beat a real
 /// later edit on another device.
 String editedAtText(DateTime stamp, DateTime now) =>
-    (stamp.isAfter(now) ? now : stamp).toUtc().toIso8601String();
+    editedAtOf(stamp, now).toUtc().toIso8601String();
+
+/// The instant [editedAtText] writes.
+DateTime editedAtOf(DateTime stamp, DateTime now) =>
+    stamp.isAfter(now) ? now : stamp;

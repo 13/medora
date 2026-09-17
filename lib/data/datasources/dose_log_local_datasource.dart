@@ -4,6 +4,7 @@ library;
 import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/edit_time.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
@@ -182,13 +183,35 @@ class DoseLogLocalDatasource {
 
   Future<void> upsert(DoseLogModel model, {required String syncStatus}) async {
     final db = await _db;
-    final row = rowOf(model, syncStatus, now: _now);
-    // Use UPDATE-first to avoid DELETE+INSERT issues
+    final at = _now();
+    final row = rowOf(model, syncStatus, now: () => at);
+    if (syncStatus == SyncStatus.synced) {
+      await _store(db, model.id, row);
+      return;
+    }
+    await db.transaction((txn) async {
+      // A change made here: stamp the columns it changes.
+      row['field_edited_at'] = fieldTimesAfterWrite(
+        previous: await _stored(txn, model.id),
+        after: row,
+        wireOf: wireOf,
+        at: editedAtOf(model.updatedAt ?? at, at),
+      );
+      await _store(txn, model.id, row);
+    });
+  }
+
+  /// UPDATE first, never DELETE + INSERT.
+  Future<void> _store(
+    DatabaseExecutor db,
+    String id,
+    Map<String, Object?> row,
+  ) async {
     final updated = await db.update(
       'dose_logs',
       row,
       where: 'id = ?',
-      whereArgs: [model.id],
+      whereArgs: [id],
     );
     if (updated == 0) {
       await db.insert(
@@ -198,6 +221,15 @@ class DoseLogLocalDatasource {
       );
     }
   }
+
+  Future<Map<String, Object?>?> _stored(DatabaseExecutor db, String id) async {
+    final rows = await db.query('dose_logs', where: 'id = ?', whereArgs: [id]);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// The wire copy of the stored row [row] (what the edit times compare).
+  static Map<String, Object?> wireOf(Map<String, Object?> row) =>
+      DoseLogModel.fromLocalMap(row).toJson();
 
   /// Inserts [models] in one transaction, leaving any row that already has
   /// one of their ids untouched: a generated dose never replaces a dose
@@ -230,42 +262,49 @@ class DoseLogLocalDatasource {
     required String syncStatus,
   }) async {
     final db = await _db;
-    // Never stamp a time at or before the row's current one: see
-    // [nextUpdatedAt]. A dose toggled twice in the same millisecond, or on a
-    // device whose clock just stepped back, must still look like the newer
-    // write to last-write-wins sync.
-    final rows = await db.query(
-      'dose_logs',
-      columns: ['updated_at'],
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    final previousRaw = rows.isEmpty
-        ? null
-        : rows.first['updated_at'] as String?;
-    final previous = previousRaw == null
-        ? null
-        : DateTime.tryParse(previousRaw);
-    final now = _now();
-    final stamp = nextUpdatedAt(previous, now);
-    final updates = <String, dynamic>{
-      'status': status,
-      'sync_status': syncStatus,
-      'updated_at': stamp.toIso8601String(),
-      'edited_at': editedAtText(stamp, now),
-    };
-    if (clearTakenTime) {
-      updates['taken_time'] = null;
-    } else if (takenTime != null) {
-      updates['taken_time'] = takenTime.toIso8601String();
-    }
-    await db.update(
-      'dose_logs',
-      updates,
-      where: 'id = ? AND sync_status != ?',
-      whereArgs: [id, SyncStatus.pendingDelete],
-    );
+    await db.transaction((txn) async {
+      // Never stamp a time at or before the row's current one: see
+      // [nextUpdatedAt]. A dose toggled twice in the same millisecond, or on
+      // a device whose clock just stepped back, must still look like the
+      // newer write to last-write-wins sync.
+      final rows = await txn.query(
+        'dose_logs',
+        where: 'id = ? AND sync_status != ?',
+        whereArgs: [id, SyncStatus.pendingDelete],
+        limit: 1,
+      );
+      if (rows.isEmpty) return;
+      final row = rows.first;
+      final previousRaw = row['updated_at'] as String?;
+      final previous = previousRaw == null
+          ? null
+          : DateTime.tryParse(previousRaw);
+      final now = _now();
+      final stamp = nextUpdatedAt(previous, now);
+      final change = <String, Object?>{'status': status};
+      if (clearTakenTime) {
+        change['taken_time'] = null;
+      } else if (takenTime != null) {
+        change['taken_time'] = takenTime.toIso8601String();
+      }
+      await txn.update(
+        'dose_logs',
+        {
+          ...change,
+          'sync_status': syncStatus,
+          'updated_at': stamp.toIso8601String(),
+          'edited_at': editedAtText(stamp, now),
+          'field_edited_at': fieldTimesAfterWrite(
+            previous: row,
+            after: {...row, ...change},
+            wireOf: wireOf,
+            at: editedAtOf(stamp, now),
+          ),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
   }
 
   Future<List<Map<String, dynamic>>> getPendingChanges() async {
@@ -351,7 +390,6 @@ class DoseLogLocalDatasource {
     return db.transaction((txn) async {
       final rows = await txn.query(
         'dose_logs',
-        columns: ['id', 'updated_at', 'sync_status'],
         where:
             '''status = 'pending'
            AND scheduled_time < ?
@@ -374,11 +412,19 @@ class DoseLogLocalDatasource {
       for (final row in rows) {
         final raw = row['updated_at'] as String?;
         final previous = raw == null ? null : DateTime.tryParse(raw);
+        const change = {'status': 'missed'};
         await txn.update(
           'dose_logs',
           {
-            'status': 'missed',
+            ...change,
             'updated_at': automaticUpdatedAt(previous).toIso8601String(),
+            // The app's own change: its column is marked automatic.
+            'field_edited_at': fieldTimesAfterWrite(
+              previous: row,
+              after: {...row, ...change},
+              wireOf: wireOf,
+              at: FieldTime.automaticChange.at,
+            ),
           },
           where: 'id = ?',
           whereArgs: [row['id']],

@@ -100,7 +100,9 @@ final List<Migration> kMigrations = [
   }),
   // v16: sync v2 (supabase/migrations/20260918000000_sync_v2.sql). Each
   // synced row keeps when its last change was made here (`edited_at`, 1970
-  // for a change the app made on its own), the server copy it was last in
+  // for a change the app made on its own), when each of its columns was
+  // last changed (`field_edited_at`, JSON; NULL until a column changes: the
+  // row's `edited_at` stands for all of them), the server copy it was last in
   // step with (`sync_version`, `sync_base`, the base of every merge) and
   // the write attempt whose answer never came (`sync_write_id`). A dose the
   // app drops from a changed schedule is deleted on the server only while
@@ -115,6 +117,7 @@ final List<Migration> kMigrations = [
       'dose_logs',
     ]) {
       await db.execute('ALTER TABLE $table ADD COLUMN edited_at TEXT');
+      await db.execute('ALTER TABLE $table ADD COLUMN field_edited_at TEXT');
       await db.execute('ALTER TABLE $table ADD COLUMN sync_version INTEGER');
       await db.execute('ALTER TABLE $table ADD COLUMN sync_base TEXT');
       await db.execute('ALTER TABLE $table ADD COLUMN sync_write_id TEXT');

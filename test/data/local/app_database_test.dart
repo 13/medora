@@ -332,6 +332,7 @@ void main() {
         await columnsOf(db, table),
         containsAll([
           'edited_at',
+          'field_edited_at',
           'sync_version',
           'sync_base',
           'sync_write_id',

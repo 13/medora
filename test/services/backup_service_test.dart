@@ -382,6 +382,8 @@ void main() {
       await seedEverything(db);
       await db.update('medications', {
         'edited_at': '2026-03-01T09:00:00.000',
+        'field_edited_at':
+            '{"notes":{"at":"2026-03-01T08:00:00.000Z","auto":false}}',
         'sync_version': 4,
         'sync_base': '{}',
         'sync_write_id': 'w1',
@@ -400,6 +402,10 @@ void main() {
         expect(dose.containsKey(key), isFalse, reason: key);
       }
       expect(med['edited_at'], '2026-03-01T09:00:00.000');
+      expect(
+        med['field_edited_at'],
+        '{"notes":{"at":"2026-03-01T08:00:00.000Z","auto":false}}',
+      );
     },
   );
 
@@ -477,7 +483,9 @@ void main() {
     json['schemaVersion'] = 15;
     for (final rows in (json['tables']! as Map<String, Object?>).values) {
       for (final row in rows! as List<Object?>) {
-        (row! as Map<String, Object?>).remove('edited_at');
+        (row! as Map<String, Object?>)
+          ..remove('edited_at')
+          ..remove('field_edited_at');
       }
     }
     await file.writeAsString(jsonEncode(json));
@@ -485,6 +493,8 @@ void main() {
       'name': 'Older on the device',
       'updated_at': '2026-03-01T08:00:00.000Z',
       'edited_at': '2026-03-01T08:00:00.000Z',
+      'field_edited_at':
+          '{"name":{"at":"2026-03-01T08:00:00.000Z","auto":false}}',
     });
 
     await makeService().restore(
@@ -503,6 +513,11 @@ void main() {
       row['edited_at'],
       isNull,
       reason: 'unknown: the sync reads updated_at instead',
+    );
+    expect(
+      row['field_edited_at'],
+      isNull,
+      reason: 'no map: updated_at stands for every column',
     );
   });
 
@@ -738,8 +753,13 @@ void main() {
       ]) {
         final row = (await db.query(table)).single;
         expect(
-          [row['edited_at'], row['sync_version'], row['sync_base']],
-          [null, null, null],
+          [
+            row['edited_at'],
+            row['field_edited_at'],
+            row['sync_version'],
+            row['sync_base'],
+          ],
+          [null, null, null, null],
           reason: '$table ($mode)',
         );
         expect(row['sync_status'], SyncStatus.pendingUpdate, reason: table);

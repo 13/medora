@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/edit_time.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -91,6 +92,8 @@ class MedicationLocalDatasource {
   ///   stamp came from a server whose clock is ahead of this device's, and
   ///   `edited_at` records the same instant in UTC, never later than now
   ///   ([editedAtText]);
+  /// - `field_edited_at` stamps the same instant on exactly the columns
+  ///   [changes] changes ([fieldTimesAfterWrite]);
   /// - `sync_status` follows [editedSyncStatus].
   ///
   /// A missing or deleted (`pending_delete`) row is left alone and false is
@@ -114,13 +117,20 @@ class MedicationLocalDatasource {
       final previous = raw == null ? null : DateTime.tryParse(raw);
       final now = _now();
       final stamp = nextUpdatedAt(previous, now);
+      final changed = changes(row);
       await txn.update(
         'medications',
         {
-          ...changes(row),
+          ...changed,
           'sync_status': editedSyncStatus(status),
           'updated_at': stamp.toIso8601String(),
           'edited_at': editedAtText(stamp, now),
+          'field_edited_at': fieldTimesAfterWrite(
+            previous: row,
+            after: {...row, ...changed},
+            wireOf: wireOf,
+            at: editedAtOf(stamp, now),
+          ),
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -215,14 +225,36 @@ class MedicationLocalDatasource {
     required String syncStatus,
   }) async {
     final db = await _db;
-    final row = rowOf(model, syncStatus, now: _now);
-    // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
-    // which would CASCADE-DELETE prescriptions and dose_logs.
+    final at = _now();
+    final row = rowOf(model, syncStatus, now: () => at);
+    if (syncStatus == SyncStatus.synced) {
+      await _store(db, model.id, row);
+      return;
+    }
+    await db.transaction((txn) async {
+      // A change made here: stamp the columns it changes.
+      row['field_edited_at'] = fieldTimesAfterWrite(
+        previous: await _stored(txn, model.id),
+        after: row,
+        wireOf: wireOf,
+        at: editedAtOf(model.updatedAt ?? at, at),
+      );
+      await _store(txn, model.id, row);
+    });
+  }
+
+  /// UPDATE first: an INSERT OR REPLACE (ConflictAlgorithm.replace) would
+  /// delete the row first and cascade-delete its prescriptions and doses.
+  Future<void> _store(
+    DatabaseExecutor db,
+    String id,
+    Map<String, Object?> row,
+  ) async {
     final updated = await db.update(
       'medications',
       row,
       where: 'id = ?',
-      whereArgs: [model.id],
+      whereArgs: [id],
     );
     if (updated == 0) {
       await db.insert(
@@ -232,6 +264,19 @@ class MedicationLocalDatasource {
       );
     }
   }
+
+  Future<Map<String, Object?>?> _stored(DatabaseExecutor db, String id) async {
+    final rows = await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// The wire copy of the stored row [row] (what the edit times compare).
+  static Map<String, Object?> wireOf(Map<String, Object?> row) =>
+      MedicationModel.fromLocalMap(row).toJson();
 
   /// Marks the row for deletion: pending push plus a local tombstone stamp
   /// (spec §4.6). A row already deleted keeps its stamps.
