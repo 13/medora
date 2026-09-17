@@ -66,6 +66,24 @@ class LocalUploadMarker {
   /// anyway unless the user owns the family.
   Future<int> markAllForUpload(String userId) async {
     final db = await _database.database;
+    // What this device knew about a server copy belongs to the account it
+    // came from: the merge bases go, and so do stock changes still waiting
+    // for that account (the upload carries each quantity).
+    await db.transaction((txn) async {
+      for (final table in const [
+        'medications',
+        'treatments',
+        'prescriptions',
+        'dose_logs',
+      ]) {
+        await txn.update(table, const {
+          'sync_version': null,
+          'sync_base': null,
+          'sync_write_id': null,
+        });
+      }
+      await txn.delete('stock_outbox');
+    });
     var count = 0;
     for (final table in tables) {
       final ownRowOnly = table == 'family_members';

@@ -47,7 +47,7 @@ class TreatmentLocalDatasource {
     required String syncStatus,
   }) async {
     final db = await _db;
-    final row = _toRow(model, syncStatus);
+    final row = rowOf(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
     // which would CASCADE-DELETE prescriptions and dose_logs.
     final updated = await db.update(
@@ -74,6 +74,7 @@ class TreatmentLocalDatasource {
       {
         'sync_status': SyncStatus.pendingDelete,
         'deleted_at': DateTime.now().toIso8601String(),
+        'edited_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -136,7 +137,7 @@ class TreatmentLocalDatasource {
     );
   }
 
-  Map<String, dynamic> _toRow(TreatmentModel m, String syncStatus) {
+  static Map<String, dynamic> rowOf(TreatmentModel m, String syncStatus) {
     return {
       'id': m.id,
       'user_id': m.userId,
@@ -157,6 +158,11 @@ class TreatmentLocalDatasource {
           m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
+      // A change made here was made when it was stamped; a pulled row gets
+      // the server's edit time from the sync cycle instead.
+      if (syncStatus != SyncStatus.synced)
+        'edited_at':
+            m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
     };
   }
 }

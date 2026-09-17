@@ -86,6 +86,7 @@ void main() {
         13,
         14,
         15,
+        16,
       ]);
 
       // Reopen: nothing re-applied, no duplicate rows.
@@ -97,6 +98,7 @@ void main() {
         13,
         14,
         15,
+        16,
       ]);
       await again.close();
       await dir.delete(recursive: true);
@@ -155,6 +157,7 @@ void main() {
       13,
       14,
       15,
+      16,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
@@ -224,6 +227,7 @@ void main() {
         13,
         14,
         15,
+        16,
       ]);
       await AppDatabase.instance.reset();
       await dir.delete(recursive: true);
@@ -298,6 +302,7 @@ void main() {
       13,
       14,
       15,
+      16,
     ]);
     // The pre-existing row survives with the new columns null.
     final row = (await upgraded.query(
@@ -311,6 +316,97 @@ void main() {
     expect(row['sick_leave_ref'], isNull);
     expect(row['doctor'], isNull);
 
+    await AppDatabase.instance.reset();
+    await dir.delete(recursive: true);
+  });
+
+  test('migration 16 adds the sync bookkeeping and the stock outbox', () async {
+    final db = await AppDatabase.instance.database;
+    for (final table in [
+      'medications',
+      'treatments',
+      'prescriptions',
+      'dose_logs',
+    ]) {
+      expect(
+        await columnsOf(db, table),
+        containsAll([
+          'edited_at',
+          'sync_version',
+          'sync_base',
+          'sync_write_id',
+        ]),
+        reason: table,
+      );
+    }
+    expect(await columnsOf(db, 'dose_logs'), contains('delete_guard'));
+    expect(
+      await columnsOf(db, 'stock_outbox'),
+      containsAll(['op_id', 'medication_id', 'delta', 'set_to', 'created_at']),
+    );
+    await db.insert('medications', {'id': 'm1', 'name': 'M', 'quantity': 1});
+    await expectLater(
+      db.insert('stock_outbox', {
+        'op_id': 'both',
+        'medication_id': 'm1',
+        'delta': -1,
+        'set_to': 3,
+        'created_at': '2026-03-05T08:00:00.000Z',
+      }),
+      throwsA(isA<DatabaseException>()),
+      reason: 'a change is a delta or a count, never both',
+    );
+  });
+
+  test('upgrading a v15 database keeps the time of an edit still waiting '
+      'to be pushed', () async {
+    final dir = await Directory.systemTemp.createTemp('medora_mig16_');
+    final path = p.join(dir.path, 'medora.db');
+    final legacy = await databaseFactory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 15,
+        onCreate: (db, _) async {
+          await AppDatabase.createBaseSchema(db);
+          for (final m in kMigrations.where((m) => m.version <= 15)) {
+            await m.run(db);
+          }
+        },
+      ),
+    );
+    await legacy.insert('medications', {
+      'id': 'pending',
+      'name': 'Edited',
+      'quantity': 1,
+      'updated_at': '2026-09-15T10:00:00.000',
+      'sync_status': 'pending_update',
+    });
+    await legacy.insert('medications', {
+      'id': 'synced',
+      'name': 'Pulled',
+      'quantity': 1,
+      'updated_at': '2026-09-14T10:00:00.000',
+      'sync_status': 'synced',
+    });
+    await legacy.close();
+
+    AppDatabase.debugPathOverride = path;
+    await AppDatabase.instance.reset();
+    final upgraded = await AppDatabase.instance.database;
+    final rows = {
+      for (final r in await upgraded.query('medications')) r['id']: r,
+    };
+    expect(rows['pending']!['edited_at'], '2026-09-15T10:00:00.000');
+    expect(rows['synced']!['edited_at'], isNull);
+    expect(rows['pending']!['sync_version'], isNull);
+    expect(await AppDatabase.instance.appliedMigrations(), [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+    ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
   });
@@ -342,6 +438,12 @@ void main() {
     });
     await db.insert('families', {'id': 'f1', 'name': 'The Family'});
     await db.insert('family_members', {'id': 'fm1', 'family_id': 'f1'});
+    await db.insert('stock_outbox', {
+      'op_id': 'op1',
+      'medication_id': 'm1',
+      'delta': -1,
+      'created_at': '2026-01-01T08:00:00.000Z',
+    });
 
     await AppDatabase.instance.clearAllData();
 
@@ -352,6 +454,7 @@ void main() {
       'dose_logs',
       'families',
       'family_members',
+      'stock_outbox',
     ]) {
       expect(await db.query(table), isEmpty, reason: table);
     }

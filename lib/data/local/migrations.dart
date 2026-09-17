@@ -14,7 +14,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 15;
+const int kSchemaVersion = 16;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -95,5 +95,46 @@ final List<Migration> kMigrations = [
     await db.execute('ALTER TABLE treatments ADD COLUMN sick_leave_to TEXT');
     await db.execute('ALTER TABLE treatments ADD COLUMN sick_leave_ref TEXT');
     await db.execute('ALTER TABLE treatments ADD COLUMN doctor TEXT');
+  }),
+  // v16: sync v2 (supabase/migrations/20260918000000_sync_v2.sql). Each
+  // synced row keeps when its last change was made here (`edited_at`, 1970
+  // for a change the app made on its own), the server copy it was last in
+  // step with (`sync_version`, `sync_base`, the base of every merge) and
+  // the write attempt whose answer never came (`sync_write_id`). A dose the
+  // app drops from a changed schedule is deleted on the server only while
+  // it is still pending (`delete_guard`). Stock changes wait in their own
+  // outbox, as changes, never as totals.
+  Migration(16, (db) async {
+    for (final table in [
+      'medications',
+      'treatments',
+      'prescriptions',
+      'dose_logs',
+    ]) {
+      await db.execute('ALTER TABLE $table ADD COLUMN edited_at TEXT');
+      await db.execute('ALTER TABLE $table ADD COLUMN sync_version INTEGER');
+      await db.execute('ALTER TABLE $table ADD COLUMN sync_base TEXT');
+      await db.execute('ALTER TABLE $table ADD COLUMN sync_write_id TEXT');
+      // A change still waiting to be pushed was made when it was stamped.
+      await db.execute(
+        "UPDATE $table SET edited_at = updated_at WHERE sync_status != 'synced'",
+      );
+    }
+    await db.execute('ALTER TABLE dose_logs ADD COLUMN delete_guard TEXT');
+    await db.execute('''
+      CREATE TABLE stock_outbox (
+        op_id TEXT PRIMARY KEY,
+        medication_id TEXT NOT NULL
+          REFERENCES medications(id) ON DELETE CASCADE,
+        delta INTEGER,
+        set_to INTEGER,
+        created_at TEXT NOT NULL,
+        CHECK ((delta IS NULL) <> (set_to IS NULL))
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_local_stock_outbox_med '
+      'ON stock_outbox(medication_id, created_at)',
+    );
   }),
 ];

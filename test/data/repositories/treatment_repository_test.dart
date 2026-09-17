@@ -98,6 +98,21 @@ void main() {
       expect(stored.isActive, isTrue);
     });
 
+    test('updateTreatment on a row deleted on this device fails and keeps '
+        'the delete', () async {
+      await local.upsert(episode, syncStatus: SyncStatus.synced);
+      await local.markDeleted('t1');
+      final repo = TreatmentRepositoryImpl(localDatasource: local);
+
+      final result = await repo.updateTreatment(
+        episode.toDomain().copyWith(name: 'Brought back?'),
+      );
+
+      expect(result.isFailure, isTrue);
+      expect(await syncStatus('t1'), SyncStatus.pendingDelete);
+      expect((await local.getTreatmentById('t1'))!.name, episode.name);
+    });
+
     test('endTreatment on a missing id fails instead of writing', () async {
       final result = await repo.endTreatment('nope');
       expect(result.isFailure, isTrue);

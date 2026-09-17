@@ -85,6 +85,10 @@ class TreatmentRepositoryImpl implements TreatmentRepository {
   Future<Result<Treatment>> updateTreatment(Treatment treatment) async {
     try {
       final previous = await localDatasource.getTreatmentById(treatment.id);
+      // An edit of a treatment deleted on this device would bring it back.
+      if (previous?.deletedAt != null) {
+        return const Result.failure('Treatment was deleted');
+      }
       final model = TreatmentModel.fromDomain(
         treatment.copyWith(
           updatedAt: nextUpdatedAt(previous?.updatedAt, _now()),

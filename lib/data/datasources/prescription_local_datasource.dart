@@ -88,7 +88,7 @@ class PrescriptionLocalDatasource {
     required String syncStatus,
   }) async {
     final db = await _db;
-    final row = _toRow(model, syncStatus);
+    final row = rowOf(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
     // which would CASCADE-DELETE all dose_logs for this prescription.
     final updated = await db.update(
@@ -115,6 +115,7 @@ class PrescriptionLocalDatasource {
       {
         'sync_status': SyncStatus.pendingDelete,
         'deleted_at': DateTime.now().toIso8601String(),
+        'edited_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -144,15 +145,14 @@ class PrescriptionLocalDatasource {
       );
       final raw = rows.isEmpty ? null : rows.first['updated_at'] as String?;
       final previous = raw == null ? null : DateTime.tryParse(raw);
+      final stamp = nextUpdatedAt(previous, DateTime.now()).toIso8601String();
       await txn.update(
         'prescriptions',
         {
           'is_active': active ? 1 : 0,
           'sync_status': SyncStatus.pendingUpdate,
-          'updated_at': nextUpdatedAt(
-            previous,
-            DateTime.now(),
-          ).toIso8601String(),
+          'updated_at': stamp,
+          'edited_at': stamp,
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -165,10 +165,14 @@ class PrescriptionLocalDatasource {
     await db.delete('prescriptions');
   }
 
-  Map<String, dynamic> _toRow(PrescriptionModel m, String syncStatus) {
+  static Map<String, dynamic> rowOf(PrescriptionModel m, String syncStatus) {
     final row = m.toLocalMap();
     row['sync_status'] = syncStatus;
     row['created_at'] ??= DateTime.now().toIso8601String();
+    if (syncStatus != SyncStatus.synced) {
+      row['edited_at'] =
+          m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String();
+    }
     return row;
   }
 }

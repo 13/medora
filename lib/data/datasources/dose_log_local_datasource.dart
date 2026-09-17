@@ -178,7 +178,7 @@ class DoseLogLocalDatasource {
 
   Future<void> upsert(DoseLogModel model, {required String syncStatus}) async {
     final db = await _db;
-    final row = _toRow(model, syncStatus);
+    final row = rowOf(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT issues
     final updated = await db.update(
       'dose_logs',
@@ -208,7 +208,7 @@ class DoseLogLocalDatasource {
       for (final model in models) {
         batch.insert(
           'dose_logs',
-          _toRow(model, syncStatus),
+          rowOf(model, syncStatus),
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }
@@ -243,10 +243,12 @@ class DoseLogLocalDatasource {
     final previous = previousRaw == null
         ? null
         : DateTime.tryParse(previousRaw);
+    final stamp = nextUpdatedAt(previous, DateTime.now()).toIso8601String();
     final updates = <String, dynamic>{
       'status': status,
       'sync_status': syncStatus,
-      'updated_at': nextUpdatedAt(previous, DateTime.now()).toIso8601String(),
+      'updated_at': stamp,
+      'edited_at': stamp,
     };
     if (clearTakenTime) {
       updates['taken_time'] = null;
@@ -279,6 +281,9 @@ class DoseLogLocalDatasource {
       {
         'sync_status': SyncStatus.pendingDelete,
         'deleted_at': DateTime.now().toIso8601String(),
+        'edited_at': DateTime.now().toIso8601String(),
+        // A person's delete is never guarded.
+        'delete_guard': null,
       },
       where: 'id = ? AND sync_status != ?',
       whereArgs: [id, SyncStatus.pendingDelete],
@@ -392,7 +397,7 @@ class DoseLogLocalDatasource {
     final db = await _db;
     final changed = await db.update(
       'dose_logs',
-      _toRow(remote, SyncStatus.synced),
+      rowOf(remote, SyncStatus.synced),
       where: 'id = ? AND updated_at IS ? AND sync_status = ?',
       whereArgs: [remote.id, pushedUpdatedAt, SyncStatus.pendingCreate],
     );
@@ -465,7 +470,7 @@ class DoseLogLocalDatasource {
     );
   }
 
-  Map<String, dynamic> _toRow(DoseLogModel m, String syncStatus) {
+  static Map<String, dynamic> rowOf(DoseLogModel m, String syncStatus) {
     return {
       'id': m.id,
       'prescription_id': m.prescriptionId,
@@ -479,6 +484,11 @@ class DoseLogLocalDatasource {
           m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
+      // A change made here was made when it was stamped; a pulled row gets
+      // the server's edit time from the sync cycle instead.
+      if (syncStatus != SyncStatus.synced)
+        'edited_at':
+            m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
     };
   }
 }

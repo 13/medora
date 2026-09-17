@@ -7,6 +7,9 @@
 /// twice, and changes from two devices both apply.
 library;
 
+import 'package:medora/data/local/app_database.dart';
+import 'package:sqflite/sqflite.dart';
+
 /// One stock change: exactly one of [delta] and [setTo].
 class StockOp {
   const StockOp({
@@ -50,4 +53,42 @@ int applyStockOps(int quantity, Iterable<StockOp> ops) {
     q = (op.setTo ?? q + op.delta!).clamp(0, maxStock);
   }
   return q;
+}
+
+class StockOutboxLocalDatasource {
+  StockOutboxLocalDatasource();
+
+  static const table = 'stock_outbox';
+
+  Future<Database> get _db => AppDatabase.instance.database;
+
+  /// Adds [op] inside [txn], the transaction that changes the quantity.
+  static Future<void> enqueue(DatabaseExecutor txn, StockOp op) =>
+      txn.insert(table, op.toRow());
+
+  /// The changes still waiting, oldest first; only [medicationId]'s when
+  /// given.
+  Future<List<StockOp>> pending({String? medicationId}) async =>
+      pendingIn(await _db, medicationId: medicationId);
+
+  /// [pending] inside an open transaction.
+  static Future<List<StockOp>> pendingIn(
+    DatabaseExecutor db, {
+    String? medicationId,
+  }) async {
+    final rows = await db.query(
+      table,
+      where: medicationId == null ? null : 'medication_id = ?',
+      whereArgs: medicationId == null ? null : [medicationId],
+      orderBy: 'created_at, op_id',
+    );
+    return rows.map(StockOp.fromRow).toList();
+  }
+
+  /// Drops the change [opId]; true when it was there.
+  Future<bool> remove(String opId) async =>
+      await (await _db).delete(table, where: 'op_id = ?', whereArgs: [opId]) >
+      0;
+
+  Future<void> clearAll() async => (await _db).delete(table);
 }

@@ -375,6 +375,93 @@ void main() {
     expect((await db.query('medications')).single['name'], 'Backed up name');
   });
 
+  test(
+    'a backup leaves out the sync bookkeeping and keeps the edit time',
+    () async {
+      final db = await AppDatabase.instance.database;
+      await seedEverything(db);
+      await db.update('medications', {
+        'edited_at': '2026-03-01T09:00:00.000',
+        'sync_version': 4,
+        'sync_base': '{}',
+        'sync_write_id': 'w1',
+      });
+      await db.update('dose_logs', {'delete_guard': 'if_pending'});
+      final file = await makeService().exportToFile(outDir);
+      final tables =
+          (jsonDecode(await file.readAsString())
+                  as Map<String, dynamic>)['tables']
+              as Map<String, dynamic>;
+      final med =
+          (tables['medications'] as List).single as Map<String, dynamic>;
+      final dose = (tables['dose_logs'] as List).single as Map<String, dynamic>;
+      for (final key in BackupService.localOnlyColumns) {
+        expect(med.containsKey(key), isFalse, reason: key);
+        expect(dose.containsKey(key), isFalse, reason: key);
+      }
+      expect(med['edited_at'], '2026-03-01T09:00:00.000');
+    },
+  );
+
+  test('a restored row knows nothing about a server copy', () async {
+    final db = await AppDatabase.instance.database;
+    await seedEverything(db);
+    final id = (await db.query('medications')).single['id']! as String;
+    await db.update('medications', {'updated_at': '2099-01-01T09:00:00.000'});
+    final file = await makeService().exportToFile(outDir);
+    await db.update('medications', {
+      'updated_at': '2098-01-01T09:00:00.000',
+      'sync_version': 7,
+      'sync_base': '{"id":"x"}',
+      'sync_write_id': 'w7',
+    });
+
+    await makeService().restore(
+      file,
+      mode: RestoreMode.merge,
+      markPending: true,
+    );
+
+    final row = (await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(
+      [row['sync_version'], row['sync_base'], row['sync_write_id']],
+      [null, null, null],
+    );
+    expect(row['sync_status'], SyncStatus.pendingUpdate);
+  });
+
+  // Bites under TZ=Europe/Rome (the gates run it): there the local naive
+  // stamp sorts after the backup's UTC one as text, though it is older.
+  test('a merge compares stamps as instants, whatever their format', () async {
+    final db = await AppDatabase.instance.database;
+    await seedEverything(db);
+    final id = (await db.query('medications')).single['id']! as String;
+    await db.update('medications', {
+      'name': 'From the backup',
+      'updated_at': DateTime.utc(2026, 3, 5, 10, 30).toIso8601String(),
+    });
+    final file = await makeService().exportToFile(outDir);
+    await db.update('medications', {
+      'name': 'Older on the device',
+      'updated_at': DateTime.utc(2026, 3, 5, 10).toLocal().toIso8601String(),
+    });
+
+    await makeService().restore(file, mode: RestoreMode.merge);
+
+    expect(
+      (await db.query(
+        'medications',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).single['name'],
+      'From the backup',
+    );
+  });
+
   test('photos round-trip through the backup file', () async {
     final db = await AppDatabase.instance.database;
     await seedEverything(db);
@@ -501,6 +588,100 @@ void main() {
         ),
       ),
     );
+  });
+
+  // 0.3.0 (schema 15) accepts a backup only up to its own schema and
+  // refuses a newer one as `newerSchema` (the test above). A backup made
+  // now carries edit times it has no column for, so it must say 16.
+  test('a backup made now is marked schema 16, which 0.3.0 refuses', () async {
+    final file = await makeService().exportToFile(outDir);
+    final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
+    expect(json['schemaVersion'], 16);
+  });
+
+  test('a backup made by 0.3.0 (schema 15) still restores', () async {
+    final db = await AppDatabase.instance.database;
+    final file = File(p.join(outDir.path, 'v15.json'))
+      ..writeAsStringSync(
+        jsonEncode({
+          'format': 'medora-backup',
+          'version': 1,
+          'schemaVersion': 15,
+          'createdAt': '2026-09-01T08:00:00.000Z',
+          'appVersion': '0.3.0+18',
+          'tables': {
+            'medications': [
+              {
+                'id': 'm15',
+                'name': 'Tachipirina',
+                'quantity': 4,
+                'minimum_stock_level': 0,
+                'created_at': '2026-08-01T08:00:00.000',
+                'updated_at': '2026-08-02T08:00:00.000',
+                'deleted_at': null,
+              },
+            ],
+            'treatments': [
+              {
+                'id': 't15',
+                'name': 'Flu',
+                'start_date': '2026-08-01',
+                'is_active': 1,
+                'sick_leave_from': '2026-08-01',
+                'doctor': 'Dr. Rossi',
+                'created_at': '2026-08-01T08:00:00.000',
+                'updated_at': '2026-08-01T08:00:00.000',
+              },
+            ],
+            'prescriptions': [
+              {
+                'id': 'p15',
+                'treatment_id': 't15',
+                'medication_id': 'm15',
+                'dosage': '1 tablet',
+                'start_time': '2026-08-01T08:00:00.000',
+                'created_at': '2026-08-01T08:00:00.000',
+                'updated_at': '2026-08-01T08:00:00.000',
+              },
+            ],
+            'dose_logs': [
+              {
+                'id': 'd15',
+                'prescription_id': 'p15',
+                'scheduled_time': '2026-08-01T08:00:00.000',
+                'status': 'taken',
+                'created_at': '2026-08-01T08:00:00.000',
+                'updated_at': '2026-08-01T08:05:00.000',
+              },
+            ],
+            'families': <Object?>[],
+            'family_members': <Object?>[],
+          },
+          'photos': <String, Object?>{},
+        }),
+      );
+
+    expect((await makeService().inspect(file)).schemaVersion, 15);
+    for (final mode in RestoreMode.values) {
+      await AppDatabase.instance.clearAllData();
+      await makeService().restore(file, mode: mode, markPending: true);
+      for (final table in [
+        'medications',
+        'treatments',
+        'prescriptions',
+        'dose_logs',
+      ]) {
+        final row = (await db.query(table)).single;
+        expect(
+          [row['edited_at'], row['sync_version'], row['sync_base']],
+          [null, null, null],
+          reason: '$table ($mode)',
+        );
+        expect(row['sync_status'], SyncStatus.pendingUpdate, reason: table);
+      }
+      expect((await db.query('dose_logs')).single['delete_guard'], isNull);
+      expect((await db.query('medications')).single['quantity'], 4);
+    }
   });
 
   test(

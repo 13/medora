@@ -49,6 +49,34 @@ void main() {
     expect(await cursors.lastPullAt('medications'), isNull);
   });
 
+  test(
+    'what this device knew about another account\'s server is dropped',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      await db.update('medications', {
+        'sync_version': 3,
+        'sync_base': '{"id":"x"}',
+        'sync_write_id': 'w1',
+      });
+      await db.insert('stock_outbox', {
+        'op_id': 'op1',
+        'medication_id': seeded.medicationId,
+        'delta': -1,
+        'created_at': '2026-03-05T08:00:00.000Z',
+      });
+
+      await makeMarker().markAllForUpload('user-b');
+
+      final med = (await db.query('medications')).single;
+      expect(
+        [med['sync_version'], med['sync_base'], med['sync_write_id']],
+        [null, null, null],
+      );
+      expect(await db.query('stock_outbox'), isEmpty);
+    },
+  );
+
   test('pending_delete rows are left alone', () async {
     final db = await AppDatabase.instance.database;
     final seeded = await seedPrescription(db);

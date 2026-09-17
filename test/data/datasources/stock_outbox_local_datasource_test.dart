@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
+import 'package:medora/data/local/app_database.dart';
+
+import '../../helpers/test_database.dart';
 
 StockOp _op(String id, {int? delta, int? setTo, int minute = 0}) => StockOp(
   opId: id,
@@ -40,6 +43,61 @@ void main() {
         [back.opId, back.medicationId, back.delta, back.setTo, back.createdAt],
         ['a', 'm1', -2, null, DateTime.utc(2026, 3, 5, 8, 7)],
       );
+    });
+  });
+
+  group('StockOutboxLocalDatasource', () {
+    setUp(() async {
+      await setUpTestDatabase();
+      final db = await AppDatabase.instance.database;
+      await db.insert('medications', {'id': 'm1', 'name': 'M', 'quantity': 5});
+      await db.insert('medications', {'id': 'm2', 'name': 'N', 'quantity': 5});
+    });
+    tearDown(tearDownTestDatabase);
+
+    test('keeps changes oldest first, per medication, until removed', () async {
+      final db = await AppDatabase.instance.database;
+      await db.transaction((txn) async {
+        await StockOutboxLocalDatasource.enqueue(
+          txn,
+          _op('late', delta: -1, minute: 9),
+        );
+        await StockOutboxLocalDatasource.enqueue(
+          txn,
+          _op('early', delta: -1, minute: 1),
+        );
+        await StockOutboxLocalDatasource.enqueue(
+          txn,
+          StockOp(
+            opId: 'other',
+            medicationId: 'm2',
+            setTo: 3,
+            createdAt: DateTime.utc(2026, 3, 5, 8, 5),
+          ),
+        );
+      });
+      final outbox = StockOutboxLocalDatasource();
+      expect((await outbox.pending()).map((o) => o.opId), [
+        'early',
+        'other',
+        'late',
+      ]);
+      expect((await outbox.pending(medicationId: 'm1')).map((o) => o.opId), [
+        'early',
+        'late',
+      ]);
+      expect(await outbox.remove('early'), isTrue);
+      expect(await outbox.remove('early'), isFalse);
+      expect((await outbox.pending()).map((o) => o.opId), ['other', 'late']);
+      await outbox.clearAll();
+      expect(await outbox.pending(), isEmpty);
+    });
+
+    test('a medication deleted here takes its changes with it', () async {
+      final db = await AppDatabase.instance.database;
+      await StockOutboxLocalDatasource.enqueue(db, _op('a', delta: -1));
+      await db.delete('medications', where: 'id = ?', whereArgs: ['m1']);
+      expect(await StockOutboxLocalDatasource().pending(), isEmpty);
     });
   });
 }

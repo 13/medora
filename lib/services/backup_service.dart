@@ -7,8 +7,9 @@
 /// schema instead of replacing it.
 ///
 /// Rows are stored exactly as the database holds them (naive-local ISO
-/// timestamps, tombstones included) minus `sync_status`, which is local
-/// bookkeeping and is re-stamped on restore.
+/// timestamps, tombstones included) minus the local sync bookkeeping
+/// ([BackupService.localOnlyColumns]), which is re-stamped on restore.
+/// `edited_at` stays: a restored row keeps the time its last change was made.
 library;
 
 import 'dart:convert';
@@ -136,6 +137,16 @@ class BackupService {
     'dose_logs',
   };
 
+  /// Columns that describe this device's sync state, never carried by a
+  /// backup: another device, or this one later, is in another state.
+  static const localOnlyColumns = {
+    'sync_status',
+    'sync_version',
+    'sync_base',
+    'sync_write_id',
+    'delete_guard',
+  };
+
   /// Photo payload above which the UI defaults to leaving the photos out:
   /// the export holds the whole envelope in memory before it is written.
   static const largePhotoBytes = 150 * 1024 * 1024;
@@ -178,7 +189,8 @@ class BackupService {
           for (final row in rows)
             {
               for (final entry in row.entries)
-                if (entry.key != 'sync_status') entry.key: entry.value,
+                if (!localOnlyColumns.contains(entry.key))
+                  entry.key: entry.value,
             },
         ];
       }
@@ -232,6 +244,8 @@ class BackupService {
   /// [markPending] re-stamps every restored row as `pending_update` so a
   /// cloud-mode device uploads the restored data on the next sync cycle -
   /// except `family_members` (see [_neverPending]), which stays `synced`.
+  /// Nothing about the server copy is known any more, so the next push
+  /// merges by edit time.
   Future<BackupManifest> restore(
     File file, {
     required RestoreMode mode,
@@ -275,7 +289,7 @@ class BackupService {
     return backup.manifest;
   }
 
-  /// Writes one backed-up row.
+  /// Writes one backed-up row; returns whether it was written.
   ///
   /// In [RestoreMode.replace] the tables were emptied first, so every row is
   /// a plain insert. In [RestoreMode.merge] a row whose id is not on the
@@ -283,19 +297,29 @@ class BackupService {
   /// [_versioned] are compared, and the backup wins only when its
   /// `updated_at` is strictly newer - a tie, a missing timestamp, or a row of
   /// `families`/`family_members` (which carry no `updated_at`) keeps whatever
-  /// the device already holds.
-  Future<void> _applyRow(
+  /// the device already holds. Stamps are compared as instants: the device
+  /// holds both naive-local and UTC stamps.
+  Future<bool> _applyRow(
     Transaction txn,
     String table,
     Map<String, Object?> row,
     RestoreMode mode,
     String status,
   ) async {
-    final values = {...row, 'sync_status': status};
+    final values = {
+      ...row,
+      'sync_status': status,
+      if (_versioned.contains(table)) ...{
+        'sync_version': null,
+        'sync_base': null,
+        'sync_write_id': null,
+      },
+      if (table == 'dose_logs') 'delete_guard': null,
+    };
     final id = row['id'];
     if (mode == RestoreMode.replace || id == null) {
       await txn.insert(table, values);
-      return;
+      return true;
     }
 
     final existing = await txn.query(
@@ -306,16 +330,21 @@ class BackupService {
     );
     if (existing.isEmpty) {
       await txn.insert(table, values);
-      return;
+      return true;
     }
-    if (!_versioned.contains(table)) return;
+    if (!_versioned.contains(table)) return false;
 
-    // Naive-local ISO strings sort exactly like the instants they describe.
-    final mine = existing.single['updated_at'] as String?;
-    final theirs = row['updated_at'] as String?;
-    if (mine != null && (theirs == null || mine.compareTo(theirs) >= 0)) return;
+    final mine = _instant(existing.single['updated_at']);
+    final theirs = _instant(row['updated_at']);
+    if (mine != null && (theirs == null || !theirs.isAfter(mine))) {
+      return false;
+    }
     await txn.update(table, values, where: 'id = ?', whereArgs: [id]);
+    return true;
   }
+
+  static DateTime? _instant(Object? raw) =>
+      raw is String ? DateTime.tryParse(raw)?.toUtc() : null;
 
   Future<_Backup> _read(File file) async {
     final String content;
@@ -362,7 +391,9 @@ class BackupService {
         if (row is! Map<String, Object?>) {
           throw BackupException(BackupErrorKind.corrupt, table);
         }
-        parsed.add({...row}..remove('sync_status'));
+        parsed.add(
+          {...row}..removeWhere((k, _) => localOnlyColumns.contains(k)),
+        );
       }
       rows[table] = parsed;
     }

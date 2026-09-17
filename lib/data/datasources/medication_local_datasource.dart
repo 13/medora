@@ -84,7 +84,8 @@ class MedicationLocalDatasource {
   /// bookkeeping every local edit needs, in one transaction:
   /// - `updated_at` is stamped with [nextUpdatedAt], so the change looks
   ///   newer than the row's current stamp to last-write-wins even when that
-  ///   stamp came from a server whose clock is ahead of this device's;
+  ///   stamp came from a server whose clock is ahead of this device's, and
+  ///   `edited_at` records the same instant;
   /// - `sync_status` follows [editedSyncStatus].
   ///
   /// A missing or deleted (`pending_delete`) row is left alone and false is
@@ -106,15 +107,14 @@ class MedicationLocalDatasource {
       if (status == SyncStatus.pendingDelete) return false;
       final raw = row['updated_at'] as String?;
       final previous = raw == null ? null : DateTime.tryParse(raw);
+      final stamp = nextUpdatedAt(previous, DateTime.now()).toIso8601String();
       await txn.update(
         'medications',
         {
           ...changes(row),
           'sync_status': editedSyncStatus(status),
-          'updated_at': nextUpdatedAt(
-            previous,
-            DateTime.now(),
-          ).toIso8601String(),
+          'updated_at': stamp,
+          'edited_at': stamp,
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -209,7 +209,7 @@ class MedicationLocalDatasource {
     required String syncStatus,
   }) async {
     final db = await _db;
-    final row = _toRow(model, syncStatus);
+    final row = rowOf(model, syncStatus);
     // Use UPDATE-first to avoid DELETE+INSERT from ConflictAlgorithm.replace,
     // which would CASCADE-DELETE prescriptions and dose_logs.
     final updated = await db.update(
@@ -236,6 +236,7 @@ class MedicationLocalDatasource {
       {
         'sync_status': SyncStatus.pendingDelete,
         'deleted_at': DateTime.now().toIso8601String(),
+        'edited_at': DateTime.now().toIso8601String(),
       },
       where: 'id = ?',
       whereArgs: [id],
@@ -305,7 +306,7 @@ class MedicationLocalDatasource {
     );
   }
 
-  Map<String, dynamic> _toRow(MedicationModel m, String syncStatus) {
+  static Map<String, dynamic> rowOf(MedicationModel m, String syncStatus) {
     return {
       'id': m.id,
       'user_id': m.userId,
@@ -335,6 +336,11 @@ class MedicationLocalDatasource {
           m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
+      // A change made here was made when it was stamped; a pulled row gets
+      // the server's edit time from the sync cycle instead.
+      if (syncStatus != SyncStatus.synced)
+        'edited_at':
+            m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
     };
   }
 }
