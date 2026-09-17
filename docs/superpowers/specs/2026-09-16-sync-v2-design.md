@@ -392,8 +392,10 @@ The app's own deletes are:
 - **The local outbox.** A new local table `stock_outbox(op_id, medication_id, delta, set_to, created_at)` receives one row per stock change. It is written in the same transaction as the local quantity.
   - A dose that uses stock, a stock button and an undo each write `delta`.
   - A quantity typed in the medication form writes `set_to`.
-  - Local-only mode writes no outbox row.
-  - A medication that is still `pending_create` writes none either: its quantity goes with the insert. If the quantity changes while that insert is in flight, settling the create turns the difference into one `delta` (§7.4).
+  - A stock change is not a row edit: the row keeps its status and stamps, so a change made while the row's push is in flight never makes that push look stale.
+  - Local-only mode writes an outbox row only for a medication the server has seen (a known `sync_version`): a device that left cloud mode and kept its data sends those changes when it signs back in to the same account (`markAllForUpload` keeps the outbox; another account drops it). A medication that never synced gets none. A change that is not queued stamps `updated_at` and `edited_at` and fills the column times, as every local write does.
+  - A quantity typed into the form is a count only when the person changed the field: a field left as it was loaded takes the stock as it is when the form is saved, so an old number never undoes a dose taken meanwhile.
+  - A medication that is still `pending_create` writes its changes too. Its insert carries its quantity, which already holds them, so they leave the outbox in the transaction that prepares the insert and stores its write id (§7.3). A change made after that waits and goes out once the insert settles. (An earlier draft queued nothing and turned an in-flight difference into a `delta` when the create settled; that lost the difference when the insert's answer was lost and the write was found again, and counted waiting changes twice then.)
 - **Draining.** Each cycle drains the outbox after the medication rows are pushed, in the order the changes were made (`seq`), by calling `apply_stock_change(op_id, medication_id, delta, set_to)`. The function:
   - takes a transaction-level advisory lock on the op id;
   - returns `duplicate` if the ledger already has the id;
@@ -403,7 +405,7 @@ The app's own deletes are:
   - returns `applied` with the new quantity and version, or `gone`: no live medication with that id (deleted, removed from the server, never created, or not the caller's). `gone` is final: drop the change.
 - **Reading stock.**
   - `quantity` is server-owned in the merge and never part of a row patch.
-  - The local quantity is always `the server's quantity + the pending outbox changes, in order` (`applyStockOps`), applied on every pull and after every drain.
+  - The local quantity is always `the server's quantity + the pending outbox changes, in order` (`applyStockOps`), applied on every pull, settle and drain (`localStock`). One exception: `apply_stock_change` stamps its op id as the medication's `write_id`, so when a pulled copy's write id is the op id of the oldest change still waiting, that change has landed (only its answer was lost) and is left out of the sum. It stays in the outbox until the function answers `duplicate`; nothing else is read as proof that a change applied.
   - When the answer's `row_version` is exactly one more than the local `sync_version`, the client moves the base forward, so its own stock change does not turn the next row edit into a conflict.
 - **Result:** two devices each taking one tablet from 10 end at 8 on both, in any order and with any lost answer. A retry is never counted twice.
 - **Force push** sends each local quantity as `set_to`. So does a cloud restore.
@@ -1089,12 +1091,12 @@ It also gains `newWriteId`, which defaults to `const Uuid().v4()`; tests inject 
 A tombstone **loses** only when all of these hold (§4.6): the table is `dose_logs`; R's `edited_at` is 1970; L is pending; R does not carry L's `sync_write_id`; L has a person's changed value, or L is `pending_create` with a `created_at` after R's `deleted_at` (or none); and L's prescription is here and not `pending_delete`.
 
 - **Synced rows** (replaced) store R's map, as they store R's `edited_at`.
-- **Medications:** the stored quantity is `applyStockOps(W.quantity, outbox ops)`.
+- **Medications:** the stored quantity is `localStock(W.quantity, W.write_id, outbox ops)` (§4.8).
 - **Prescriptions:** the new/changed tracking for `onPrescriptionsPulled` is unchanged.
 
 ### 7.3 Push (`TableSync.pushRow`)
 
-Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or** `pending_update` with a failure record; sick-branch m-3), and the stock ops of a medication the server lacks.
+Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or** `pending_update` with a failure record; sick-branch m-3), and the stock ops of a medication with no known server version (§7.5).
 
 Dropped: a prescription or dose whose parent is `pending_delete` here (its delete failed or waits for its backoff) is deleted here and never sent, before any other check, in the batch of new doses too (§4.6).
 
@@ -1120,7 +1122,7 @@ Dropped: a prescription or dose whose parent is `pending_delete` here (its delet
   5. If none came back: fetch R. Our write id: settle with R. No row: create path. Otherwise merge, store, and repeat from step 2 once. After the second failure, leave the row pending and request a re-run.
 - **`pending_delete`:** §4.6.
 
-**Force push:** every row is sent as `PATCH` of every column with no version condition, a fresh write id and `edited_at = now`. A row the server lacks is inserted. Every medication quantity is queued as `set_to`. Parents go first, so their children are brought back under live parents; a child the server still stores deleted (its parent's own force push failed) fails and stays as it is here.
+**Force push:** every row is sent as `PATCH` of every column with no version condition, a fresh write id and `edited_at = now`. A row the server lacks is inserted. Every medication quantity is queued as `set_to` before the rows go out (settling a row shows the server's stock plus the waiting changes, so the count must be read first); the counts drain after the medication rows, behind any change already waiting. A force patch never names `quantity`. Parents go first, so their children are brought back under live parents; a child the server still stores deleted (its parent's own force push failed) fails and stays as it is here.
 
 ### 7.4 Settle (`lib/data/sync/row_settle.dart`, which replaces `push_settle.dart`)
 
@@ -1135,7 +1137,7 @@ Dropped: a prescription or dose whose parent is `pending_delete` here (its delet
   - base, version and write id as above;
   - status stays `pending_update`, and the next push sends only the newer difference;
   - the columns it shares with the server copy take the server's (capped) times, so a clock ahead does not make them look changed since the base.
-  - For a medication that was `pending_create`: if the local quantity differs from the pushed one, queue `delta = current − pushed`.
+  - A medication keeps its own quantity: a change made in flight waits in the outbox. (No difference is queued here; see §4.8.)
 - **Row gone, or `pending_delete`:** left alone. A `pending_delete` still returns "still pending".
 
 ### 7.5 Draining the stock outbox
@@ -1147,8 +1149,8 @@ For each op, oldest first:
 - **`applied` or `duplicate`:** delete the op. For `applied`, set the local quantity to `applyStockOps(result.quantity, remaining ops)`, and move the base forward when `result.rowVersion == version + 1`.
 - **`gone`:** delete the op. It is final: the medication is deleted or was removed from the server, and its ledger went with it, so a retry would never apply either.
 - **An error:** keep the op, record a failure with backoff (table `stock_outbox`, id = op id), and stop draining that medication for this cycle, so the order is kept.
-- **A medication re-created by the create path** (§7.3, "No row: create path"): its insert carries the local quantity, which already includes the waiting ops, so drop that medication's ops when the insert settles.
-- **`discardFailedRow('stock_outbox', opId)`** drops the op.
+- **A medication the create path inserts** (a new one, one restored or re-marked with no server copy, or one re-created after it was removed from the server): its insert carries the local quantity, which already includes the waiting ops, so they leave the outbox in the transaction that stores the insert's write id. Dropping them only once the insert settles would count them twice when the answer is lost and the write is found again on the next cycle. If the insert still never lands, the next attempt carries the same quantity. If the server turns out to hold another copy (the insert was ignored), the ops go back to the outbox with their old `seq` and apply to that copy.
+- **`discardFailedRow('stock_outbox', opId)`** fetches the medication, drops the op, and shows the server's quantity with the other waiting ops on top (the local quantity held the dropped change). A fetch that fails keeps the op.
 
 ### 7.6 Force pull and discard
 
@@ -1200,7 +1202,7 @@ For each op, oldest first:
 | `select('updated_at')` after the upsert | Unchanged. A real update gets `now()`. An insert now also gets `now()`, so its create re-send simply does not fire. |
 | Pulls by `updated_at` | Sees every real change a 0.4.0 device makes. Does **not** see automatic changes (missed, time corrections, dropped slots): it computes "missed" itself and drops off-schedule pending doses locally, so its view matches. |
 | Skips an edit when the server `updated_at` is newer | Unchanged for real edits. Automatic changes keep `updated_at`, so they never make a 0.3.0 edit look stale. |
-| Pushes stock as an absolute `quantity` | Still overwrites whatever the ledger applied in between (arrival order, as today). **Known limitation until every device is updated.** |
+| Pushes stock as an absolute `quantity` | A 0.3.0 stock change (and any 0.3.0 row write, a rename included) is a whole-row upsert carrying the quantity it computed from the copy it last pulled. Its stale check skips it only when the server's `updated_at` is newer than its own edit; otherwise the server stores that number as it is (no ledger row, no edit time for `quantity`, `write_id` NULL), replacing whatever the ledger applied since that 0.3.0 device last pulled. A 0.4.0 change that reaches the server after it applies on top of it (arrival order). 0.4.0 devices pull the row (its `row_version` moved) and show the server's quantity plus their own waiting changes, so every 0.4.0 device converges on the server's number. **Known limitation until every device is updated:** doses logged on 0.4.0 devices between the 0.3.0 device's last pull and its write are lost (pinned in `multi_device_stock_sync_test`). |
 | Inserts new doses if absent, then reads them back | Unchanged. Generated rows keep 1970 and get `edited_at = 1970`. |
 | Takes a dose whose time a 0.4.0 device corrected | Its whole-row upsert sends the shifted time back. The take wins as a real edit. The correction is not retried, because the row is no longer pending. |
 | Takes (or skips) a dose a 0.4.0 device dropped from its schedule | 0.3.0 never saw the drop. Its upsert brings the dose back as a person's change, so the take reaches every device (§4.6). A 0.3.0 write that leaves the status alone, or sets its own "missed", leaves the dose deleted, still as the app's own delete. |
@@ -1310,6 +1312,8 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - a row restored without a map;
   - an edit back to the old value, and an undone take;
   - deletes and the rows under them: a slot dropped and generated again (on either device, before or after the drop, and after a person's delete), a take and a generated dose under a prescription deleted elsewhere, a dose pulled under a prescription deleted here, a live orphan on the server, and a 0.3.0 take of a dropped dose. Each ends with a round that changes nothing on the server.
+
+  `test/services/multi_device_stock_sync_test.dart` runs the stock through two phones with real repositories and cycles, each case ending with rounds that change nothing: a dose on each phone (both orders), a restock against a dose, a count against a dose (both arrival orders), a lost answer, a medication deleted or removed from the server ("delete all data") while a dose waits, a medication added and restocked offline (also with its insert answer lost), an undone dose, a phone that left cloud mode, a cloud restore, and a 0.3.0 phone's absolute quantity.
 
   `test/services/multi_device_schedule_sync_test.dart` runs the same through the whole cycle: a schedule changed and changed back (doses and reminders on both devices), and a prescription deleted while the other device, offline, takes a dose or generates more.
 - **Existing suites.** `multi_device_*`, `treatment_sync_test` and `sync_service_test` keep their behavioural expectations. Tests that pin removed v1 mechanics (the stale skip, the create re-send, the 1970 floor, the `updated_at` cursor) are replaced by their v2 equivalents, listed per task.
