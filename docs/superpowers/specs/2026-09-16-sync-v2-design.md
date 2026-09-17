@@ -432,6 +432,7 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 - after the Task 3 review (fix round) the checks also cover: no TRUNCATE, TRIGGER or REFERENCES for clients on any synced or family table, every kind of update moving `sync_xid`, stock values out of range, a medication removed from the server, a retry racing its original, and the app's family and "delete all data" flows. They pass on the real `supabase/postgres:15.8.1.085` image as well.
 - after the per-column revision (2026-09-17), the checks also fail when a column time goes back, when the cap at arrival is missing, when an older time overwrites an entry, when an unchanged column is stamped, when a legacy write's map is read, when a sent map is ignored or replaces the stored one, when the fill is missing or uses the arrival time, and when the stock or `deleted_at` gets an entry (14 mutants, all caught). The revision was checked on `postgres:15-alpine` only.
 - after the engine review (2026-09-17), the checks also cover: children stored deleted under a deleted treatment, medication or prescription (inserts, 0.4.0 updates that bring a row back, 0.3.0 upserts); the cascade as the app's own change; the one-time repair of live children; a 0.3.0 take bringing a dropped dose back, and every legacy write that must not; the fill capped at arrival, a write id without an edit time, and the automatic fill. 15 mutants of these rules, all caught, on `postgres:15-alpine`.
+- after the cycle review (2026-09-17), `tools/check_supabase_sql.sh` also runs two sessions against each other under row-level security: a dose insert left open while its prescription is deleted, the delete left open while the insert runs, and a prescription insert left open while its medication is deleted. Each child must end deleted, as the app's own delete. Without the parents read `FOR SHARE` every case fails.
 - `tools/sql/fake_server_parity.sql`, which `test/helpers/fake_server_parity_test.dart` writes, runs the fake server's script of writes against the migration and fails on any row where Postgres answers differently (§12).
 
 ```sql
@@ -576,6 +577,7 @@ declare
   -- The row stays or becomes the app's own tombstone.
   v_app_delete boolean := false;
   v_parent_deleted timestamptz;
+  v_other_deleted  timestamptz;
   v_new    jsonb;
   v_old    jsonb;
   v_sent   jsonb;
@@ -676,15 +678,25 @@ begin
   new.field_edited_at := v_map;
 
   -- A live child under a deleted parent is stored deleted.
+  --
+  -- The parents are read FOR SHARE and held until this write commits. A
+  -- parent's delete (FOR NO KEY UPDATE) then waits for this write, and its
+  -- cascade, which runs after that wait, sees this row and deletes it; a
+  -- delete that came first makes this read wait, and it then sees the
+  -- parent deleted. Without the lock the two pass each other (the foreign
+  -- key's FOR KEY SHARE does not conflict with a delete) and a live child
+  -- stays under a deleted parent. Reading FOR SHARE needs the UPDATE right
+  -- and policy on the parent, which its owner has.
   if new.deleted_at is null then
     if tg_table_name = 'prescriptions' then
-      select coalesce(
-               (select t.deleted_at from public.treatments t where t.id = v_new->>'treatment_id'),
-               (select m.deleted_at from public.medications m where m.id = v_new->>'medication_id'))
-        into v_parent_deleted;
+      select t.deleted_at into v_parent_deleted
+        from public.treatments t where t.id = v_new->>'treatment_id' for share;
+      select m.deleted_at into v_other_deleted
+        from public.medications m where m.id = v_new->>'medication_id' for share;
+      v_parent_deleted := coalesce(v_parent_deleted, v_other_deleted);
     elsif tg_table_name = 'dose_logs' then
       select p.deleted_at into v_parent_deleted
-        from public.prescriptions p where p.id = v_new->>'prescription_id';
+        from public.prescriptions p where p.id = v_new->>'prescription_id' for share;
     end if;
     if v_parent_deleted is not null then
       new.deleted_at := v_parent_deleted;
@@ -927,9 +939,12 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 -- prescription was deleted). Every device would fail to store such a row.
 -- They are deleted here as the app's own change (the trigger above keeps
 -- it so from now on): prescriptions first, whose own tombstones cascade
--- to their doses, then the doses left. updated_at stays, like any other
--- change the app makes; 0.3.0 devices already dropped these rows with
--- their parent. Running this again finds nothing.
+-- to their doses, then the doses left. The rows updated here keep their
+-- updated_at, like any other change the app makes; 0.3.0 devices already
+-- dropped them with their parent. The doses the cascade reaches from a
+-- prescription repaired here are a cascade write, which moves updated_at
+-- (0.3.0 then pulls a tombstone for a row it no longer holds, which does
+-- nothing). Running this again finds nothing.
 
 update public.prescriptions c
    set deleted_at = coalesce(t.deleted_at, m.deleted_at),
@@ -970,7 +985,7 @@ update public.dose_logs c
 - **After this migration** never run `20260901000000_initial_schema.sql` again (it would restore the old `update_updated_at()`), and do not enable read replicas (a page could come from a replica that has not yet replayed rows below the primary's horizon).
 - **Locks.** `CREATE INDEX` without `CONCURRENTLY` blocks writes to that table while it builds. That takes milliseconds at household sizes, and `CONCURRENTLY` cannot run inside the CLI's migration transaction.
 - **Edit times per column.** The trigger compares `to_jsonb(new)` with `to_jsonb(old)`, so it needs no list of each table's columns; a column a later migration adds gets entries from its first change on. A malformed `at` in a sent map fails the write (SQLSTATE 22007); only the app writes the map.
-- **Rows under a deleted parent** (§4.6). The trigger looks the parents up with the caller's rights: the insert and update policies already require the caller to see them. It tells the tombstone cascade from every other writer by `pg_trigger_depth() > 1` (the cascade's update runs inside another trigger; `apply_stock_change` is a function, not a trigger). The app's own delete is marked by setting `edited_at` to 1970 after the column times are stamped, so the columns a write changes keep that write's time. The one-time repair (section 7) is the only UPDATE in the migration: it touches only live rows under deleted parents, which no device can store anyway, and keeps their `updated_at` (0.3.0 dropped them with their parent).
+- **Rows under a deleted parent** (§4.6). The trigger looks the parents up with the caller's rights: the insert and update policies already require the caller to see them. It reads them `FOR SHARE`, held until the write commits (review I-3): a parent's delete takes `FOR NO KEY UPDATE`, so it waits for a child being written and its cascade then sees that child, and a child written while the delete is open waits and then sees the parent deleted. The foreign key's own `FOR KEY SHARE` does not conflict with a delete, so without this the two passed each other and left a live child. `FOR SHARE` needs the UPDATE right and policy on the parent, which its owner has. A batch that writes children of two parents while another request deletes both can deadlock; Postgres aborts one of them (40P01) and the device retries it after its backoff. It tells the tombstone cascade from every other writer by `pg_trigger_depth() > 1` (the cascade's update runs inside another trigger; `apply_stock_change` is a function, not a trigger). The app's own delete is marked by setting `edited_at` to 1970 after the column times are stamped, so the columns a write changes keep that write's time. The one-time repair (section 7) is the only UPDATE in the migration: it touches only live rows under deleted parents, which no device can store anyway, and keeps their `updated_at` (0.3.0 dropped them with their parent). The doses its cascade reaches from a repaired prescription are a cascade write and get a new `updated_at`; 0.3.0 then pulls a tombstone for a row it no longer holds, which does nothing (review Minor 2).
 - **A 0.3.0 take of a dropped dose** (§4.6). Only a legacy write (no new write id) that does not set `deleted_at` itself, on a row whose tombstone is the app's own, and that changes `status` to `taken` or `skipped`, clears `deleted_at`. The trigger reads `status` through `to_jsonb`, so the one function serves every table.
 - **Trigger order.** Postgres runs `BEFORE` triggers of one event in name order. `<table>_sync_stamp` sorts before `<table>_updated_at`, and `update_updated_at()` reads the `write_id` and `edited_at` the stamp trigger has just settled.
 - **No down migration.** Every change is additive, and 0.3.0 runs against it (§9.2). Rolling the app back does not need the schema rolled back.

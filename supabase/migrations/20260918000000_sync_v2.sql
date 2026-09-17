@@ -139,6 +139,7 @@ declare
   -- The row stays or becomes the app's own tombstone.
   v_app_delete boolean := false;
   v_parent_deleted timestamptz;
+  v_other_deleted  timestamptz;
   v_new    jsonb;
   v_old    jsonb;
   v_sent   jsonb;
@@ -239,15 +240,25 @@ begin
   new.field_edited_at := v_map;
 
   -- A live child under a deleted parent is stored deleted.
+  --
+  -- The parents are read FOR SHARE and held until this write commits. A
+  -- parent's delete (FOR NO KEY UPDATE) then waits for this write, and its
+  -- cascade, which runs after that wait, sees this row and deletes it; a
+  -- delete that came first makes this read wait, and it then sees the
+  -- parent deleted. Without the lock the two pass each other (the foreign
+  -- key's FOR KEY SHARE does not conflict with a delete) and a live child
+  -- stays under a deleted parent. Reading FOR SHARE needs the UPDATE right
+  -- and policy on the parent, which its owner has.
   if new.deleted_at is null then
     if tg_table_name = 'prescriptions' then
-      select coalesce(
-               (select t.deleted_at from public.treatments t where t.id = v_new->>'treatment_id'),
-               (select m.deleted_at from public.medications m where m.id = v_new->>'medication_id'))
-        into v_parent_deleted;
+      select t.deleted_at into v_parent_deleted
+        from public.treatments t where t.id = v_new->>'treatment_id' for share;
+      select m.deleted_at into v_other_deleted
+        from public.medications m where m.id = v_new->>'medication_id' for share;
+      v_parent_deleted := coalesce(v_parent_deleted, v_other_deleted);
     elsif tg_table_name = 'dose_logs' then
       select p.deleted_at into v_parent_deleted
-        from public.prescriptions p where p.id = v_new->>'prescription_id';
+        from public.prescriptions p where p.id = v_new->>'prescription_id' for share;
     end if;
     if v_parent_deleted is not null then
       new.deleted_at := v_parent_deleted;
@@ -490,9 +501,12 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 -- prescription was deleted). Every device would fail to store such a row.
 -- They are deleted here as the app's own change (the trigger above keeps
 -- it so from now on): prescriptions first, whose own tombstones cascade
--- to their doses, then the doses left. updated_at stays, like any other
--- change the app makes; 0.3.0 devices already dropped these rows with
--- their parent. Running this again finds nothing.
+-- to their doses, then the doses left. The rows updated here keep their
+-- updated_at, like any other change the app makes; 0.3.0 devices already
+-- dropped them with their parent. The doses the cascade reaches from a
+-- prescription repaired here are a cascade write, which moves updated_at
+-- (0.3.0 then pulls a tombstone for a row it no longer holds, which does
+-- nothing). Running this again finds nothing.
 
 update public.prescriptions c
    set deleted_at = coalesce(t.deleted_at, m.deleted_at),

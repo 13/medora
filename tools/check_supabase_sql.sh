@@ -106,3 +106,55 @@ if [[ "$retry" != duplicate || "$quantity" != 9 ]]; then
   exit 1
 fi
 echo "retry race check passed"
+
+# A child written while another request deletes its parent (review I-3):
+# whichever runs first, the other waits for it, and the child ends deleted,
+# as the app's own delete. Both sessions are user A's, under row-level
+# security. Without the parent lookup's FOR SHARE the two pass each other
+# and the dose stays live under a deleted prescription.
+psql_run >/dev/null <<'SQL'
+insert into treatments (id, user_id, name, start_date)
+  values ('race-t', '00000000-0000-0000-0000-00000000000a', 'Race', '2026-09-10');
+insert into medications (id, user_id, name)
+  values ('race-m', '00000000-0000-0000-0000-00000000000a', 'Race'),
+         ('race-m3', '00000000-0000-0000-0000-00000000000a', 'Race');
+insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
+  values ('race-p1', 'race-t', 'race-m', '1', '2026-09-10T08:00:00Z'),
+         ('race-p2', 'race-t', 'race-m', '1', '2026-09-10T08:00:00Z');
+SQL
+race_insert() { # $1 dose id, $2 prescription id
+  echo "insert into dose_logs (id, prescription_id, scheduled_time, status, write_id, edited_at, field_edited_at)
+        values ('$1', '$2', '2026-09-11T08:00:00Z', 'taken', gen_random_uuid(), now(),
+                jsonb_build_object('status', jsonb_build_object('at', now(), 'auto', false)))"
+}
+race_delete() { # $1 prescription id
+  echo "update prescriptions set deleted_at = now(), write_id = gen_random_uuid(), edited_at = now() where id = '$1'"
+}
+race_result() { # $1 dose id
+  psql_run -At -c "select coalesce((select (deleted_at is not null)::text || '/' || (edited_at = timestamptz '1970-01-01T00:00:00Z')::text from dose_logs where id = '$1'), 'missing');"
+}
+# 1. The insert is open while the delete runs.
+psql_bg "${as_a[@]}" -c "begin" -c "$(race_insert race-d1 race-p1)" -c "select pg_sleep(4)" -c "commit"
+sleep 1.5
+psql_run "${as_a[@]}" -c "$(race_delete race-p1)" >/dev/null
+# Read only once the other session has finished either way.
+sleep 3
+first=$(race_result race-d1)
+# 2. The delete is open while the insert runs.
+psql_bg "${as_a[@]}" -c "begin" -c "$(race_delete race-p2)" -c "select pg_sleep(4)" -c "commit"
+sleep 1.5
+psql_run "${as_a[@]}" -c "$(race_insert race-d2 race-p2)" >/dev/null
+sleep 3
+second=$(race_result race-d2)
+# 3. A prescription insert is open while its medication is deleted.
+psql_bg "${as_a[@]}" -c "begin" -c "insert into prescriptions (id, treatment_id, medication_id, dosage, start_time, write_id, edited_at) values ('race-p3', 'race-t', 'race-m3', '1', '2026-09-10T08:00:00Z', gen_random_uuid(), now())" -c "select pg_sleep(4)" -c "commit"
+sleep 1.5
+psql_run "${as_a[@]}" -c "update medications set deleted_at = now(), write_id = gen_random_uuid(), edited_at = now() where id = 'race-m3'" >/dev/null
+sleep 3
+third=$(psql_run -At -c "select coalesce((select (deleted_at is not null)::text || '/' || (edited_at = timestamptz '1970-01-01T00:00:00Z')::text from prescriptions where id = 'race-p3'), 'missing');")
+wait || true
+if [[ "$first" != true/true || "$second" != true/true || "$third" != true/true ]]; then
+  echo "parent race check failed: dose insert first=$first, delete first=$second; prescription insert first=$third (want true/true: deleted, as the app's own)" >&2
+  exit 1
+fi
+echo "parent race check passed"
