@@ -197,6 +197,31 @@ void main() {
     );
   });
 
+  test(
+    'a project without the edit-time map names the sync v2 migration',
+    () async {
+      final table = PostgrestSyncTable(
+        answering({
+          'code': 'PGRST204',
+          'message':
+              "Could not find the 'field_edited_at' column of 'treatments'",
+        }, status: 400),
+        'treatments',
+      );
+      await expectLater(
+        table.patch('t1', {
+          'notes': 'x',
+          'field_edited_at': <String, Object?>{},
+        }, ifVersion: 1),
+        throwsA(
+          isA<MissingColumnException>()
+              .having((e) => e.column, 'column', 'field_edited_at')
+              .having((e) => e.migration, 'migration', syncV2Migration),
+        ),
+      );
+    },
+  );
+
   group('afterPullPage', () {
     Map<String, dynamic> row(int xid, String id) => {'id': id, 'sync_xid': xid};
 

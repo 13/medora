@@ -1,6 +1,6 @@
 -- ============================================================
 -- Medora - Sync v2: a change cursor the server assigns, row versions,
--- write ids, edit times and idempotent stock changes.
+-- write ids, edit times per column and idempotent stock changes.
 --
 -- Apply after 20260917000000_treatment_sick_leave.sql and BEFORE any
 -- device runs Medora 0.4.0. Medora 0.3.0 keeps working against it:
@@ -43,31 +43,48 @@ set local lock_timeout = '5s';
 -- edited_at    when the change was made on the device, never later than
 --              the server received it. 1970-01-01 marks a change the app
 --              made on its own (an overdue dose marked missed, a dose time
---              corrected, a dose dropped from a changed schedule).
+--              corrected, a dose dropped from a changed schedule). It is the
+--              time the last write carried; the merge reads the times per
+--              column below.
+-- field_edited_at
+--              per column, when that column's last applied change was made:
+--              {"<column>": {"at": <timestamptz>, "auto": <bool>}}. "auto"
+--              marks a change the app made on its own. A time is never
+--              later than the server received the change, and never earlier
+--              than the time the map already held for that column. The
+--              stock (quantity) and the bookkeeping columns have no entry.
+--              An empty map (every row from before this migration, every
+--              row not updated since it was inserted): each column was last
+--              changed at the row's edited_at, or its updated_at when that
+--              is empty. The first update of such a row fills the map.
 
 alter table public.medications
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 alter table public.treatments
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 alter table public.prescriptions
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 alter table public.dose_logs
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 -- 2. Pull indexes (keyset: sync_xid, then id) -----------------------------
 
@@ -87,34 +104,104 @@ returns trigger
 language plpgsql
 set search_path = public, pg_temp
 as $$
+declare
+  c_ceiling constant timestamptz := timestamptz '1970-01-02 00:00:00+00';
+  c_epoch   constant timestamptz := timestamptz '1970-01-01 00:00:00+00';
+  -- Columns with no edit time of their own: the bookkeeping, and the stock,
+  -- which only apply_stock_change writes.
+  c_untimed constant text[] := array['id', 'user_id', 'created_at', 'updated_at',
+    'deleted_at', 'sync_xid', 'row_version', 'write_id', 'edited_at',
+    'field_edited_at', 'quantity'];
+  v_now    timestamptz := now();
+  v_legacy boolean := false;
+  v_new    jsonb;
+  v_old    jsonb;
+  v_sent   jsonb := '{}';
+  v_map    jsonb := '{}';
+  v_key    text;
+  v_entry  jsonb;
+  v_at     timestamptz;
+  v_auto   boolean;
 begin
   new.sync_xid := pg_current_xact_id()::text::bigint;
   if tg_op = 'INSERT' then
     new.row_version := 1;
-    new.edited_at := coalesce(new.edited_at, new.updated_at, now());
+    new.edited_at := coalesce(new.edited_at, new.updated_at, v_now);
   else
     new.row_version := old.row_version + 1;
     if new.write_id is null or new.write_id is not distinct from old.write_id then
       -- A writer that sends no write id: Medora 0.3.0 and older, the
       -- tombstone cascade. Its change counts as made when it arrived.
+      v_legacy := true;
       new.write_id := null;
-      new.edited_at := now();
+      new.edited_at := v_now;
     elsif new.edited_at is null then
-      new.edited_at := coalesce(old.updated_at, now());
+      new.edited_at := coalesce(old.updated_at, v_now);
     end if;
   end if;
-  if new.edited_at < timestamptz '1970-01-02 00:00:00+00' then
-    new.edited_at := timestamptz '1970-01-01 00:00:00+00';
+  if new.edited_at < c_ceiling then
+    new.edited_at := c_epoch;
   else
-    new.edited_at := least(new.edited_at, now());
+    new.edited_at := least(new.edited_at, v_now);
     if tg_op = 'INSERT' then
       -- A row a person created is stamped on arrival, so a device whose
       -- updated_at cursor passed its creation time while it was offline
       -- still pulls it (Medora 0.3.0 pulls by updated_at). A generated
       -- row keeps its 1970 stamp and stays invisible to those cursors.
-      new.updated_at := now();
+      new.updated_at := v_now;
     end if;
   end if;
+
+  -- Edit times per column. A 0.4.0 client sends an entry for each column
+  -- it writes; the entries are read only for the columns the write really
+  -- changes (an insert: the columns it names).
+  v_new := to_jsonb(new);
+  if tg_op = 'INSERT' then
+    v_sent := new.field_edited_at;
+  else
+    v_old := to_jsonb(old);
+    v_map := old.field_edited_at;
+    if not v_legacy and new.field_edited_at is distinct from old.field_edited_at then
+      v_sent := new.field_edited_at;
+    end if;
+    if v_map is null or jsonb_typeof(v_map) <> 'object' or v_map = '{}' then
+      -- The first update since the row was written: every column was last
+      -- changed at the row's own time.
+      v_map := '{}';
+      v_at := least(coalesce(old.edited_at, old.updated_at, v_now), v_now);
+      v_auto := v_at < c_ceiling;
+      for v_key in select jsonb_object_keys(v_old) loop
+        continue when v_key = any(c_untimed);
+        v_map := v_map || jsonb_build_object(v_key, jsonb_build_object(
+          'at', case when v_auto then c_epoch else v_at end, 'auto', v_auto));
+      end loop;
+    end if;
+  end if;
+  if v_sent is null or jsonb_typeof(v_sent) <> 'object' then
+    v_sent := '{}';
+  end if;
+  for v_key in select jsonb_object_keys(v_new) loop
+    continue when v_key = any(c_untimed);
+    v_entry := v_sent -> v_key;
+    if tg_op = 'INSERT' then
+      continue when v_entry is null;
+    else
+      continue when (v_new -> v_key) is not distinct from (v_old -> v_key);
+    end if;
+    if v_legacy then
+      v_at := v_now;
+      v_auto := false;
+    else
+      -- A changed column with no entry takes the time the write carried.
+      v_at := coalesce((v_entry ->> 'at')::timestamptz, new.edited_at);
+      v_auto := coalesce((v_entry ->> 'auto')::boolean, false) or v_at < c_ceiling;
+    end if;
+    v_at := case when v_auto then c_epoch else least(v_at, v_now) end;
+    -- Never earlier than the time already held (greatest skips a NULL).
+    v_at := greatest((v_map -> v_key ->> 'at')::timestamptz, v_at);
+    v_map := v_map || jsonb_build_object(v_key, jsonb_build_object('at', v_at, 'auto', v_auto));
+  end loop;
+  new.field_edited_at := v_map;
   return new;
 end;
 $$;

@@ -15,8 +15,28 @@ insert into auth.users (id) values
 -- A row written before the migration keeps the defaults.
 do $$ begin
   assert (select sync_xid = 0 and row_version = 1 and write_id is null and edited_at is null
+              and field_edited_at = '{}'
             from medications where id = 'pre-migration'),
-    'a row from before the migration keeps sync_xid 0, row_version 1';
+    'a row from before the migration keeps sync_xid 0, row_version 1, an empty edit-time map';
+end $$;
+
+-- Its first update fills the edit-time map: the columns it does not change
+-- were last changed no later than the row's old stamp; the one it changes
+-- (a 0.3.0 write) counts as made on arrival.
+update medications set notes = 'changed by 0.3.0' where id = 'pre-migration-2';
+do $$
+declare m jsonb;
+begin
+  select field_edited_at into m from medications where id = 'pre-migration-2';
+  assert (m->'name'->>'at')::timestamptz = timestamptz '2026-01-01T00:00:00Z'
+     and m->'name'->>'auto' = 'false',
+    'fill: an unchanged column carries the row''s old updated_at ' || m::text;
+  assert (m->'notes'->>'at')::timestamptz = (select updated_at from medications where id = 'pre-migration-2')
+     and m->'notes'->>'auto' = 'false',
+    'fill: the changed column is stamped on arrival ' || m::text;
+  assert not (m ? 'quantity') and not (m ? 'updated_at') and not (m ? 'id')
+     and not (m ? 'user_id') and not (m ? 'edited_at') and not (m ? 'field_edited_at'),
+    'fill: bookkeeping and the stock have no edit time ' || m::text;
 end $$;
 
 -- A 0.3.0 update of that row (a later transaction) stamps it.
@@ -139,6 +159,183 @@ begin
    where id = 'd1' and status = 'pending' and deleted_at is null;
   get diagnostics n = row_count;
   assert n = 0, 'guarded tombstone skips a taken dose';
+end $$;
+
+-- Edit times per column (field_edited_at). Every statement below is a
+-- transaction of its own, so each has its own now(); a real update stamps
+-- updated_at with that now(), which the checks use as "when it arrived".
+-- pg_temp.at(id, column) is the entry's time, pg_temp.auto(id, column) its
+-- flag.
+create function pg_temp.at(p_id text, p_col text) returns timestamptz language sql as $$
+  select (field_edited_at->p_col->>'at')::timestamptz from treatments where id = p_id
+$$;
+create function pg_temp.auto(p_id text, p_col text) returns boolean language sql as $$
+  select (field_edited_at->p_col->>'auto')::boolean from treatments where id = p_id
+$$;
+create function pg_temp.arrived(p_id text) returns timestamptz language sql as $$
+  select updated_at from treatments where id = p_id
+$$;
+create function pg_temp.entry(p_at timestamptz, p_auto boolean default false) returns jsonb
+  language sql as $$ select jsonb_build_object('at', p_at, 'auto', p_auto) $$;
+
+-- A 0.4.0 insert sends its map: a future time is capped at arrival, a time
+-- before 1970-01-02 is automatic, bookkeeping and unknown keys are dropped,
+-- a column it names no time for has no entry.
+insert into treatments (id, user_id, name, start_date, notes, sick_leave_ref, doctor,
+                        write_id, edited_at, field_edited_at)
+  values ('ft', auth.uid(), 'Flu', '2026-09-10', 'n0', 'R0', 'Dr. A',
+          'f0000000-0000-0000-0000-000000000001', now() - interval '5 hours',
+          jsonb_build_object(
+            'name', pg_temp.entry(now() - interval '5 hours'),
+            'notes', pg_temp.entry(now() - interval '5 hours'),
+            'sick_leave_ref', pg_temp.entry('2099-01-01T00:00:00Z'),
+            'doctor', pg_temp.entry('1970-01-01T00:00:00.5Z'),
+            'updated_at', pg_temp.entry(now()),
+            'no_such_column', pg_temp.entry(now())));
+do $$
+declare m jsonb := (select field_edited_at from treatments where id = 'ft');
+begin
+  assert pg_temp.at('ft', 'name') < pg_temp.arrived('ft') - interval '4 hours'
+     and not pg_temp.auto('ft', 'name'), 'map insert: a sent time is kept ' || m::text;
+  assert pg_temp.at('ft', 'sick_leave_ref') = pg_temp.arrived('ft'),
+    'map insert: a future time is capped at arrival ' || m::text;
+  assert pg_temp.at('ft', 'doctor') = timestamptz '1970-01-01T00:00:00Z' and pg_temp.auto('ft', 'doctor'),
+    'map insert: a time before 1970-01-02 is an automatic change ' || m::text;
+  assert not (m ? 'updated_at') and not (m ? 'no_such_column') and not (m ? 'end_date'),
+    'map insert: only the sent data columns have an entry ' || m::text;
+end $$;
+-- A 0.3.0 insert has an empty map: the row's edited_at stands for every column.
+insert into treatments (id, user_id, name, start_date) values ('ft-legacy', auth.uid(), 'Old', '2026-09-10');
+do $$ begin
+  assert (select field_edited_at = '{}' from treatments where id = 'ft-legacy'),
+    'map insert: a 0.3.0 insert has an empty map';
+end $$;
+
+-- Device A changes notes (its "10:00").
+update treatments set notes = 'A', write_id = 'f0000000-0000-0000-0000-00000000000a',
+       edited_at = now() - interval '1 hour',
+       field_edited_at = jsonb_build_object('notes', pg_temp.entry(now() - interval '1 hour'))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'notes') between pg_temp.arrived('ft') - interval '61 minutes'
+                                       and pg_temp.arrived('ft') - interval '59 minutes',
+    'map: a later time replaces the entry';
+end $$;
+create temp table ft_a as select pg_temp.at('ft', 'notes') as notes_at;
+
+-- Device B, offline, changed sick_leave_from earlier (its "09:00").
+update treatments set sick_leave_from = '2026-09-11', write_id = 'f0000000-0000-0000-0000-00000000000b',
+       edited_at = now() - interval '4 hours',
+       field_edited_at = jsonb_build_object('sick_leave_from', pg_temp.entry(now() - interval '4 hours'))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'notes') = (select notes_at from ft_a),
+    'map: a change to another column leaves the notes entry alone';
+  assert pg_temp.at('ft', 'sick_leave_from') < pg_temp.arrived('ft') - interval '3 hours',
+    'map: B''s column gets B''s time';
+  assert (select edited_at from treatments where id = 'ft') < pg_temp.at('ft', 'notes'),
+    'map: the row''s edited_at is the last write''s time, the entries keep their own';
+end $$;
+
+-- Device C writes notes with an older time (its "09:30"): the value lands
+-- (the client merged first), the entry never goes back.
+update treatments set notes = 'C', write_id = 'f0000000-0000-0000-0000-00000000000c',
+       edited_at = now() - interval '3 hours',
+       field_edited_at = jsonb_build_object('notes', pg_temp.entry(now() - interval '3 hours'))
+ where id = 'ft';
+do $$ begin
+  assert (select notes from treatments where id = 'ft') = 'C', 'map: the older write still lands';
+  assert pg_temp.at('ft', 'notes') = (select notes_at from ft_a),
+    'map: an older time never overwrites the entry';
+end $$;
+
+-- A future time is capped when it arrives.
+update treatments set notes = 'D', write_id = 'f0000000-0000-0000-0000-00000000000d',
+       edited_at = now(), field_edited_at = jsonb_build_object('notes', pg_temp.entry('2099-01-01T00:00:00Z'))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'notes') = pg_temp.arrived('ft'), 'map: a future time is capped at arrival';
+  assert not pg_temp.auto('ft', 'notes'), 'map: a person''s change';
+end $$;
+create temp table ft_d as select pg_temp.at('ft', 'notes') as notes_at, pg_temp.arrived('ft') as arrived;
+
+-- An automatic change of notes: marked automatic, the time stays, and
+-- updated_at stays too (0.3.0 must not see it).
+update treatments set notes = 'auto', write_id = 'f0000000-0000-0000-0000-0000000000a1',
+       edited_at = '1970-01-01T00:00:00Z',
+       field_edited_at = jsonb_build_object('notes', pg_temp.entry('1970-01-01T00:00:00Z', true))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.auto('ft', 'notes'), 'map: an automatic change is marked automatic';
+  assert pg_temp.at('ft', 'notes') = (select notes_at from ft_d), 'map: an automatic change keeps the time';
+  assert pg_temp.arrived('ft') = (select arrived from ft_d), 'map: an automatic change keeps updated_at';
+end $$;
+-- A flag sent with a real time is automatic as well.
+update treatments set doctor = 'Dr. auto', write_id = 'f0000000-0000-0000-0000-0000000000a2',
+       edited_at = '1970-01-01T00:00:00Z',
+       field_edited_at = jsonb_build_object('doctor', pg_temp.entry(now(), true))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.auto('ft', 'doctor') and pg_temp.at('ft', 'doctor') = timestamptz '1970-01-01T00:00:00Z',
+    'map: an automatic flag with a real time is automatic';
+end $$;
+
+-- A person's change after it: no longer automatic; the time never goes back.
+update treatments set notes = 'E', write_id = 'f0000000-0000-0000-0000-00000000000e',
+       edited_at = now() - interval '2 hours',
+       field_edited_at = jsonb_build_object('notes', pg_temp.entry(now() - interval '2 hours'))
+ where id = 'ft';
+do $$ begin
+  assert not pg_temp.auto('ft', 'notes'), 'map: a person''s change clears the automatic flag';
+  assert pg_temp.at('ft', 'notes') = (select notes_at from ft_d), 'map: and keeps the later time';
+end $$;
+
+-- An entry for a column the write does not change is ignored; a column it
+-- changes without an entry takes the row's edited_at; a map that is not
+-- an object counts as none.
+update treatments set name = 'Flu', doctor = 'Dr. B', write_id = 'f0000000-0000-0000-0000-0000000000f1',
+       edited_at = now() - interval '30 minutes',
+       field_edited_at = jsonb_build_object('name', pg_temp.entry(now()))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'name') < pg_temp.arrived('ft') - interval '4 hours',
+    'map: an entry for an unchanged column is ignored';
+  assert pg_temp.at('ft', 'doctor') between pg_temp.arrived('ft') - interval '31 minutes'
+                                        and pg_temp.arrived('ft') - interval '29 minutes'
+     and not pg_temp.auto('ft', 'doctor'),
+    'map: a changed column with no entry takes the row''s edit time';
+end $$;
+update treatments set doctor = 'Dr. C', write_id = 'f0000000-0000-0000-0000-0000000000f2',
+       edited_at = now() - interval '10 minutes', field_edited_at = '["doctor"]'
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'doctor') < pg_temp.arrived('ft') - interval '9 minutes',
+    'map: a map that is not an object counts as none';
+  assert (select jsonb_typeof(field_edited_at) from treatments where id = 'ft') = 'object',
+    'map: the stored map stays an object';
+end $$;
+
+-- A 0.3.0 upsert (whole row): only the columns it really changes are
+-- stamped, on arrival; a map it cannot send is never read.
+create temp table ft_before as select field_edited_at as m from treatments where id = 'ft';
+insert into treatments (id, user_id, name, start_date, notes, end_date, updated_at)
+  values ('ft', auth.uid(), 'Flu', '2026-09-10', 'E', '2026-09-12', '2026-09-01T00:00:00Z')
+  on conflict (id) do update
+    set name = excluded.name, start_date = excluded.start_date, notes = excluded.notes,
+        end_date = excluded.end_date, updated_at = excluded.updated_at;
+do $$ begin
+  assert pg_temp.at('ft', 'end_date') = pg_temp.arrived('ft') and not pg_temp.auto('ft', 'end_date'),
+    'map legacy: a changed column is stamped on arrival';
+  assert (select field_edited_at - 'end_date' from treatments where id = 'ft') = (select m from ft_before),
+    'map legacy: unchanged columns keep their entries';
+end $$;
+update treatments set notes = 'F',
+       field_edited_at = jsonb_build_object('notes', pg_temp.entry('2000-01-01T00:00:00Z'))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'notes') = pg_temp.arrived('ft'),
+    'map legacy: a writer without a new write id is stamped on arrival, whatever map it sets';
+  assert (select write_id is null from treatments where id = 'ft'), 'map legacy: write id cleared';
 end $$;
 
 -- Every update moves sync_xid: the pull finds a changed row only by it.
@@ -266,12 +463,17 @@ begin
   assert (j->>'quantity')::int = 20, 'range: back to 20 ' || j::text;
 end $$;
 
--- A stock change moves sync_xid and the version.
+-- A stock change moves sync_xid and the version, and leaves the edit-time
+-- map alone: the stock is the server's, not a column the merge compares.
 select pg_temp.remember('m1') \g /dev/null
+create temp table m1_before as select field_edited_at as m from medications where id = 'm1';
 select apply_stock_change('acacacac-0000-0000-0000-000000000001', 'm1', -1, null) \g /dev/null
 do $$ begin
   assert pg_temp.moved('m1'), 'stock: a change moves sync_xid';
   assert (select quantity from medications where id = 'm1') = 19, 'stock: 20 minus 1';
+  assert (select field_edited_at from medications where id = 'm1') = (select m from m1_before)
+     and (select m from m1_before) <> '{}',
+    'stock: the edit-time map is unchanged';
 end $$;
 
 -- A medication removed from the server (a purge, or "delete all data")
@@ -367,6 +569,8 @@ do $$ begin
          edited_at = now() where id = 't1';
   assert (select deleted_at is not null and write_id is null and row_version = 2
             from prescriptions where id = 'p1'), 'cascade: child tombstoned as a legacy write';
+  assert (select not (field_edited_at ? 'deleted_at') and field_edited_at ? 'dosage'
+            from prescriptions where id = 'p1'), 'cascade: a tombstone has no edit time of its own';
   insert into treatments (id, user_id, name, start_date) values ('t2', auth.uid(), 'Cold', '2026-09-10');
   insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
     values ('p2', 't2', 'm2', '1', '2026-09-10T08:00:00');

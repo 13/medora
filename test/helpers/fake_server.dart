@@ -1,7 +1,8 @@
 /// A fake Supabase server that behaves like the migrations up to
 /// `20260918000000_sync_v2.sql`: one xid per request, a horizon held back
 /// by transactions still open, `row_version`, the write-id rule, edit-time
-/// normalisation, the `updated_at` rules, guarded updates, the tombstone
+/// normalisation, the edit times per column (`field_edited_at`), the
+/// `updated_at` rules, guarded updates, the tombstone
 /// cascade, hard deletes with their foreign-key cascade, the stock ledger
 /// and an answer cap ([FakeServerCore.rowCap], 1000 by default; a real
 /// project may be set lower).
@@ -27,6 +28,52 @@ final _epoch = DateTime.utc(1970);
 String _iso(DateTime t) => t.toUtc().toIso8601String();
 DateTime? _time(Object? raw) =>
     raw is String ? DateTime.tryParse(raw)?.toUtc() : null;
+
+/// Columns with no edit time of their own (`c_untimed` in the trigger).
+const _untimed = {
+  'id',
+  'user_id',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+  'sync_xid',
+  'row_version',
+  'write_id',
+  'edited_at',
+  'field_edited_at',
+  'quantity',
+};
+
+Map<String, Object?> _entry(DateTime at, bool auto) => {
+  'at': _iso(at),
+  'auto': auto,
+};
+
+final _zoned = RegExp(r'T.*(Z|[+-]\d\d:\d\d)$');
+
+/// Equal as Postgres compares the stored values: a timestamp written as
+/// `Z` equals the same instant written as `+00:00`.
+bool _same(Object? a, Object? b) {
+  if (a == b) return true;
+  if (a is String && b is String && _zoned.hasMatch(a) && _zoned.hasMatch(b)) {
+    return DateTime.parse(a).isAtSameMomentAs(DateTime.parse(b));
+  }
+  return false;
+}
+
+bool _sameJson(Object? a, Object? b) {
+  if (a is Map && b is Map) {
+    return a.length == b.length &&
+        a.keys.every((k) => b.containsKey(k) && _sameJson(a[k], b[k]));
+  }
+  if (a is List && b is List) {
+    return a.length == b.length &&
+        [
+          for (var i = 0; i < a.length; i++) i,
+        ].every((i) => _sameJson(a[i], b[i]));
+  }
+  return a == b;
+}
 
 /// The children each parent's tombstone cascades to. A hard delete
 /// cascades along the same foreign keys (`ON DELETE CASCADE`).
@@ -92,6 +139,7 @@ class FakeServerCore {
     final now = clock().toUtc();
     row['sync_xid'] = xid;
     var edited = _time(row['edited_at']);
+    var legacy = false;
     if (old == null) {
       row['row_version'] = 1;
       edited ??= _time(row['updated_at']) ?? now;
@@ -99,6 +147,7 @@ class FakeServerCore {
       row['row_version'] = (old['row_version'] as int? ?? 1) + 1;
       final writeId = row['write_id'];
       if (writeId == null || writeId == old['write_id']) {
+        legacy = true;
         row['write_id'] = null;
         edited = now;
       } else {
@@ -108,6 +157,7 @@ class FakeServerCore {
     final weak = edited.isBefore(_weakCeiling);
     edited = weak ? _epoch : (edited.isAfter(now) ? now : edited);
     row['edited_at'] = _iso(edited);
+    row['field_edited_at'] = _fieldTimes(old, row, legacy, edited, now);
     if (old == null) {
       if (!weak) {
         row['updated_at'] = _iso(now);
@@ -120,6 +170,65 @@ class FakeServerCore {
           : _iso(now);
     }
     return row;
+  }
+
+  /// The trigger's edit times per column: sent entries for the columns a
+  /// write changes, capped at [now], automatic before 1970-01-02, never
+  /// earlier than the entry held; a legacy write stamps its changes [now];
+  /// an empty map is filled from the row's old time on the first update.
+  Map<String, dynamic> _fieldTimes(
+    Map<String, dynamic>? old,
+    Map<String, dynamic> row,
+    bool legacy,
+    DateTime edited,
+    DateTime now,
+  ) {
+    Object? sent;
+    final map = <String, dynamic>{};
+    if (old == null) {
+      sent = row['field_edited_at'];
+    } else {
+      final held = old['field_edited_at'];
+      if (!legacy && !_sameJson(row['field_edited_at'], held)) {
+        sent = row['field_edited_at'];
+      }
+      if (held is Map && held.isNotEmpty) {
+        map.addAll(Map<String, dynamic>.from(held));
+      } else {
+        var at = _time(old['edited_at']) ?? _time(old['updated_at']) ?? now;
+        if (at.isAfter(now)) at = now;
+        final auto = at.isBefore(_weakCeiling);
+        for (final key in old.keys) {
+          if (_untimed.contains(key)) continue;
+          map[key] = _entry(auto ? _epoch : at, auto);
+        }
+      }
+    }
+    final entries = sent is Map ? sent : const <String, Object?>{};
+    for (final key in row.keys) {
+      if (_untimed.contains(key)) continue;
+      final entry = entries[key];
+      if (old == null) {
+        if (entry == null) continue;
+      } else if (_same(row[key], old[key])) {
+        continue;
+      }
+      DateTime at;
+      bool auto;
+      if (legacy) {
+        at = now;
+        auto = false;
+      } else {
+        final e = entry is Map ? entry : const <String, Object?>{};
+        at = _time(e['at']) ?? edited;
+        auto = e['auto'] == true || at.isBefore(_weakCeiling);
+      }
+      at = auto ? _epoch : (at.isAfter(now) ? now : at);
+      final heldAt = _time((map[key] as Map?)?['at']);
+      if (heldAt != null && heldAt.isAfter(at)) at = heldAt;
+      map[key] = _entry(at, auto);
+    }
+    return map;
   }
 
   // ── Requests ───────────────────────────────────────────────
@@ -465,10 +574,12 @@ class FakeSyncTable implements SyncTable {
     String id,
     Map<String, dynamic> changes, {
     required DateTime editedAt,
+    Map<String, Object?>? fieldTimes,
   }) => core.patch(table, id, {
     ...changes,
     'write_id': 'other-${core.requests.length}',
     'edited_at': _iso(editedAt),
+    'field_edited_at': ?fieldTimes,
   });
 
   Map<String, dynamic>? get(String id) => rows[id];

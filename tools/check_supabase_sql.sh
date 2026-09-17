@@ -51,6 +51,8 @@ test -f "$sync_v2" || { echo "missing $sync_v2" >&2; exit 1; }
       # A row from before sync v2.
       echo "insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000cc');"
       echo "insert into medications (id, user_id, name) values ('pre-migration', '00000000-0000-0000-0000-0000000000cc', 'Old');"
+      # One with a known stamp: its first update fills the edit-time map.
+      echo "insert into medications (id, user_id, name, notes, updated_at) values ('pre-migration-2', '00000000-0000-0000-0000-0000000000cc', 'Old', 'n', '2026-01-01T00:00:00Z');"
       printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'
       # Re-runnable: apply it a second time.
       printf 'begin;\n'; cat "$f"; printf '\ncommit;\n'

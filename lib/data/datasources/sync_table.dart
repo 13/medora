@@ -52,7 +52,13 @@ class RemoteMeta {
 }
 
 /// The columns [syncV2Migration] adds to every synced table.
-const syncV2Columns = {'sync_xid', 'row_version', 'write_id', 'edited_at'};
+const syncV2Columns = {
+  'sync_xid',
+  'row_version',
+  'write_id',
+  'edited_at',
+  'field_edited_at',
+};
 
 /// One synced table on the server.
 abstract interface class SyncTable {
