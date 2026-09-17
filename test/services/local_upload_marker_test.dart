@@ -3,6 +3,7 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/services/local_upload_marker.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
@@ -49,33 +50,78 @@ void main() {
     expect(await cursors.lastPullAt('medications'), isNull);
   });
 
-  test(
-    'what this device knew about another account\'s server is dropped',
-    () async {
-      final db = await AppDatabase.instance.database;
+  group('stock changes still waiting', () {
+    late Database db;
+    setUp(() async {
+      db = await AppDatabase.instance.database;
       final seeded = await seedPrescription(db);
       await db.update('medications', {
         'sync_version': 3,
         'sync_base': '{"id":"x"}',
         'sync_write_id': 'w1',
       });
-      await db.insert('stock_outbox', {
-        'op_id': 'op1',
-        'medication_id': seeded.medicationId,
-        'delta': -1,
-        'created_at': '2026-03-05T08:00:00.000Z',
-      });
+      for (final (id, delta, setTo) in [('op1', -1, null), ('op2', null, 7)]) {
+        await db.insert('stock_outbox', {
+          'op_id': id,
+          'medication_id': seeded.medicationId,
+          'delta': delta,
+          'set_to': setTo,
+          'created_at': '2026-03-05T08:00:00.000Z',
+        });
+      }
+    });
 
-      await makeMarker().markAllForUpload('user-b');
+    Future<List<Object?>> outbox() async =>
+        (await db.query('stock_outbox')).map((r) => r['op_id']).toList();
 
+    Future<void> expectBasesCleared() async {
       final med = (await db.query('medications')).single;
       expect(
         [med['sync_version'], med['sync_base'], med['sync_write_id']],
         [null, null, null],
       );
-      expect(await db.query('stock_outbox'), isEmpty);
-    },
-  );
+    }
+
+    test('go when another account signs in: what this device knew about '
+        'the old account\'s server is dropped', () async {
+      final marker = makeMarker();
+      await marker.setOwner('user-a');
+
+      await marker.markAllForUpload('user-b');
+
+      await expectBasesCleared();
+      expect(await outbox(), isEmpty);
+    });
+
+    test('stay when the same account signs back in, so offline doses still '
+        'reach the stock', () async {
+      final marker = makeMarker();
+      await marker.setOwner('user-a');
+
+      await marker.markAllForUpload('user-a');
+
+      await expectBasesCleared();
+      expect(await outbox(), ['op1', 'op2']);
+    });
+
+    test('stay when the first account claims the device', () async {
+      await makeMarker().markAllForUpload('user-a');
+
+      expect(await outbox(), ['op1', 'op2']);
+    });
+
+    test('stay after a cloud restore, which queues the restored counts '
+        'first', () async {
+      // `_afterRestore` marks the restored rows for the signed-in owner.
+      final marker = makeMarker();
+      await marker.setOwner('user-a');
+
+      await marker.markAllForUpload('user-a');
+      await marker.markAllForUpload('user-a');
+
+      expect(await outbox(), ['op1', 'op2']);
+    });
+  });
 
   test('pending_delete rows are left alone', () async {
     final db = await AppDatabase.instance.database;

@@ -60,6 +60,12 @@ void main() {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db);
       await seedDoseLog(db, s.prescriptionId, DateTime(2026, 3, 1, 8));
+      await db.insert('stock_outbox', {
+        'op_id': 'op1',
+        'medication_id': s.medicationId,
+        'delta': -1,
+        'created_at': '2026-03-05T08:00:00.000Z',
+      });
 
       final port = _Port();
       await LocalDataWiper(
@@ -76,6 +82,7 @@ void main() {
         'treatments',
         'prescriptions',
         'dose_logs',
+        'stock_outbox',
       ]) {
         expect(await db.query(t), isEmpty, reason: t);
       }
@@ -101,6 +108,12 @@ void main() {
       final db = await AppDatabase.instance.database;
       final s = await seedPrescription(db);
       await seedDoseLog(db, s.prescriptionId, DateTime(2026, 3, 1, 8));
+      await db.insert('stock_outbox', {
+        'op_id': 'op1',
+        'medication_id': s.medicationId,
+        'delta': -1,
+        'created_at': '2026-03-05T08:00:00.000Z',
+      });
 
       final port = _Port();
       await LocalDataWiper(
@@ -116,6 +129,7 @@ void main() {
         'treatments',
         'prescriptions',
         'dose_logs',
+        'stock_outbox',
       ]) {
         expect(await db.query(t), isEmpty, reason: t);
       }

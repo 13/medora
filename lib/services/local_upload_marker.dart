@@ -64,12 +64,22 @@ class LocalUploadMarker {
   /// row is marked. Other members' rows belong to them — re-uploading them
   /// would push rows this user has no business writing, and RLS rejects them
   /// anyway unless the user owns the family.
+  ///
+  /// The merge bases always go, so each row is merged against a fresh read
+  /// of the server. The stock changes still waiting stay, unless the rows
+  /// were last uploaded under another account ([ownerUserId]): offline doses
+  /// of the same account must still reach its stock, and a cloud restore
+  /// queues the restored counts before it calls this. The new account has
+  /// none of the old one's medications, so each is created with its local
+  /// quantity instead.
+  ///
+  /// Everything runs in one transaction: a kill half-way must not leave the
+  /// bases gone and the rows still `synced`, which would never upload them.
   Future<int> markAllForUpload(String userId) async {
     final db = await _database.database;
-    // What this device knew about a server copy belongs to the account it
-    // came from: the merge bases go, and so do stock changes still waiting
-    // for that account (the upload carries each quantity).
-    await db.transaction((txn) async {
+    final owner = ownerUserId;
+    final accountChanged = owner != null && owner != userId;
+    final count = await db.transaction((txn) async {
       for (final table in const [
         'medications',
         'treatments',
@@ -82,22 +92,23 @@ class LocalUploadMarker {
           'sync_write_id': null,
         });
       }
-      await txn.delete('stock_outbox');
+      if (accountChanged) await txn.delete('stock_outbox');
+      var count = 0;
+      for (final table in tables) {
+        final ownRowOnly = table == 'family_members';
+        count += await txn.update(
+          table,
+          {'sync_status': SyncStatus.pendingUpdate},
+          where: ownRowOnly
+              ? 'sync_status = ? AND user_id = ?'
+              : 'sync_status = ?',
+          whereArgs: ownRowOnly
+              ? [SyncStatus.synced, userId]
+              : [SyncStatus.synced],
+        );
+      }
+      return count;
     });
-    var count = 0;
-    for (final table in tables) {
-      final ownRowOnly = table == 'family_members';
-      count += await db.update(
-        table,
-        {'sync_status': SyncStatus.pendingUpdate},
-        where: ownRowOnly
-            ? 'sync_status = ? AND user_id = ?'
-            : 'sync_status = ?',
-        whereArgs: ownRowOnly
-            ? [SyncStatus.synced, userId]
-            : [SyncStatus.synced],
-      );
-    }
     await _cursors.clear();
     return count;
   }
