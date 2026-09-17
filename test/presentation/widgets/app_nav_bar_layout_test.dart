@@ -159,6 +159,21 @@ void main() {
     expect(pxOf(paragraphOf(tester, 'Behandlungen')), greaterThan(12));
   });
 
+  testWidgets('a label that cannot fit even at 1.0x is not made smaller', (
+    tester,
+  ) async {
+    // 320 dp: 80 dp slots, and "Behandlungen" is 88.8 dp at 1.0x. Material
+    // keeps the label at its normal size rather than shrink it past that.
+    await pumpBar(tester, width: 320, locale: 'de', scale: 1.6);
+    for (final label in labelsOf('de')) {
+      expect(
+        pxOf(paragraphOf(tester, label)),
+        moreOrLessEquals(baseFontSize, epsilon: 0.01),
+        reason: label,
+      );
+    }
+  });
+
   testWidgets('the long-press tooltip keeps the full label', (tester) async {
     await pumpBar(tester, width: 360, locale: 'de', scale: 1.6);
     expect(find.byTooltip('Behandlungen'), findsOneWidget);
