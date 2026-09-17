@@ -515,6 +515,7 @@ void main() {
     final report = (await b.run((_) => b.service.forcePush()))!;
 
     expect(report.failures, isEmpty);
+    expect(await b.cursors.wipeSeen('user-a'), 1);
     expect(live('medications'), [_med]);
     expect(live('dose_logs'), hasLength(14));
     expect(

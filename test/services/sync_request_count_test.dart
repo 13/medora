@@ -331,6 +331,43 @@ void main() {
       await expectSettled([a, b]);
     });
 
+    test('a bulk request that fails backs its rows off instead of sending '
+        'them one by one', () async {
+      final overdue = await a.count(
+        "status = 'pending' AND scheduled_time < '${DateTime.now().toIso8601String()}'",
+      );
+      final first = scheduledDoseId(
+        prescriptionId,
+        DateTime(today.year, today.month, today.day - 180, 8),
+      );
+      // The server refuses the bulk write that names the oldest dose.
+      server.doses.table.failIds.add(first);
+      final sweep = await requests(a.sweep);
+      expect(
+        server.core.requests.where((r) => r == 'dose_logs:patch'),
+        isEmpty,
+        reason: 'no dose of the failed request is sent on its own',
+      );
+      expect(sweep.writes, (overdue / 100).ceil() - 1, reason: 'the others');
+      expect(
+        a.reports.expand((r) => r.failures).map((f) => f.id).toSet(),
+        hasLength(100),
+      );
+      expect(await a.count("sync_status = 'pending_update'"), 100);
+
+      // A bulk read that fails backs its rows off the same way.
+      server.doses.table.failIds.clear();
+      await a.failures.clearAll();
+      await a.markAllForUpload();
+      server.doses.table.failGetIds.add(first);
+      final read = await requests(a.sync);
+      expect(read.singleReads, 0);
+      server.doses.table.failGetIds.clear();
+      await a.failures.clearAll();
+      await a.sync();
+      await expectSettled([a, b]);
+    });
+
     test('the overdue sweep goes out in bulk; the same sweep on the other '
         'device writes nothing; a take made there first wins', () async {
       final taken = scheduledDoseId(
