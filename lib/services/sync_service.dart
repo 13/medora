@@ -1404,7 +1404,8 @@ class SyncService {
     for (var page = 0; page < maxPullPages; page++) {
       final List<Map<String, dynamic>> rows;
       try {
-        rows = await _remote(sync.remote.page(after: after, horizon: horizon));
+        // [TableSync.remote] is timed ([_TimedSyncTable]).
+        rows = await sync.remote.page(after: after, horizon: horizon);
       } catch (e) {
         report.failures.add(SyncFailure(table, '*', 'pull: $e'));
         if (force) throw _FetchFailedFatally(table, e);

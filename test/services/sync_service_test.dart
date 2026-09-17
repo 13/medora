@@ -45,6 +45,7 @@ class Harness {
     Duration capRetryDelay = const Duration(seconds: 15),
     int maxPullPages = SyncService.defaultMaxPullPages,
     SyncCursorStore? cursors,
+    Future<void> Function(String userId)? onFirstSuccessfulSync,
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
     this.server =
         server ??
@@ -82,6 +83,7 @@ class Harness {
       requestTimeout: requestTimeout,
       capRetryDelay: capRetryDelay,
       maxPullPages: maxPullPages,
+      onFirstSuccessfulSync: onFirstSuccessfulSync,
     );
     // A retry armed at the re-run cap must not fire into a later test.
     addTearDown(service.dispose);
@@ -2490,6 +2492,45 @@ void main() {
       );
       expect(await h.failures.get('medications', 'm-slow'), isNotNull);
       expect(h.service.currentState, SyncState.partial);
+    });
+
+    test('the data owner is recorded only after a clean cycle (review '
+        'X20)', () async {
+      final owners = <String>[];
+      final h = Harness(onFirstSuccessfulSync: (u) async => owners.add(u));
+      await MedicationLocalDatasource().upsert(
+        const MedicationModel(id: 'stuck', name: 'Stuck', quantity: 1),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      h.meds.table.failIds.add('stuck');
+      expect((await h.service.syncAll())!.failures, isNotEmpty);
+      h.server.state.migrated = false;
+      expect((await h.service.syncAll())!.fatal, isNotNull);
+      expect(owners, isEmpty);
+      h.server.state.migrated = true;
+      h.meds.table.failIds.clear();
+      h.clock.advance(const Duration(days: 1));
+      expect((await h.service.syncAll())!.isClean, isTrue);
+      expect(owners, ['user-a']);
+    });
+
+    test('a pull page that never answers ends with the request timeout '
+        '(review X18)', () async {
+      final h = Harness(requestTimeout: const Duration(milliseconds: 50));
+      final never = Completer<void>();
+      var paged = false;
+      h.treatments.table.beforeCall = () {
+        paged = true;
+        return never.future;
+      };
+      final report = (await h.service.syncAll().timeout(
+        const Duration(seconds: 5),
+      ))!;
+      expect(paged, isTrue);
+      expect(
+        report.failures.map((f) => '${f.table}/${f.id}'),
+        contains('treatments/*'),
+      );
     });
 
     test('a pull that times out keeps its cursor', () async {

@@ -832,6 +832,75 @@ void main() {
       }
     });
 
+    group('A cannot send its doses yet: B generates them from the pulled '
+        'prescription', () {
+      var doseTableDown = false;
+      setUp(() {
+        h.server.doses.rows.beforeCall = () async {
+          if (doseTableDown) throw StateError('the dose table is unreachable');
+        };
+      });
+
+      test('a new prescription (review X5)', () async {
+        doseTableDown = true;
+        final p = await h.createOnA(
+          start: DateTime(today.year, today.month, today.day + 1, 8),
+          durationDays: 2,
+        );
+        expect(h.server.dosesOf(p.prescriptionId), isEmpty);
+        doseTableDown = false;
+        await h.b.appSync(ensure: false);
+        final onB = await h.b.slots(p.prescriptionId);
+        expect(onB, hasLength(6));
+        expect(await h.b.remindersFor(p.prescriptionId), hasLength(6));
+        await h.a.appSync();
+        expect(await h.a.slots(p.prescriptionId), onB);
+      });
+
+      test('times changed, and nothing else (review X4)', () async {
+        final p = await h.createOnA(
+          start: DateTime(today.year, today.month, today.day + 1),
+          durationDays: 2,
+          scheduleType: 'times_per_day',
+          times: '["08:00","20:00"]',
+        );
+        await h.b.appSync();
+        doseTableDown = true;
+        await h.a.run((db) async {
+          await db.update(
+            'prescriptions',
+            {
+              'schedule_times': '["09:00","21:00"]',
+              'sync_status': SyncStatus.pendingUpdate,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [p.prescriptionId],
+          );
+          await h.a.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+          await h.a.service.syncAll();
+        });
+        expect(
+          h.server.prescriptions.table.rows[p
+              .prescriptionId]!['schedule_times'],
+          '["09:00","21:00"]',
+        );
+        doseTableDown = false;
+        await h.b.appSync(ensure: false);
+        final hours = {
+          for (final s in await h.b.slots(p.prescriptionId))
+            DateTime.parse(s.split('@').last).hour,
+        };
+        expect(hours, {9, 21});
+        expect(
+          (await h.b.remindersFor(
+            p.prescriptionId,
+          )).values.map((t) => t.hour).toSet(),
+          {9, 21},
+        );
+      });
+    });
+
     test('times changed while the first batch of new doses is on its way: '
         'the dropped doses end deleted, as the app\'s own, everywhere, with '
         'no reminders (cycle review I-1)', () async {
