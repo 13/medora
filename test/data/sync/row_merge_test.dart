@@ -97,6 +97,35 @@ void main() {
       const med = {'id': 'm1', 'name': 'Ibu', 'quantity': 10};
       expect(changedColumns(med, {...med, 'quantity': 8}, stockOwned), isEmpty);
     });
+
+    test('a medication\'s stock is the server\'s: only the stock function '
+        'and pulls change it', () {
+      const med = {'id': 'm1', 'name': 'Ibu', 'quantity': 10};
+      final policy = mergePolicyOf('medications');
+      expect(policy.serverOwned, {'quantity'});
+      // Not even with no base, nor as a person's change after the base's.
+      expect(changedColumns(null, med, policy), {'name'});
+      expect(
+        changedColumns(
+          med,
+          med,
+          policy,
+          times: FieldTimes({'quantity': FieldTime(ten)}),
+          baseTimes: FieldTimes({'quantity': FieldTime(nine)}),
+        ),
+        isEmpty,
+      );
+      final merged = mergeRows(
+        base: null,
+        local: {...med, 'quantity': 3},
+        remote: {...med, 'quantity': 8},
+        localTimes: rowTimes(ten),
+        remoteTimes: rowTimes(nine),
+        policy: policy,
+      );
+      expect(merged.row['quantity'], 8);
+      expect(merged.conflicts, isEmpty);
+    });
   });
 
   group('mergeRows', () {

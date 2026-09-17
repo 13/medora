@@ -16,11 +16,13 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/migrations.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 /// Why a backup file could not be read or applied.
 enum BackupErrorKind {
@@ -87,12 +89,17 @@ class BackupService {
     required this._photos,
     required this._now,
     required this._appVersion,
-  });
+    String Function()? newOpId,
+  }) : _newOpId = newOpId ?? const Uuid().v4;
 
   final AppDatabase _database;
   final PhotoStorage _photos;
   final DateTime Function() _now;
   final String _appVersion;
+
+  /// Names a restored quantity's stock change (a uuid: the server's ledger
+  /// key).
+  final String Function() _newOpId;
 
   /// Envelope marker; anything else is not a Medora backup.
   static const format = 'medora-backup';
@@ -246,7 +253,11 @@ class BackupService {
   /// cloud-mode device uploads the restored data on the next sync cycle -
   /// except `family_members` (see [_neverPending]), which stays `synced`.
   /// Nothing about the server copy is known any more, so the next push
-  /// merges by edit time.
+  /// merges by edit time. A push never sends a stock, so each medication the
+  /// restore writes also queues its quantity as a count (a stock change the
+  /// server applies once, after the changes this device still holds for
+  /// it); a medication the server lacks is created with that quantity
+  /// instead, and the count is dropped then.
   Future<BackupManifest> restore(
     File file, {
     required RestoreMode mode,
@@ -269,7 +280,23 @@ class BackupService {
               ? SyncStatus.synced
               : status;
           for (final row in rows) {
-            await _applyRow(txn, table, row, mode, tableStatus);
+            final written = await _applyRow(txn, table, row, mode, tableStatus);
+            final id = row['id'];
+            if (written &&
+                markPending &&
+                table == 'medications' &&
+                id is String &&
+                row['deleted_at'] == null) {
+              await StockOutboxLocalDatasource.enqueue(
+                txn,
+                StockOp(
+                  opId: _newOpId(),
+                  medicationId: id,
+                  setTo: (row['quantity'] as num?)?.toInt() ?? 0,
+                  createdAt: _now(),
+                ),
+              );
+            }
           }
         }
       });

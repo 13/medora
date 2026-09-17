@@ -2,9 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
+import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
+import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
@@ -574,8 +577,10 @@ void main() {
         where: 'id = ?',
         whereArgs: [s.medicationId],
       );
-      // The absolute quantity, marked for the sync cycle to push.
-      expect(med.single['sync_status'], SyncStatus.pendingUpdate);
+      // A stock change is not a row edit: with no sync configured the row
+      // stays as it was and nothing is queued.
+      expect(med.single['sync_status'], SyncStatus.synced);
+      expect(await db.query('stock_outbox'), isEmpty);
     });
 
     test(
@@ -791,6 +796,130 @@ void main() {
       expect(id, isNull);
       expect(await quantity(db, s.medicationId), 10);
       expect(await db.query('dose_logs'), isEmpty);
+    });
+  });
+
+  group('in cloud mode, each dose moves the stock by one change', () {
+    Future<ProviderContainer> cloudContainer() async {
+      var n = 0;
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          syncStartupDelayProvider.overrideWithValue(Duration.zero),
+          reminderPortProvider.overrideWithValue(FakePort()),
+          medicationRepositoryProvider.overrideWithValue(
+            MedicationRepositoryImpl(
+              localDatasource: MedicationLocalDatasource(),
+              requestSync: () async {},
+              newOpId: () => 'op${n++}',
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    /// An as-needed prescription that takes stock, dosed [dosage].
+    Future<SeededPrescription> seed(
+      Database db, {
+      required double? amount,
+      String dosage = '1 tablet',
+      String? dosageUnit,
+      String medicationUnit = 'tablets',
+    }) async {
+      final s = await seedPrescription(db, scheduleType: 'as_needed');
+      await db.update(
+        'prescriptions',
+        {
+          'auto_diminish': 1,
+          'dosage': dosage,
+          'dosage_amount': amount,
+          'dosage_unit': dosageUnit,
+        },
+        where: 'id = ?',
+        whereArgs: [s.prescriptionId],
+      );
+      await db.update(
+        'medications',
+        {'quantity': 10, 'quantity_unit': medicationUnit},
+        where: 'id = ?',
+        whereArgs: [s.medicationId],
+      );
+      return s;
+    }
+
+    Future<List<(int?, int?)>> changes() async => [
+      for (final op in await StockOutboxLocalDatasource().pending())
+        (op.delta, op.setTo),
+    ];
+
+    Future<Map<String, Object?>> med(Database db, String id) async =>
+        (await db.query(
+          'medications',
+          where: 'id = ?',
+          whereArgs: [id],
+        )).single;
+
+    test('a logged dose and its undo each wait as one change, and the row '
+        'is left alone', () async {
+      final db = await AppDatabase.instance.database;
+      final s = await seed(db, amount: 2);
+      final actions = (await cloudContainer()).read(doseActionsProvider);
+
+      final id = await actions.logAsNeededDose(s.prescriptionId);
+      expect(await changes(), [(-2, null)]);
+      expect((await med(db, s.medicationId))['quantity'], 8);
+
+      expect(await actions.undoTake(id!), isTrue);
+      expect(await actions.undoTake(id), isFalse);
+
+      expect(await changes(), [(-2, null), (2, null)]);
+      final row = await med(db, s.medicationId);
+      expect([row['quantity'], row['sync_status']], [10, SyncStatus.synced]);
+    });
+
+    test('a fraction takes the whole units, and half a tablet takes '
+        'nothing', () async {
+      final db = await AppDatabase.instance.database;
+      final whole = await seed(db, amount: 1.5);
+      final half = await seed(db, amount: 0.5);
+      final actions = (await cloudContainer()).read(doseActionsProvider);
+
+      await actions.logAsNeededDose(whole.prescriptionId);
+      await actions.logAsNeededDose(half.prescriptionId);
+
+      expect(await changes(), [(-1, null)]);
+      expect((await med(db, whole.medicationId))['quantity'], 9);
+      expect((await med(db, half.medicationId))['quantity'], 10);
+    });
+
+    test('ml or drops from a stock counted in pieces take nothing', () async {
+      final db = await AppDatabase.instance.database;
+      final ml = await seed(
+        db,
+        amount: 5,
+        dosage: '5 ml',
+        dosageUnit: 'ml',
+        medicationUnit: 'pieces',
+      );
+      final drops = await seed(
+        db,
+        amount: 20,
+        dosage: '20 drops',
+        dosageUnit: 'drops',
+        medicationUnit: 'pieces',
+      );
+      final actions = (await cloudContainer()).read(doseActionsProvider);
+
+      await actions.logAsNeededDose(ml.prescriptionId);
+      await actions.logAsNeededDose(drops.prescriptionId);
+
+      expect(await changes(), isEmpty);
+      expect((await med(db, ml.medicationId))['quantity'], 10);
+      expect((await med(db, drops.medicationId))['quantity'], 10);
     });
   });
 }

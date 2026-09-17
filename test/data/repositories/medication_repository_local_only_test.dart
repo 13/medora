@@ -146,11 +146,14 @@ void main() {
       await repo.unarchiveMedication('m1');
       expect(await status(), SyncStatus.pendingCreate);
 
-      // A synced row becomes an update.
+      // Without sync, a stock change of a synced row changes the quantity
+      // (and its stamp) only: nothing is queued, and a later sign-in
+      // uploads the change.
       await db.update('medications', {'sync_status': SyncStatus.synced});
       await repo.updateQuantity('m1', -1);
-      expect(await status(), SyncStatus.pendingUpdate);
+      expect(await status(), SyncStatus.synced);
       expect((await repo.getMedicationById('m1')).dataOrNull!.quantity, 8);
+      expect(await db.query('stock_outbox'), isEmpty);
     });
   });
 }

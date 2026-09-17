@@ -88,10 +88,11 @@ void main() {
       await repo.deleteMedication('m1');
       await pumpEventQueue();
 
+      // A stock change leaves the row as it is and waits in the outbox.
       expect(requests.statuses, [
         pendingCreate,
         pendingUpdate,
-        pendingUpdate,
+        SyncStatus.synced,
         pendingUpdate,
         pendingUpdate,
         pendingDelete,

@@ -4,31 +4,46 @@ library;
 import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
+import 'package:uuid/uuid.dart';
 
 /// Writes go to the local database only: each one stores the row as pending
 /// and asks for a sync cycle, which is the one place that pushes (see
-/// `TreatmentRepositoryImpl`). A stock change is still pushed as the new
-/// quantity, like any other changed column, until stock changes go through
-/// the server's stock ledger.
+/// `TreatmentRepositoryImpl`).
+///
+/// A stock change goes out as a change, never as the new total: it waits in
+/// the stock outbox with an id the server applies once
+/// (`apply_stock_change`), and leaves the row as it is. A quantity typed
+/// into the form is a count, sent the same way, so a dose logged on another
+/// device meanwhile still applies in the order the server receives the two.
 class MedicationRepositoryImpl implements MedicationRepository {
   /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
-  /// failure only logs. Null in local-only mode, where nothing is pushed.
+  /// failure only logs. Null in local-only mode, where nothing is pushed and
+  /// a stock change waits only for a medication the server has seen
+  /// ([StockQueueing.ifKnownToServer]).
   ///
-  /// [now] is the clock for the stamps a write sets.
+  /// [now] is the clock for the stamps a write sets; [newOpId] names a stock
+  /// change (a uuid: the server's ledger key).
   MedicationRepositoryImpl({
     required this.localDatasource,
     this._requestSync,
     this._now = systemNow,
-  });
+    String Function()? newOpId,
+  }) : _newOpId = newOpId ?? const Uuid().v4;
 
   final MedicationLocalDatasource localDatasource;
   final RequestSync? _requestSync;
   final Now _now;
+  final String Function() _newOpId;
+
+  StockQueueing get _queueing => _requestSync == null
+      ? StockQueueing.ifKnownToServer
+      : StockQueueing.always;
 
   @override
   Future<Result<List<Medication>>> getMedications() async {
@@ -118,16 +133,26 @@ class MedicationRepositoryImpl implements MedicationRepository {
         return const Result.failure('Medication was deleted');
       }
       final previous = await localDatasource.getMedicationById(medication.id);
+      final now = _now();
       final model = MedicationModel.fromDomain(
-        medication.copyWith(
-          updatedAt: nextUpdatedAt(previous?.updatedAt, _now()),
-        ),
+        medication.copyWith(updatedAt: nextUpdatedAt(previous?.updatedAt, now)),
       );
+      final counted =
+          previous != null && previous.quantity != medication.quantity;
       await localDatasource.upsert(
         model,
         syncStatus: status == null
             ? SyncStatus.pendingCreate
             : MedicationLocalDatasource.editedSyncStatus(status),
+        stockOp: counted
+            ? StockOp(
+                opId: _newOpId(),
+                medicationId: medication.id,
+                setTo: medication.quantity,
+                createdAt: now,
+              )
+            : null,
+        queueing: _queueing,
       );
       _syncSoon();
       return Result.success(medication);
@@ -150,9 +175,14 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> updateQuantity(String id, int delta) async {
     try {
-      // Only the quantity is written: a stock change neither drops another
-      // column nor brings a deleted medication back.
-      final updated = await localDatasource.adjustQuantity(id, delta);
+      // Only the quantity is written, and the change waits as a change: it
+      // neither drops another column nor brings a deleted medication back.
+      final updated = await localDatasource.adjustQuantity(
+        id,
+        delta,
+        opId: _newOpId(),
+        queueing: _queueing,
+      );
       if (updated == null) {
         return const Result.failure('Medication not found');
       }

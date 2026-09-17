@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
+import 'package:medora/data/datasources/stock_remote.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -28,6 +29,22 @@ void main() {
         18,
       );
       expect(applyStockOps(999998, [_op('a', delta: 5)]), maxStock);
+    });
+
+    test('brings a change into range before adding it, as the server does', () {
+      // The largest int would wrap past the top if it were added first.
+      const huge = 0x7fffffffffffffff;
+      expect(applyStockOps(maxStock, [_op('a', delta: huge)]), maxStock);
+      expect(applyStockOps(5, [_op('a', delta: -huge)]), 0);
+      expect(applyStockOps(5, [_op('a', setTo: huge)]), maxStock);
+      expect(applyStockOps(5, [_op('a', setTo: -3)]), 0);
+      // Always the same result as the server's rule.
+      for (final (q, delta) in [(0, huge), (maxStock, -huge), (7, 3)]) {
+        expect(
+          applyStockOps(q, [_op('a', delta: delta)]),
+          stockAfter(q, delta: delta),
+        );
+      }
     });
 
     test('a change is a delta or a count, never both', () {

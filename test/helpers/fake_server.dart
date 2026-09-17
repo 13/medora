@@ -800,8 +800,24 @@ class FakeStockRemote implements StockRemote {
   /// How many of the next changes land with their answer lost.
   int loseNextAnswers = 0;
 
+  /// How many of the next changes fail before they reach the server (a
+  /// network error): nothing is applied.
+  int failNextRequests = 0;
+
+  /// Awaited before every change is applied; a test can hold it open.
+  Future<void> Function(StockOp op)? beforeCall;
+
+  /// Every change sent, in order: the op id.
+  final List<String> sent = [];
+
   @override
   Future<StockChangeResult> apply(StockOp op) async {
+    await beforeCall?.call(op);
+    sent.add(op.opId);
+    if (failNextRequests > 0) {
+      failNextRequests--;
+      throw StateError('stock change ${op.opId} did not reach the server');
+    }
     final json = core.applyStockChange(
       opId: op.opId,
       medicationId: op.medicationId,

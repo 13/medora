@@ -7,6 +7,7 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -17,6 +18,8 @@ import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
+import 'package:medora/data/repositories/medication_repository_impl.dart';
+import 'package:medora/data/sync/sync_meta.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
@@ -786,7 +789,8 @@ void main() {
 
       final report = (await h.service.forcePush())!;
 
-      expect(report.pushed, 1);
+      // The row, and its quantity sent as a count.
+      expect(report.pushed, 2);
       expect(h.meds.table.rows['m13']?['name'], 'Local');
     });
 
@@ -3716,6 +3720,317 @@ void main() {
       final sent = h.doses.table.sent.length;
       await h.service.syncAll();
       expect(h.doses.table.sent.length, sent);
+    });
+  });
+
+  group('stock changes', () {
+    /// A medication the server and this device agree on: 10 in stock.
+    Future<Harness> inSync() async {
+      final h = Harness();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm1', name: 'Ibu', quantity: 10).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(days: 3)),
+      );
+      await h.service.syncAll();
+      return h;
+    }
+
+    MedicationRepositoryImpl repo(Harness h, {String prefix = 'op'}) {
+      var n = 0;
+      return MedicationRepositoryImpl(
+        localDatasource: MedicationLocalDatasource(),
+        requestSync: () async {},
+        now: h.clock.now,
+        newOpId: () => '$prefix${n++}',
+      );
+    }
+
+    Future<List<String>> waiting() async => [
+      for (final op in await StockOutboxLocalDatasource().pending()) op.opId,
+    ];
+
+    Future<int?> localQuantity(String id) async =>
+        (await localRow('medications', id))?['quantity'] as int?;
+
+    List<(String, int)> ledger(Harness h) => [
+      for (final e in h.core.ledger.entries) (e.key, e.value.quantityAfter),
+    ];
+
+    test('a change for a medication whose create is backing off waits for '
+        'it, then rides with the insert', () async {
+      final h = Harness();
+      final medications = repo(h);
+      await medications.addMedication(
+        const MedicationModel(id: 'm1', name: 'Ibu', quantity: 7).toDomain(),
+      );
+      h.meds.table.failIds.add('m1');
+      final first = (await h.service.syncAll())!;
+      expect(first.failures.map((f) => (f.table, f.id)), [
+        ('medications', 'm1'),
+      ]);
+      // Taken while the create backs off: it cannot go out before it.
+      await medications.updateQuantity('m1', -1);
+
+      final second = (await h.service.syncAll())!;
+      expect(second.skippedBackoff, 2);
+      expect(second.failures, isEmpty);
+      expect(h.core.ledger, isEmpty);
+      expect(await waiting(), ['op0']);
+
+      h.meds.table.failIds.clear();
+      h.clock.advance(const Duration(hours: 1));
+      final third = (await h.service.syncAll())!;
+      expect(third.failures, isEmpty);
+      // The insert carried 6, which already holds the dose.
+      expect(h.meds.table.get('m1')!['quantity'], 6);
+      expect(h.core.ledger, isEmpty);
+      expect(await waiting(), isEmpty);
+      expect(await localQuantity('m1'), 6);
+    });
+
+    test('a medication restored for upload that the server has: its count '
+        'goes out once the merge knows the server copy', () async {
+      final h = await inSync();
+      // Another phone took two meanwhile.
+      h.core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -2);
+      // A restore for upload: no merge base, and the counted quantity waits
+      // as a stock change.
+      final db = await AppDatabase.instance.database;
+      await db.update('medications', {
+        ...clearedSyncMeta,
+        'quantity': 7,
+        'sync_status': SyncStatus.pendingUpdate,
+      });
+      await db.transaction(
+        (txn) => StockOutboxLocalDatasource.enqueue(
+          txn,
+          StockOp(
+            opId: 'count',
+            medicationId: 'm1',
+            setTo: 7,
+            createdAt: DateTime.utc(2026, 3, 4, 11),
+          ),
+        ),
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(ledger(h), [('other', 8), ('count', 7)]);
+      expect(h.meds.table.get('m1')!['quantity'], 7);
+      expect(await localQuantity('m1'), 7);
+      expect(await waiting(), isEmpty);
+    });
+
+    test('a change whose answer is lost holds the later ones back, and each '
+        'counts once', () async {
+      final h = await inSync();
+      final medications = repo(h);
+      await medications.updateQuantity('m1', -1);
+      await medications.updateQuantity('m1', -1);
+      h.meds.stock.loseNextAnswers = 1;
+
+      final first = (await h.service.syncAll())!;
+      expect(first.failures.map((f) => (f.table, f.id)), [
+        ('stock_outbox', 'op0'),
+      ]);
+      expect(h.core.ledger.keys, ['op0']);
+      expect(h.meds.stock.sent, ['op0']);
+      expect(h.meds.table.get('m1')!['quantity'], 9);
+      // The pull brought the server's 9, which already holds op0: only op1
+      // is on top.
+      expect(await localQuantity('m1'), 8);
+      expect(await waiting(), ['op0', 'op1']);
+
+      // Still backing off: nothing goes out.
+      final waitingCycle = (await h.service.syncAll())!;
+      expect(waitingCycle.skippedBackoff, 1);
+      expect(h.meds.stock.sent, ['op0']);
+      expect(await localQuantity('m1'), 8);
+
+      h.clock.advance(const Duration(hours: 1));
+      final second = (await h.service.syncAll())!;
+      expect(second.failures, isEmpty);
+      expect(h.core.ledger.keys, ['op0', 'op1']);
+      expect(h.meds.table.get('m1')!['quantity'], 8);
+      expect(await localQuantity('m1'), 8);
+      expect(await waiting(), isEmpty);
+      expect(await h.failures.get('stock_outbox', 'op0'), isNull);
+    });
+
+    test('a change that fails holds back only its own medication', () async {
+      final h = await inSync();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm2', name: 'Moment', quantity: 5).toJson(),
+      );
+      await h.service.syncAll();
+      final medications = repo(h);
+      await medications.updateQuantity('m1', -1);
+      await medications.updateQuantity('m1', -1);
+      await medications.updateQuantity('m2', 3);
+      h.meds.stock.failNextRequests = 1;
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => f.id), ['op0']);
+      expect(h.meds.stock.sent, ['op0', 'op2']);
+      expect(h.meds.table.get('m2')!['quantity'], 8);
+      expect(h.meds.table.get('m1')!['quantity'], 10);
+      expect(await waiting(), ['op0', 'op1']);
+      expect(await localQuantity('m1'), 8);
+    });
+
+    test('a change for a medication gone from the server is dropped, with no '
+        'failure', () async {
+      final h = await inSync();
+      await repo(h).updateQuantity('m1', -1);
+      // "Delete all data" on another device.
+      h.meds.table.hardDelete('m1');
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(await waiting(), isEmpty);
+      expect(h.core.ledger, isEmpty);
+      expect(h.meds.table.get('m1'), isNull);
+    });
+
+    test('a change for a medication deleted on another device is dropped, and '
+        'the pull deletes it here', () async {
+      final h = await inSync();
+      await repo(h).updateQuantity('m1', -1);
+      h.meds.table.tombstone('m1');
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(await waiting(), isEmpty);
+      expect(await localRow('medications', 'm1'), isNull);
+    });
+
+    test('a stuck change the user discards is dropped, and the stock shows '
+        'the server\'s with the other changes on top', () async {
+      final h = await inSync();
+      final medications = repo(h);
+      await medications.updateQuantity('m1', -1);
+      await medications.updateQuantity('m1', -2);
+      h.core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -5);
+      h.meds.stock.failNextRequests = 1;
+      final report = (await h.service.syncAll())!;
+      final failure = report.failures.single;
+      expect((failure.table, failure.id), ('stock_outbox', 'op0'));
+
+      await h.service.discardFailedRow(failure.table, failure.id);
+
+      expect(await waiting(), ['op1']);
+      expect(await h.failures.get('stock_outbox', 'op0'), isNull);
+      // The server's 5, and op1 still on top.
+      expect(await localQuantity('m1'), 3);
+
+      h.clock.advance(const Duration(hours: 1));
+      await h.service.syncAll();
+      expect(h.meds.table.get('m1')!['quantity'], 3);
+      expect(await localQuantity('m1'), 3);
+      expect(ledger(h), [('other', 5), ('op1', 3)]);
+    });
+
+    test('renaming a medication never sends its quantity: a dose from '
+        'another device still counts', () async {
+      final h = await inSync();
+      final medications = repo(h);
+      await medications.updateQuantity('m1', -1);
+      final m = (await medications.getMedicationById('m1')).dataOrNull!;
+      await medications.updateMedication(m.copyWith(name: 'Ibuprofen 400'));
+      // Meanwhile another phone takes three.
+      h.core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -3);
+
+      await h.service.syncAll();
+
+      final server = h.meds.table.get('m1')!;
+      expect([server['name'], server['quantity']], ['Ibuprofen 400', 6]);
+      expect(await localQuantity('m1'), 6);
+      expect(
+        h.meds.table.sent.where((w) => w.containsKey('quantity')),
+        isEmpty,
+      );
+      // Nothing is left to do.
+      final row = (await localRow('medications', 'm1'))!;
+      expect(row['sync_status'], SyncStatus.synced);
+      final requests = h.core.requests.length;
+      final again = (await h.service.syncAll())!;
+      expect([again.pushed, again.pulled, again.failures], [0, 0, isEmpty]);
+      expect(
+        h.core.requests
+            .sublist(requests)
+            .where((r) => !r.endsWith(':page') && !r.startsWith('rpc:medora')),
+        isEmpty,
+      );
+      expect(await localQuantity('m1'), 6);
+    });
+
+    test('a counted quantity and a dose from another device apply in the '
+        'order the server receives them: the dose after the count', () async {
+      final h = await inSync();
+      final medications = repo(h);
+      final m = (await medications.getMedicationById('m1')).dataOrNull!;
+      await medications.updateMedication(m.copyWith(quantity: 20));
+      await h.service.syncAll();
+      expect(h.meds.table.get('m1')!['quantity'], 20);
+
+      // The other phone's dose reaches the server after the count.
+      h.core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -1);
+      await h.service.syncAll();
+
+      expect(h.meds.table.get('m1')!['quantity'], 19);
+      expect(await localQuantity('m1'), 19);
+      expect(ledger(h), [('op0', 20), ('other', 19)]);
+    });
+
+    test('a counted quantity and a dose from another device apply in the '
+        'order the server receives them: the count after the dose', () async {
+      final h = await inSync();
+      final medications = repo(h);
+      final m = (await medications.getMedicationById('m1')).dataOrNull!;
+      await medications.updateMedication(m.copyWith(quantity: 20));
+      // The other phone's dose reaches the server first.
+      h.core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -1);
+
+      await h.service.syncAll();
+
+      expect(h.meds.table.get('m1')!['quantity'], 20);
+      expect(await localQuantity('m1'), 20);
+      expect(ledger(h), [('other', 9), ('op0', 20)]);
+    });
+
+    test('a form saved without touching the quantity sends no count', () async {
+      final h = await inSync();
+      final medications = repo(h);
+      final m = (await medications.getMedicationById('m1')).dataOrNull!;
+      await medications.updateMedication(m.copyWith(notes: 'after meals'));
+
+      await h.service.syncAll();
+
+      expect(h.core.ledger, isEmpty);
+      expect(h.meds.table.get('m1')!['notes'], 'after meals');
+    });
+
+    test('a force push sends each quantity as a count, whatever the server '
+        'holds', () async {
+      final h = await inSync();
+      // Another phone took three; this device has not pulled it.
+      h.core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -3);
+      final medications = repo(h);
+      await medications.updateQuantity('m1', -1);
+
+      final report = (await h.service.forcePush())!;
+
+      expect(report.failures, isEmpty);
+      // The waiting change, then the count of what this device holds.
+      expect(h.meds.table.get('m1')!['quantity'], 9);
+      expect(await localQuantity('m1'), 9);
+      expect(ledger(h).map((e) => e.$2), [7, 6, 9]);
+      expect(await waiting(), isEmpty);
+      expect(h.meds.table.sent.single.containsKey('quantity'), isFalse);
     });
   });
 }

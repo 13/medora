@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/migrations.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
@@ -519,6 +521,151 @@ void main() {
       isNull,
       reason: 'no map: updated_at stands for every column',
     );
+  });
+
+  group('a restore for upload sends each quantity as a count', () {
+    Future<List<(Object?, int?, int?)>> waiting() async => [
+      for (final op in await StockOutboxLocalDatasource().pending())
+        (op.medicationId, op.delta, op.setTo),
+    ];
+
+    Future<void> addMedication(
+      Database db,
+      String id, {
+      required int quantity,
+      required String updatedAt,
+      String? deletedAt,
+    }) => db.insert('medications', {
+      'id': id,
+      'name': id,
+      'quantity': quantity,
+      'created_at': '2026-03-01T08:00:00.000Z',
+      'updated_at': updatedAt,
+      'deleted_at': deletedAt,
+      'sync_status': SyncStatus.synced,
+    });
+
+    Future<void> waitingChange(Database db, String id, int delta) =>
+        StockOutboxLocalDatasource.enqueue(
+          db,
+          StockOp(
+            opId: 'local-$id',
+            medicationId: id,
+            delta: delta,
+            createdAt: DateTime.utc(2026, 3, 4),
+          ),
+        );
+
+    test('replace: one count per medication, and the changes the device '
+        'still held go with its rows', () async {
+      final db = await AppDatabase.instance.database;
+      await seedEverything(db);
+      final med = (await db.query('medications')).single;
+      final file = await makeService().exportToFile(outDir);
+      await waitingChange(db, med['id']! as String, -1);
+      var n = 0;
+
+      await BackupService(
+        database: AppDatabase.instance,
+        photos: photos,
+        now: () => DateTime.utc(2026, 3, 4, 17, 5),
+        appVersion: '0.1.1+11',
+        newOpId: () => 'count-${n++}',
+      ).restore(file, mode: RestoreMode.replace, markPending: true);
+
+      expect(await waiting(), [(med['id'], null, med['quantity'])]);
+      final op = (await StockOutboxLocalDatasource().pending()).single;
+      expect(op.opId, 'count-0');
+      expect(op.createdAt, DateTime.utc(2026, 3, 4, 17, 5));
+    });
+
+    test('the op ids are fresh uuids by default', () async {
+      final db = await AppDatabase.instance.database;
+      await addMedication(db, 'a', quantity: 1, updatedAt: '2026-03-01');
+      await addMedication(db, 'b', quantity: 2, updatedAt: '2026-03-01');
+      final file = await makeService().exportToFile(outDir);
+
+      await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+        markPending: true,
+      );
+
+      final ids = [
+        for (final op in await StockOutboxLocalDatasource().pending()) op.opId,
+      ];
+      expect(ids, hasLength(2));
+      expect(ids.toSet(), hasLength(2));
+      for (final id in ids) {
+        expect(Uuid.isValidUUID(fromString: id), isTrue, reason: id);
+      }
+    });
+
+    test('merge: only a medication the backup writes gets a count, after the '
+        'changes the device still holds', () async {
+      final db = await AppDatabase.instance.database;
+      await addMedication(
+        db,
+        'older-here',
+        quantity: 5,
+        updatedAt: '2026-03-02T08:00:00.000Z',
+      );
+      await addMedication(
+        db,
+        'newer-here',
+        quantity: 6,
+        updatedAt: '2026-03-02T08:00:00.000Z',
+      );
+      await addMedication(
+        db,
+        'only-backup',
+        quantity: 7,
+        updatedAt: '2026-03-02T08:00:00.000Z',
+      );
+      await addMedication(
+        db,
+        'deleted',
+        quantity: 8,
+        updatedAt: '2026-03-02T08:00:00.000Z',
+        deletedAt: '2026-03-02T09:00:00.000Z',
+      );
+      final file = await makeService().exportToFile(outDir);
+      await db.delete('medications', where: "id IN ('only-backup', 'deleted')");
+      await db.update('medications', {
+        'quantity': 1,
+        'updated_at': '2026-03-01T08:00:00.000Z',
+      }, where: "id = 'older-here'");
+      await db.update('medications', {
+        'quantity': 2,
+        'updated_at': '2026-03-03T08:00:00.000Z',
+      }, where: "id = 'newer-here'");
+      await waitingChange(db, 'older-here', -1);
+      await waitingChange(db, 'newer-here', -1);
+
+      await makeService().restore(
+        file,
+        mode: RestoreMode.merge,
+        markPending: true,
+      );
+
+      expect(await waiting(), [
+        ('older-here', -1, null),
+        ('newer-here', -1, null),
+        ('older-here', null, 5),
+        ('only-backup', null, 7),
+      ]);
+    });
+
+    test('a restore for this device only queues nothing', () async {
+      final db = await AppDatabase.instance.database;
+      await seedEverything(db);
+      final file = await makeService().exportToFile(outDir);
+
+      await makeService().restore(file, mode: RestoreMode.replace);
+      await makeService().restore(file, mode: RestoreMode.merge);
+
+      expect(await waiting(), isEmpty);
+    });
   });
 
   test('a merged dose drops a guard left on the device copy', () async {

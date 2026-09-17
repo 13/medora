@@ -12,11 +12,15 @@ import 'package:sqflite/sqflite.dart';
 /// write id). Returns true when the row still has changes to push.
 ///
 /// - **Unchanged since the push read it** (same local `updated_at`): the
-///   server copy is stored as `synced` and becomes the base.
+///   server copy is stored as `synced` and becomes the base. A medication
+///   shows the server's stock with the stock changes still waiting here on
+///   top (a stock change never stamps the row, so one made while the push
+///   was in flight is among them).
 /// - **Edited while the push was in flight:** the server copy becomes the
 ///   base and the row stays `pending_update`, so the next push sends only
 ///   the newer difference. The columns it shares with the server copy take
-///   the server's times.
+///   the server's times. A medication keeps its own stock: a quantity
+///   changed here waits in the stock outbox.
 /// - **Replaced by a pull meanwhile** (`synced` with another `updated_at`):
 ///   left as the pull stored it.
 /// - **Deleted meanwhile** (`pending_delete`) or gone: left alone; a pending
@@ -28,7 +32,6 @@ Future<bool> settlePushedRow(
   String table, {
   required Map<String, Object?> pushed,
   required Map<String, dynamic> server,
-  required String Function() newOpId,
 }) {
   final id = pushed['id']! as String;
   final meta = RemoteMeta.fromJson(server);
@@ -46,8 +49,9 @@ Future<bool> settlePushedRow(
     if (current['updated_at'] == pushed['updated_at']) {
       final row = localRowOf(table, server, SyncStatus.synced);
       if (table == 'medications') {
-        row['quantity'] = applyStockOps(
+        row['quantity'] = localStock(
           (server['quantity'] as num?)?.toInt() ?? 0,
+          meta.writeId,
           await StockOutboxLocalDatasource.pendingIn(txn, medicationId: id),
         );
       }

@@ -176,10 +176,16 @@ bool sameContent(
     changedColumns(b, a, policy).isEmpty;
 
 /// How each synced table merges (see the design, section 4.5).
+///
+/// A medication's stock is the server's: only `apply_stock_change` changes
+/// it (a change waits in the stock outbox until then), and a pull brings
+/// it. A push never sends it, so a rename cannot undo a dose taken on
+/// another device (design section 4.8).
 const medicationMerge = MergePolicy(
   groups: [
     {'barcode', 'ean'},
   ],
+  serverOwned: {'quantity'},
 );
 
 const treatmentMerge = MergePolicy(

@@ -368,6 +368,232 @@ void main() {
     expect((await db.query('medications')).single['quantity'], 19);
   });
 
+  group('the stock of a medication', () {
+    late FakeSyncTable meds;
+    late TableSync medSync;
+    setUp(() {
+      meds = FakeSyncTable(core, 'medications');
+      medSync = TableSync(
+        table: 'medications',
+        remote: meds,
+        newWriteId: () => 'm${ids++}',
+        now: () => now,
+      );
+    });
+
+    Future<Map<String, Object?>> med() async =>
+        (await (await AppDatabase.instance.database).query(
+          'medications',
+          where: "id = 'm1'",
+        )).single;
+
+    /// A stock change made here: the quantity and its change together.
+    Future<void> change(String opId, int delta) async {
+      final db = await AppDatabase.instance.database;
+      await db.transaction((txn) async {
+        await txn.rawUpdate(
+          "UPDATE medications SET quantity = quantity + ? WHERE id = 'm1'",
+          [delta],
+        );
+        await StockOutboxLocalDatasource.enqueue(
+          txn,
+          StockOp(
+            opId: opId,
+            medicationId: 'm1',
+            delta: delta,
+            createdAt: DateTime.utc(2026, 3, 5, 11),
+          ),
+        );
+      });
+    }
+
+    Future<List<String>> waiting() async => [
+      for (final op in await StockOutboxLocalDatasource().pending()) op.opId,
+    ];
+
+    /// Made here offline with 5, then restocked with 10 before its first
+    /// sync.
+    Future<void> createdAndRestocked() async {
+      final db = await AppDatabase.instance.database;
+      await db.insert('medications', {
+        'id': 'm1',
+        'name': 'Moment',
+        'quantity': 5,
+        'created_at': '2026-03-05T10:00:00.000Z',
+        'updated_at': '2026-03-05T10:00:00.000Z',
+        'edited_at': '2026-03-05T10:00:00.000Z',
+        'sync_status': 'pending_create',
+      });
+      await change('restock', 10);
+    }
+
+    test('a new medication goes out with its quantity, and the changes it '
+        'already holds are not sent again', () async {
+      await createdAndRestocked();
+
+      final result = await medSync.pushRow(await med(), userId: 'u');
+
+      expect(result.outcome, PushOutcome.settled);
+      expect(meds.get('m1')!['quantity'], 15);
+      expect(core.ledger, isEmpty);
+      expect(await waiting(), isEmpty);
+      final row = await med();
+      expect([row['quantity'], row['sync_status']], [15, 'synced']);
+    });
+
+    test('a new medication whose insert answer is lost is not counted twice '
+        'when its write is found again', () async {
+      await createdAndRestocked();
+      meds.loseAnswerFor.add('m1');
+
+      await expectLater(
+        medSync.pushRow(await med(), userId: 'u'),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(meds.get('m1')!['quantity'], 15);
+      expect(await waiting(), isEmpty);
+
+      final result = await medSync.pushRow(await med(), userId: 'u');
+
+      expect(result.outcome, PushOutcome.settled);
+      expect(meds.get('m1')!['quantity'], 15);
+      expect(core.ledger, isEmpty);
+      final row = await med();
+      expect([row['quantity'], row['sync_status']], [15, 'synced']);
+      expect(row['sync_write_id'], isNull);
+    });
+
+    test('a new medication whose insert never lands is sent again with the '
+        'same quantity', () async {
+      await createdAndRestocked();
+      meds.failIds.add('m1');
+
+      await expectLater(
+        medSync.pushRow(await med(), userId: 'u'),
+        throwsA(isA<StateError>()),
+      );
+      expect(meds.get('m1'), isNull);
+      expect((await med())['quantity'], 15);
+
+      meds.failIds.clear();
+      await medSync.pushRow(await med(), userId: 'u');
+      expect(meds.get('m1')!['quantity'], 15);
+      expect((await med())['quantity'], 15);
+      expect(core.ledger, isEmpty);
+    });
+
+    test('a stock change made while the insert is in flight waits and stays '
+        'on top', () async {
+      await createdAndRestocked();
+      var held = false;
+      meds.beforeCall = () async {
+        if (held) return;
+        held = true;
+        await change('taken', -1);
+      };
+
+      final result = await medSync.pushRow(await med(), userId: 'u');
+
+      expect(result.outcome, PushOutcome.settled);
+      expect(meds.get('m1')!['quantity'], 15);
+      expect(await waiting(), ['taken']);
+      final row = await med();
+      expect([row['quantity'], row['sync_status']], [14, 'synced']);
+      expect(row['sync_version'], 1);
+    });
+
+    test('a new medication that meets another copy on the server keeps its '
+        'changes, in their place', () async {
+      await createdAndRestocked();
+      await change('taken', -1);
+      // The same id reached the server from elsewhere between the read and
+      // the insert (a restore on two devices).
+      var held = false;
+      meds.beforeCall = () async {
+        if (held) return;
+        held = true;
+        core.insertIfAbsent('medications', [
+          {
+            'id': 'm1',
+            'user_id': 'u',
+            'name': 'Moment',
+            'quantity': 20,
+            'write_id': 'other',
+            'edited_at': '2026-03-05T09:00:00Z',
+          },
+        ]);
+      };
+
+      await medSync.pushRow(await med(), userId: 'u');
+
+      expect(meds.get('m1')!['quantity'], 20);
+      expect(await waiting(), ['restock', 'taken']);
+      // The server's 20 with the two changes on top.
+      expect((await med())['quantity'], 29);
+    });
+
+    test('a medication removed from the server is created again with its '
+        'quantity, and its waiting changes are not sent again', () async {
+      meds.seed({'id': 'm1', 'user_id': 'u', 'name': 'Ibu', 'quantity': 10});
+      await medSync.applyPulled(core.fetch('medications', 'm1')!);
+      await change('taken', -1);
+      final db = await AppDatabase.instance.database;
+      await writeLocalChange(db, 'medications', 'm1', {
+        'name': 'Ibuprofen',
+        'sync_status': 'pending_update',
+        'updated_at': '2026-03-05T11:30:00.000Z',
+        'edited_at': '2026-03-05T11:30:00.000Z',
+      }, at: DateTime.utc(2026, 3, 5, 11, 30));
+      meds.hardDelete('m1');
+
+      await medSync.pushRow(await med(), userId: 'u');
+
+      expect(
+        [meds.get('m1')!['name'], meds.get('m1')!['quantity']],
+        ['Ibuprofen', 9],
+      );
+      expect(await waiting(), isEmpty);
+      expect((await med())['quantity'], 9);
+    });
+
+    test('an edit never sends the quantity, even when it differs from the '
+        'base', () async {
+      meds.seed({'id': 'm1', 'user_id': 'u', 'name': 'Ibu', 'quantity': 10});
+      await medSync.applyPulled(core.fetch('medications', 'm1')!);
+      final db = await AppDatabase.instance.database;
+      await writeLocalChange(db, 'medications', 'm1', {
+        'name': 'Ibuprofen',
+        'quantity': 4,
+        'sync_status': 'pending_update',
+        'updated_at': '2026-03-05T11:30:00.000Z',
+        'edited_at': '2026-03-05T11:30:00.000Z',
+      }, at: DateTime.utc(2026, 3, 5, 11, 30));
+      core.applyStockChange(opId: 'other', medicationId: 'm1', delta: -3);
+
+      await medSync.pushRow(await med(), userId: 'u');
+
+      expect(meds.sent.where((s) => s.containsKey('quantity')), isEmpty);
+      expect(
+        [meds.get('m1')!['name'], meds.get('m1')!['quantity']],
+        ['Ibuprofen', 7],
+      );
+      final times = FieldTimes.decode(meds.get('m1')!['field_edited_at']);
+      expect(times.of('quantity'), isNull);
+    });
+
+    test('a forced push never patches the quantity', () async {
+      meds.seed({'id': 'm1', 'user_id': 'u', 'name': 'Ibu', 'quantity': 10});
+      await medSync.applyPulled(core.fetch('medications', 'm1')!);
+      final db = await AppDatabase.instance.database;
+      await db.update('medications', {'quantity': 4});
+
+      await medSync.pushRow(await med(), userId: 'u', force: true);
+
+      expect(meds.sent.single.containsKey('quantity'), isFalse);
+      expect(meds.get('m1')!['quantity'], 10);
+    });
+  });
+
   group('doses', () {
     late FakeSyncTable doses;
     late TableSync doseSync;

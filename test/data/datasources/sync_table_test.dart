@@ -419,5 +419,25 @@ void main() {
       expect(result.status, StockChangeStatus.gone);
       expect(result.quantity, isNull);
     });
+
+    test('an answer it does not know throws, so the change is kept', () async {
+      for (final answer in [
+        {'status': 'missing'},
+        <String, Object?>{},
+      ]) {
+        await expectLater(
+          PostgrestStockRemote(answering(answer)).apply(
+            StockOp(
+              opId: 'op1',
+              medicationId: 'm1',
+              delta: -1,
+              createdAt: DateTime.utc(2026),
+            ),
+          ),
+          throwsA(anything),
+          reason: '$answer',
+        );
+      }
+    });
   });
 }

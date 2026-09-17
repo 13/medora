@@ -289,8 +289,10 @@ class TableSync {
     final id = json['id']! as String;
     final row = localRowOf(table, json, status);
     if (table == 'medications') {
-      row['quantity'] = applyStockOps(
+      // The server's stock, with the changes still waiting here on top.
+      row['quantity'] = localStock(
         (json['quantity'] as num?)?.toInt() ?? 0,
+        meta.writeId,
         await StockOutboxLocalDatasource.pendingIn(txn, medicationId: id),
       );
     }
@@ -471,28 +473,39 @@ class TableSync {
   }
 
   /// Inserts the row where the server lacks it and reads it back.
+  ///
+  /// A medication's insert carries its stock, which already holds every
+  /// stock change still waiting for it here: those changes leave the
+  /// outbox when the insert is prepared, in the same transaction that
+  /// stores its write id, so neither a settled insert nor one found again
+  /// after a lost answer counts them twice (design section 7.5). A change
+  /// made after that waits, and goes out once the insert has settled. When
+  /// the server turns out to hold another copy, the insert was ignored:
+  /// the changes go back to the outbox, in their place, and apply to that
+  /// copy.
   Future<Map<String, Object?>?> _pushCreate(
     Map<String, Object?> local, {
     required String? userId,
     required List<MergeConflict> conflicts,
   }) async {
     final id = local['id']! as String;
-    final meta = LocalSyncMeta.fromRow(local);
-    if (meta.version == null &&
+    if (LocalSyncMeta.fromRow(local).version == null &&
         local['sync_status'] != SyncStatus.pendingCreate) {
       // An update with no known server copy: read it first.
       final server = await remote.fetch(id);
       if (server != null) return _mergeFrom(server, conflicts);
     }
-    final writeId = await _beginWrite(local);
+    final (:row, :writeId, :carried) = await _beginCreate(id);
+    if (row == null) return null;
+    final meta = LocalSyncMeta.fromRow(row);
     await remote.insertIfAbsent([
       {
-        ...localWire(table, local, userId: userId),
+        ...localWire(table, row, userId: userId),
         'write_id': writeId,
-        'edited_at': _wireTime(_editedAtOf(local, meta) ?? now()),
+        'edited_at': _wireTime(_editedAtOf(row, meta) ?? now()),
         // Empty when no column changed since the row was made here: the
         // server then reads edited_at for every column, as this device does.
-        'field_edited_at': FieldTimes.decode(local['field_edited_at']).toJson(),
+        'field_edited_at': FieldTimes.decode(row['field_edited_at']).toJson(),
       },
     ]);
     final server = await remote.fetch(id);
@@ -500,16 +513,81 @@ class TableSync {
       throw StateError('$table/$id is not on the server after insert');
     }
     if (RemoteMeta.fromJson(server).writeId == writeId) {
-      await settlePushedRow(
-        await _db,
-        table,
-        pushed: local,
-        server: server,
-        newOpId: newWriteId,
-      );
+      await settlePushedRow(await _db, table, pushed: row, server: server);
       return _read(id);
     }
+    await _putBackStock(id, carried);
     return _mergeFrom(server, conflicts);
+  }
+
+  /// Stores a fresh write id on the row [id] and reads the row back, in one
+  /// transaction; for a medication, the stock changes waiting for it leave
+  /// the outbox there too ([carried], as outbox rows). [row] is null when
+  /// the row is gone.
+  Future<
+    ({
+      Map<String, Object?>? row,
+      String writeId,
+      List<Map<String, Object?>> carried,
+    })
+  >
+  _beginCreate(String id) async {
+    final writeId = newWriteId();
+    final db = await _db;
+    return db.transaction((txn) async {
+      await txn.update(
+        table,
+        {'sync_write_id': writeId},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      final rows = await txn.query(table, where: 'id = ?', whereArgs: [id]);
+      if (rows.isEmpty) {
+        return (
+          row: null,
+          writeId: writeId,
+          carried: const <Map<String, Object?>>[],
+        );
+      }
+      var carried = const <Map<String, Object?>>[];
+      if (table == 'medications') {
+        carried = await txn.query(
+          StockOutboxLocalDatasource.table,
+          where: 'medication_id = ?',
+          whereArgs: [id],
+          orderBy: 'seq',
+        );
+        await txn.delete(
+          StockOutboxLocalDatasource.table,
+          where: 'medication_id = ?',
+          whereArgs: [id],
+        );
+      }
+      return (row: rows.first, writeId: writeId, carried: carried);
+    });
+  }
+
+  /// Puts the stock changes [carried] for medication [id] back into the
+  /// outbox, each in its old place (its `seq`), unless the medication is
+  /// gone here.
+  Future<void> _putBackStock(
+    String id,
+    List<Map<String, Object?>> carried,
+  ) async {
+    if (carried.isEmpty) return;
+    final db = await _db;
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        table,
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      if (rows.isEmpty) return;
+      for (final op in carried) {
+        await txn.insert(StockOutboxLocalDatasource.table, op);
+      }
+    });
   }
 
   /// Sends a person's delete, or, for a dose the app dropped from a changed
@@ -640,7 +718,6 @@ class TableSync {
       table,
       pushed: local,
       server: server,
-      newOpId: newWriteId,
     );
     return PushResult(
       pending ? PushOutcome.pending : PushOutcome.settled,

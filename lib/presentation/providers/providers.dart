@@ -19,6 +19,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
@@ -137,6 +138,11 @@ final syncStateDatasourceProvider = Provider<SyncStateRemoteDatasource?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : SyncStateRemoteDatasource(client);
 });
+
+/// The stock changes waiting to go out (sync v2).
+final stockOutboxDatasourceProvider = Provider<StockOutboxLocalDatasource>(
+  (ref) => StockOutboxLocalDatasource(),
+);
 
 // ============================================================
 // Repository Providers (offline-first; remote may be null)
@@ -326,6 +332,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
     syncState: ref.watch(syncStateDatasourceProvider),
+    stockOutbox: ref.watch(stockOutboxDatasourceProvider),
     cursors: ref.watch(syncCursorStoreProvider),
     failures: ref.watch(syncFailureStoreProvider),
     now: ref.watch(nowProvider),

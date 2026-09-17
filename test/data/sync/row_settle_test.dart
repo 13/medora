@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/sync/row_settle.dart';
 import 'package:medora/data/sync/sync_meta.dart';
@@ -53,7 +54,6 @@ void main() {
         'medications',
         pushed: pushed,
         server: server(),
-        newOpId: () => 'op',
       );
 
       expect(pending, isFalse);
@@ -79,7 +79,6 @@ void main() {
       'medications',
       pushed: pushed,
       server: server(),
-      newOpId: () => 'op',
     );
 
     expect(pending, isTrue);
@@ -88,6 +87,60 @@ void main() {
     expect(r['name'], 'Edited meanwhile');
     expect(r['sync_version'], 4);
     expect(r['sync_write_id'], isNull);
+  });
+
+  test('a medication settles with the server\'s stock and the changes still '
+      'waiting here on top', () async {
+    final db = await AppDatabase.instance.database;
+    final pushed = await seed(db);
+    // A dose taken here while the push was on its way: the quantity and its
+    // change, never the row's stamp.
+    await db.transaction((txn) async {
+      await txn.update('medications', {'quantity': 4});
+      await StockOutboxLocalDatasource.enqueue(
+        txn,
+        StockOp(
+          opId: 'taken',
+          medicationId: 'm1',
+          delta: -1,
+          createdAt: DateTime.utc(2026, 3, 5, 10),
+        ),
+      );
+    });
+
+    final pending = await settlePushedRow(
+      db,
+      'medications',
+      pushed: pushed,
+      server: server(quantity: 7),
+    );
+
+    expect(pending, isFalse);
+    final r = await row(db);
+    expect([r['sync_status'], r['quantity']], ['synced', 6]);
+    expect(LocalSyncMeta.fromRow(r).base!['quantity'], 7);
+    expect(await StockOutboxLocalDatasource().pending(), hasLength(1));
+  });
+
+  test('a medication edited meanwhile keeps its own quantity', () async {
+    final db = await AppDatabase.instance.database;
+    final pushed = await seed(db);
+    await db.update('medications', {
+      'name': 'Edited meanwhile',
+      'quantity': 3,
+      'updated_at': '2026-03-05T10:00:00.500',
+    });
+
+    await settlePushedRow(
+      db,
+      'medications',
+      pushed: pushed,
+      server: server(quantity: 7),
+    );
+
+    final r = await row(db);
+    expect([r['sync_status'], r['quantity']], ['pending_update', 3]);
+    expect(await StockOutboxLocalDatasource().pending(), isEmpty);
   });
 
   test('a delete made meanwhile stays a pending delete', () async {
@@ -101,7 +154,6 @@ void main() {
         'medications',
         pushed: pushed,
         server: server(),
-        newOpId: () => 'op',
       ),
       isTrue,
     );
@@ -125,7 +177,6 @@ void main() {
       'medications',
       pushed: pushed,
       server: server(),
-      newOpId: () => 'op',
     );
 
     expect(pending, isFalse);
@@ -147,7 +198,6 @@ void main() {
         'medications',
         pushed: pushed,
         server: server(),
-        newOpId: () => 'op',
       ),
       isFalse,
     );

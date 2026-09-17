@@ -13,6 +13,7 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
@@ -209,37 +210,83 @@ void main() {
       expect(local['sync_status'], SyncStatus.synced);
     });
 
-    test(
-      'medications: a dose taken after an offline one is counted once',
-      () async {
-        final r = _Rig();
-        final db = await AppDatabase.instance.database;
-        final id = (await seedPrescription(db)).medicationId; // quantity 10
-        r.meds.table.seed(
-          MedicationModel.fromLocalMap(
-            await _localRow('medications', id),
-          ).toJson(),
-          updatedAt: longAgo,
+    test('medications: a dose taken while the cycle sends an offline one is '
+        'counted once', () async {
+      final r = _Rig();
+      final db = await AppDatabase.instance.database;
+      final id = (await seedPrescription(db)).medicationId; // quantity 10
+      r.meds.table.seed(
+        MedicationModel.fromLocalMap(
+          await _localRow('medications', id),
+        ).toJson(),
+        updatedAt: longAgo,
+      );
+      // This device pulled that copy.
+      await r.service.syncAll();
+      await r.idle();
+      // Two tablets taken offline: waiting as one stock change.
+      await db.transaction((txn) async {
+        await txn.update(
+          'medications',
+          {'quantity': 8},
+          where: 'id = ?',
+          whereArgs: [id],
         );
-        // This device pulled that copy, so it holds its merge base. (The
-        // stock has no edit time of its own until it moves to the stock
-        // ledger: a pending stock change with no base is judged by the row
-        // time only while nothing else was written to the row.)
-        await r.service.syncAll();
-        await r.idle();
-        await _pendingOffline('medications', id, {'quantity': 8}, offline);
-
-        await r.writeWhileCyclePushes(
-          r.meds.table,
-          () => r.medicationRepo.updateQuantity(id, -1),
+        await StockOutboxLocalDatasource.enqueue(
+          txn,
+          StockOp(
+            opId: 'offline-op',
+            medicationId: id,
+            delta: -2,
+            createdAt: offline,
+          ),
         );
+      });
 
-        expect(r.meds.table.rows[id]!['quantity'], 7);
-        final local = await _localRow('medications', id);
-        expect(local['quantity'], 7);
-        expect(local['sync_status'], SyncStatus.synced);
-      },
-    );
+      await r.writeWhileCyclePushes(
+        r.meds.table,
+        () => r.medicationRepo.updateQuantity(id, -1),
+      );
+
+      expect(r.meds.table.rows[id]!['quantity'], 7);
+      final local = await _localRow('medications', id);
+      expect(local['quantity'], 7);
+      expect(local['sync_status'], SyncStatus.synced);
+      expect(await StockOutboxLocalDatasource().pending(), isEmpty);
+    });
+
+    test('medications: a dose taken while the stock change before it is on '
+        'its way is counted once', () async {
+      final r = _Rig();
+      final db = await AppDatabase.instance.database;
+      final id = (await seedPrescription(db)).medicationId; // quantity 10
+      r.meds.table.seed(
+        MedicationModel.fromLocalMap(
+          await _localRow('medications', id),
+        ).toJson(),
+        updatedAt: longAgo,
+      );
+      await r.service.syncAll();
+      await r.idle();
+      await r.medicationRepo.updateQuantity(id, -2);
+      final release = Completer<void>();
+      final started = Completer<void>();
+      r.meds.stock.beforeCall = (op) async {
+        if (started.isCompleted) return;
+        started.complete();
+        await release.future;
+      };
+      final cycle = r.service.syncAll();
+      await started.future;
+      await r.medicationRepo.updateQuantity(id, -1);
+      release.complete();
+      await cycle;
+      await r.idle();
+
+      expect(r.meds.table.rows[id]!['quantity'], 7);
+      expect((await _localRow('medications', id))['quantity'], 7);
+      expect(await StockOutboxLocalDatasource().pending(), isEmpty);
+    });
 
     test('dose logs: taken after an offline skip', () async {
       final r = _Rig();

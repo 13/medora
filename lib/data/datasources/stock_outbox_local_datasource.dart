@@ -46,14 +46,31 @@ class StockOp {
 /// The largest stock the app stores.
 const maxStock = 999999;
 
-/// [quantity] after [ops], in order, clamped like the server clamps.
+/// [quantity] after [ops], in order, by the server's rule: each change is
+/// brought into range before it applies (`stockAfter` in
+/// `stock_remote.dart`), then the result is capped.
 int applyStockOps(int quantity, Iterable<StockOp> ops) {
   var q = quantity;
   for (final op in ops) {
-    q = (op.setTo ?? q + op.delta!).clamp(0, maxStock);
+    final setTo = op.setTo;
+    q = setTo != null
+        ? setTo.clamp(0, maxStock)
+        : (q + op.delta!.clamp(-maxStock, maxStock)).clamp(0, maxStock);
   }
   return q;
 }
+
+/// The stock this device shows for a server copy that holds [quantity] and
+/// whose last write carried [writeId], with [ops] still waiting here: the
+/// waiting changes on top. The oldest waiting change is left out when it is
+/// the server copy's last write: `apply_stock_change` stamps its op id as
+/// the write id, so that change already landed and only its answer was
+/// lost. It stays in the outbox until the stock function answers for it.
+int localStock(int quantity, String? writeId, List<StockOp> ops) =>
+    applyStockOps(
+      quantity,
+      ops.isNotEmpty && ops.first.opId == writeId ? ops.skip(1) : ops,
+    );
 
 class StockOutboxLocalDatasource {
   StockOutboxLocalDatasource();

@@ -14,7 +14,9 @@
 ///   merged column group by column group (`row_merge.dart`) and the rest is
 ///   sent again. Each attempt carries a write id stored before it is sent, so
 ///   an answer that never arrived is recognised later. New dose logs go out
-///   in batches, inserted only where the server lacks them.
+///   in batches, inserted only where the server lacks them. Stock changes
+///   go out once each, as changes or counts, never as totals, through
+///   `apply_stock_change` (`stock_sync.dart`), in the order they were made.
 /// - **Pull.** Each table is read from its stored key up to the server's
 ///   horizon, in pages; a pending local row is merged, not overwritten.
 ///
@@ -48,6 +50,8 @@ import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/datasources/schema_errors.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
+import 'package:medora/data/datasources/stock_remote.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
@@ -60,6 +64,7 @@ import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/row_settle.dart';
+import 'package:medora/data/sync/stock_sync.dart';
 import 'package:medora/data/sync/sync_meta.dart';
 import 'package:medora/data/sync/table_sync.dart';
 import 'package:medora/services/connectivity_service.dart';
@@ -88,6 +93,7 @@ class SyncService {
     required this.familyLocal,
     required this.familyRemote,
     required this.syncState,
+    StockOutboxLocalDatasource? stockOutbox,
     String Function()? newWriteId,
     SyncCursorStore? cursors,
     SyncFailureStore? failures,
@@ -107,6 +113,7 @@ class SyncService {
        _onlineStream =
            onlineStream ?? ConnectivityService.instance.onlineStream,
        _now = now ?? DateTime.now,
+       stockOutbox = stockOutbox ?? StockOutboxLocalDatasource(),
        _newWriteId = newWriteId ?? const Uuid().v4;
 
   final MedicationLocalDatasource medicationLocal;
@@ -122,6 +129,12 @@ class SyncService {
 
   /// `medora_sync_state`; null in local-only mode.
   final SyncStateRemoteDatasource? syncState;
+
+  /// The stock changes waiting to go out.
+  final StockOutboxLocalDatasource stockOutbox;
+
+  /// A fresh id for a write attempt, or for a stock change the cycle makes
+  /// (a forced count).
   final String Function() _newWriteId;
 
   /// Called with the signed-in user id after a clean cycle. Belt and braces
@@ -437,6 +450,11 @@ class SyncService {
       'dose_logs': _tableSync('dose_logs', doseLogRemote!.rows),
   };
 
+  /// `apply_stock_change`, with every request under [requestTimeout].
+  late final StockRemote? _stock = medicationRemote == null
+      ? null
+      : _TimedStockRemote(medicationRemote!.stock, requestTimeout);
+
   TableSync _tableSync(String table, SyncTable rows) => TableSync(
     table: table,
     remote: _TimedSyncTable(rows, requestTimeout),
@@ -469,8 +487,8 @@ class SyncService {
         ? [SyncStatus.pendingDelete]
         : [SyncStatus.synced, SyncStatus.pendingDelete];
 
-    // FK order: Families -> Medications -> Treatments -> Prescriptions ->
-    // DoseLogs
+    // FK order: Families -> Medications (then their stock changes) ->
+    // Treatments -> Prescriptions -> DoseLogs
     await _pushBatch('families', report, familyWhere, familyWhereArgs, (
       row,
     ) async {
@@ -522,7 +540,12 @@ class SyncService {
       },
     );
 
+    // Queued before the rows go out: settling a row shows the server's
+    // stock with the waiting changes on top, and the count must be what
+    // this device holds now.
+    if (forceAll) await _queueForcedStock();
     await _pushTable('medications', report, userId, forceAll: forceAll);
+    await _pushStock(report);
     await _pushTable('treatments', report, userId, forceAll: forceAll);
     await _pushTable('prescriptions', report, userId, forceAll: forceAll);
     // A dose this device created is only ever inserted where the server does
@@ -611,6 +634,93 @@ class SyncService {
       if (await _failures.get('prescriptions', id) != null) refused.add(id);
     }
     return refused;
+  }
+
+  /// Sends the waiting stock changes, oldest first (design section 7.5).
+  ///
+  /// A change waits, counted as backing off, while its medication has no
+  /// known server version (its create has not settled: until then the
+  /// create carries the stock), and while it backs off after a failure. A
+  /// change that fails, or waits, holds the later changes of its medication
+  /// back for this cycle, so they keep their order; other medications go
+  /// on. A failure is recorded under [StockOutboxLocalDatasource.table] and
+  /// the op id, and [discardFailedRow] can drop it.
+  Future<void> _pushStock(SyncReport report) async {
+    final db = await AppDatabase.instance.database;
+    final held = <String>{};
+    for (final op in await stockOutbox.pending()) {
+      final medicationId = op.medicationId;
+      if (held.contains(medicationId)) continue;
+      final med = await db.query(
+        'medications',
+        columns: ['sync_version'],
+        where: 'id = ?',
+        whereArgs: [medicationId],
+      );
+      if (med.isEmpty || med.first['sync_version'] == null) {
+        held.add(medicationId);
+        report.skippedBackoff++;
+        continue;
+      }
+      final failure = await _failures.get(
+        StockOutboxLocalDatasource.table,
+        op.opId,
+      );
+      if (failure != null && failure.isBackingOffAt(_now())) {
+        held.add(medicationId);
+        report.skippedBackoff++;
+        continue;
+      }
+      try {
+        final status = await sendStockOp(_stock!, op);
+        if (status == StockChangeStatus.gone) {
+          debugPrint(
+            'Sync: stock change ${op.opId} dropped: medication '
+            '$medicationId is not on the server',
+          );
+        } else {
+          report.pushed++;
+        }
+        if (failure != null) {
+          await _failures.clear(StockOutboxLocalDatasource.table, op.opId);
+        }
+      } catch (e) {
+        held.add(medicationId);
+        await _failures.recordFailure(
+          StockOutboxLocalDatasource.table,
+          op.opId,
+          _now(),
+        );
+        report.failures.add(
+          SyncFailure(StockOutboxLocalDatasource.table, op.opId, 'push: $e'),
+        );
+      }
+    }
+  }
+
+  /// A forced push sends every quantity here as a count, after the changes
+  /// still waiting: "my copy is the truth" holds for the stock too.
+  Future<void> _queueForcedStock() async {
+    final db = await AppDatabase.instance.database;
+    await db.transaction((txn) async {
+      final meds = await txn.query(
+        'medications',
+        columns: ['id', 'quantity'],
+        where: 'sync_status != ?',
+        whereArgs: [SyncStatus.pendingDelete],
+      );
+      for (final m in meds) {
+        await StockOutboxLocalDatasource.enqueue(
+          txn,
+          StockOp(
+            opId: _newWriteId(),
+            medicationId: m['id']! as String,
+            setTo: (m['quantity'] as int?) ?? 0,
+            createdAt: _now(),
+          ),
+        );
+      }
+    });
   }
 
   /// How many new dose logs one request inserts. The read-back lists their
@@ -712,7 +822,6 @@ class SyncService {
             'dose_logs',
             pushed: row,
             server: remote,
-            newOpId: _newWriteId,
           );
         } else {
           final applied = await sync.applyPulled(remote);
@@ -878,6 +987,10 @@ class SyncService {
   /// That is also what discarding a local `pending_delete` means: keep the
   /// server's copy.
   ///
+  /// A stuck stock change ([StockOutboxLocalDatasource.table], by op id) is
+  /// dropped, and its medication shows the server's stock again, with the
+  /// other changes still waiting on top.
+  ///
   /// Throws when the fetch fails, leaving the row pending so the caller can
   /// surface the error and the user can try again.
   Future<void> discardFailedRow(String table, String id) async {
@@ -895,6 +1008,8 @@ class SyncService {
         for (final child in _childTables[table]!) {
           await _cursors.resetPullKey(child);
         }
+      case StockOutboxLocalDatasource.table:
+        await _discardStockChange(id);
       case 'families':
         final remote = await familyRemote!.getFamilyById(id);
         await _replaceLocal(
@@ -911,6 +1026,40 @@ class SyncService {
     }
     await _failures.clear(table, id);
     debugPrint('Sync: discarded the local change to $table/$id');
+  }
+
+  /// Drops the stock change [opId]; see [discardFailedRow].
+  Future<void> _discardStockChange(String opId) async {
+    final op = (await stockOutbox.pending()).where((o) => o.opId == opId);
+    if (op.isEmpty) return;
+    final medicationId = op.first.medicationId;
+    final remote = await _remote(
+      _tables['medications']!.remote.fetch(medicationId),
+    );
+    final db = await AppDatabase.instance.database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        StockOutboxLocalDatasource.table,
+        where: 'op_id = ?',
+        whereArgs: [opId],
+      );
+      if (remote == null || remote['deleted_at'] != null) return;
+      await txn.update(
+        'medications',
+        {
+          'quantity': localStock(
+            (remote['quantity'] as num?)?.toInt() ?? 0,
+            RemoteMeta.fromJson(remote).writeId,
+            await StockOutboxLocalDatasource.pendingIn(
+              txn,
+              medicationId: medicationId,
+            ),
+          ),
+        },
+        where: 'id = ?',
+        whereArgs: [medicationId],
+      );
+    });
   }
 
   /// Applies the server's copy of a row the user gave up on: a missing or
@@ -1249,6 +1398,18 @@ class _FetchFailedFatally implements Exception {
 
   @override
   String toString() => '_FetchFailedFatally($table): $cause';
+}
+
+/// [StockRemote] with every request under [timeout].
+class _TimedStockRemote implements StockRemote {
+  _TimedStockRemote(this._inner, this._timeout);
+
+  final StockRemote _inner;
+  final Duration _timeout;
+
+  @override
+  Future<StockChangeResult> apply(StockOp op) =>
+      _inner.apply(op).timeout(_timeout);
 }
 
 /// [SyncTable] with every request under [timeout].

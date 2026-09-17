@@ -4,11 +4,32 @@ library;
 import 'dart:convert';
 
 import 'package:medora/core/clock.dart';
+import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/edit_time.dart';
 import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:sqflite/sqflite.dart';
+
+/// When a stock change made here waits in the stock outbox, to go out as a
+/// change through `apply_stock_change`.
+enum StockQueueing {
+  /// Cloud mode: every change waits. One for a medication the server has
+  /// not seen yet rides with its insert instead (see `TableSync`).
+  always,
+
+  /// Local-only mode: only a change to a medication the server has seen (a
+  /// known server version) waits. A device that left cloud mode and kept
+  /// its data then still sends its doses when it signs back in; one that
+  /// never synced has no server to send them to.
+  ifKnownToServer;
+
+  /// Whether a change to the stored medication [row] waits.
+  bool queues(Map<String, Object?> row) => switch (this) {
+    always => true,
+    ifKnownToServer => row['sync_version'] != null,
+  };
+}
 
 class MedicationLocalDatasource {
   /// [now] is the clock for the stamps a local write sets.
@@ -54,14 +75,62 @@ class MedicationLocalDatasource {
   Future<bool> _setArchived(String id, {required bool archived}) =>
       _editRow(id, (_) => {'is_archived': archived ? 1 : 0});
 
-  /// Adds [delta] to the stock, never going below zero. Returns the stored
-  /// row, or null (and changes nothing) when the medication is missing or
-  /// deleted. Only the quantity and the bookkeeping columns are written, so
+  /// Adds [delta] to the stock, never going below zero or above
+  /// [maxStock]. Returns the stored row, or null (and changes nothing) when
+  /// the medication is missing or deleted. Only the quantity is written, so
   /// no other column can be lost on the way.
-  Future<MedicationModel?> adjustQuantity(String id, int delta) async {
-    final changed = await _editRow(id, (row) {
-      final current = row['quantity'] as int? ?? 0;
-      return {'quantity': (current + delta).clamp(0, 999999)};
+  ///
+  /// A stock change is not a row edit: it goes out as a change, never as
+  /// the new total (design section 4.8). With [opId] it waits in the stock
+  /// outbox, written in the same transaction, when [queueing] says so; the
+  /// row keeps its status and stamps, so a change made while the row's push
+  /// is in flight never makes that push look stale. A change that is not
+  /// queued stamps `updated_at` and `edited_at` (a backup merge compares
+  /// them) and fills the column times as every local write does, still
+  /// leaving the status alone.
+  Future<MedicationModel?> adjustQuantity(
+    String id,
+    int delta, {
+    String? opId,
+    StockQueueing queueing = StockQueueing.always,
+  }) async {
+    final db = await _db;
+    final changed = await db.transaction((txn) async {
+      final row = await _stored(txn, id);
+      if (row == null) return false;
+      if (row['sync_status'] == SyncStatus.pendingDelete) return false;
+      final now = _now();
+      final change = StockOp(
+        opId: opId ?? '',
+        medicationId: id,
+        delta: delta,
+        createdAt: now,
+      );
+      final values = <String, Object?>{
+        // By the server's rule, as the change will apply there.
+        'quantity': applyStockOps(row['quantity'] as int? ?? 0, [change]),
+      };
+      if (opId != null && queueing.queues(row)) {
+        await StockOutboxLocalDatasource.enqueue(txn, change);
+      } else {
+        final raw = row['updated_at'] as String?;
+        final stamp = nextUpdatedAt(
+          raw == null ? null : DateTime.tryParse(raw),
+          now,
+        );
+        values['updated_at'] = stamp.toIso8601String();
+        values['edited_at'] = editedAtText(stamp, now);
+        // The row time moves: an empty map is filled with the old one, so
+        // no other column looks changed now (the stock has no entry).
+        values['field_edited_at'] = fieldTimesAfterWrite(
+          previous: row,
+          after: {...row, ...values},
+          wireOf: wireOf,
+          at: editedAtOf(stamp, now),
+        );
+      }
+      await txn.update('medications', values, where: 'id = ?', whereArgs: [id]);
+      return true;
     });
     return changed ? getMedicationById(id) : null;
   }
@@ -220,26 +289,39 @@ class MedicationLocalDatasource {
     return _fromRow(rows.first);
   }
 
+  /// Stores [model] as [syncStatus].
+  ///
+  /// [stockOp] is a quantity typed into the form, a count: it waits in the
+  /// stock outbox, written in the same transaction, when [queueing] says so
+  /// for the row as it was stored before.
   Future<void> upsert(
     MedicationModel model, {
     required String syncStatus,
+    StockOp? stockOp,
+    StockQueueing queueing = StockQueueing.always,
   }) async {
     final db = await _db;
     final at = _now();
     final row = rowOf(model, syncStatus, now: () => at);
-    if (syncStatus == SyncStatus.synced) {
+    if (syncStatus == SyncStatus.synced && stockOp == null) {
       await _store(db, model.id, row);
       return;
     }
     await db.transaction((txn) async {
-      // A change made here: stamp the columns it changes.
-      row['field_edited_at'] = fieldTimesAfterWrite(
-        previous: await _stored(txn, model.id),
-        after: row,
-        wireOf: wireOf,
-        at: editedAtOf(model.updatedAt ?? at, at),
-      );
+      final previous = await _stored(txn, model.id);
+      if (syncStatus != SyncStatus.synced) {
+        // A change made here: stamp the columns it changes.
+        row['field_edited_at'] = fieldTimesAfterWrite(
+          previous: previous,
+          after: row,
+          wireOf: wireOf,
+          at: editedAtOf(model.updatedAt ?? at, at),
+        );
+      }
       await _store(txn, model.id, row);
+      if (stockOp != null && previous != null && queueing.queues(previous)) {
+        await StockOutboxLocalDatasource.enqueue(txn, stockOp);
+      }
     });
   }
 
