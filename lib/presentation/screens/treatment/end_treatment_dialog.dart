@@ -71,8 +71,15 @@ Future<bool> confirmAndEndTreatment(
   );
 
   if (confirmed != true || !context.mounted) return false;
-  await ref
-      .read(treatmentListProvider.notifier)
-      .endTreatment(treatment.id, endSickLeave: endSickLeave);
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref
+        .read(treatmentListProvider.notifier)
+        .endTreatment(treatment.id, endSickLeave: endSickLeave);
+  } catch (e) {
+    debugPrint('⚠ Ending treatment ${treatment.id} failed: $e');
+    messenger.showSnackBar(SnackBar(content: Text(l10n.endTreatmentFailed)));
+    return false;
+  }
   return true;
 }

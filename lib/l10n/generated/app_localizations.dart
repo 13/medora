@@ -688,6 +688,12 @@ abstract class AppLocalizations {
   /// **'End \"{name}\"? No new doses or reminders will be created for its medicines, and no further doses can be logged. Doses already recorded are kept.'**
   String endTreatmentConfirm(String name);
 
+  /// No description provided for @endTreatmentFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not end the treatment'**
+  String get endTreatmentFailed;
+
   /// No description provided for @startDate.
   ///
   /// In en, this message translates to:

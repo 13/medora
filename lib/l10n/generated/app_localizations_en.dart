@@ -340,6 +340,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get endTreatmentFailed => 'Could not end the treatment';
+
+  @override
   String get startDate => 'Start Date';
 
   @override

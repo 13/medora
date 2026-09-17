@@ -113,6 +113,7 @@
   "treatmentNotFound": "Behandlung nicht gefunden",
   "endTreatment": "Behandlung beenden",
   "endTreatmentConfirm": "\"{name}\" beenden? Für die Medikamente dieser Behandlung werden keine neuen Dosen und Erinnerungen mehr angelegt, und es lassen sich keine weiteren Dosen eintragen. Bereits eingetragene Dosen bleiben erhalten.",
+  "endTreatmentFailed": "Die Behandlung konnte nicht beendet werden",
   "startDate": "Startdatum",
   "endDate": "Enddatum",
   "ongoing": "Laufend",

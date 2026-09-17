@@ -169,6 +169,7 @@
       "name": { "type": "String" }
     }
   },
+  "endTreatmentFailed": "Could not end the treatment",
   "startDate": "Start Date",
   "endDate": "End Date",
   "ongoing": "Ongoing",

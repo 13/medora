@@ -19,6 +19,7 @@ import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
+import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -350,6 +351,32 @@ void main() {
       expect(t.isActive, isFalse);
       expect(t.sickLeaveTo, isNull);
     });
+
+    for (final locale in const ['en', 'de', 'it']) {
+      testWidgets('a failed End says so and leaves the treatment running '
+          '($locale)', (tester) async {
+        await seedAndPump(
+          tester,
+          locale: Locale(locale),
+          extraOverrides: [
+            treatmentRepositoryProvider.overrideWithValue(
+              _EndFails(localDatasource: TreatmentLocalDatasource()),
+            ),
+          ],
+        );
+        final l10n = lookupAppLocalizations(Locale(locale));
+        await openEndDialog(tester, label: l10n.endTreatment);
+        await confirm(tester, label: l10n.endTreatment);
+        expect(
+          find.descendant(
+            of: find.byType(SnackBar),
+            matching: find.text(l10n.endTreatmentFailed),
+          ),
+          findsOneWidget,
+        );
+        expect((await stored()).isActive, isTrue);
+      });
+    }
 
     testWidgets('cancelling changes nothing', (tester) async {
       await seedAndPump(tester, from: DateTime(2026, 3, 3));
@@ -1475,4 +1502,15 @@ void main() {
       }
     });
   });
+}
+
+/// A treatment repository whose End always fails, as a full disk would.
+class _EndFails extends TreatmentRepositoryImpl {
+  _EndFails({required super.localDatasource});
+
+  @override
+  Future<Result<Treatment>> endTreatment(
+    String id, {
+    bool endSickLeave = false,
+  }) async => const Result.failure('disk full');
 }

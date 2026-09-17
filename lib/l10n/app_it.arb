@@ -113,6 +113,7 @@
   "treatmentNotFound": "Trattamento non trovato",
   "endTreatment": "Termina trattamento",
   "endTreatmentConfirm": "Terminare \"{name}\"? Per i farmaci di questo trattamento non verranno più pianificate dosi né inviati promemoria, e non si potranno registrare altre dosi. Le dosi già registrate restano salvate.",
+  "endTreatmentFailed": "Impossibile terminare il trattamento",
   "startDate": "Data di inizio",
   "endDate": "Data di fine",
   "ongoing": "In corso",
