@@ -822,6 +822,21 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
     setState(() => _isLoading = true);
     final l10n = AppLocalizations.of(context);
 
+    // A quantity typed in is a count, sent as one. A quantity left as it
+    // was loaded is not: the stock may have moved since the form opened (a
+    // dose taken from a reminder, or pulled from another device), and
+    // sending the old number back would undo that.
+    final typedQuantity = int.tryParse(_quantityController.text) ?? 0;
+    final existing = _existingMedication;
+    var quantity = typedQuantity;
+    if (existing != null && typedQuantity == existing.quantity) {
+      final current = await ref
+          .read(medicationRepositoryProvider)
+          .getMedicationById(existing.id);
+      if (!mounted) return;
+      quantity = current.dataOrNull?.quantity ?? typedQuantity;
+    }
+
     final medication = Medication(
       id: _existingMedication?.id ?? _uuid.v4(),
       userId: SupabaseConfig.currentUserId,
@@ -844,7 +859,7 @@ class _AddMedicationScreenState extends ConsumerState<AddMedicationScreen> {
       patientTags: _patientTags,
       purchaseDate: _purchaseDate,
       expiryDate: _expiryDate,
-      quantity: int.tryParse(_quantityController.text) ?? 0,
+      quantity: quantity,
       quantityUnit: _quantityUnit,
       minimumStockLevel: int.tryParse(_minStockController.text) ?? 0,
       storageLocation: _storageLocationController.text.trim().isEmpty
