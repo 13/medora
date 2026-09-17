@@ -298,6 +298,39 @@ void main() {
       await expectSettled([a, b]);
     });
 
+    test('writes that never reached the server are read again in bulk, not '
+        'one by one', () async {
+      final ids = [
+        for (var day = 1; day <= 60; day++)
+          scheduledDoseId(
+            prescriptionId,
+            DateTime(today.year, today.month, today.day + day, 8),
+          ),
+      ];
+      // The server refuses these writes before anything lands; each row
+      // keeps the write id it stored before sending.
+      server.doses.table.failIds.addAll(ids);
+      for (final id in ids) {
+        await a.run((_) => a.doses.markDoseTaken(id));
+      }
+      expect(
+        await a.count(
+          "sync_write_id IS NOT NULL AND sync_status = 'pending_update'",
+        ),
+        60,
+      );
+      server.doses.table.failIds.clear();
+      await a.failures.clearAll();
+      final cost = await requests(a.sync);
+      expect(cost.singleReads, 0);
+      expect(cost.writes, 60, reason: 'one take each');
+      expect(
+        server.doses.table.rows.values.where((r) => r['status'] == 'taken'),
+        hasLength(60),
+      );
+      await expectSettled([a, b]);
+    });
+
     test('the overdue sweep goes out in bulk; the same sweep on the other '
         'device writes nothing; a take made there first wins', () async {
       final taken = scheduledDoseId(

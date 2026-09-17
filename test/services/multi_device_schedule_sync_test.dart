@@ -937,8 +937,10 @@ void main() {
       );
       h.a.online = true;
       armed = true;
-      await h.a.sync();
+      final report = (await h.a.run((_) async => h.a.service.syncAll()))!;
       expect(fired, isTrue);
+      expect(report.fatal, isNull);
+      expect(report.failures, isEmpty);
 
       bool onSchedule(DateTime local) => {9, 15, 21}.contains(local.hour);
       DateTime localTime(Map<String, dynamic> r) =>
