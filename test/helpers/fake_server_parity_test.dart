@@ -205,6 +205,18 @@ final parityScript = <ParityStep>[
     },
   ),
   ParityStep.update(
+    'the automatic value again with an older person\'s time: the automatic '
+        'entry stays',
+    'treatments',
+    'par-t2',
+    {
+      'notes': 'auto',
+      'write_id': _uuid(91),
+      'edited_at': _feb,
+      'field_edited_at': {'notes': _at(_feb)},
+    },
+  ),
+  ParityStep.update(
     'a person\'s older time never replaces the held one, and clears the '
         'automatic flag',
     'treatments',

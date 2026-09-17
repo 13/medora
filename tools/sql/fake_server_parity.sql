@@ -142,184 +142,195 @@ do $$ begin
     format('parity step 8, treatments/par-t2: postgres %s', pg_temp.parity_row('treatments', 'par-t2'));
 end $$;
 
--- Step 9: a person's older time never replaces the held one, and clears the automatic flag
+-- Step 9: the automatic value again with an older person's time: the automatic entry stays
 begin;
 insert into parity_now values (9, now());
+update public.treatments set notes = 'auto', write_id = '00000000-0000-0000-0000-000000000091', edited_at = '2020-02-01T00:00:00.000Z', field_edited_at = '{"notes":{"at":"2020-02-01T00:00:00.000Z","auto":false}}'::jsonb
+  where id = 'par-t2';
+commit;
+do $$ begin
+  assert pg_temp.parity_row('treatments', 'par-t2') = '{"deleted":false,"edited_at":"2020-02-01T00:00:00.000Z","field_edited_at":{"doctor":{"at":"1970-01-01T00:00:00.000Z","auto":true},"end_date":{"at":"1970-01-01T00:00:00.000Z","auto":true},"is_active":{"at":"2020-03-02T00:00:00.000Z","auto":false},"name":{"at":"2020-03-09T00:00:00.000Z","auto":false},"notes":{"at":"@5","auto":true},"sick_leave_from":{"at":"2020-03-04T00:00:00.000Z","auto":false},"sick_leave_ref":{"at":"2020-03-10T00:00:00.000Z","auto":false}},"row_version":5,"updated_at":"@9","write_id":true}'::jsonb,
+    format('parity step 9, treatments/par-t2: postgres %s', pg_temp.parity_row('treatments', 'par-t2'));
+end $$;
+
+-- Step 10: a person's older time never replaces the held one, and clears the automatic flag
+begin;
+insert into parity_now values (10, now());
 update public.treatments set notes = 'older', write_id = '00000000-0000-0000-0000-000000000006', edited_at = '2020-02-01T00:00:00.000Z', field_edited_at = '{"notes":{"at":"2020-02-01T00:00:00.000Z","auto":false}}'::jsonb
   where id = 'par-t2';
 commit;
 do $$ begin
-  assert pg_temp.parity_row('treatments', 'par-t2') = '{"deleted":false,"edited_at":"2020-02-01T00:00:00.000Z","field_edited_at":{"doctor":{"at":"1970-01-01T00:00:00.000Z","auto":true},"end_date":{"at":"1970-01-01T00:00:00.000Z","auto":true},"is_active":{"at":"2020-03-02T00:00:00.000Z","auto":false},"name":{"at":"2020-03-09T00:00:00.000Z","auto":false},"notes":{"at":"@5","auto":false},"sick_leave_from":{"at":"2020-03-04T00:00:00.000Z","auto":false},"sick_leave_ref":{"at":"2020-03-10T00:00:00.000Z","auto":false}},"row_version":5,"updated_at":"@9","write_id":true}'::jsonb,
-    format('parity step 9, treatments/par-t2: postgres %s', pg_temp.parity_row('treatments', 'par-t2'));
+  assert pg_temp.parity_row('treatments', 'par-t2') = '{"deleted":false,"edited_at":"2020-02-01T00:00:00.000Z","field_edited_at":{"doctor":{"at":"1970-01-01T00:00:00.000Z","auto":true},"end_date":{"at":"1970-01-01T00:00:00.000Z","auto":true},"is_active":{"at":"2020-03-02T00:00:00.000Z","auto":false},"name":{"at":"2020-03-09T00:00:00.000Z","auto":false},"notes":{"at":"@5","auto":false},"sick_leave_from":{"at":"2020-03-04T00:00:00.000Z","auto":false},"sick_leave_ref":{"at":"2020-03-10T00:00:00.000Z","auto":false}},"row_version":6,"updated_at":"@10","write_id":true}'::jsonb,
+    format('parity step 10, treatments/par-t2: postgres %s', pg_temp.parity_row('treatments', 'par-t2'));
 end $$;
 
--- Step 10: 0.3.0 creates a medication
+-- Step 11: 0.3.0 creates a medication
 begin;
-insert into parity_now values (10, now());
+insert into parity_now values (11, now());
 insert into public.medications (id, name, quantity)
   values ('par-m1', 'Ibuprofen', 10)
   on conflict (id) do update set name = excluded.name, quantity = excluded.quantity;
 commit;
 do $$ begin
-  assert pg_temp.parity_row('medications', 'par-m1') = '{"deleted":false,"edited_at":"@10","field_edited_at":{},"row_version":1,"updated_at":"@10","write_id":false}'::jsonb,
-    format('parity step 10, medications/par-m1: postgres %s', pg_temp.parity_row('medications', 'par-m1'));
+  assert pg_temp.parity_row('medications', 'par-m1') = '{"deleted":false,"edited_at":"@11","field_edited_at":{},"row_version":1,"updated_at":"@11","write_id":false}'::jsonb,
+    format('parity step 11, medications/par-m1: postgres %s', pg_temp.parity_row('medications', 'par-m1'));
 end $$;
 
--- Step 11: 0.3.0 creates a prescription
+-- Step 12: 0.3.0 creates a prescription
 begin;
-insert into parity_now values (11, now());
+insert into parity_now values (12, now());
 insert into public.prescriptions (id, treatment_id, medication_id, dosage, start_time)
   values ('par-p1', 'par-t1', 'par-m1', '1 tablet', '2020-01-01T08:00:00.000Z')
   on conflict (id) do update set treatment_id = excluded.treatment_id, medication_id = excluded.medication_id, dosage = excluded.dosage, start_time = excluded.start_time;
 commit;
 do $$ begin
-  assert pg_temp.parity_row('prescriptions', 'par-p1') = '{"deleted":false,"edited_at":"@11","field_edited_at":{},"row_version":1,"updated_at":"@11","write_id":false}'::jsonb,
-    format('parity step 11, prescriptions/par-p1: postgres %s', pg_temp.parity_row('prescriptions', 'par-p1'));
+  assert pg_temp.parity_row('prescriptions', 'par-p1') = '{"deleted":false,"edited_at":"@12","field_edited_at":{},"row_version":1,"updated_at":"@12","write_id":false}'::jsonb,
+    format('parity step 12, prescriptions/par-p1: postgres %s', pg_temp.parity_row('prescriptions', 'par-p1'));
 end $$;
 
--- Step 12: 0.4.0 inserts a generated dose: automatic, updated_at kept
+-- Step 13: 0.4.0 inserts a generated dose: automatic, updated_at kept
 begin;
-insert into parity_now values (12, now());
+insert into parity_now values (13, now());
 insert into public.dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at, field_edited_at)
   values ('par-d1', 'par-p1', '2020-01-01T08:00:00.000Z', 'pending', '1970-01-01T00:00:00.000Z', '00000000-0000-0000-0000-000000000007', '1970-01-01T00:00:00.000Z', '{}'::jsonb)
   on conflict (id) do nothing;
 commit;
 do $$ begin
   assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":false,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{},"row_version":1,"updated_at":"1970-01-01T00:00:00.000Z","write_id":true}'::jsonb,
-    format('parity step 12, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
+    format('parity step 13, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
 end $$;
 
--- Step 13: a person takes it: the fill marks the untouched columns automatic
+-- Step 14: a person takes it: the fill marks the untouched columns automatic
 begin;
-insert into parity_now values (13, now());
+insert into parity_now values (14, now());
 update public.dose_logs set status = 'taken', taken_time = '2020-04-01T00:00:00.000Z', write_id = '00000000-0000-0000-0000-000000000008', edited_at = '2020-04-01T00:00:00.000Z', field_edited_at = '{"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}}'::jsonb
   where id = 'par-d1';
 commit;
 do $$ begin
-  assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":false,"edited_at":"2020-04-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"1970-01-01T00:00:00.000Z","auto":true},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}},"row_version":2,"updated_at":"@13","write_id":true}'::jsonb,
-    format('parity step 13, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
+  assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":false,"edited_at":"2020-04-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"1970-01-01T00:00:00.000Z","auto":true},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}},"row_version":2,"updated_at":"@14","write_id":true}'::jsonb,
+    format('parity step 14, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
 end $$;
 
--- Step 14: 0.4.0 inserts a second generated dose
+-- Step 15: 0.4.0 inserts a second generated dose
 begin;
-insert into parity_now values (14, now());
+insert into parity_now values (15, now());
 insert into public.dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at, field_edited_at)
   values ('par-d2', 'par-p1', '2020-01-01T16:00:00.000Z', 'pending', '1970-01-01T00:00:00.000Z', '00000000-0000-0000-0000-000000000009', '1970-01-01T00:00:00.000Z', '{}'::jsonb)
   on conflict (id) do nothing;
 commit;
 do $$ begin
   assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":false,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{},"row_version":1,"updated_at":"1970-01-01T00:00:00.000Z","write_id":true}'::jsonb,
-    format('parity step 14, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
+    format('parity step 15, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
 end $$;
 
--- Step 15: a stock change leaves the map alone
+-- Step 16: a stock change leaves the map alone
 begin;
-insert into parity_now values (15, now());
+insert into parity_now values (16, now());
 update public.medications set quantity = 9, write_id = '00000000-0000-0000-0000-000000000010'
   where id = 'par-m1';
 commit;
 do $$ begin
-  assert pg_temp.parity_row('medications', 'par-m1') = '{"deleted":false,"edited_at":"@10","field_edited_at":{"active_ingredients":{"at":"@10","auto":false},"atc_code":{"at":"@10","auto":false},"barcode":{"at":"@10","auto":false},"category":{"at":"@10","auto":false},"description":{"at":"@10","auto":false},"ean":{"at":"@10","auto":false},"expiry_date":{"at":"@10","auto":false},"family_id":{"at":"@10","auto":false},"form":{"at":"@10","auto":false},"image_path":{"at":"@10","auto":false},"is_archived":{"at":"@10","auto":false},"manufacturer":{"at":"@10","auto":false},"minimum_stock_level":{"at":"@10","auto":false},"name":{"at":"@10","auto":false},"notes":{"at":"@10","auto":false},"patient_tags":{"at":"@10","auto":false},"purchase_date":{"at":"@10","auto":false},"quantity_unit":{"at":"@10","auto":false},"storage_location":{"at":"@10","auto":false},"symptoms":{"at":"@10","auto":false}},"row_version":2,"updated_at":"@15","write_id":true}'::jsonb,
-    format('parity step 15, medications/par-m1: postgres %s', pg_temp.parity_row('medications', 'par-m1'));
+  assert pg_temp.parity_row('medications', 'par-m1') = '{"deleted":false,"edited_at":"@11","field_edited_at":{"active_ingredients":{"at":"@11","auto":false},"atc_code":{"at":"@11","auto":false},"barcode":{"at":"@11","auto":false},"category":{"at":"@11","auto":false},"description":{"at":"@11","auto":false},"ean":{"at":"@11","auto":false},"expiry_date":{"at":"@11","auto":false},"family_id":{"at":"@11","auto":false},"form":{"at":"@11","auto":false},"image_path":{"at":"@11","auto":false},"is_archived":{"at":"@11","auto":false},"manufacturer":{"at":"@11","auto":false},"minimum_stock_level":{"at":"@11","auto":false},"name":{"at":"@11","auto":false},"notes":{"at":"@11","auto":false},"patient_tags":{"at":"@11","auto":false},"purchase_date":{"at":"@11","auto":false},"quantity_unit":{"at":"@11","auto":false},"storage_location":{"at":"@11","auto":false},"symptoms":{"at":"@11","auto":false}},"row_version":2,"updated_at":"@16","write_id":true}'::jsonb,
+    format('parity step 16, medications/par-m1: postgres %s', pg_temp.parity_row('medications', 'par-m1'));
 end $$;
 
--- Step 16: the schedule drops the second dose: the app's own tombstone
+-- Step 17: the schedule drops the second dose: the app's own tombstone
 begin;
-insert into parity_now values (16, now());
+insert into parity_now values (17, now());
 update public.dose_logs set deleted_at = '2020-04-01T00:00:00.000Z', write_id = '00000000-0000-0000-0000-000000000011', edited_at = '1970-01-01T00:00:00.000Z'
   where id = 'par-d2';
 commit;
 do $$ begin
   assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"1970-01-01T00:00:00.000Z","auto":true},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"1970-01-01T00:00:00.000Z","auto":true},"taken_time":{"at":"1970-01-01T00:00:00.000Z","auto":true}},"row_version":2,"updated_at":"1970-01-01T00:00:00.000Z","write_id":true}'::jsonb,
-    format('parity step 16, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
+    format('parity step 17, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
 end $$;
 
--- Step 17: 0.3.0 re-sends the dropped dose with a note: still the app's tombstone
+-- Step 18: 0.3.0 re-sends the dropped dose with a note: still the app's tombstone
 begin;
-insert into parity_now values (17, now());
+insert into parity_now values (18, now());
 insert into public.dose_logs (id, prescription_id, scheduled_time, status, notes, updated_at)
   values ('par-d2', 'par-p1', '2020-01-01T16:00:00.000Z', 'pending', 'n', '2020-04-01T00:00:00.000Z')
   on conflict (id) do update set prescription_id = excluded.prescription_id, scheduled_time = excluded.scheduled_time, status = excluded.status, notes = excluded.notes, updated_at = excluded.updated_at;
 commit;
 do $$ begin
-  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"@17","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"1970-01-01T00:00:00.000Z","auto":true},"taken_time":{"at":"1970-01-01T00:00:00.000Z","auto":true}},"row_version":3,"updated_at":"@17","write_id":false}'::jsonb,
-    format('parity step 17, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
+  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"@18","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"1970-01-01T00:00:00.000Z","auto":true},"taken_time":{"at":"1970-01-01T00:00:00.000Z","auto":true}},"row_version":3,"updated_at":"@18","write_id":false}'::jsonb,
+    format('parity step 18, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
 end $$;
 
--- Step 18: 0.3.0 takes the dropped dose: it comes back as a person's change
+-- Step 19: 0.3.0 takes the dropped dose: it comes back as a person's change
 begin;
-insert into parity_now values (18, now());
+insert into parity_now values (19, now());
 insert into public.dose_logs (id, prescription_id, scheduled_time, status, taken_time, notes, updated_at)
   values ('par-d2', 'par-p1', '2020-01-01T16:00:00.000Z', 'taken', '2020-04-01T00:00:00.000Z', 'n', '2020-04-01T00:00:00.000Z')
   on conflict (id) do update set prescription_id = excluded.prescription_id, scheduled_time = excluded.scheduled_time, status = excluded.status, taken_time = excluded.taken_time, notes = excluded.notes, updated_at = excluded.updated_at;
 commit;
 do $$ begin
-  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":false,"edited_at":"@18","field_edited_at":{"notes":{"at":"@17","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"@18","auto":false},"taken_time":{"at":"@18","auto":false}},"row_version":4,"updated_at":"@18","write_id":false}'::jsonb,
-    format('parity step 18, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
+  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":false,"edited_at":"@19","field_edited_at":{"notes":{"at":"@18","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"@19","auto":false},"taken_time":{"at":"@19","auto":false}},"row_version":4,"updated_at":"@19","write_id":false}'::jsonb,
+    format('parity step 19, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
 end $$;
 
--- Step 19: a person deletes the treatment: the tombstone cascades to the prescription and its doses as the app's own change
+-- Step 20: a person deletes the treatment: the tombstone cascades to the prescription and its doses as the app's own change
 begin;
-insert into parity_now values (19, now());
+insert into parity_now values (20, now());
 update public.treatments set deleted_at = '2020-05-01T00:00:00.000Z', write_id = '00000000-0000-0000-0000-000000000012', edited_at = '2020-05-01T00:00:00.000Z'
   where id = 'par-t1';
 commit;
 do $$ begin
-  assert pg_temp.parity_row('treatments', 'par-t1') = '{"deleted":true,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"doctor":{"at":"2020-02-01T00:00:00.000Z","auto":false},"end_date":{"at":"2020-01-01T00:00:00.000Z","auto":false},"family_id":{"at":"2020-01-01T00:00:00.000Z","auto":false},"is_active":{"at":"2020-01-01T00:00:00.000Z","auto":false},"name":{"at":"2020-01-01T00:00:00.000Z","auto":false},"notes":{"at":"@2","auto":false},"patient_tags":{"at":"2020-01-01T00:00:00.000Z","auto":false},"sick_leave_from":{"at":"2020-01-01T00:00:00.000Z","auto":false},"sick_leave_ref":{"at":"@4","auto":false},"sick_leave_to":{"at":"2020-01-01T00:00:00.000Z","auto":false},"start_date":{"at":"2020-01-01T00:00:00.000Z","auto":false},"symptom_tags":{"at":"2020-01-01T00:00:00.000Z","auto":false}},"row_version":6,"updated_at":"@19","write_id":true}'::jsonb,
-    format('parity step 19, treatments/par-t1: postgres %s', pg_temp.parity_row('treatments', 'par-t1'));
-  assert pg_temp.parity_row('prescriptions', 'par-p1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"auto_diminish":{"at":"@11","auto":false},"dosage":{"at":"@11","auto":false},"dosage_amount":{"at":"@11","auto":false},"dosage_unit":{"at":"@11","auto":false},"duration_days":{"at":"@11","auto":false},"interval_hours":{"at":"@11","auto":false},"is_active":{"at":"@11","auto":false},"medication_id":{"at":"@11","auto":false},"notes":{"at":"@11","auto":false},"schedule_times":{"at":"@11","auto":false},"schedule_type":{"at":"@11","auto":false},"start_time":{"at":"@11","auto":false},"treatment_id":{"at":"@11","auto":false}},"row_version":2,"updated_at":"@19","write_id":false}'::jsonb,
-    format('parity step 19, prescriptions/par-p1: postgres %s', pg_temp.parity_row('prescriptions', 'par-p1'));
-  assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"1970-01-01T00:00:00.000Z","auto":true},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}},"row_version":3,"updated_at":"@19","write_id":false}'::jsonb,
-    format('parity step 19, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
-  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"@17","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"@18","auto":false},"taken_time":{"at":"@18","auto":false}},"row_version":5,"updated_at":"@19","write_id":false}'::jsonb,
-    format('parity step 19, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
+  assert pg_temp.parity_row('treatments', 'par-t1') = '{"deleted":true,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"doctor":{"at":"2020-02-01T00:00:00.000Z","auto":false},"end_date":{"at":"2020-01-01T00:00:00.000Z","auto":false},"family_id":{"at":"2020-01-01T00:00:00.000Z","auto":false},"is_active":{"at":"2020-01-01T00:00:00.000Z","auto":false},"name":{"at":"2020-01-01T00:00:00.000Z","auto":false},"notes":{"at":"@2","auto":false},"patient_tags":{"at":"2020-01-01T00:00:00.000Z","auto":false},"sick_leave_from":{"at":"2020-01-01T00:00:00.000Z","auto":false},"sick_leave_ref":{"at":"@4","auto":false},"sick_leave_to":{"at":"2020-01-01T00:00:00.000Z","auto":false},"start_date":{"at":"2020-01-01T00:00:00.000Z","auto":false},"symptom_tags":{"at":"2020-01-01T00:00:00.000Z","auto":false}},"row_version":6,"updated_at":"@20","write_id":true}'::jsonb,
+    format('parity step 20, treatments/par-t1: postgres %s', pg_temp.parity_row('treatments', 'par-t1'));
+  assert pg_temp.parity_row('prescriptions', 'par-p1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"auto_diminish":{"at":"@12","auto":false},"dosage":{"at":"@12","auto":false},"dosage_amount":{"at":"@12","auto":false},"dosage_unit":{"at":"@12","auto":false},"duration_days":{"at":"@12","auto":false},"interval_hours":{"at":"@12","auto":false},"is_active":{"at":"@12","auto":false},"medication_id":{"at":"@12","auto":false},"notes":{"at":"@12","auto":false},"schedule_times":{"at":"@12","auto":false},"schedule_type":{"at":"@12","auto":false},"start_time":{"at":"@12","auto":false},"treatment_id":{"at":"@12","auto":false}},"row_version":2,"updated_at":"@20","write_id":false}'::jsonb,
+    format('parity step 20, prescriptions/par-p1: postgres %s', pg_temp.parity_row('prescriptions', 'par-p1'));
+  assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"1970-01-01T00:00:00.000Z","auto":true},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}},"row_version":3,"updated_at":"@20","write_id":false}'::jsonb,
+    format('parity step 20, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
+  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"@18","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"@19","auto":false},"taken_time":{"at":"@19","auto":false}},"row_version":5,"updated_at":"@20","write_id":false}'::jsonb,
+    format('parity step 20, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
 end $$;
 
--- Step 20: a device that has not heard of it sends a generated dose: stored deleted
+-- Step 21: a device that has not heard of it sends a generated dose: stored deleted
 begin;
-insert into parity_now values (20, now());
+insert into parity_now values (21, now());
 insert into public.dose_logs (id, prescription_id, scheduled_time, status, updated_at, write_id, edited_at, field_edited_at)
   values ('par-d3', 'par-p1', '2020-01-02T08:00:00.000Z', 'pending', '1970-01-01T00:00:00.000Z', '00000000-0000-0000-0000-000000000013', '1970-01-01T00:00:00.000Z', '{}'::jsonb)
   on conflict (id) do nothing;
 commit;
 do $$ begin
   assert pg_temp.parity_row('dose_logs', 'par-d3') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{},"row_version":1,"updated_at":"1970-01-01T00:00:00.000Z","write_id":true}'::jsonb,
-    format('parity step 20, dose_logs/par-d3: postgres %s', pg_temp.parity_row('dose_logs', 'par-d3'));
+    format('parity step 21, dose_logs/par-d3: postgres %s', pg_temp.parity_row('dose_logs', 'par-d3'));
 end $$;
 
--- Step 21: and brings the cascaded dose back with a note: stored deleted
+-- Step 22: and brings the cascaded dose back with a note: stored deleted
 begin;
-insert into parity_now values (21, now());
+insert into parity_now values (22, now());
 update public.dose_logs set deleted_at = null, notes = 'after food', write_id = '00000000-0000-0000-0000-000000000014', edited_at = '2020-05-01T00:00:00.000Z', field_edited_at = '{"notes":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb
   where id = 'par-d1';
 commit;
 do $$ begin
-  assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"2020-05-01T00:00:00.000Z","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}},"row_version":4,"updated_at":"@19","write_id":true}'::jsonb,
-    format('parity step 21, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
+  assert pg_temp.parity_row('dose_logs', 'par-d1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"2020-05-01T00:00:00.000Z","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"2020-04-01T00:00:00.000Z","auto":false},"taken_time":{"at":"2020-04-01T00:00:00.000Z","auto":false}},"row_version":4,"updated_at":"@20","write_id":true}'::jsonb,
+    format('parity step 22, dose_logs/par-d1: postgres %s', pg_temp.parity_row('dose_logs', 'par-d1'));
 end $$;
 
--- Step 22: 0.3.0 skips a cascaded dose: brought back, then deleted with its parent again
+-- Step 23: 0.3.0 skips a cascaded dose: brought back, then deleted with its parent again
 begin;
-insert into parity_now values (22, now());
+insert into parity_now values (23, now());
 insert into public.dose_logs (id, prescription_id, scheduled_time, status, notes, updated_at)
   values ('par-d2', 'par-p1', '2020-01-01T16:00:00.000Z', 'skipped', 'n', '2020-05-01T00:00:00.000Z')
   on conflict (id) do update set prescription_id = excluded.prescription_id, scheduled_time = excluded.scheduled_time, status = excluded.status, notes = excluded.notes, updated_at = excluded.updated_at;
 commit;
 do $$ begin
-  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"@17","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"@22","auto":false},"taken_time":{"at":"@18","auto":false}},"row_version":6,"updated_at":"@22","write_id":false}'::jsonb,
-    format('parity step 22, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
+  assert pg_temp.parity_row('dose_logs', 'par-d2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"notes":{"at":"@18","auto":false},"prescription_id":{"at":"1970-01-01T00:00:00.000Z","auto":true},"scheduled_time":{"at":"1970-01-01T00:00:00.000Z","auto":true},"status":{"at":"@23","auto":false},"taken_time":{"at":"@19","auto":false}},"row_version":6,"updated_at":"@23","write_id":false}'::jsonb,
+    format('parity step 23, dose_logs/par-d2: postgres %s', pg_temp.parity_row('dose_logs', 'par-d2'));
 end $$;
 
--- Step 23: a prescription sent under the deleted treatment: stored deleted
+-- Step 24: a prescription sent under the deleted treatment: stored deleted
 begin;
-insert into parity_now values (23, now());
+insert into parity_now values (24, now());
 insert into public.prescriptions (id, treatment_id, medication_id, dosage, start_time, write_id, edited_at, field_edited_at)
   values ('par-p2', 'par-t1', 'par-m1', '2 tablets', '2020-05-02T08:00:00.000Z', '00000000-0000-0000-0000-000000000015', '2020-05-01T00:00:00.000Z', '{}'::jsonb)
   on conflict (id) do nothing;
 commit;
 do $$ begin
-  assert pg_temp.parity_row('prescriptions', 'par-p2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{},"row_version":1,"updated_at":"@23","write_id":true}'::jsonb,
-    format('parity step 23, prescriptions/par-p2: postgres %s', pg_temp.parity_row('prescriptions', 'par-p2'));
+  assert pg_temp.parity_row('prescriptions', 'par-p2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{},"row_version":1,"updated_at":"@24","write_id":true}'::jsonb,
+    format('parity step 24, prescriptions/par-p2: postgres %s', pg_temp.parity_row('prescriptions', 'par-p2'));
 end $$;
 
 select 'fake server parity passed' as result;

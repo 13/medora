@@ -305,6 +305,16 @@ do $$ begin
   assert pg_temp.at('ft', 'notes') = (select notes_at from ft_d), 'map: an automatic change keeps the time';
   assert pg_temp.arrived('ft') = (select arrived from ft_d), 'map: an automatic change keeps updated_at';
 end $$;
+-- The same value again with an older person's time does not take over
+-- that automatic entry (review Minor 1: only a later time moves it).
+update treatments set notes = 'auto', write_id = 'f0000000-0000-0000-0000-0000000000a3',
+       edited_at = now() - interval '3 hours',
+       field_edited_at = jsonb_build_object('notes', pg_temp.entry(now() - interval '3 hours'))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.auto('ft', 'notes') and pg_temp.at('ft', 'notes') = (select notes_at from ft_d),
+    'map: an older person''s time for an unchanged column leaves an automatic entry alone';
+end $$;
 -- A flag sent with a real time is automatic as well.
 update treatments set doctor = 'Dr. auto', write_id = 'f0000000-0000-0000-0000-0000000000a2',
        edited_at = '1970-01-01T00:00:00Z',
