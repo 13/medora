@@ -8,6 +8,7 @@ library;
 
 import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/datasources/sync_page.dart';
+import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The server's bookkeeping on a synced row (migration 20260918000000).
@@ -50,6 +51,9 @@ class RemoteMeta {
       raw is String ? DateTime.tryParse(raw)?.toUtc() : null;
 }
 
+/// The columns [syncV2Migration] adds to every synced table.
+const syncV2Columns = {'sync_xid', 'row_version', 'write_id', 'edited_at'};
+
 /// One synced table on the server.
 abstract interface class SyncTable {
   /// One page of rows below [horizon] after [after] (see `pullPage`),
@@ -87,7 +91,8 @@ class PostgrestSyncTable implements SyncTable {
   /// [select] must start with `*`, so the bookkeeping columns come along.
   /// A write the server refuses for a column it lacks becomes a
   /// [MissingColumnException] naming [migration] ([fallbackColumn] when the
-  /// server names none).
+  /// server names none), or [syncV2Migration] when the column is one of
+  /// [syncV2Columns].
   PostgrestSyncTable(
     this._client,
     this.table, {
@@ -103,15 +108,28 @@ class PostgrestSyncTable implements SyncTable {
   final String? migration;
   final String? fallbackColumn;
 
-  Future<T> _write<T>(Future<T> Function() send) {
-    final file = migration;
-    if (file == null) return send();
-    return mapMissingColumn(
-      send,
-      table: table,
-      migration: file,
-      fallbackColumn: fallbackColumn ?? 'id',
-    );
+  Future<T> _write<T>(Future<T> Function() send) async {
+    try {
+      return await send();
+    } on PostgrestException catch (e) {
+      final missing = missingColumn(
+        e,
+        table: table,
+        migration: migration ?? syncV2Migration,
+        fallbackColumn: fallbackColumn ?? 'id',
+      );
+      if (missing == null) rethrow;
+      if (syncV2Columns.contains(missing.column)) {
+        throw MissingColumnException(
+          table: table,
+          column: missing.column,
+          migration: syncV2Migration,
+          cause: e,
+        );
+      }
+      if (migration == null) rethrow;
+      throw missing;
+    }
   }
 
   @override

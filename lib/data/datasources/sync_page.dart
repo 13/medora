@@ -8,9 +8,13 @@
 /// ordered by `sync_xid` and then `id`, and a row committed late is never
 /// skipped: its transaction id keeps it above the horizon until it commits.
 ///
-/// A hosted Supabase project answers at most 1000 rows per request and says
-/// nothing when it cut an answer short, so a page shorter than
-/// [pullPageSize] is the last one.
+/// A project answers at most its "Max rows" setting per request (1000 on a
+/// new hosted project, but the owner may lower it) and says nothing when it
+/// cut an answer short. So a page shorter than [pullPageSize] is not the
+/// last one: only an empty page ends a table ([afterPullPage]). That costs
+/// one more request per table per pull. The horizon cannot end a table
+/// earlier either: rows of one transaction share a `sync_xid`, so a page
+/// that ends at `horizon - 1` may still have rows after it.
 library;
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -79,3 +83,21 @@ PostgrestTransformBuilder<PostgrestList> pullPage(
 /// commas and parentheses it may hold are not read as syntax.
 String _quoted(String value) =>
     '"${value.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
+
+/// Where a pull goes after it applied [rows], one page asked with
+/// [horizon]: the key to store, and whether the table is done.
+///
+/// Only an empty page is the end; its key is `PullKey(horizon)`, so the
+/// next pull starts at the first row a later transaction writes. Any other
+/// page, however short, continues after its last row.
+({PullKey key, bool done}) afterPullPage(
+  List<Map<String, dynamic>> rows, {
+  required int horizon,
+}) {
+  if (rows.isEmpty) return (key: PullKey(horizon), done: true);
+  final last = rows.last;
+  return (
+    key: PullKey((last['sync_xid']! as num).toInt(), last['id']! as String),
+    done: false,
+  );
+}

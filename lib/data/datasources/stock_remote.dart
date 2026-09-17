@@ -11,11 +11,27 @@ enum StockChangeStatus {
   /// This op id was applied before (a retry after a lost answer).
   duplicate,
 
-  /// The medication is deleted: drop the change.
+  /// There is no live medication with this id for this user: it was
+  /// deleted, removed from the server, or never reached it. The change can
+  /// never apply: drop it. (A change is sent only once its medication's
+  /// create reached the server, so this is never "not there yet".)
   gone,
+}
 
-  /// No such medication on the server yet: keep the change.
-  missing,
+/// A stock change brought into the range `apply_stock_change` accepts:
+/// [setTo] into `0..maxStock`, [delta] into `-maxStock..maxStock`. The
+/// server does the same, so a change out of range is never refused.
+({int? delta, int? setTo}) stockChangeInRange({int? delta, int? setTo}) => (
+  delta: delta?.clamp(-maxStock, maxStock),
+  setTo: setTo?.clamp(0, maxStock),
+);
+
+/// The quantity `apply_stock_change` stores for a change to [quantity]:
+/// the change is brought into range first ([stockChangeInRange]), then the
+/// result is capped to `0..maxStock`.
+int stockAfter(int quantity, {int? delta, int? setTo}) {
+  final change = stockChangeInRange(delta: delta, setTo: setTo);
+  return change.setTo ?? (quantity + change.delta!).clamp(0, maxStock);
 }
 
 class StockChangeResult {
@@ -49,13 +65,16 @@ class PostgrestStockRemote implements StockRemote {
 
   @override
   Future<StockChangeResult> apply(StockOp op) async {
+    // In range before it leaves: a Dart int can exceed the function's
+    // integer arguments, which the server would refuse on every retry.
+    final change = stockChangeInRange(delta: op.delta, setTo: op.setTo);
     final raw = await _client.rpc<dynamic>(
       'apply_stock_change',
       params: {
         'p_op_id': op.opId,
         'p_medication_id': op.medicationId,
-        'p_delta': op.delta,
-        'p_set_to': op.setTo,
+        'p_delta': change.delta,
+        'p_set_to': change.setTo,
       },
     );
     return StockChangeResult.fromJson(raw as Map<String, dynamic>);

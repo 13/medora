@@ -176,6 +176,68 @@ void main() {
     });
   });
 
+  test('a write to a project without a sync v2 column names the sync v2 '
+      'migration', () async {
+    final table = PostgrestSyncTable(
+      answering({
+        'code': 'PGRST204',
+        'message': "Could not find the 'write_id' column of 'medications'",
+      }, status: 400),
+      'medications',
+      migration: 'supabase/migrations/20260916000000_medication_ean.sql',
+      fallbackColumn: 'ean',
+    );
+    await expectLater(
+      table.patch('m1', {'name': 'x', 'write_id': 'w1'}, ifVersion: 1),
+      throwsA(
+        isA<MissingColumnException>()
+            .having((e) => e.column, 'column', 'write_id')
+            .having((e) => e.migration, 'migration', syncV2Migration),
+      ),
+    );
+  });
+
+  group('afterPullPage', () {
+    Map<String, dynamic> row(int xid, String id) => {'id': id, 'sync_xid': xid};
+
+    test('only an empty page ends a table, at the horizon', () {
+      final end = afterPullPage(const [], horizon: 900);
+      expect(end.done, isTrue);
+      expect(end.key, const PullKey(900));
+    });
+
+    test('a short page is not the end: the project may cap its answers '
+        'below $pullPageSize rows', () {
+      final step = afterPullPage([row(5, 'a'), row(7, 'b')], horizon: 900);
+      expect(step.done, isFalse);
+      expect(step.key, const PullKey(7, 'b'));
+    });
+
+    test('a full page continues after its last row', () {
+      final rows = [for (var i = 0; i < pullPageSize; i++) row(i, 'r$i')];
+      final step = afterPullPage(rows, horizon: 5000);
+      expect(step.done, isFalse);
+      expect(step.key, const PullKey(pullPageSize - 1, 'r999'));
+    });
+  });
+
+  group('stockAfter', () {
+    test('brings the change into range, then caps the quantity', () {
+      expect(stockAfter(10, delta: -3), 7);
+      expect(stockAfter(10, delta: -100), 0);
+      expect(stockAfter(3, setTo: -1), 0);
+      expect(stockAfter(3, setTo: 1000000), maxStock);
+      expect(stockAfter(5, delta: 1000000), maxStock);
+      expect(stockAfter(-5, delta: 3), 0);
+      expect(
+        stockAfter(2000000, delta: -2000000),
+        maxStock,
+        reason: 'the delta counts as -999999 first',
+      );
+      expect(stockAfter(0, delta: 1 << 40), maxStock);
+    });
+  });
+
   group('RemoteMeta', () {
     test('reads the bookkeeping of a row', () {
       final meta = RemoteMeta.fromJson({
@@ -293,6 +355,44 @@ void main() {
       expect(result.status, StockChangeStatus.applied);
       expect(result.quantity, 3);
       expect(result.rowVersion, 2);
+    });
+
+    test('sends values out of range brought into range, so the server '
+        'never refuses them', () async {
+      final client = answering({'status': 'applied', 'quantity': 0});
+      final remote = PostgrestStockRemote(client);
+      StockOp op({int? delta, int? setTo}) => StockOp(
+        opId: 'op1',
+        medicationId: 'm1',
+        delta: delta,
+        setTo: setTo,
+        createdAt: DateTime.utc(2026),
+      );
+      await remote.apply(op(delta: 1 << 40));
+      await remote.apply(op(delta: -5000000));
+      await remote.apply(op(setTo: 1000000));
+      await remote.apply(op(setTo: -1));
+      Map<String, dynamic> body(int i) =>
+          jsonDecode(seen[i].body) as Map<String, dynamic>;
+      expect(body(0)['p_delta'], maxStock);
+      expect(body(1)['p_delta'], -maxStock);
+      expect(body(2)['p_set_to'], maxStock);
+      expect(body(3)['p_set_to'], 0);
+      expect(body(3)['p_delta'], isNull);
+    });
+
+    test('a medication the server does not have is gone', () async {
+      final result = await PostgrestStockRemote(answering({'status': 'gone'}))
+          .apply(
+            StockOp(
+              opId: 'op1',
+              medicationId: 'm1',
+              setTo: 3,
+              createdAt: DateTime.utc(2026),
+            ),
+          );
+      expect(result.status, StockChangeStatus.gone);
+      expect(result.quantity, isNull);
     });
   });
 }

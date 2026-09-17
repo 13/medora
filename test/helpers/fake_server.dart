@@ -2,7 +2,9 @@
 /// `20260918000000_sync_v2.sql`: one xid per request, a horizon held back
 /// by transactions still open, `row_version`, the write-id rule, edit-time
 /// normalisation, the `updated_at` rules, guarded updates, the tombstone
-/// cascade, the stock ledger and a 1000-row answer cap.
+/// cascade, hard deletes with their foreign-key cascade, the stock ledger
+/// and an answer cap ([FakeServerCore.rowCap], 1000 by default; a real
+/// project may be set lower).
 ///
 /// The Dart-level fakes (`fake_remotes.dart`) and the HTTP fake
 /// (`fake_postgrest.dart`) are both views of one [FakeServerCore], so the
@@ -17,6 +19,7 @@ import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/stock_remote.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/sync_table.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 final _weakCeiling = DateTime.utc(1970, 1, 2);
 final _epoch = DateTime.utc(1970);
@@ -25,7 +28,8 @@ String _iso(DateTime t) => t.toUtc().toIso8601String();
 DateTime? _time(Object? raw) =>
     raw is String ? DateTime.tryParse(raw)?.toUtc() : null;
 
-/// The children each parent's tombstone cascades to.
+/// The children each parent's tombstone cascades to. A hard delete
+/// cascades along the same foreign keys (`ON DELETE CASCADE`).
 const _cascade = {
   'treatments': ('prescriptions', 'treatment_id'),
   'medications': ('prescriptions', 'medication_id'),
@@ -44,13 +48,19 @@ class FakeServerCore {
   /// Committed rows per table, by id.
   final Map<String, Map<String, Map<String, dynamic>>> tables = {};
 
-  /// The stock ledger: op id → the quantity after it was applied.
-  final Map<String, ({String medicationId, int quantityAfter})> ledger = {};
+  /// The stock ledger: op id → what was applied (the values in range) and
+  /// the quantity after it.
+  final Map<
+    String,
+    ({String medicationId, int? delta, int? setTo, int quantityAfter})
+  >
+  ledger = {};
 
   /// Every request answered, in order (`table:verb`), for request counts.
   final List<String> requests = [];
 
-  /// The most rows one fetch answers (PostgREST `max_rows`).
+  /// The most rows one fetch answers (PostgREST `max_rows`, the project's
+  /// "Max rows" setting).
   int rowCap = 1000;
 
   Map<String, Map<String, dynamic>> rowsOf(String table) =>
@@ -232,36 +242,64 @@ class FakeServerCore {
     return row == null ? null : Map.of(row);
   }
 
-  /// `apply_stock_change(...)`.
+  /// `apply_stock_change(...)`. Like the server, an answer that writes
+  /// nothing takes no transaction id.
   Map<String, dynamic> applyStockChange({
     required String opId,
     required String medicationId,
     int? delta,
     int? setTo,
-  }) => _request('rpc:apply_stock_change', (xid) {
+  }) {
+    requests.add('rpc:apply_stock_change');
     if ((delta == null) == (setTo == null)) {
-      throw ArgumentError('pass exactly one of delta and setTo');
+      throw const PostgrestException(
+        message: 'pass exactly one of p_delta and p_set_to',
+        code: '22023',
+      );
     }
+    final inDelta = delta?.clamp(-999999, 999999);
+    final inSetTo = setTo?.clamp(0, 999999);
     final done = ledger[opId];
     if (done != null) {
       return {'status': 'duplicate', 'quantity': done.quantityAfter};
     }
     final med = rowsOf('medications')[medicationId];
-    if (med == null) return {'status': 'missing'};
-    if (med['deleted_at'] != null) return {'status': 'gone'};
+    if (med == null || med['deleted_at'] != null) return {'status': 'gone'};
     final current = (med['quantity'] as num?)?.toInt() ?? 0;
-    final next = (setTo ?? current + delta!).clamp(0, 999999);
+    final next = inSetTo ?? (current + inDelta!).clamp(0, 999999);
     final row = _update('medications', med, {
       'quantity': next,
       'write_id': opId,
-    }, xid);
-    ledger[opId] = (medicationId: medicationId, quantityAfter: next);
+    }, _nextXid++);
+    ledger[opId] = (
+      medicationId: medicationId,
+      delta: inDelta,
+      setTo: inSetTo,
+      quantityAfter: next,
+    );
     return {
       'status': 'applied',
       'quantity': next,
       'row_version': row['row_version'],
     };
-  });
+  }
+
+  /// `delete from [table] where id = [id]`: the row goes, its children go
+  /// along the foreign keys, and a medication's ledger entries go with it.
+  void purge(String table, String id) {
+    requests.add('$table:delete');
+    if (rowsOf(table).remove(id) == null) return;
+    if (table == 'medications') {
+      ledger.removeWhere((_, e) => e.medicationId == id);
+    }
+    for (final MapEntry(key: parent, value: (child, column))
+        in _cascade.entries) {
+      if (parent != table) continue;
+      for (final c in rowsOf(child).values.toList()) {
+        if (c[column] == id) purge(child, c['id'] as String);
+      }
+    }
+  }
 
   /// `medora_sync_state()`.
   Map<String, dynamic> syncState() {
@@ -474,8 +512,9 @@ extension FakeSyncTableLegacy on FakeSyncTable {
     core.patch(table, id, {'deleted_at': _iso(core.clock())});
   }
 
-  /// A row removed by a server purge.
-  void hardDelete(String id) => rows.remove(id);
+  /// A row removed from the server (a purge, or "delete all data"), with
+  /// what the foreign keys cascade to ([FakeServerCore.purge]).
+  void hardDelete(String id) => core.purge(table, id);
 
   List<Map<String, dynamic>> all() => rows.values.map(Map.of).toList();
 
