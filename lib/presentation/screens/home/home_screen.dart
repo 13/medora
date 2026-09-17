@@ -14,6 +14,7 @@ import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
+import 'package:medora/presentation/providers/medication_list_filter_provider.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -124,7 +125,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             // Low Stock
             _SectionHeader(
               title: l10n.lowStock,
-              onSeeAll: () => MainShellScope.of(context)?.switchTab(1),
+              onSeeAll: () => _openLowStock(context, ref),
             ),
             const _LowStockCard(),
           ],
@@ -132,6 +133,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
     );
   }
+}
+
+/// Opens the Medications tab filtered to low stock: the same set the
+/// dashboard's low-stock tile and card count, not the whole cabinet.
+void _openLowStock(BuildContext context, WidgetRef ref) {
+  final shell = MainShellScope.of(context);
+  if (shell == null) return;
+  ref
+      .read(medicationListFilterProvider.notifier)
+      .request(MedicationFilter.lowStock);
+  shell.switchTab(1);
 }
 
 /// The single most relevant thing to do right now: take (or skip) the next
@@ -414,7 +426,7 @@ class _StatTiles extends ConsumerWidget {
           label: l10n.statLowStock,
           value: lowStock,
           color: context.medora.warning,
-          onTap: () => MainShellScope.of(context)?.switchTab(1),
+          onTap: () => _openLowStock(context, ref),
         ),
         const SizedBox(width: 12),
         _StatTile(
@@ -653,7 +665,16 @@ class _LowStockCard extends ConsumerWidget {
           title: l10n.allMedicationsWellStocked,
         ),
       ),
-      data: (meds) {
+      data: (unsorted) {
+        // Furthest under its minimum first, so the three rows shown are the
+        // most urgent; the name breaks ties.
+        final meds = [...unsorted]
+          ..sort((a, b) {
+            final byShortfall = (a.quantity - a.minimumStockLevel).compareTo(
+              b.quantity - b.minimumStockLevel,
+            );
+            return byShortfall != 0 ? byShortfall : a.name.compareTo(b.name);
+          });
         final hidden = meds.length - 3;
         return Card(
           child: Column(
@@ -724,7 +745,7 @@ class _LowStockCard extends ConsumerWidget {
               if (hidden > 0)
                 _MoreRow(
                   count: hidden,
-                  onTap: () => MainShellScope.of(context)?.switchTab(1),
+                  onTap: () => _openLowStock(context, ref),
                 ),
             ],
           ),

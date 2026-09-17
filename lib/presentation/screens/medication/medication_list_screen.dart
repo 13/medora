@@ -10,15 +10,13 @@ import 'package:medora/core/extensions.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/medication_list_filter_provider.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/settings_action.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
-
-/// Filter options for medication list.
-enum MedicationFilter { all, needsAttention, archived }
 
 class MedicationListScreen extends ConsumerStatefulWidget {
   const MedicationListScreen({super.key});
@@ -32,6 +30,20 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
   final _searchController = TextEditingController();
   bool _isSearching = false;
   MedicationFilter _filter = MedicationFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    // A filter the dashboard asked for (its low-stock links). Taken once and
+    // cleared after this frame, so a later visit opens unfiltered.
+    final requested = ref.read(medicationListFilterProvider);
+    if (requested != null) {
+      _filter = requested;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(medicationListFilterProvider.notifier).clear();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -82,6 +94,11 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
     return switch (_filter) {
       // Exclude archived from "All" view per user request.
       MedicationFilter.all => filtered.where((m) => !m.isArchived).toList(),
+      // The same set as the dashboard's low-stock count (lowStockProvider).
+      MedicationFilter.lowStock =>
+        filtered
+            .where((m) => !m.isArchived && m.quantity <= m.minimumStockLevel)
+            .toList(),
       MedicationFilter.needsAttention => filtered.where((m) {
         if (m.isArchived) return false;
         final isLowStock = m.quantity <= m.minimumStockLevel;
@@ -146,6 +163,13 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                   label: l10n.all,
                   selected: _filter == MedicationFilter.all,
                   onTap: () => setState(() => _filter = MedicationFilter.all),
+                ),
+                const SizedBox(width: 8),
+                _FilterChip(
+                  label: l10n.lowStock,
+                  selected: _filter == MedicationFilter.lowStock,
+                  onTap: () =>
+                      setState(() => _filter = MedicationFilter.lowStock),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
