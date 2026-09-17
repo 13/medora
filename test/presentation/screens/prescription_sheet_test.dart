@@ -494,8 +494,8 @@ void main() {
       expect(doses.map((d) => d['id']), [taken]);
     });
 
-    testWidgets('switching back to a schedule starts it now, for a duration '
-        'the user enters', (tester) async {
+    testWidgets('switching back to a schedule starts it now, for a week '
+        'unless the user enters another duration', (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -519,14 +519,19 @@ void main() {
       await tester.tap(find.text('Fixed Interval'));
       await tester.pumpAndSettle();
 
-      // The stored zero is no duration: the user has to enter one.
-      await tester.tap(find.widgetWithText(ElevatedButton, 'Update'));
-      await tester.pumpAndSettle();
+      // The stored zero is no duration: the field offers the usual week.
       expect(
-        find.text('Duration must be between 1 and 365 days'),
-        findsOneWidget,
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const Key('durationDaysField')),
+                matching: find.byType(TextField),
+              ),
+            )
+            .controller!
+            .text,
+        '7',
       );
-      await tester.enterText(find.byKey(const Key('durationDaysField')), '7');
       await tester.tap(find.widgetWithText(ElevatedButton, 'Update'));
       await tester.pumpAndSettle();
 

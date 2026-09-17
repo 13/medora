@@ -109,8 +109,12 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
     _intervalController = TextEditingController(
       text: (existing?.intervalHours ?? 8).toString(),
     );
+    // An as-needed prescription is stored with no duration (0). Switching it
+    // back to a schedule starts from the usual week, not from a 0 the form
+    // would refuse.
+    final storedDays = existing?.durationDays ?? 0;
     _durationController = TextEditingController(
-      text: (existing?.durationDays ?? 7).toString(),
+      text: (storedDays > 0 ? storedDays : 7).toString(),
     );
     _notesController = TextEditingController(text: existing?.notes ?? '');
 
