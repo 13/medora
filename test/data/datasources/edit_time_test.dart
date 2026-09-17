@@ -1,6 +1,10 @@
 /// Every local write stamps when it was made (`edited_at`), so a merge can
 /// tell a person's change from an older one, and from the app's own
 /// (1970). A row stored from the server is left to the sync cycle.
+///
+/// The stamp is UTC text (`…Z`) from the datasource's clock, never later
+/// than that clock. Run these under `TZ=Europe/Rome` as well: naive local
+/// text only goes wrong in a zone with daylight saving.
 library;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,14 +16,142 @@ import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
 
+typedef _Ids = ({SeededPrescription p, String doseId});
+
+/// One synced table and its write paths, each built on the clock [now].
+class _Case {
+  const _Case({
+    required this.table,
+    required this.idOf,
+    required this.upsert,
+    required this.markDeleted,
+    this.edit,
+  });
+
+  final String table;
+  final String Function(_Ids ids) idOf;
+  final Future<void> Function(
+    Now now,
+    _Ids ids,
+    String syncStatus,
+    DateTime? updatedAt,
+  )
+  upsert;
+  final Future<void> Function(Now now, String id) markDeleted;
+
+  /// The table's own edit path, when it has one besides [upsert].
+  final Future<void> Function(Now now, String id)? edit;
+}
+
+final _cases = [
+  _Case(
+    table: 'medications',
+    idOf: (ids) => ids.p.medicationId,
+    upsert: (now, ids, status, at) =>
+        MedicationLocalDatasource(now: now).upsert(
+          MedicationModel(
+            id: ids.p.medicationId,
+            name: 'Ibu',
+            quantity: 1,
+            updatedAt: at,
+          ),
+          syncStatus: status,
+        ),
+    markDeleted: (now, id) =>
+        MedicationLocalDatasource(now: now).markDeleted(id),
+    edit: (now, id) async {
+      expect(
+        await MedicationLocalDatasource(now: now).archiveMedication(id),
+        isTrue,
+      );
+    },
+  ),
+  _Case(
+    table: 'treatments',
+    idOf: (ids) => ids.p.treatmentId,
+    upsert: (now, ids, status, at) => TreatmentLocalDatasource(now: now).upsert(
+      TreatmentModel(
+        id: ids.p.treatmentId,
+        name: 'Flu',
+        startDate: DateTime(2026, 3),
+        updatedAt: at,
+      ),
+      syncStatus: status,
+    ),
+    markDeleted: (now, id) =>
+        TreatmentLocalDatasource(now: now).markDeleted(id),
+  ),
+  _Case(
+    table: 'prescriptions',
+    idOf: (ids) => ids.p.prescriptionId,
+    upsert: (now, ids, status, at) =>
+        PrescriptionLocalDatasource(now: now).upsert(
+          PrescriptionModel(
+            id: ids.p.prescriptionId,
+            treatmentId: ids.p.treatmentId,
+            medicationId: ids.p.medicationId,
+            dosage: '1 tablet',
+            startTime: DateTime(2026, 3, 1, 8),
+            updatedAt: at,
+          ),
+          syncStatus: status,
+        ),
+    markDeleted: (now, id) =>
+        PrescriptionLocalDatasource(now: now).markDeleted(id),
+    edit: (now, id) async {
+      expect(
+        await PrescriptionLocalDatasource(now: now).deactivate(id),
+        isTrue,
+      );
+    },
+  ),
+  _Case(
+    table: 'dose_logs',
+    idOf: (ids) => ids.doseId,
+    upsert: (now, ids, status, at) => DoseLogLocalDatasource(now: now).upsert(
+      DoseLogModel(
+        id: ids.doseId,
+        prescriptionId: ids.p.prescriptionId,
+        scheduledTime: DateTime(2026, 3, 1, 8),
+        updatedAt: at,
+      ),
+      syncStatus: status,
+    ),
+    markDeleted: (now, id) => DoseLogLocalDatasource(now: now).markDeleted(id),
+    edit: (now, id) => DoseLogLocalDatasource(now: now).updateStatus(
+      id,
+      'taken',
+      takenTime: DateTime(2026, 3, 1, 8, 5),
+      syncStatus: SyncStatus.pendingUpdate,
+    ),
+  ),
+];
+
 void main() {
   setUp(setUpTestDatabase);
   tearDown(tearDownTestDatabase);
+
+  // The phone's clock. Like `DateTime.now()`, it reads local time.
+  late DateTime clock;
+  DateTime now() => clock.toLocal();
+
+  late _Ids ids;
+  setUp(() async {
+    clock = DateTime.utc(2026, 3, 5, 8);
+    final db = await AppDatabase.instance.database;
+    final p = await seedPrescription(db);
+    ids = (p: p, doseId: await seedDoseLog(db, p.prescriptionId, clock));
+    // The seeds are stamped with the real clock; start before [clock].
+    for (final c in _cases) {
+      await db.update(c.table, {'updated_at': '2026-03-01T00:00:00.000Z'});
+    }
+  });
 
   Future<Map<String, Object?>> row(String table, String id) async =>
       (await (await AppDatabase.instance.database).query(
@@ -28,120 +160,153 @@ void main() {
         whereArgs: [id],
       )).single;
 
-  test('a pending upsert takes the model stamp; a synced one leaves the '
-      'column alone', () async {
-    final local = MedicationLocalDatasource();
-    final at = DateTime(2026, 3, 5, 10);
-    await local.upsert(
-      MedicationModel(id: 'm1', name: 'Ibu', quantity: 1, updatedAt: at),
-      syncStatus: SyncStatus.pendingUpdate,
-    );
-    expect((await row('medications', 'm1'))['edited_at'], at.toIso8601String());
-    await local.upsert(
-      MedicationModel(
-        id: 'm1',
-        name: 'Ibu',
-        quantity: 1,
-        updatedAt: DateTime(2026, 3, 5, 11),
-      ),
-      syncStatus: SyncStatus.synced,
-    );
-    expect((await row('medications', 'm1'))['edited_at'], at.toIso8601String());
-  });
+  Future<Object?> editedAt(_Case c) async =>
+      (await row(c.table, c.idOf(ids)))['edited_at'];
 
-  test('archiving, a treatment edit and deletes stamp now', () async {
-    final meds = MedicationLocalDatasource();
-    await meds.upsert(
-      const MedicationModel(id: 'm1', name: 'Ibu', quantity: 1),
-      syncStatus: SyncStatus.synced,
-    );
-    final before = DateTime.now().subtract(const Duration(seconds: 1));
-    await meds.archiveMedication('m1');
-    final archived = (await row('medications', 'm1'))['edited_at']! as String;
-    expect(DateTime.parse(archived).isAfter(before), isTrue);
-    expect(archived, (await row('medications', 'm1'))['updated_at']);
-
-    final treatments = TreatmentLocalDatasource();
-    await treatments.upsert(
-      TreatmentModel(
-        id: 't1',
-        name: 'Flu',
-        startDate: DateTime(2026, 3),
-        updatedAt: DateTime(2026, 3, 5, 9),
-      ),
-      syncStatus: SyncStatus.pendingUpdate,
-    );
-    expect(
-      (await row('treatments', 't1'))['edited_at'],
-      DateTime(2026, 3, 5, 9).toIso8601String(),
-    );
-    await treatments.markDeleted('t1');
-    final deleted = (await row('treatments', 't1'))['edited_at']! as String;
-    expect(DateTime.parse(deleted).isAfter(before), isTrue);
-  });
-
-  test('a dose status change and a prescription pause stamp the same instant '
-      'as updated_at', () async {
-    final db = await AppDatabase.instance.database;
-    final seeded = await seedPrescription(db);
-    final doseId = await seedDoseLog(
-      db,
-      seeded.prescriptionId,
-      DateTime(2026, 3, 1, 8),
-    );
-    await DoseLogLocalDatasource().updateStatus(
-      doseId,
-      'taken',
-      takenTime: DateTime(2026, 3, 1, 8, 5),
-      syncStatus: SyncStatus.pendingUpdate,
-    );
-    final dose = await row('dose_logs', doseId);
-    expect(dose['edited_at'], dose['updated_at']);
-
-    await PrescriptionLocalDatasource().deactivate(seeded.prescriptionId);
-    final p = await row('prescriptions', seeded.prescriptionId);
-    expect(p['edited_at'], p['updated_at']);
-  });
-
-  test(
-    'a person\'s delete of a dose stamps now and is never guarded',
-    () async {
-      final db = await AppDatabase.instance.database;
-      final seeded = await seedPrescription(db);
-      final doseId = await seedDoseLog(
-        db,
-        seeded.prescriptionId,
-        DateTime(2026, 3, 1, 8),
-      );
-      await db.update('dose_logs', {
-        'delete_guard': 'if_pending',
-        'edited_at': generatedUpdatedAt.toIso8601String(),
+  for (final c in _cases) {
+    group(c.table, () {
+      test('a pending upsert stores the model stamp, in UTC', () async {
+        await c.upsert(
+          now,
+          ids,
+          SyncStatus.pendingUpdate,
+          DateTime.utc(2026, 3, 5, 7, 30).toLocal(),
+        );
+        expect(await editedAt(c), '2026-03-05T07:30:00.000Z');
       });
-      final before = DateTime.now().subtract(const Duration(seconds: 1));
-      await DoseLogLocalDatasource().markDeleted(doseId);
-      final dose = await row('dose_logs', doseId);
-      expect(dose['delete_guard'], isNull);
-      expect(
-        DateTime.parse(dose['edited_at']! as String).isAfter(before),
-        isTrue,
-      );
-    },
-  );
+
+      test('a pending upsert with no stamp, or one still to come, is '
+          'stamped now', () async {
+        clock = DateTime.utc(2026, 3, 5, 8, 10);
+        await c.upsert(now, ids, SyncStatus.pendingUpdate, null);
+        expect(await editedAt(c), '2026-03-05T08:10:00.000Z');
+
+        await c.upsert(
+          now,
+          ids,
+          SyncStatus.pendingUpdate,
+          DateTime.utc(2026, 3, 5, 9).toLocal(),
+        );
+        expect(
+          await editedAt(c),
+          '2026-03-05T08:10:00.000Z',
+          reason: 'an edit time is never later than the clock',
+        );
+      });
+
+      test('a synced upsert leaves the column alone', () async {
+        final db = await AppDatabase.instance.database;
+        await db.update(
+          c.table,
+          {'edited_at': '2026-03-01T00:00:00.000Z'},
+          where: 'id = ?',
+          whereArgs: [c.idOf(ids)],
+        );
+        await c.upsert(
+          now,
+          ids,
+          SyncStatus.synced,
+          DateTime.utc(2026, 3, 5, 7).toLocal(),
+        );
+        expect(await editedAt(c), '2026-03-01T00:00:00.000Z');
+      });
+
+      test('a delete stamps now once, and a second delete changes '
+          'nothing', () async {
+        clock = DateTime.utc(2026, 3, 5, 8, 15);
+        await c.markDeleted(now, c.idOf(ids));
+        final deleted = await row(c.table, c.idOf(ids));
+        expect(deleted['sync_status'], SyncStatus.pendingDelete);
+        expect(deleted['edited_at'], '2026-03-05T08:15:00.000Z');
+        expect(
+          DateTime.parse(deleted['deleted_at']! as String).toUtc(),
+          DateTime.utc(2026, 3, 5, 8, 15),
+        );
+
+        clock = DateTime.utc(2026, 3, 5, 9);
+        await c.markDeleted(now, c.idOf(ids));
+        final again = await row(c.table, c.idOf(ids));
+        expect(
+          [again['edited_at'], again['deleted_at']],
+          [deleted['edited_at'], deleted['deleted_at']],
+        );
+      });
+
+      if (c.edit case final edit?) {
+        test('its own edit stamps now in UTC, the instant of '
+            'updated_at', () async {
+          clock = DateTime.utc(2026, 3, 5, 8, 20);
+          await edit(now, c.idOf(ids));
+          final edited = await row(c.table, c.idOf(ids));
+          expect(edited['edited_at'], '2026-03-05T08:20:00.000Z');
+          expect(
+            DateTime.parse(edited['updated_at']! as String).toUtc(),
+            DateTime.utc(2026, 3, 5, 8, 20),
+          );
+        });
+
+        test('an edit in the October fall-back hour, after one in the '
+            'summer-time hour, reads as the later one', () async {
+          // 02:30 CEST, then 02:20 CET 50 minutes later (Europe/Rome).
+          clock = DateTime.utc(2026, 10, 25, 0, 30);
+          await edit(now, c.idOf(ids));
+          final first = await editedAt(c);
+          clock = DateTime.utc(2026, 10, 25, 1, 20);
+          await edit(now, c.idOf(ids));
+          final second = await editedAt(c);
+          expect(
+            [first, second],
+            ['2026-10-25T00:30:00.000Z', '2026-10-25T01:20:00.000Z'],
+          );
+        });
+
+        test('an edit after the phone moved zones is stamped with the '
+            'real time, never one still to come', () async {
+          // The last edit was made at 08:00Z in Rome, which wrote its
+          // updated_at as the naive text 10:00. Read back in London (or
+          // anywhere west of Rome) that text is later than 08:30Z.
+          final db = await AppDatabase.instance.database;
+          await db.update(
+            c.table,
+            {
+              'updated_at': '2026-03-05T10:00:00.000',
+              'edited_at': '2026-03-05T08:00:00.000Z',
+            },
+            where: 'id = ?',
+            whereArgs: [c.idOf(ids)],
+          );
+          clock = DateTime.utc(2026, 3, 5, 8, 30);
+          await edit(now, c.idOf(ids));
+          expect(await editedAt(c), '2026-03-05T08:30:00.000Z');
+        });
+      }
+    });
+  }
 
   test('a generated dose carries the automatic 1970 edit time', () async {
-    final db = await AppDatabase.instance.database;
-    final seeded = await seedPrescription(db);
-    await DoseLogLocalDatasource().insertBatchIfAbsent([
+    await DoseLogLocalDatasource(now: now).insertBatchIfAbsent([
       DoseLogModel(
         id: 'g1',
-        prescriptionId: seeded.prescriptionId,
+        prescriptionId: ids.p.prescriptionId,
         scheduledTime: DateTime(2026, 3, 1, 8),
         updatedAt: generatedUpdatedAt,
       ),
     ], syncStatus: SyncStatus.pendingCreate);
     expect(
       (await row('dose_logs', 'g1'))['edited_at'],
-      generatedUpdatedAt.toIso8601String(),
+      '1970-01-01T00:00:00.000Z',
     );
+  });
+
+  test('a person\'s delete of a dose is never guarded', () async {
+    final db = await AppDatabase.instance.database;
+    await db.update('dose_logs', {
+      'delete_guard': 'if_pending',
+      'edited_at': generatedUpdatedAt.toIso8601String(),
+    });
+    await DoseLogLocalDatasource(now: now).markDeleted(ids.doseId);
+    final dose = await row('dose_logs', ids.doseId);
+    expect(dose['delete_guard'], isNull);
+    expect(dose['edited_at'], '2026-03-05T08:00:00.000Z');
   });
 }

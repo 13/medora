@@ -1,9 +1,11 @@
 /// Medora - Local schema migrations.
 ///
 /// Add a new [Migration] with the next version number at the END of
-/// [kMigrations] and bump [kSchemaVersion]. Never edit an existing migration.
+/// [kMigrations] and bump [kSchemaVersion]. Never edit a migration that has
+/// shipped in a release.
 library;
 
+import 'package:medora/data/local/edit_time.dart';
 import 'package:sqflite/sqflite.dart';
 
 class Migration {
@@ -115,10 +117,7 @@ final List<Migration> kMigrations = [
       await db.execute('ALTER TABLE $table ADD COLUMN sync_version INTEGER');
       await db.execute('ALTER TABLE $table ADD COLUMN sync_base TEXT');
       await db.execute('ALTER TABLE $table ADD COLUMN sync_write_id TEXT');
-      // A change still waiting to be pushed was made when it was stamped.
-      await db.execute(
-        "UPDATE $table SET edited_at = updated_at WHERE sync_status != 'synced'",
-      );
+      await _backfillEditedAt(db, table, DateTime.now());
     }
     await db.execute('ALTER TABLE dose_logs ADD COLUMN delete_guard TEXT');
     await db.execute('''
@@ -138,3 +137,34 @@ final List<Migration> kMigrations = [
     );
   }),
 ];
+
+/// Migration 16's backfill: a change still waiting to be pushed was made
+/// when it was stamped, so its `edited_at` is its `updated_at` in UTC.
+///
+/// Done in Dart, not SQL: 0.3.0 wrote local stamps as naive local text,
+/// and only a parse in the zone they were written in gives the instant,
+/// with the offset in force on that day (a stamp from before the October
+/// change keeps summer time). A stamp that reads as later than [now]
+/// (written further east, or before the clock stepped back) is capped at
+/// [now]; one that does not parse is left NULL, and the sync reads
+/// `updated_at` instead. A `pending_delete` row gets its `updated_at`,
+/// not its `deleted_at`: a person's delete wins whatever its time.
+Future<void> _backfillEditedAt(Database db, String table, DateTime now) async {
+  final rows = await db.query(
+    table,
+    columns: ['id', 'updated_at'],
+    where: "sync_status != 'synced' AND updated_at IS NOT NULL",
+  );
+  final batch = db.batch();
+  for (final row in rows) {
+    final stamp = DateTime.tryParse(row['updated_at']! as String);
+    if (stamp == null) continue;
+    batch.update(
+      table,
+      {'edited_at': editedAtText(stamp, now)},
+      where: 'id = ?',
+      whereArgs: [row['id']],
+    );
+  }
+  await batch.commit(noResult: true);
+}

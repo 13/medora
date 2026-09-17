@@ -359,7 +359,7 @@ void main() {
   });
 
   test('upgrading a v15 database keeps the time of an edit still waiting '
-      'to be pushed', () async {
+      'to be pushed, in UTC', () async {
     final dir = await Directory.systemTemp.createTemp('medora_mig16_');
     final path = p.join(dir.path, 'medora.db');
     final legacy = await databaseFactory.openDatabase(
@@ -374,12 +374,38 @@ void main() {
         },
       ),
     );
-    await legacy.insert('medications', {
-      'id': 'pending',
-      'name': 'Edited',
-      'quantity': 1,
-      'updated_at': '2026-09-15T10:00:00.000',
-      'sync_status': 'pending_update',
+    // 0.3.0 stamps local edits as naive local text, and a settled row
+    // as the server's UTC text.
+    final legacyRows = {
+      'pending': '2026-09-15T10:00:00.000',
+      // Either side of the October 2025 change in Europe/Rome: the offset
+      // is the one in force on that day, not today's.
+      'summer': '2025-10-25T10:00:00.000',
+      'winter': '2025-10-27T10:00:00.000',
+      'utc': '2026-09-01T06:00:00.000Z',
+      'offset': '2026-09-01T08:00:00.000+02:00',
+      'generated': '1970-01-01T00:00:00.000Z',
+      // Written in a zone east of this one, or before the clock stepped
+      // back: never an edit time still to come.
+      'future': '2999-01-01T00:00:00.000',
+      'garbage': 'not a time',
+    };
+    for (final MapEntry(key: id, value: at) in legacyRows.entries) {
+      await legacy.insert('medications', {
+        'id': id,
+        'name': id,
+        'quantity': 1,
+        'updated_at': at,
+        'sync_status': 'pending_update',
+      });
+    }
+    await legacy.insert('dose_logs', {
+      'id': 'deleted-dose',
+      'prescription_id': 'p-gone',
+      'scheduled_time': '2026-09-01T08:00:00.000',
+      'status': 'pending',
+      'updated_at': '2025-10-27T10:00:00.000',
+      'sync_status': 'pending_delete',
     });
     await legacy.insert('medications', {
       'id': 'synced',
@@ -396,8 +422,32 @@ void main() {
     final rows = {
       for (final r in await upgraded.query('medications')) r['id']: r,
     };
-    expect(rows['pending']!['edited_at'], '2026-09-15T10:00:00.000');
+    String utcOf(DateTime local) => local.toUtc().toIso8601String();
+    expect(rows['pending']!['edited_at'], utcOf(DateTime(2026, 9, 15, 10)));
+    expect(rows['summer']!['edited_at'], utcOf(DateTime(2025, 10, 25, 10)));
+    expect(rows['winter']!['edited_at'], utcOf(DateTime(2025, 10, 27, 10)));
+    if (DateTime(2025, 10, 25, 10).timeZoneName == 'CEST') {
+      // Europe/Rome: pinned literally, so a backfill that used today's
+      // offset for every row is caught.
+      expect(
+        [rows['summer']!['edited_at'], rows['winter']!['edited_at']],
+        ['2025-10-25T08:00:00.000Z', '2025-10-27T09:00:00.000Z'],
+      );
+    }
+    expect(rows['utc']!['edited_at'], '2026-09-01T06:00:00.000Z');
+    expect(rows['offset']!['edited_at'], '2026-09-01T06:00:00.000Z');
+    expect(rows['generated']!['edited_at'], '1970-01-01T00:00:00.000Z');
+    final future = DateTime.parse(rows['future']!['edited_at']! as String);
+    expect(future.isUtc, isTrue);
+    expect(future.isAfter(DateTime.now()), isFalse);
+    expect(
+      rows['garbage']!['edited_at'],
+      isNull,
+      reason: 'unreadable: the reader falls back to updated_at',
+    );
     expect(rows['synced']!['edited_at'], isNull);
+    final dose = (await upgraded.query('dose_logs')).single;
+    expect(dose['edited_at'], utcOf(DateTime(2025, 10, 27, 10)));
     expect(rows['pending']!['sync_version'], isNull);
     expect(await AppDatabase.instance.appliedMigrations(), [
       11,

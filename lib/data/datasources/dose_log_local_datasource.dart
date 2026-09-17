@@ -3,13 +3,17 @@ library;
 
 import 'package:medora/core/clock.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/edit_time.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:sqflite/sqflite.dart';
 
 class DoseLogLocalDatasource {
-  DoseLogLocalDatasource();
+  /// [now] is the clock for the stamps a local write sets.
+  DoseLogLocalDatasource({this._now = systemNow});
+
+  final Now _now;
 
   Future<Database> get _db => AppDatabase.instance.database;
 
@@ -88,7 +92,7 @@ class DoseLogLocalDatasource {
       '''(p.schedule_type IS NULL OR p.schedule_type != 'as_needed')''';
 
   Future<List<DoseLogModel>> getTodaysDoseLogs() async {
-    final now = DateTime.now();
+    final now = _now();
     final start = DateTime(now.year, now.month, now.day);
     final end = DateTime(now.year, now.month, now.day + 1);
     final db = await _db;
@@ -178,7 +182,7 @@ class DoseLogLocalDatasource {
 
   Future<void> upsert(DoseLogModel model, {required String syncStatus}) async {
     final db = await _db;
-    final row = rowOf(model, syncStatus);
+    final row = rowOf(model, syncStatus, now: _now);
     // Use UPDATE-first to avoid DELETE+INSERT issues
     final updated = await db.update(
       'dose_logs',
@@ -208,7 +212,7 @@ class DoseLogLocalDatasource {
       for (final model in models) {
         batch.insert(
           'dose_logs',
-          rowOf(model, syncStatus),
+          rowOf(model, syncStatus, now: _now),
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }
@@ -243,12 +247,13 @@ class DoseLogLocalDatasource {
     final previous = previousRaw == null
         ? null
         : DateTime.tryParse(previousRaw);
-    final stamp = nextUpdatedAt(previous, DateTime.now()).toIso8601String();
+    final now = _now();
+    final stamp = nextUpdatedAt(previous, now);
     final updates = <String, dynamic>{
       'status': status,
       'sync_status': syncStatus,
-      'updated_at': stamp,
-      'edited_at': stamp,
+      'updated_at': stamp.toIso8601String(),
+      'edited_at': editedAtText(stamp, now),
     };
     if (clearTakenTime) {
       updates['taken_time'] = null;
@@ -276,13 +281,15 @@ class DoseLogLocalDatasource {
   /// (spec §4.6).
   Future<void> markDeleted(String id) async {
     final db = await _db;
+    final now = _now();
     await db.update(
       'dose_logs',
       {
         'sync_status': SyncStatus.pendingDelete,
-        'deleted_at': DateTime.now().toIso8601String(),
-        'edited_at': DateTime.now().toIso8601String(),
-        // A person's delete is never guarded.
+        'deleted_at': now.toIso8601String(),
+        'edited_at': editedAtText(now, now),
+        // A person's delete is never guarded, even if an old automatic
+        // guard was left on the row.
         'delete_guard': null,
       },
       where: 'id = ? AND sync_status != ?',
@@ -397,7 +404,7 @@ class DoseLogLocalDatasource {
     final db = await _db;
     final changed = await db.update(
       'dose_logs',
-      rowOf(remote, SyncStatus.synced),
+      rowOf(remote, SyncStatus.synced, now: _now),
       where: 'id = ? AND updated_at IS ? AND sync_status = ?',
       whereArgs: [remote.id, pushedUpdatedAt, SyncStatus.pendingCreate],
     );
@@ -470,7 +477,13 @@ class DoseLogLocalDatasource {
     );
   }
 
-  static Map<String, dynamic> rowOf(DoseLogModel m, String syncStatus) {
+  /// The row [m] is stored as. [now] stamps what the model leaves unset.
+  static Map<String, dynamic> rowOf(
+    DoseLogModel m,
+    String syncStatus, {
+    Now now = systemNow,
+  }) {
+    final at = now();
     return {
       'id': m.id,
       'prescription_id': m.prescriptionId,
@@ -478,17 +491,14 @@ class DoseLogLocalDatasource {
       'taken_time': m.takenTime?.toIso8601String(),
       'status': m.status.name,
       'notes': m.notes,
-      'created_at':
-          m.createdAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
-      'updated_at':
-          m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+      'created_at': (m.createdAt ?? at).toIso8601String(),
+      'updated_at': (m.updatedAt ?? at).toIso8601String(),
       'deleted_at': m.deletedAt?.toIso8601String(),
       'sync_status': syncStatus,
       // A change made here was made when it was stamped; a pulled row gets
       // the server's edit time from the sync cycle instead.
       if (syncStatus != SyncStatus.synced)
-        'edited_at':
-            m.updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
+        'edited_at': editedAtText(m.updatedAt ?? at, at),
     };
   }
 }
