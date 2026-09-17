@@ -49,6 +49,7 @@ Future<bool> settlePushedRow(
           version: meta.rowVersion,
           base: base,
           editedAt: meta.effectiveEditedAt,
+          fieldTimes: meta.fieldTimes,
         ),
       );
       if (table == 'dose_logs') row['delete_guard'] = null;

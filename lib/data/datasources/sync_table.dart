@@ -9,6 +9,7 @@ library;
 import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The server's bookkeeping on a synced row (migration 20260918000000).
@@ -20,6 +21,7 @@ class RemoteMeta {
     this.editedAt,
     this.updatedAt,
     this.deletedAt,
+    this.fieldEditedAt,
   });
 
   factory RemoteMeta.fromJson(Map<String, dynamic> json) => RemoteMeta(
@@ -29,6 +31,7 @@ class RemoteMeta {
     editedAt: _time(json['edited_at']),
     updatedAt: _time(json['updated_at']),
     deletedAt: _time(json['deleted_at']),
+    fieldEditedAt: json['field_edited_at'],
   );
 
   final int syncXid;
@@ -46,6 +49,14 @@ class RemoteMeta {
 
   /// [editedAt], or [updatedAt] for a row from before the migration.
   DateTime? get effectiveEditedAt => editedAt ?? updatedAt;
+
+  /// The row's `field_edited_at` as the server sent it.
+  final Object? fieldEditedAt;
+
+  /// When each column was last changed. An empty map: every column carries
+  /// [effectiveEditedAt].
+  FieldTimes get fieldTimes =>
+      FieldTimes.decode(fieldEditedAt, rowTime: effectiveEditedAt);
 
   static DateTime? _time(Object? raw) =>
       raw is String ? DateTime.tryParse(raw)?.toUtc() : null;

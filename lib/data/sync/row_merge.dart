@@ -3,8 +3,11 @@
 /// A pending local copy and the server's copy are merged against the base:
 /// the server copy this device was last in step with. Columns that only
 /// make sense together form a group; a group only one side changed takes
-/// that side, a group both changed takes the later edit. Pure, no I/O.
+/// that side, a group both changed takes the later edit, judged by the
+/// edit times of that group's columns (`field_edited_at`). Pure, no I/O.
 library;
+
+import 'package:medora/data/local/field_times.dart';
 
 /// Stamps before this are the app's own changes, never a person's.
 final DateTime weakEditCeiling = DateTime.utc(1970, 1, 2);
@@ -42,9 +45,13 @@ class MergeConflict {
 }
 
 class MergeResult {
-  const MergeResult(this.row, this.conflicts);
+  const MergeResult(this.row, this.conflicts, this.times);
   final Map<String, Object?> row;
   final List<MergeConflict> conflicts;
+
+  /// The edit times of [row]: the server's, with this device's for the
+  /// columns taken from here.
+  final FieldTimes times;
 }
 
 /// The columns of [local] that differ from [base], bookkeeping and
@@ -65,19 +72,28 @@ Set<String> changedColumns(
 /// Merges a local pending copy with the server's.
 ///
 /// Per group: a group only one side changed since [base] takes that side;
-/// a group both sides changed to different values takes the side edited
-/// later ([localEditedAt] against [remoteEditedAt]; a tie keeps the
-/// server's). With no [base] every group counts as changed on both sides.
-/// Server-owned and bookkeeping columns always come from [remote].
+/// a group both sides changed to different values takes the side whose
+/// change to it beats the other's ([beats]): each side's change is the
+/// strongest of the times ([localTimes], [remoteTimes]) of the group's
+/// columns that side changed. A person's change beats the app's own; two
+/// people's changes go by time; a tie keeps the server's. With no [base]
+/// every group counts as changed on both sides. Server-owned and
+/// bookkeeping columns always come from [remote].
+///
+/// The times a server copy carries are already capped at the moment the
+/// server received each change. A local change has not arrived yet, so its
+/// cap would be a later moment than any server copy's; comparing it
+/// uncapped gives the same answer.
 MergeResult mergeRows({
   required Map<String, Object?>? base,
   required Map<String, Object?> local,
   required Map<String, Object?> remote,
-  required DateTime? localEditedAt,
-  required DateTime? remoteEditedAt,
+  required FieldTimes localTimes,
+  required FieldTimes remoteTimes,
   required MergePolicy policy,
 }) {
   final merged = Map<String, Object?>.of(remote);
+  final times = remoteTimes.resolved(remote.keys);
   final conflicts = <MergeConflict>[];
   final localChanged = changedColumns(base, local, policy);
   final remoteChanged = changedColumns(base, remote, policy);
@@ -89,33 +105,29 @@ MergeResult mergeRows({
     final sameValues = group.every((c) => local[c] == remote[c]);
     if (sameValues) continue;
     final remoteTouched = group.any(remoteChanged.contains);
-    final takeLocal = !remoteTouched || _isLater(localEditedAt, remoteEditedAt);
+    final takeLocal =
+        !remoteTouched ||
+        beats(
+          localTimes.strongestOf(group.where(localChanged.contains)),
+          remoteTimes.strongestOf(group.where(remoteChanged.contains)),
+        );
     if (remoteTouched) {
       conflicts.add(MergeConflict(group, keptLocal: takeLocal));
     }
     if (takeLocal) {
       for (final c in group) {
-        if (local.containsKey(c)) merged[c] = local[c];
+        if (!local.containsKey(c)) continue;
+        merged[c] = local[c];
+        final time = localTimes.of(c);
+        if (time == null) {
+          times.remove(c);
+        } else if (!untimedColumns.contains(c)) {
+          times[c] = time;
+        }
       }
     }
   }
-  return MergeResult(merged, conflicts);
-}
-
-/// True when an edit at [a] beats one at [b]. A change the app made on its
-/// own ([a] before [weakEditCeiling]) never beats anything; an unknown [b]
-/// loses to any real edit.
-///
-/// The later device edit wins, capped at the time the server received it
-/// (controller decision 1). The server applies the cap: every server copy
-/// carries its capped edit time. A local change has not arrived yet, so its
-/// cap is a later moment than any server copy's; comparing it uncapped
-/// gives the same answer. Both are compared as instants, whatever zone or
-/// format they were written in.
-bool _isLater(DateTime? a, DateTime? b) {
-  if (a == null || a.toUtc().isBefore(weakEditCeiling)) return false;
-  if (b == null) return true;
-  return a.toUtc().isAfter(b.toUtc());
+  return MergeResult(merged, conflicts, FieldTimes(times));
 }
 
 /// True when [a] and [b] hold the same client-written values.

@@ -12,6 +12,7 @@ library;
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/row_settle.dart';
 import 'package:medora/data/sync/sync_meta.dart';
@@ -108,16 +109,17 @@ class TableSync {
     final status = local['sync_status'] as String?;
     final localMeta = LocalSyncMeta.fromRow(local);
     final localEditedAt = _editedAtOf(local, localMeta);
+    final localTimes = localFieldTimes(local);
     final pending =
         status == SyncStatus.pendingCreate ||
         status == SyncStatus.pendingUpdate;
     // An automatic tombstone (a dose dropped from a changed schedule) loses
-    // to a real change still waiting here; every other tombstone wins.
+    // to a person's change still waiting here; every other tombstone wins.
     final resurrect =
         tombstone &&
         isAutomaticEdit(meta.editedAt) &&
         pending &&
-        !isAutomaticEdit(localEditedAt);
+        _hasPersonsChange(local, localMeta, localTimes);
     if (tombstone && !resurrect) {
       await txn.delete(table, where: 'id = ?', whereArgs: [id]);
       return const PullApplied(PullOutcome.deleted);
@@ -155,8 +157,8 @@ class TableSync {
       base: localMeta.base,
       local: localCopy,
       remote: remoteWire,
-      localEditedAt: localEditedAt,
-      remoteEditedAt: meta.effectiveEditedAt,
+      localTimes: localTimes,
+      remoteTimes: meta.fieldTimes,
       policy: policy,
     );
     final settled = !resurrect && sameContent(merge.row, remoteWire, policy);
@@ -168,6 +170,7 @@ class TableSync {
       exists: true,
       base: remoteWire,
       editedAt: settled ? meta.effectiveEditedAt : localEditedAt,
+      fieldTimes: settled ? meta.fieldTimes : merge.times,
     );
     return PullApplied(PullOutcome.merged, merge.conflicts);
   }
@@ -208,6 +211,7 @@ class TableSync {
     required bool exists,
     Map<String, Object?>? base,
     DateTime? editedAt,
+    FieldTimes? fieldTimes,
   }) async {
     final id = json['id']! as String;
     final row = localRowOf(table, json, status);
@@ -222,6 +226,7 @@ class TableSync {
         version: meta.rowVersion,
         base: base ?? canonicalWire(table, json),
         editedAt: editedAt ?? meta.effectiveEditedAt,
+        fieldTimes: fieldTimes ?? meta.fieldTimes,
       ),
     );
     if (table == 'dose_logs') row['delete_guard'] = null;
@@ -266,10 +271,17 @@ class TableSync {
         return PushResult(PushOutcome.settled, conflicts);
       }
       final writeId = await _beginWrite(local);
+      final times = _sentTimes(local, changes.keys);
       final written = await remote.patch(id, {
         ...changes,
         'write_id': writeId,
-        'edited_at': _wireTime(_editedAtOf(local, meta) ?? now()),
+        'edited_at': _wireTime(
+          writeTime(times.values) ?? _editedAtOf(local, meta) ?? now(),
+        ),
+        'field_edited_at': {
+          for (final MapEntry(:key, :value) in times.entries)
+            key: value.toJson(),
+        },
       }, ifVersion: meta.version);
       if (written != null) {
         return _settle(local, written, conflicts);
@@ -362,6 +374,9 @@ class TableSync {
         ...localWire(table, local, userId: userId),
         'write_id': writeId,
         'edited_at': _wireTime(_editedAtOf(local, meta) ?? now()),
+        // Empty when no column changed since the row was made here: the
+        // server then reads edited_at for every column, as this device does.
+        'field_edited_at': FieldTimes.decode(local['field_edited_at']).toJson(),
       },
     ]);
     final server = await remote.fetch(id);
@@ -506,6 +521,24 @@ class TableSync {
     return rows.isEmpty ? null : rows.first;
   }
 
+  /// The known edit times of [columns] of the local row [local].
+  static Map<String, FieldTime> _sentTimes(
+    Map<String, Object?> local,
+    Iterable<String> columns,
+  ) => localFieldTimes(local).resolved(columns);
+
+  /// True when a column the local row changed since its base carries a
+  /// person's change (or one of unknown time), not only the app's own.
+  bool _hasPersonsChange(
+    Map<String, Object?> local,
+    LocalSyncMeta meta,
+    FieldTimes times,
+  ) {
+    final changed = changedColumns(meta.base, localWire(table, local), policy);
+    return changed.isNotEmpty &&
+        beats(times.strongestOf(changed), FieldTime.automaticChange);
+  }
+
   static DateTime? _editedAtOf(Map<String, Object?> row, LocalSyncMeta meta) =>
       meta.editedAt ??
       (row['updated_at'] is String
@@ -513,6 +546,21 @@ class TableSync {
           : null);
 
   static String _wireTime(DateTime time) => time.toUtc().toIso8601String();
+}
+
+/// The edit time a write that carries the column times [times] sends as
+/// its row's `edited_at`: the latest person's change; the automatic mark
+/// (1970) when every change is the app's own, so the server keeps
+/// `updated_at`; null when there is none.
+DateTime? writeTime(Iterable<FieldTime> times) {
+  DateTime? latest;
+  var any = false;
+  for (final time in times) {
+    any = true;
+    if (time.automatic) continue;
+    if (latest == null || time.at.isAfter(latest)) latest = time.at;
+  }
+  return latest ?? (any ? automaticEditedAt : null);
 }
 
 /// The columns of [local] a push sends: those that differ from [base], plus

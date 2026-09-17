@@ -159,7 +159,11 @@ void main() {
         'sync_base',
         'sync_write_id',
       ]);
-      expect(syncMetaColumnNames, ['edited_at', ...clearedSyncMeta.keys]);
+      expect(syncMetaColumnNames, [
+        'edited_at',
+        'field_edited_at',
+        ...clearedSyncMeta.keys,
+      ]);
     });
   });
 }

@@ -13,8 +13,10 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/sync_meta.dart';
 import 'package:medora/data/sync/table_sync.dart';
@@ -22,6 +24,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../helpers/fake_server.dart';
+import '../../helpers/local_write.dart';
 import '../../helpers/test_database.dart';
 
 /// One phone: its database file, its clock (the server's plus [skew]) and
@@ -105,7 +108,7 @@ class _Device {
         ...values,
         'updated_at': now().toUtc().toIso8601String(),
         'edited_at': now().toUtc().toIso8601String(),
-      });
+      }, at: now().toLocal());
 
   /// A change the app made on its own.
   Future<void> automatic(
@@ -113,15 +116,21 @@ class _Device {
     String id,
     Map<String, Object?> values, {
     String status = SyncStatus.pendingUpdate,
-  }) => _write(table, id, {
-    ...values,
-    'edited_at': automaticEditedAt.toIso8601String(),
-  }, status: status);
+  }) => _write(
+    table,
+    id,
+    {...values, 'edited_at': automaticEditedAt.toIso8601String()},
+    at: automaticEditedAt,
+    status: status,
+  );
 
+  /// Writes [values] as the app's write paths do: the columns they change
+  /// are stamped [at].
   Future<void> _write(
     String table,
     String id,
     Map<String, Object?> values, {
+    required DateTime at,
     String status = SyncStatus.pendingUpdate,
   }) async {
     final db = await open();
@@ -130,17 +139,12 @@ class _Device {
       where: 'id = ?',
       whereArgs: [id],
     )).single;
-    await db.update(
-      table,
-      {
-        ...values,
-        'sync_status': current['sync_status'] == SyncStatus.pendingCreate
-            ? SyncStatus.pendingCreate
-            : status,
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await writeLocalChange(db, table, id, {
+      ...values,
+      'sync_status': current['sync_status'] == SyncStatus.pendingCreate
+          ? SyncStatus.pendingCreate
+          : status,
+    }, at: at);
   }
 }
 
@@ -395,6 +399,7 @@ void main() {
             'updated_at': wallClock(before),
             'sync_status': SyncStatus.pendingUpdate,
             'edited_at': null,
+            'field_edited_at': null,
             ...clearedSyncMeta,
           }, where: "id = 't1'");
           serverNow = after;
@@ -528,5 +533,344 @@ void main() {
         },
       );
     }
+  });
+
+  group('each column goes by its own edit time (three devices)', () {
+    late _Device c;
+    final day5 = DateTime.utc(2026, 3, 5);
+    DateTime at(int h, [int m = 0]) => day5.add(Duration(hours: h, minutes: m));
+
+    setUp(() async {
+      c = _Device('c', p.join(dir.path, 'c.db'), core);
+      serverNow = DateTime.utc(2026, 3, 3, 21);
+      await c.sync();
+      c.conflicts.clear();
+    });
+
+    Future<List<Object?>> everywhere(
+      String table,
+      String id,
+      String column,
+    ) async => [
+      for (final device in [a, b, c]) (await device.row(table, id))?[column],
+      core.rowsOf(table)[id]?[column],
+    ];
+
+    FieldTime? serverTime(String table, String id, String column) =>
+        FieldTimes.decode(
+          core.rowsOf(table)[id]!['field_edited_at'],
+        ).of(column);
+
+    /// B changes the sick leave at [bAt] and C the notes at [cAt], both
+    /// offline; A changes the notes at [aAt] and syncs; then B and C sync
+    /// in [order], and everyone syncs twice more.
+    Future<void> abc({
+      required DateTime bAt,
+      required DateTime cAt,
+      required DateTime aAt,
+      required List<_Device> order,
+    }) async {
+      serverNow = bAt;
+      await b.edit('treatments', 't1', {'sick_leave_to': '2026-03-06'});
+      serverNow = cAt;
+      await c.edit('treatments', 't1', {'notes': 'from C'});
+      serverNow = aAt;
+      await a.edit('treatments', 't1', {'notes': 'from A'});
+      serverNow = aAt.add(const Duration(minutes: 1));
+      await a.sync();
+      for (final device in order) {
+        serverNow = serverNow.add(const Duration(minutes: 5));
+        await device.sync();
+      }
+      serverNow = serverNow.add(const Duration(minutes: 5));
+      await syncAll([a, b, c]);
+    }
+
+    for (final (name, order) in [
+      ('B, then C', () => [b, c]),
+      ('C, then B', () => [c, b]),
+    ]) {
+      test('A/B/C: an older sick-leave change does not let an older note '
+          'win: $name', () async {
+        await abc(bAt: at(9), cAt: at(9, 30), aAt: at(10), order: order());
+        expect(
+          await everywhere('treatments', 't1', 'notes'),
+          List.filled(4, 'from A'),
+        );
+        expect(
+          await everywhere('treatments', 't1', 'sick_leave_to'),
+          List.filled(4, '2026-03-06'),
+        );
+        expect(c.conflicts.single.keptLocal, isFalse);
+        expect(b.conflicts, isEmpty);
+        expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(10)));
+        expect(
+          serverTime('treatments', 't1', 'sick_leave_to'),
+          FieldTime(at(9)),
+        );
+      });
+
+      test('A/B/C: a note C made after A\'s still wins: $name', () async {
+        await abc(bAt: at(9), cAt: at(10, 2), aAt: at(10), order: order());
+        expect(
+          await everywhere('treatments', 't1', 'notes'),
+          List.filled(4, 'from C'),
+        );
+        expect(c.conflicts.single.keptLocal, isTrue);
+        expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(10, 2)));
+      });
+    }
+
+    for (final (season, bAt, cAt, aAt) in [
+      // Rome: 01:30 CET, 01:50 CET, then 03:10 CEST.
+      (
+        'spring',
+        DateTime.utc(2026, 3, 29, 0, 30),
+        DateTime.utc(2026, 3, 29, 0, 50),
+        DateTime.utc(2026, 3, 29, 1, 10),
+      ),
+      // Rome: 02:20 CEST, 02:40 CEST, then 02:10 CET: A's note reads
+      // earlier on the wall clock but is the later instant.
+      (
+        'autumn',
+        DateTime.utc(2026, 10, 25, 0, 20),
+        DateTime.utc(2026, 10, 25, 0, 40),
+        DateTime.utc(2026, 10, 25, 1, 10),
+      ),
+    ]) {
+      test('A/B/C across the $season change: the later instant wins the '
+          'notes', () async {
+        await abc(bAt: bAt, cAt: cAt, aAt: aAt, order: [b, c]);
+        expect(
+          await everywhere('treatments', 't1', 'notes'),
+          List.filled(4, 'from A'),
+        );
+        final stored = FieldTimes.decode(
+          (await c.row('treatments', 't1'))!['field_edited_at'],
+        );
+        expect(stored.of('notes'), FieldTime(aAt));
+        expect(stored.of('notes')!.at.isUtc, isTrue);
+      });
+    }
+
+    test('C\'s clock a day ahead: its note wins only against changes that '
+        'reached the server before it did', () async {
+      c.skew = const Duration(days: 1);
+      serverNow = at(9);
+      await b.edit('treatments', 't1', {'sick_leave_to': '2026-03-06'});
+      serverNow = at(9, 30);
+      await c.edit('treatments', 't1', {'notes': 'from C'});
+      serverNow = at(10);
+      await a.edit('treatments', 't1', {'notes': 'from A'});
+      serverNow = at(10, 1);
+      await a.sync();
+      serverNow = at(10, 5);
+      await b.sync();
+      // B, offline again, changes the notes before C's change arrives.
+      serverNow = at(10, 20);
+      await b.edit('treatments', 't1', {'notes': 'from B'});
+      serverNow = at(10, 30);
+      await c.sync();
+      expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(10, 30)));
+      serverNow = at(10, 35);
+      await syncAll([b, a, c]);
+      expect(
+        await everywhere('treatments', 't1', 'notes'),
+        List.filled(4, 'from C'),
+      );
+      expect(b.conflicts.last.keptLocal, isFalse);
+      // A note made after C's change arrived wins, though C's clock read a
+      // later time for its own.
+      serverNow = at(10, 40);
+      await a.edit('treatments', 't1', {'notes': 'A again'});
+      serverNow = at(10, 41);
+      await syncAll([a, b, c]);
+      expect(
+        await everywhere('treatments', 't1', 'notes'),
+        List.filled(4, 'A again'),
+      );
+    });
+
+    test('C\'s clock two hours behind: its really later note loses, and B\'s '
+        'older change in between does not help it', () async {
+      c.skew = const Duration(hours: -2);
+      serverNow = at(9);
+      await b.edit('treatments', 't1', {'sick_leave_to': '2026-03-06'});
+      serverNow = at(10);
+      await a.edit('treatments', 't1', {'notes': 'from A'});
+      serverNow = at(10, 1);
+      await a.sync();
+      serverNow = at(10, 5);
+      await b.sync();
+      // Really 10:30; C's clock reads 08:30.
+      serverNow = at(10, 30);
+      await c.edit('treatments', 't1', {'notes': 'from C'});
+      serverNow = at(10, 31);
+      await syncAll([c, a, b]);
+      expect(
+        await everywhere('treatments', 't1', 'notes'),
+        List.filled(4, 'from A'),
+      );
+      expect(c.conflicts.single.keptLocal, isFalse);
+      expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(10)));
+    });
+
+    for (final (name, order) in [
+      ('A syncs first', () => [a, b, c]),
+      ('B syncs first', () => [b, a, c]),
+    ]) {
+      test('the app marks a dose missed on A, then a person notes it there; '
+          'B took it earlier: taken, with the note: $name', () async {
+        serverNow = at(7, 5);
+        await b.edit('dose_logs', 'd1', {
+          'status': 'taken',
+          'taken_time': b.now().toIso8601String(),
+        });
+        // A's overdue sweep (the real one: it leaves edited_at alone),
+        // then a person's note on A.
+        serverNow = at(10);
+        await a.open();
+        final swept = await DoseLogLocalDatasource(
+          now: () => a.now().toLocal(),
+        ).markOverduePendingAsMissed(at(9).toLocal());
+        expect(swept.changed, 1);
+        serverNow = at(11);
+        await a.edit('dose_logs', 'd1', {'notes': 'felt sick'});
+        serverNow = at(12);
+        await syncAll(order());
+        expect(
+          await everywhere('dose_logs', 'd1', 'status'),
+          List.filled(4, 'taken'),
+        );
+        expect(
+          await everywhere('dose_logs', 'd1', 'notes'),
+          List.filled(4, 'felt sick'),
+        );
+        expect(serverTime('dose_logs', 'd1', 'status')!.automatic, isFalse);
+      });
+
+      test('the app marks a dose missed on A, a person notes it on B: both '
+          'are kept: $name', () async {
+        serverNow = at(10);
+        await a.automatic('dose_logs', 'd1', {'status': 'missed'});
+        serverNow = at(10, 30);
+        await b.edit('dose_logs', 'd1', {'notes': 'with water'});
+        serverNow = at(11);
+        await syncAll(order());
+        expect(
+          await everywhere('dose_logs', 'd1', 'status'),
+          List.filled(4, 'missed'),
+        );
+        expect(
+          await everywhere('dose_logs', 'd1', 'notes'),
+          List.filled(4, 'with water'),
+        );
+        expect(serverTime('dose_logs', 'd1', 'status'), isNotNull);
+        expect(serverTime('dose_logs', 'd1', 'status')!.automatic, isTrue);
+        expect(serverTime('dose_logs', 'd1', 'notes'), FieldTime(at(10, 30)));
+        expect([...a.conflicts, ...b.conflicts], isEmpty);
+      });
+    }
+
+    /// Medora 0.3.0 upserts the whole row as it holds it (here: current),
+    /// with [changes] made at [when].
+    Map<String, dynamic> legacyWrite(
+      DateTime when,
+      Map<String, Object?> changes,
+    ) {
+      serverNow = when;
+      final json = {
+        ...canonicalWire('treatments', core.rowsOf('treatments')['t1']!),
+        ...changes,
+        'updated_at': when.toIso8601String(),
+      };
+      return FakeSyncTable(
+        core,
+        'treatments',
+      ).core.legacyUpsert('treatments', json);
+    }
+
+    test('a 0.3.0 write in between stamps only what it changed: C\'s older '
+        'note still loses', () async {
+      serverNow = at(9, 30);
+      await c.edit('treatments', 't1', {'notes': 'from C'});
+      serverNow = at(10);
+      await a.edit('treatments', 't1', {'notes': 'from A'});
+      serverNow = at(10, 1);
+      await a.sync();
+      final legacy = legacyWrite(at(10, 15), {'sick_leave_ref': 'CERT-OLD'});
+      expect(legacy['write_id'], isNull);
+      expect(legacy['row_version'], 4);
+      serverNow = at(10, 30);
+      await syncAll([c, a, b]);
+      expect(
+        await everywhere('treatments', 't1', 'notes'),
+        List.filled(4, 'from A'),
+      );
+      expect(
+        await everywhere('treatments', 't1', 'sick_leave_ref'),
+        List.filled(4, 'CERT-OLD'),
+      );
+      expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(10)));
+      expect(
+        serverTime('treatments', 't1', 'sick_leave_ref'),
+        FieldTime(at(10, 15)),
+      );
+    });
+
+    test('a 0.3.0 write in between: a note C made after A\'s still wins, '
+        'though the 0.3.0 write arrived later', () async {
+      serverNow = at(10);
+      await a.edit('treatments', 't1', {'notes': 'from A'});
+      serverNow = at(10, 1);
+      await a.sync();
+      serverNow = at(10, 10);
+      await c.edit('treatments', 't1', {'notes': 'from C'});
+      legacyWrite(at(10, 15), {'sick_leave_ref': 'CERT-OLD'});
+      serverNow = at(10, 30);
+      await syncAll([c, a, b]);
+      expect(
+        await everywhere('treatments', 't1', 'notes'),
+        List.filled(4, 'from C'),
+      );
+      expect(
+        await everywhere('treatments', 't1', 'sick_leave_ref'),
+        List.filled(4, 'CERT-OLD'),
+      );
+    });
+
+    test('a row restored from a backup without the map meets the server '
+        'column by column', () async {
+      serverNow = at(10);
+      await a.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+      serverNow = at(10, 1);
+      await a.sync();
+      // B restores a 0.3.0 backup: the row was last changed at 09:00 today,
+      // with a note and the doctor as they were then. No base, no edit
+      // times, `updated_at` in local wall-clock time.
+      final db = await b.open();
+      await db.update('treatments', {
+        'notes': 'restored note',
+        'doctor': 'Dr. Rossi',
+        'updated_at': wallClock(at(9)),
+        'sync_status': SyncStatus.pendingUpdate,
+        'edited_at': null,
+        'field_edited_at': null,
+        ...clearedSyncMeta,
+      }, where: "id = 't1'");
+      serverNow = at(10, 30);
+      await syncAll([b, a, c]);
+      // The server's note is B's from the 3rd: older than the backup's row.
+      expect(
+        await everywhere('treatments', 't1', 'notes'),
+        List.filled(4, 'restored note'),
+      );
+      // The doctor changed at 10:00: newer than the backup's row.
+      expect(
+        await everywhere('treatments', 't1', 'doctor'),
+        List.filled(4, 'Dr. Bianchi'),
+      );
+      expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(9)));
+    });
   });
 }

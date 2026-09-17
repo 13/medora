@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/sync/row_merge.dart';
 
 void main() {
@@ -17,6 +18,9 @@ void main() {
   const stockOwned = MergePolicy(groups: [], serverOwned: {'quantity'});
   final nine = DateTime.utc(2026, 3, 5, 9);
   final ten = DateTime.utc(2026, 3, 5, 10);
+
+  /// A copy with no map: [time] stands for every column (null: unknown).
+  FieldTimes rowTimes(DateTime? time) => FieldTimes(const {}, rowTime: time);
 
   group('changedColumns', () {
     test('lists what differs from the base, bookkeeping left out', () {
@@ -59,8 +63,8 @@ void main() {
         base: base,
         local: local,
         remote: remote,
-        localEditedAt: nine,
-        remoteEditedAt: ten,
+        localTimes: rowTimes(nine),
+        remoteTimes: rowTimes(ten),
         policy: treatmentMerge,
       );
       expect(
@@ -87,8 +91,8 @@ void main() {
         base: base,
         local: local,
         remote: remote,
-        localEditedAt: ten,
-        remoteEditedAt: nine,
+        localTimes: rowTimes(ten),
+        remoteTimes: rowTimes(nine),
         policy: treatmentMerge,
       );
       expect(
@@ -105,8 +109,8 @@ void main() {
         base: base,
         local: local,
         remote: remote,
-        localEditedAt: nine,
-        remoteEditedAt: ten,
+        localTimes: rowTimes(nine),
+        remoteTimes: rowTimes(ten),
         policy: treatmentMerge,
       );
       expect(
@@ -121,8 +125,8 @@ void main() {
         base: base,
         local: {...base, 'name': 'Local'},
         remote: {...base, 'name': 'Remote'},
-        localEditedAt: nine,
-        remoteEditedAt: nine,
+        localTimes: rowTimes(nine),
+        remoteTimes: rowTimes(nine),
         policy: treatmentMerge,
       );
       expect(result.row['name'], 'Remote');
@@ -131,7 +135,7 @@ void main() {
     test('an automatic change never beats a real one, even a much older '
         'one or one with no known edit time', () {
       const dose = {'id': 'd1', 'status': 'pending', 'taken_time': null};
-      for (final remoteEditedAt in [DateTime.utc(2020), null]) {
+      for (final remoteAt in [DateTime.utc(2020), null]) {
         final result = mergeRows(
           base: dose,
           local: {...dose, 'status': 'missed'},
@@ -140,14 +144,14 @@ void main() {
             'status': 'taken',
             'taken_time': '2026-03-01T07:05:00.000Z',
           },
-          localEditedAt: automaticEditedAt,
-          remoteEditedAt: remoteEditedAt,
+          localTimes: rowTimes(automaticEditedAt),
+          remoteTimes: rowTimes(remoteAt),
           policy: doseLogMerge,
         );
         expect(
           [result.row['status'], result.row['taken_time']],
           ['taken', '2026-03-01T07:05:00.000Z'],
-          reason: '$remoteEditedAt',
+          reason: '$remoteAt',
         );
       }
     });
@@ -158,8 +162,8 @@ void main() {
         base: null,
         local: {...base, 'name': 'Cold', 'doctor': 'Dr. Bianchi'},
         remote: {...base, 'doctor': 'Dr. Rossi'},
-        localEditedAt: ten,
-        remoteEditedAt: nine,
+        localTimes: rowTimes(ten),
+        remoteTimes: rowTimes(nine),
         policy: treatmentMerge,
       );
       expect(
@@ -178,8 +182,8 @@ void main() {
         base: med,
         local: {...med, 'name': 'Ibuprofen', 'quantity': 3},
         remote: {...med, 'quantity': 8},
-        localEditedAt: ten,
-        remoteEditedAt: nine,
+        localTimes: rowTimes(ten),
+        remoteTimes: rowTimes(nine),
         policy: stockOwned,
       );
       expect([result.row['name'], result.row['quantity']], ['Ibuprofen', 8]);
@@ -196,8 +200,8 @@ void main() {
           'taken_time': '2020-01-01T07:05:00.000Z',
         },
         remote: {...dose, 'status': 'missed'},
-        localEditedAt: DateTime.utc(2020),
-        remoteEditedAt: automaticEditedAt,
+        localTimes: rowTimes(DateTime.utc(2020)),
+        remoteTimes: rowTimes(automaticEditedAt),
         policy: doseLogMerge,
       );
       expect(
@@ -212,8 +216,8 @@ void main() {
         base: base,
         local: {...base, 'name': 'Local'},
         remote: {...base, 'name': 'Remote'},
-        localEditedAt: DateTime.utc(2000),
-        remoteEditedAt: null,
+        localTimes: rowTimes(DateTime.utc(2000)),
+        remoteTimes: rowTimes(null),
         policy: treatmentMerge,
       );
       expect(result.row['name'], 'Local');
@@ -224,8 +228,8 @@ void main() {
         base: base,
         local: {...base, 'name': 'Local'},
         remote: {...base, 'name': 'Remote'},
-        localEditedAt: null,
-        remoteEditedAt: DateTime.utc(2000),
+        localTimes: rowTimes(null),
+        remoteTimes: rowTimes(DateTime.utc(2000)),
         policy: treatmentMerge,
       );
       expect(result.row['name'], 'Remote');
@@ -238,8 +242,8 @@ void main() {
         base: dose,
         local: {...dose, 'status': 'missed'},
         remote: {...dose, 'status': 'skipped'},
-        localEditedAt: automaticEditedAt,
-        remoteEditedAt: automaticEditedAt,
+        localTimes: rowTimes(automaticEditedAt),
+        remoteTimes: rowTimes(automaticEditedAt),
         policy: doseLogMerge,
       );
       expect(result.row['status'], 'skipped');
@@ -253,11 +257,295 @@ void main() {
         base: base,
         local: {...base, 'name': 'Local'},
         remote: {...base, 'name': 'Remote'},
-        localEditedAt: romeLocal,
-        remoteEditedAt: ten,
+        localTimes: rowTimes(romeLocal),
+        remoteTimes: rowTimes(ten),
         policy: treatmentMerge,
       );
       expect(result.row['name'], 'Remote');
+    });
+  });
+
+  group('edit times per column', () {
+    // The treatment as C last saw it: before A's and B's changes.
+    const cBase = <String, Object?>{
+      'id': 't1',
+      'notes': 'n0',
+      'sick_leave_from': '2026-03-02',
+      'sick_leave_to': null,
+      'sick_leave_ref': null,
+    };
+    final nineThirty = DateTime.utc(2026, 3, 5, 9, 30);
+
+    test('A/B/C: an older change to another column does not lower the '
+        'time the notes carry', () {
+      // A changed notes at 10:00; B's older sick-leave change landed last.
+      final remote = {...cBase, 'notes': 'from A', 'sick_leave_ref': 'CERT-B'};
+      final remoteTimes = FieldTimes({
+        'notes': FieldTime(ten),
+        'sick_leave_ref': FieldTime(nine),
+        'sick_leave_from': FieldTime(DateTime.utc(2026, 3, 2)),
+      }, rowTime: nine);
+      final result = mergeRows(
+        base: cBase,
+        local: {...cBase, 'notes': 'from C'},
+        remote: remote,
+        localTimes: FieldTimes({'notes': FieldTime(nineThirty)}),
+        remoteTimes: remoteTimes,
+        policy: treatmentMerge,
+      );
+      expect(
+        [result.row['notes'], result.row['sick_leave_ref']],
+        ['from A', 'CERT-B'],
+      );
+      expect(result.conflicts.single.keptLocal, isFalse);
+      expect(result.times.entries, remoteTimes.entries);
+    });
+
+    test('a later change here wins its column, and brings its time along', () {
+      final result = mergeRows(
+        base: cBase,
+        local: {...cBase, 'notes': 'from C'},
+        remote: {...cBase, 'notes': 'from A', 'sick_leave_ref': 'CERT-B'},
+        localTimes: FieldTimes({
+          'notes': FieldTime(ten.add(const Duration(minutes: 1))),
+          'sick_leave_ref': FieldTime(DateTime.utc(2026, 3)),
+        }),
+        remoteTimes: FieldTimes({
+          'notes': FieldTime(ten),
+          'sick_leave_ref': FieldTime(nine),
+        }),
+        policy: treatmentMerge,
+      );
+      expect(
+        [result.row['notes'], result.row['sick_leave_ref']],
+        ['from C', 'CERT-B'],
+      );
+      expect(result.conflicts.single.keptLocal, isTrue);
+      expect(result.times.entries, {
+        'notes': FieldTime(ten.add(const Duration(minutes: 1))),
+        'sick_leave_ref': FieldTime(nine),
+      });
+    });
+
+    group('a person\'s change against the app\'s own', () {
+      const dose = <String, Object?>{
+        'id': 'd1',
+        'status': 'pending',
+        'taken_time': null,
+        'notes': null,
+        'scheduled_time': '2026-03-05T07:00:00.000Z',
+      };
+
+      test('on the same column: the person wins either way', () {
+        final autoHere = mergeRows(
+          base: dose,
+          local: {...dose, 'status': 'missed', 'notes': 'late'},
+          remote: {
+            ...dose,
+            'status': 'taken',
+            'taken_time': '2026-03-05T07:05:00.000Z',
+          },
+          // The note is a person's (11:00), the missed is the app's own:
+          // the note's time must not carry the missed.
+          localTimes: FieldTimes({
+            'status': FieldTime.automaticChange,
+            'notes': FieldTime(DateTime.utc(2026, 3, 5, 11)),
+          }, rowTime: DateTime.utc(2026, 3, 5, 11)),
+          remoteTimes: FieldTimes({
+            'status': FieldTime(DateTime.utc(2026, 3, 5, 7, 5)),
+            'taken_time': FieldTime(DateTime.utc(2026, 3, 5, 7, 5)),
+          }),
+          policy: doseLogMerge,
+        );
+        expect(
+          [
+            autoHere.row['status'],
+            autoHere.row['taken_time'],
+            autoHere.row['notes'],
+          ],
+          ['taken', '2026-03-05T07:05:00.000Z', 'late'],
+        );
+        expect(autoHere.conflicts.single.keptLocal, isFalse);
+
+        final autoThere = mergeRows(
+          base: dose,
+          local: {
+            ...dose,
+            'status': 'taken',
+            'taken_time': '2026-03-05T07:05:00.000Z',
+          },
+          remote: {...dose, 'status': 'missed', 'notes': 'server note'},
+          localTimes: FieldTimes({
+            'status': FieldTime(DateTime.utc(2026, 3, 5, 7, 5)),
+            'taken_time': FieldTime(DateTime.utc(2026, 3, 5, 7, 5)),
+          }),
+          remoteTimes: FieldTimes({
+            // The server keeps a later time on an automatic entry.
+            'status': FieldTime.fromJson({
+              'at': '2026-03-05T12:00:00Z',
+              'auto': true,
+            })!,
+            'notes': FieldTime(DateTime.utc(2026, 3, 5, 12)),
+          }),
+          policy: doseLogMerge,
+        );
+        expect(
+          [autoThere.row['status'], autoThere.row['notes']],
+          ['taken', 'server note'],
+        );
+        expect(autoThere.conflicts.single.keptLocal, isTrue);
+      });
+
+      test('on different columns: both are kept, no conflict', () {
+        final result = mergeRows(
+          base: dose,
+          local: {...dose, 'scheduled_time': '2026-03-05T06:00:00.000Z'},
+          remote: {
+            ...dose,
+            'status': 'taken',
+            'taken_time': '2026-03-05T06:05:00.000Z',
+          },
+          localTimes: FieldTimes({'scheduled_time': FieldTime.automaticChange}),
+          remoteTimes: FieldTimes({
+            'status': FieldTime(DateTime.utc(2026, 3, 5, 6, 5)),
+            'taken_time': FieldTime(DateTime.utc(2026, 3, 5, 6, 5)),
+          }),
+          policy: doseLogMerge,
+        );
+        expect(
+          [
+            result.row['scheduled_time'],
+            result.row['status'],
+            result.row['taken_time'],
+          ],
+          ['2026-03-05T06:00:00.000Z', 'taken', '2026-03-05T06:05:00.000Z'],
+        );
+        expect(result.conflicts, isEmpty);
+        expect(
+          result.times.entries['scheduled_time'],
+          FieldTime.automaticChange,
+        );
+      });
+
+      test('a group goes by the strongest change made to it', () {
+        // Here: taken_time corrected by a person at 10:00, status by the
+        // app. There: status skipped by a person at 09:00.
+        final result = mergeRows(
+          base: {
+            ...dose,
+            'status': 'taken',
+            'taken_time': '2026-03-05T07:00:00.000Z',
+          },
+          local: {
+            ...dose,
+            'status': 'missed',
+            'taken_time': '2026-03-05T07:30:00.000Z',
+          },
+          remote: {
+            ...dose,
+            'status': 'skipped',
+            'taken_time': '2026-03-05T07:00:00.000Z',
+          },
+          localTimes: FieldTimes({
+            'status': FieldTime.automaticChange,
+            'taken_time': FieldTime(ten),
+          }),
+          remoteTimes: FieldTimes({
+            'status': FieldTime(nine),
+            'taken_time': FieldTime(DateTime.utc(2026, 3)),
+          }),
+          policy: doseLogMerge,
+        );
+        expect(
+          [result.row['status'], result.row['taken_time']],
+          ['missed', '2026-03-05T07:30:00.000Z'],
+        );
+      });
+    });
+
+    test('a column missing from a filled map is unknown: a person\'s change '
+        'beats it, the app\'s own does not', () {
+      final remote = {...cBase, 'notes': 'server', 'sick_leave_ref': 'S'};
+      final remoteTimes = FieldTimes({
+        'sick_leave_from': FieldTime(DateTime.utc(2026, 3, 2)),
+      }, rowTime: DateTime.utc(2030));
+      final person = mergeRows(
+        base: cBase,
+        local: {...cBase, 'notes': 'here'},
+        remote: remote,
+        localTimes: FieldTimes({'notes': FieldTime(DateTime.utc(2000))}),
+        remoteTimes: remoteTimes,
+        policy: treatmentMerge,
+      );
+      expect(person.row['notes'], 'here');
+      final automatic = mergeRows(
+        base: cBase,
+        local: {...cBase, 'sick_leave_ref': 'auto'},
+        remote: remote,
+        localTimes: FieldTimes({'sick_leave_ref': FieldTime.automaticChange}),
+        remoteTimes: remoteTimes,
+        policy: treatmentMerge,
+      );
+      expect(automatic.row['sick_leave_ref'], 'S');
+    });
+
+    test('with no base, an empty server map stands for the server row\'s '
+        'time on every column (a row from before the migration)', () {
+      // Another device changed the doctor at 10:00, before the migration;
+      // this device changed the notes at 09:00 under 0.3.0 and never
+      // pulled the doctor. The server's newer row wins, as under 0.3.0.
+      final result = mergeRows(
+        base: null,
+        local: {...base, 'notes': 'here', 'doctor': null},
+        remote: {...base, 'notes': null, 'doctor': 'Dr. Bianchi'},
+        localTimes: rowTimes(nine),
+        remoteTimes: rowTimes(ten),
+        policy: treatmentMerge,
+      );
+      expect(
+        [result.row['notes'], result.row['doctor']],
+        [null, 'Dr. Bianchi'],
+      );
+      expect(result.times.of('doctor'), FieldTime(ten));
+      expect(result.times.entries, isNotEmpty);
+    });
+
+    test('with no base, a restored row\'s one time meets the server\'s '
+        'times column by column', () {
+      final result = mergeRows(
+        base: null,
+        local: {...base, 'notes': 'restored', 'doctor': 'Dr. Rossi'},
+        remote: {...base, 'notes': 'older', 'doctor': 'Dr. Bianchi'},
+        localTimes: rowTimes(nine),
+        remoteTimes: FieldTimes({
+          'notes': FieldTime(DateTime.utc(2026, 3, 5, 8)),
+          'doctor': FieldTime(ten),
+        }),
+        policy: treatmentMerge,
+      );
+      expect(
+        [result.row['notes'], result.row['doctor']],
+        ['restored', 'Dr. Bianchi'],
+      );
+      expect(result.times.entries['notes'], FieldTime(nine));
+      expect(result.times.entries['doctor'], FieldTime(ten));
+    });
+
+    test('column times are compared as instants across the autumn change', () {
+      // 02:40 CEST is before 02:10 CET.
+      final result = mergeRows(
+        base: cBase,
+        local: {...cBase, 'notes': 'here'},
+        remote: {...cBase, 'notes': 'there'},
+        localTimes: FieldTimes({
+          'notes': FieldTime(DateTime.parse('2026-10-25T02:10:00+01:00')),
+        }),
+        remoteTimes: FieldTimes({
+          'notes': FieldTime(DateTime.parse('2026-10-25T02:40:00+02:00')),
+        }),
+        policy: treatmentMerge,
+      );
+      expect(result.row['notes'], 'here');
     });
   });
 

@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/sync_meta.dart';
 import 'package:medora/data/sync/table_sync.dart';
 
 import '../../helpers/fake_server.dart';
+import '../../helpers/local_write.dart';
 import '../../helpers/test_database.dart';
 
 void main() {
@@ -41,18 +44,16 @@ void main() {
 
   Future<void> edit(String id, Map<String, Object?> values, DateTime at) async {
     final db = await AppDatabase.instance.database;
-    await db.update(
-      'treatments',
-      {
-        ...values,
-        'sync_status': 'pending_update',
-        'updated_at': at.toIso8601String(),
-        'edited_at': at.toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await writeLocalChange(db, 'treatments', id, {
+      ...values,
+      'sync_status': 'pending_update',
+      'updated_at': at.toIso8601String(),
+      'edited_at': at.toIso8601String(),
+    }, at: at);
   }
+
+  FieldTimes serverTimes(String id) =>
+      FieldTimes.decode(remote.get(id)!['field_edited_at']);
 
   /// A treatment made three days ago on a 0.3.0 device, pulled here.
   Future<void> warmUp() async {
@@ -607,6 +608,40 @@ void main() {
       });
     });
 
+    test('a push of the app\'s change and a person\'s together: each column '
+        'keeps its own kind, and updated_at moves', () async {
+      final db = await AppDatabase.instance.database;
+      await writeLocalChange(db, 'dose_logs', 'd1', {
+        'status': 'missed',
+        'sync_status': 'pending_update',
+      }, at: automaticEditedAt);
+      await writeLocalChange(db, 'dose_logs', 'd1', {
+        'notes': 'felt sick',
+        'edited_at': '2026-03-01T09:00:00.000Z',
+      }, at: DateTime.utc(2026, 3, 1, 9));
+      final before = doses.get('d1')!['updated_at'];
+      await doseSync.pushRow(await dose(), userId: 'u');
+      final server = doses.get('d1')!;
+      final times = RemoteMeta.fromJson(server).fieldTimes;
+      expect(times.of('status'), FieldTime.automaticChange);
+      expect(times.of('notes'), FieldTime(DateTime.utc(2026, 3, 1, 9)));
+      expect(server['edited_at'], '2026-03-01T09:00:00.000Z');
+      expect(server['updated_at'], isNot(before));
+    });
+
+    test('a push of the app\'s change alone is sent as automatic', () async {
+      final db = await AppDatabase.instance.database;
+      await writeLocalChange(db, 'dose_logs', 'd1', {
+        'status': 'missed',
+        'sync_status': 'pending_update',
+      }, at: automaticEditedAt);
+      final before = doses.get('d1')!['updated_at'];
+      await doseSync.pushRow(await dose(), userId: 'u');
+      final server = doses.get('d1')!;
+      expect(server['edited_at'], '1970-01-01T00:00:00.000Z');
+      expect(server['updated_at'], before);
+    });
+
     test('automatic missed loses to a take made elsewhere', () async {
       doses.editFromOtherDevice('d1', {
         'status': 'taken',
@@ -694,6 +729,174 @@ void main() {
         expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
       },
     );
+  });
+
+  group('edit times per column', () {
+    test('a push sends the times of the columns it writes; the server keeps '
+        'the others', () async {
+      await warmUp();
+      remote.editFromOtherDevice('t1', {
+        'doctor': 'Dr. Bianchi',
+      }, editedAt: DateTime.utc(2026, 3, 5, 11));
+      final before = serverTimes('t1');
+      await edit('t1', {'notes': 'after food'}, DateTime.utc(2026, 3, 5, 10));
+      await edit('t1', {
+        'sick_leave_ref': 'CERT',
+      }, DateTime.utc(2026, 3, 5, 10, 30));
+      final result = await sync.pushRow(await local('t1'), userId: 'u');
+      expect(result.outcome, PushOutcome.settled);
+      final after = serverTimes('t1');
+      expect(after.of('notes'), FieldTime(DateTime.utc(2026, 3, 5, 10)));
+      expect(
+        after.of('sick_leave_ref'),
+        FieldTime(DateTime.utc(2026, 3, 5, 10, 30)),
+      );
+      expect(after.of('doctor'), FieldTime(DateTime.utc(2026, 3, 5, 11)));
+      expect(after.of('name'), before.of('name'));
+      expect(
+        remote.get('t1')!['edited_at'],
+        '2026-03-05T10:30:00.000Z',
+        reason: 'the row carries its latest change',
+      );
+      // Settled: the local row holds the server's map.
+      final row = await local('t1');
+      expect(row['sync_status'], 'synced');
+      expect(localFieldTimes(row).entries, after.entries);
+    });
+
+    test('a pulled row stores the server\'s map; a merged one the server\'s '
+        'with this device\'s for what it kept', () async {
+      await warmUp();
+      await edit('t1', {'notes': 'mine'}, DateTime.utc(2026, 3, 5, 10));
+      final since = core.horizon;
+      remote.editFromOtherDevice('t1', {
+        'doctor': 'Dr. Bianchi',
+      }, editedAt: DateTime.utc(2026, 3, 5, 9));
+      final applied = await sync.applyPulled(
+        core.page('treatments', horizon: core.horizon, afterXid: since).single,
+      );
+      expect(applied.outcome, PullOutcome.merged);
+      final row = await local('t1');
+      expect(row['sync_status'], 'pending_update');
+      final times = localFieldTimes(row);
+      expect(times.of('notes'), FieldTime(DateTime.utc(2026, 3, 5, 10)));
+      expect(times.of('doctor'), FieldTime(DateTime.utc(2026, 3, 5, 9)));
+      expect(times.of('name'), serverTimes('t1').of('name'));
+
+      // Another device's newer change to the same column: the pull stores
+      // the server copy and its map, once this row is in step.
+      await sync.pushRow(row, userId: 'u');
+      final since2 = core.horizon;
+      remote.editFromOtherDevice('t1', {
+        'notes': 'theirs',
+      }, editedAt: DateTime.utc(2026, 3, 5, 11));
+      await sync.applyPulled(
+        core.page('treatments', horizon: core.horizon, afterXid: since2).single,
+      );
+      final synced = await local('t1');
+      expect(synced['sync_status'], 'synced');
+      expect(localFieldTimes(synced).entries, serverTimes('t1').entries);
+      expect(
+        localFieldTimes(synced).of('notes'),
+        FieldTime(DateTime.utc(2026, 3, 5, 11)),
+      );
+    });
+
+    test('a create sends the map it has; with none the server reads the row '
+        'time', () async {
+      final db = await AppDatabase.instance.database;
+      await db.insert('treatments', {
+        'id': 't7',
+        'name': 'Cold',
+        'start_date': '2026-03-05',
+        'is_active': 1,
+        'updated_at': '2026-03-05T09:00:00.000Z',
+        'edited_at': '2026-03-05T09:00:00.000Z',
+        'sync_status': 'pending_create',
+      });
+      await edit('t7', {'notes': 'n'}, DateTime.utc(2026, 3, 5, 9, 30));
+      await db.update('treatments', {
+        'sync_status': 'pending_create',
+      }, where: "id = 't7'");
+      await sync.pushRow(await local('t7'), userId: 'u');
+      expect(
+        serverTimes('t7').of('notes'),
+        FieldTime(DateTime.utc(2026, 3, 5, 9, 30)),
+      );
+      expect(
+        serverTimes('t7').of('name'),
+        FieldTime(DateTime.utc(2026, 3, 5, 9)),
+      );
+
+      await db.insert('treatments', {
+        'id': 't8',
+        'name': 'Flu',
+        'start_date': '2026-03-05',
+        'is_active': 1,
+        'updated_at': '2026-03-05T09:00:00.000Z',
+        'edited_at': '2026-03-05T09:00:00.000Z',
+        'sync_status': 'pending_create',
+      });
+      await sync.pushRow(await local('t8'), userId: 'u');
+      expect(remote.get('t8')!['field_edited_at'], isEmpty);
+      expect(
+        RemoteMeta.fromJson(remote.get('t8')!).fieldTimes.of('name'),
+        FieldTime(DateTime.utc(2026, 3, 5, 9)),
+      );
+    });
+
+    test('a row from before the migration against a change still waiting '
+        'from 0.3.0: the newer server row wins, as under 0.3.0', () async {
+      // Another device changed the doctor at 10:00 under 0.3.0; the server
+      // row has no edit times at all.
+      remote.seed({
+        'id': 't1',
+        'user_id': 'u',
+        'name': 'Sinusitis',
+        'start_date': '2026-03-02',
+        'is_active': true,
+        'doctor': 'Dr. Bianchi',
+        'notes': null,
+      }, updatedAt: DateTime.utc(2026, 3, 5, 10));
+      remote.get('t1')!
+        ..['edited_at'] = null
+        ..['field_edited_at'] = <String, dynamic>{};
+      // This device, upgraded from 0.3.0: its 09:00 note never went out,
+      // and it never pulled the doctor. No base, no map.
+      final db = await AppDatabase.instance.database;
+      await db.insert('treatments', {
+        'id': 't1',
+        'user_id': 'u',
+        'name': 'Sinusitis',
+        'start_date': '2026-03-02',
+        'is_active': 1,
+        'doctor': 'Dr. Rossi',
+        'notes': 'mine',
+        'updated_at': '2026-03-05T09:00:00.000Z',
+        'edited_at': '2026-03-05T09:00:00.000Z',
+        'sync_status': 'pending_update',
+      });
+      final result = await sync.pushRow(await local('t1'), userId: 'u');
+      expect(result.outcome, PushOutcome.settled);
+      final server = remote.get('t1')!;
+      expect([server['doctor'], server['notes']], ['Dr. Bianchi', null]);
+      expect(
+        result.conflicts.every((c) => !c.keptLocal),
+        isTrue,
+        reason: '${result.conflicts}',
+      );
+      expect(result.conflicts, hasLength(2));
+    });
+  });
+
+  test('writeTime: the latest person\'s change; 1970 when all are the '
+      'app\'s own; nothing when there is none', () {
+    final nine = FieldTime(DateTime.utc(2026, 3, 5, 9));
+    final ten = FieldTime(DateTime.utc(2026, 3, 5, 10));
+    expect(writeTime([nine, FieldTime.automaticChange, ten]), ten.at);
+    expect(writeTime([ten, nine]), ten.at);
+    expect(writeTime([FieldTime.automaticChange]), automaticEditedAt);
+    expect(writeTime(const []), isNull);
   });
 
   test('isAutomaticEdit', () {
