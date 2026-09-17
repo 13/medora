@@ -462,6 +462,71 @@ void main() {
     );
   });
 
+  test('a 0.3.0 row merged over an older copy does not keep that copy\'s '
+      'edit time', () async {
+    final db = await AppDatabase.instance.database;
+    await seedEverything(db);
+    final id = (await db.query('medications')).single['id']! as String;
+    await db.update('medications', {
+      'name': 'From the backup',
+      'updated_at': '2026-03-09T08:00:00.000Z',
+    });
+    final file = await makeService().exportToFile(outDir);
+    // What 0.3.0 writes: schema 15, no edit times.
+    final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
+    json['schemaVersion'] = 15;
+    for (final rows in (json['tables']! as Map<String, Object?>).values) {
+      for (final row in rows! as List<Object?>) {
+        (row! as Map<String, Object?>).remove('edited_at');
+      }
+    }
+    await file.writeAsString(jsonEncode(json));
+    await db.update('medications', {
+      'name': 'Older on the device',
+      'updated_at': '2026-03-01T08:00:00.000Z',
+      'edited_at': '2026-03-01T08:00:00.000Z',
+    });
+
+    await makeService().restore(
+      file,
+      mode: RestoreMode.merge,
+      markPending: true,
+    );
+
+    final row = (await db.query(
+      'medications',
+      where: 'id = ?',
+      whereArgs: [id],
+    )).single;
+    expect(row['name'], 'From the backup');
+    expect(
+      row['edited_at'],
+      isNull,
+      reason: 'unknown: the sync reads updated_at instead',
+    );
+  });
+
+  test('a merged dose drops a guard left on the device copy', () async {
+    final db = await AppDatabase.instance.database;
+    await seedEverything(db);
+    await db.update('dose_logs', {
+      'status': 'taken',
+      'updated_at': '2026-03-09T08:00:00.000Z',
+    });
+    final file = await makeService().exportToFile(outDir);
+    await db.update('dose_logs', {
+      'status': 'pending',
+      'updated_at': '2026-03-01T08:00:00.000Z',
+      'delete_guard': 'if_pending',
+    });
+
+    await makeService().restore(file, mode: RestoreMode.merge);
+
+    final dose = (await db.query('dose_logs')).single;
+    expect(dose['status'], 'taken');
+    expect(dose['delete_guard'], isNull);
+  });
+
   test('photos round-trip through the backup file', () async {
     final db = await AppDatabase.instance.database;
     await seedEverything(db);

@@ -310,6 +310,9 @@ class BackupService {
       ...row,
       'sync_status': status,
       if (_versioned.contains(table)) ...{
+        // A schema 15 row has no edit time: stored as unknown, never left
+        // at the device's value for content that came from the backup.
+        'edited_at': row['edited_at'],
         'sync_version': null,
         'sync_base': null,
         'sync_write_id': null,
