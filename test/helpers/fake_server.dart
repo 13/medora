@@ -213,16 +213,11 @@ class FakeServerCore {
       } else if (_same(row[key], old[key])) {
         continue;
       }
-      DateTime at;
-      bool auto;
-      if (legacy) {
-        at = now;
-        auto = false;
-      } else {
-        final e = entry is Map ? entry : const <String, Object?>{};
-        at = _time(e['at']) ?? edited;
-        auto = e['auto'] == true || at.isBefore(_weakCeiling);
-      }
+      // A changed column with no entry takes the time the write carried (a
+      // legacy write: its arrival).
+      final e = entry is Map ? entry : const <String, Object?>{};
+      var at = _time(e['at']) ?? edited;
+      final auto = e['auto'] == true || at.isBefore(_weakCeiling);
       at = auto ? _epoch : (at.isAfter(now) ? now : at);
       final heldAt = _time((map[key] as Map?)?['at']);
       if (heldAt != null && heldAt.isAfter(at)) at = heldAt;

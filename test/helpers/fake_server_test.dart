@@ -583,6 +583,37 @@ void main() {
       expect([at('notes'), auto('notes')], [arrived, false]);
     });
 
+    test('one write, three columns: each gets the time sent for it, a column '
+        'sent without one the row\'s, the rest the inserted row\'s', () {
+      core.insertIfAbsent('treatments', [
+        {
+          'id': 'ft2',
+          'name': 'Cold',
+          'notes': null,
+          'end_date': null,
+          'sick_leave_ref': null,
+          'write_id': 'c1',
+          'edited_at': hoursAgo(6).toIso8601String(),
+        },
+      ]);
+      core.patch('treatments', 'ft2', {
+        'notes': 'n',
+        'end_date': '2026-09-13',
+        'sick_leave_ref': 'R',
+        'write_id': 'c2',
+        'edited_at': hoursAgo(1 / 6).toIso8601String(),
+        'field_edited_at': {
+          'notes': entry(hoursAgo(2)),
+          'end_date': entry(hoursAgo(1 / 6), auto: true),
+        },
+      });
+      final m = core.rowsOf('treatments')['ft2']!['field_edited_at'] as Map;
+      expect(m['notes'], entry(hoursAgo(2)));
+      expect(m['end_date'], entry(hoursAgo(6), auto: true));
+      expect(m['sick_leave_ref'], entry(hoursAgo(1 / 6)));
+      expect(m['name'], entry(hoursAgo(6)));
+    });
+
     test('an entry for an unchanged column is ignored; a changed column '
         'without one takes the row time; a map that is not an object is '
         'none', () {

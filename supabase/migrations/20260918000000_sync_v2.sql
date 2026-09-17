@@ -154,7 +154,8 @@ begin
 
   -- Edit times per column. A 0.4.0 client sends an entry for each column
   -- it writes; the entries are read only for the columns the write really
-  -- changes (an insert: the columns it names).
+  -- changes (an insert: the columns it names), and never for a legacy
+  -- write.
   v_new := to_jsonb(new);
   if tg_op = 'INSERT' then
     v_sent := new.field_edited_at;
@@ -185,14 +186,10 @@ begin
     else
       continue when (v_new -> v_key) is not distinct from (v_old -> v_key);
     end if;
-    if v_legacy then
-      v_at := v_now;
-      v_auto := false;
-    else
-      -- A changed column with no entry takes the time the write carried.
-      v_at := coalesce((v_entry ->> 'at')::timestamptz, new.edited_at);
-      v_auto := coalesce((v_entry ->> 'auto')::boolean, false) or v_at < c_ceiling;
-    end if;
+    -- A changed column with no entry takes the time the write carried
+    -- (a legacy write: its arrival).
+    v_at := coalesce((v_entry ->> 'at')::timestamptz, new.edited_at);
+    v_auto := coalesce((v_entry ->> 'auto')::boolean, false) or v_at < c_ceiling;
     v_at := case when v_auto then c_epoch else least(v_at, v_now) end;
     -- Never earlier than the time already held (greatest skips a NULL).
     v_at := greatest((v_map -> v_key ->> 'at')::timestamptz, v_at);

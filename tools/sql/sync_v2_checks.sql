@@ -280,6 +280,34 @@ do $$ begin
     'map: an automatic flag with a real time is automatic';
 end $$;
 
+-- One write, three columns: each gets the time sent for it (one of them
+-- the app's own), a column sent without one the row's; the rest keep the
+-- time the row had when it was inserted.
+insert into treatments (id, user_id, name, start_date, write_id, edited_at)
+  values ('ft2', auth.uid(), 'Cold', '2026-09-10', 'f0000000-0000-0000-0000-0000000000c1',
+          now() - interval '6 hours');
+update treatments set notes = 'n', end_date = '2026-09-13', sick_leave_ref = 'R',
+       write_id = 'f0000000-0000-0000-0000-0000000000c2',
+       edited_at = now() - interval '10 minutes',
+       field_edited_at = jsonb_build_object(
+         'notes', pg_temp.entry(now() - interval '2 hours'),
+         'end_date', pg_temp.entry(now() - interval '10 minutes', true))
+ where id = 'ft2';
+do $$ begin
+  assert pg_temp.at('ft2', 'notes') between pg_temp.arrived('ft2') - interval '121 minutes'
+                                        and pg_temp.arrived('ft2') - interval '119 minutes'
+     and not pg_temp.auto('ft2', 'notes'),
+    'map: a column gets the time sent for it, not the row''s';
+  assert pg_temp.auto('ft2', 'end_date'),
+    'map: the app''s own column in a person''s write is automatic';
+  assert pg_temp.at('ft2', 'sick_leave_ref') between pg_temp.arrived('ft2') - interval '11 minutes'
+                                                 and pg_temp.arrived('ft2') - interval '9 minutes',
+    'map: a column sent without a time takes the row''s';
+  assert pg_temp.at('ft2', 'name') < pg_temp.arrived('ft2') - interval '5 hours'
+     and pg_temp.at('ft2', 'end_date') = pg_temp.at('ft2', 'name'),
+    'map: the first update fills the rest from the inserted row''s time';
+end $$;
+
 -- A person's change after it: no longer automatic; the time never goes back.
 update treatments set notes = 'E', write_id = 'f0000000-0000-0000-0000-00000000000e',
        edited_at = now() - interval '2 hours',
