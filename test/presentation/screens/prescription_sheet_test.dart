@@ -561,6 +561,115 @@ void main() {
       }
     });
 
+    String durationFieldText(WidgetTester tester) => tester
+        .widget<TextField>(
+          find.descendant(
+            of: find.byKey(const Key('durationDaysField')),
+            matching: find.byType(TextField),
+          ),
+        )
+        .controller!
+        .text;
+
+    // Only an as-needed prescription is stored without a duration. A
+    // scheduled one opens with its own, and an unrelated edit must not
+    // rewrite its schedule: a changed duration regenerates every dose.
+    for (final days in const [2, 14]) {
+      testWidgets('a $days-day schedule opens with $days days and keeps them '
+          'and its doses through a notes edit', (tester) async {
+        tester.view.physicalSize = const Size(800, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final db = await AppDatabase.instance.database;
+        final seeded = await seedPrescription(db, durationDays: days);
+        await seedDoseLog(
+          db,
+          seeded.prescriptionId,
+          DateTime(2026, 3, 1, 8),
+          status: 'taken',
+          takenTime: DateTime(2026, 3, 1, 8, 5),
+        );
+        await seedDoseLog(db, seeded.prescriptionId, DateTime(2026, 3, 1, 16));
+        Future<List<Map<String, Object?>>> doses() => db.query(
+          'dose_logs',
+          columns: ['id', 'scheduled_time', 'status'],
+          where: 'prescription_id = ?',
+          whereArgs: [seeded.prescriptionId],
+          orderBy: 'id',
+        );
+        final dosesBefore = await doses();
+
+        await openSheet(
+          tester,
+          seeded.treatmentId,
+          existingPrescriptionId: seeded.prescriptionId,
+        );
+        expect(durationFieldText(tester), '$days');
+
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Notes'),
+          'with food',
+        );
+        await tester.tap(find.widgetWithText(ElevatedButton, 'Update'));
+        await tester.pumpAndSettle();
+
+        final p = (await db.query(
+          'prescriptions',
+          where: 'id = ?',
+          whereArgs: [seeded.prescriptionId],
+        )).single;
+        expect(p['notes'], 'with food');
+        expect(p['duration_days'], days);
+        expect(p['schedule_type'], 'fixed_interval');
+        expect(await doses(), dosesBefore);
+      });
+    }
+
+    // A scheduled row stored with 0 (an old build, a sync, a restore) is
+    // not an as-needed one: offering a week there would, on any save,
+    // regenerate a week of doses from its original start time. The form
+    // asks for a real duration instead.
+    testWidgets('a scheduled prescription stored with 0 days is not given a '
+        'week', (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db, durationDays: 0);
+
+      await openSheet(
+        tester,
+        seeded.treatmentId,
+        existingPrescriptionId: seeded.prescriptionId,
+      );
+      expect(durationFieldText(tester), '0');
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Update'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Duration must be between 1 and 365 days'),
+        findsOneWidget,
+      );
+      final p = (await db.query(
+        'prescriptions',
+        where: 'id = ?',
+        whereArgs: [seeded.prescriptionId],
+      )).single;
+      expect(p['duration_days'], 0);
+      expect(
+        await db.query(
+          'dose_logs',
+          where: 'prescription_id = ?',
+          whereArgs: [seeded.prescriptionId],
+        ),
+        isEmpty,
+      );
+    });
+
     group('layout at 360 dp', () {
       setUpAll(loadAppFonts);
 

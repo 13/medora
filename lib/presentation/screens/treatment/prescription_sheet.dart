@@ -111,10 +111,13 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
     );
     // An as-needed prescription is stored with no duration (0). Switching it
     // back to a schedule starts from the usual week, not from a 0 the form
-    // would refuse.
-    final storedDays = existing?.durationDays ?? 0;
+    // would refuse. Only as-needed: a scheduled row stored with 0 (an old
+    // build, a sync, a restore) keeps its 0, so the form asks for a real
+    // duration instead of quietly regenerating a week of doses on save.
+    final wasAsNeeded = existing?.scheduleType == 'as_needed';
     _durationController = TextEditingController(
-      text: (storedDays > 0 ? storedDays : 7).toString(),
+      text: (existing == null || wasAsNeeded ? 7 : existing.durationDays)
+          .toString(),
     );
     _notesController = TextEditingController(text: existing?.notes ?? '');
 
@@ -729,7 +732,7 @@ class _PrescriptionSheetState extends ConsumerState<_PrescriptionSheet> {
       // An as-needed prescription is saved with no duration. Older builds
       // read the type as a fixed interval, and a zero duration is what keeps
       // them from generating (and reminding, and marking missed) doses for
-      // it. Switching back to a schedule then asks for a real duration.
+      // it. Switching back to a schedule offers the usual week again.
       durationDays: asNeeded
           ? 0
           : int.tryParse(_durationController.text.trim()) ?? 7,
