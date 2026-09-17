@@ -15,6 +15,7 @@ import 'package:medora/presentation/screens/dose/widgets/dose_card.dart';
 import 'package:medora/presentation/screens/dose/widgets/dose_summary_header.dart';
 import 'package:medora/presentation/screens/dose/widgets/time_groups.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
+import 'package:medora/presentation/widgets/settings_action.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 class DoseScheduleScreen extends ConsumerStatefulWidget {
@@ -56,6 +57,7 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> {
             tooltip: l10n.doseHistory,
             onPressed: () => context.push(AppRoutes.doseHistory),
           ),
+          const SettingsAction(),
         ],
       ),
       body: Column(
@@ -105,8 +107,13 @@ class _DoseScheduleScreenState extends ConsumerState<DoseScheduleScreen> {
         child: ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            SizedBox(
-              height: MediaQuery.sizeOf(context).height * 0.6,
+            // At least 60 % of the screen, so the message sits in the middle,
+            // but never less than it needs: at a large text scale a fixed
+            // height cut it off at the bottom.
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.sizeOf(context).height * 0.6,
+              ),
               child: EmptyStateWidget(
                 icon: Icons.check_circle_outline,
                 title: selected == today

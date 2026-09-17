@@ -14,6 +14,7 @@ import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
+import 'package:medora/presentation/widgets/settings_action.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
 /// Filter options for medication list.
@@ -120,6 +121,7 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
               });
             },
           ),
+          const SettingsAction(),
         ],
       ),
       body: Column(

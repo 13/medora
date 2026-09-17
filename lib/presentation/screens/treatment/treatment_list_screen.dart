@@ -15,6 +15,7 @@ import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
+import 'package:medora/presentation/widgets/settings_action.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sick_leave_badge.dart';
 
@@ -92,12 +93,15 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
               });
             },
           ),
+          const SettingsAction(),
         ],
       ),
       body: Column(
         children: [
-          // Filter chips
-          Padding(
+          // Filter chips. Scrollable, as on the medications tab: at a 1.6x
+          // text scale the three chips are wider than a 360 dp screen.
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Row(
               children: [

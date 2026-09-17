@@ -21,6 +21,7 @@ import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/medication_expiry_tile.dart';
+import 'package:medora/presentation/widgets/settings_action.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sick_leave_badge.dart';
 import 'package:medora/presentation/widgets/sync_status_chip.dart';
@@ -49,10 +50,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPressed: () => context.push(AppRoutes.scanner),
             ),
           const SyncStatusChip(),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(AppRoutes.settings),
-          ),
+          const SettingsAction(),
         ],
       ),
       body: RefreshIndicator(
