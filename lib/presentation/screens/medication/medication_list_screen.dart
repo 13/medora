@@ -99,10 +99,12 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
         filtered
             .where((m) => !m.isArchived && m.quantity <= m.minimumStockLevel)
             .toList(),
-      MedicationFilter.needsAttention => filtered.where((m) {
+      // The same set as the dashboard's expiry card (expiringSoonProvider):
+      // already expired, or expiring within the warning window.
+      MedicationFilter.expiringSoon => filtered.where((m) {
         if (m.isArchived) return false;
-        final isLowStock = m.quantity <= m.minimumStockLevel;
-        return isLowStock || m.expiredAt(now) || m.isExpiringSoon(now: now);
+        final days = m.daysUntilExpiry(now);
+        return days != null && days <= AppConstants.expiryWarningDays;
       }).toList(),
       MedicationFilter.archived => filtered.where((m) => m.isArchived).toList(),
     };
@@ -173,10 +175,10 @@ class _MedicationListScreenState extends ConsumerState<MedicationListScreen> {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: '${l10n.lowStock} · ${l10n.expiringSoon}',
-                  selected: _filter == MedicationFilter.needsAttention,
+                  label: l10n.expiringSoon,
+                  selected: _filter == MedicationFilter.expiringSoon,
                   onTap: () =>
-                      setState(() => _filter = MedicationFilter.needsAttention),
+                      setState(() => _filter = MedicationFilter.expiringSoon),
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(

@@ -7,7 +7,10 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Filter options for the medication list.
-enum MedicationFilter { all, lowStock, needsAttention, archived }
+///
+/// [lowStock] and [expiringSoon] select the same rows as the dashboard's
+/// low-stock and expiry cards (`lowStockProvider`, `expiringSoonProvider`).
+enum MedicationFilter { all, lowStock, expiringSoon, archived }
 
 /// A filter the next Medications tab should open with, or null for the
 /// default ([MedicationFilter.all]).
