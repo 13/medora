@@ -60,7 +60,7 @@ void main() {
       'name': name,
       'quantity': quantity,
       'minimum_stock_level': 5,
-      if (expiry != null) 'expiry_date': expiry,
+      'expiry_date': ?expiry,
       'is_archived': archived ? 1 : 0,
     });
     await add('Lapsed box', expiry: '2026-03-03');
