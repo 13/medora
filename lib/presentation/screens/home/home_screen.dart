@@ -616,11 +616,8 @@ class _ExpiringSoonCard extends ConsumerWidget {
               // ones fall off the bottom. Without this the card looks
               // complete while disagreeing with its own stat tile.
               if (hidden > 0)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.more_horiz),
-                  title: Text(l10n.moreCount(hidden)),
-                  trailing: const Icon(Icons.chevron_right),
+                _MoreRow(
+                  count: hidden,
                   onTap: () => context.push(AppRoutes.expiringMedications),
                 ),
             ],
@@ -653,69 +650,79 @@ class _LowStockCard extends ConsumerWidget {
         ),
       ),
       data: (meds) {
+        final hidden = meds.length - 3;
         return Card(
           child: Column(
-            children: meds.take(3).map((med) {
-              return ListTile(
-                leading: Icon(
-                  Icons.inventory_2_outlined,
-                  color: context.medora.warning,
-                ),
-                title: Text(med.name),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (med.category != null)
-                      Text(
-                        AppConstants.categoryLabel(l10n, med.category!),
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    if (med.patientTags.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: med.patientTags
-                            .map((t) => TagChip(label: t, fontSize: 10))
-                            .toList(),
-                      ),
-                    ],
-                  ],
-                ),
-                // Shrink to fit. A ListTile gives its trailing slot the
-                // tile's own height, and the count stacked over "Left"
-                // overflows that by 12 dp from a 1.6x text scale. The stat
-                // tiles already solve the same problem the same way:
-                // BoxFit.scaleDown only ever shrinks, so at every ordinary
-                // text scale this paints what it painted before.
-                trailing: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              ...meds.take(3).map((med) {
+                return ListTile(
+                  leading: Icon(
+                    Icons.inventory_2_outlined,
+                    color: context.medora.warning,
+                  ),
+                  title: Text(med.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${med.quantity}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: context.medora.warning,
+                      if (med.category != null)
+                        Text(
+                          AppConstants.categoryLabel(l10n, med.category!),
+                          style: const TextStyle(fontSize: 12),
                         ),
-                      ),
-                      Text(
-                        l10n.leftLabel,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: context.colors.onSurfaceVariant,
+                      if (med.patientTags.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: med.patientTags
+                              .map((t) => TagChip(label: t, fontSize: 10))
+                              .toList(),
                         ),
-                      ),
+                      ],
                     ],
                   ),
+                  // Shrink to fit. A ListTile gives its trailing slot the
+                  // tile's own height, and the count stacked over "Left"
+                  // overflows that by 12 dp from a 1.6x text scale. The stat
+                  // tiles already solve the same problem the same way:
+                  // BoxFit.scaleDown only ever shrinks, so at every ordinary
+                  // text scale this paints what it painted before.
+                  trailing: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '${med.quantity}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: context.medora.warning,
+                          ),
+                        ),
+                        Text(
+                          l10n.leftLabel,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: context.colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  dense: true,
+                  onTap: () => context.push('/medications/${med.id}'),
+                );
+              }),
+              // As on the expiry card: the stat tile counts every one of
+              // them, so the card says how many it does not show.
+              if (hidden > 0)
+                _MoreRow(
+                  count: hidden,
+                  onTap: () => MainShellScope.of(context)?.switchTab(1),
                 ),
-                dense: true,
-                onTap: () => context.push('/medications/${med.id}'),
-              );
-            }).toList(),
+            ],
           ),
         );
       },
@@ -746,14 +753,42 @@ class _ActiveTreatmentsCard extends ConsumerWidget {
         ),
       ),
       data: (treatments) {
+        final hidden = treatments.length - 3;
         return Card(
           child: Column(
-            children: treatments.take(3).map((t) {
-              return _ActiveTreatmentTile(treatment: t, now: now);
-            }).toList(),
+            children: [
+              for (final t in treatments.take(3))
+                _ActiveTreatmentTile(treatment: t, now: now),
+              if (hidden > 0)
+                _MoreRow(
+                  count: hidden,
+                  onTap: () => MainShellScope.of(context)?.switchTab(2),
+                ),
+            ],
           ),
         );
       },
+    );
+  }
+}
+
+/// The last row of a dashboard card that has more than three rows: how many
+/// it does not show, and where to see them.
+class _MoreRow extends StatelessWidget {
+  const _MoreRow({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      key: const Key('dashboardMoreRow'),
+      dense: true,
+      leading: const Icon(Icons.more_horiz),
+      title: Text(AppLocalizations.of(context).moreCount(count)),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }

@@ -385,6 +385,75 @@ void main() {
     );
   });
 
+  for (final (lang, twoMore, oneMore) in const [
+    ('de', '2 weitere', '1 weiteres'),
+    ('it', 'Altri 2', '1 altro'),
+  ]) {
+    testWidgets('the three "more" rows fit at 360 dp and 1.6x in $lang', (
+      tester,
+    ) async {
+      useNarrowPhone(tester);
+      final db = await AppDatabase.instance.database;
+      // Five medications that are both low on stock and expiring, and four
+      // active treatments: every card that caps at three rows shows its
+      // "more" row.
+      for (var i = 1; i <= 5; i++) {
+        await db.insert('medications', {
+          'id': 'm$i',
+          'name': 'Moment 20$i',
+          'quantity': 0,
+          'minimum_stock_level': 0,
+          'expiry_date': '2026-03-2$i',
+        });
+      }
+      for (var i = 1; i <= 4; i++) {
+        await db.insert('treatments', {
+          'id': 't$i',
+          'name': 'Episode $i',
+          'start_date': '2026-03-0$i',
+          'is_active': 1,
+        });
+      }
+
+      await pumpMedoraApp(
+        tester,
+        Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.6)),
+            child: const HomeScreen(),
+          ),
+        ),
+        overrides: await overrides(),
+        locale: Locale(lang),
+      );
+      await tester.pumpAndSettle();
+
+      final rows = find.byKey(const Key('dashboardMoreRow'));
+      expect(rows, findsNWidgets(3));
+      // Expiring and low stock hide two each, treatments hide one.
+      expect(
+        find.descendant(of: rows, matching: find.text(twoMore)),
+        findsNWidgets(2),
+      );
+      expect(
+        find.descendant(of: rows, matching: find.text(oneMore)),
+        findsOneWidget,
+      );
+
+      expect(tester.takeException(), isNull);
+      expectNothingPaintsOutsideViewport(tester);
+      expectNoTextIsClipped(
+        tester,
+        knownTruncations: {
+          // See 'the dashboard survives a 1.6x text scale at 360 dp'.
+          if (lang == 'de') 'Aktive Behandlungen': 'by design',
+        },
+      );
+    });
+  }
+
   testWidgets('dark mode renders the same dashboard, legibly', (tester) async {
     useNarrowPhone(tester);
     await seedFullDashboard();

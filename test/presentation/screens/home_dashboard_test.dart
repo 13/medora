@@ -1,5 +1,5 @@
 /// Dashboard states other than the Now card: the Low Stock and Active
-/// Treatments cards, the progress bar, the silent three-item truncation,
+/// Treatments cards, the progress bar, the "N more" row,
 /// the error/retry path and pull-to-refresh.
 library;
 
@@ -14,6 +14,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/home/home_screen.dart';
+import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/fake_reminder_port.dart';
@@ -321,9 +322,8 @@ void main() {
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
 
-  testWidgets('a fourth low-stock medication is silently dropped', (
-    tester,
-  ) async {
+  testWidgets('five low-stock medications: three rows and "2 more", which '
+      'opens the medications tab', (tester) async {
     useTallPhone(tester);
     final db = await AppDatabase.instance.database;
     for (var i = 1; i <= 5; i++) {
@@ -334,20 +334,17 @@ void main() {
         'minimum_stock_level': 0,
       });
     }
-
+    int? switchedTo;
     await pumpMedoraApp(
       tester,
-      const HomeScreen(),
+      MainShellScope(
+        switchTab: (i) => switchedTo = i,
+        child: const HomeScreen(),
+      ),
       overrides: await overrides(),
     );
     await tester.pumpAndSettle();
 
-    // The card takes three and offers no "+N more" affordance; the tile is
-    // the only place the other two are represented at all. This is a record
-    // of today's behaviour, not a requirement: _ExpiringSoonCard already
-    // has a `moreCount` row, and a task that gives Low Stock and Active
-    // Treatments the same affordance should change this expectation rather
-    // than work around it.
     final shown = [
       'LS1',
       'LS2',
@@ -356,11 +353,69 @@ void main() {
       'LS5',
     ].where((n) => find.text(n).evaluate().isNotEmpty).length;
     expect(shown, 3, reason: 'the card shows exactly three of the five');
+    final more = find.widgetWithText(ListTile, '2 more');
+    expect(more, findsOneWidget);
 
     final tile = find
         .ancestor(of: find.text('Low stock'), matching: find.byType(InkWell))
         .first;
     expect(find.descendant(of: tile, matching: find.text('5')), findsOneWidget);
+
+    await tester.ensureVisible(more);
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(switchedTo, 1);
+  });
+
+  testWidgets('four active treatments: three rows and "1 more", which opens '
+      'the treatments tab', (tester) async {
+    useTallPhone(tester);
+    final db = await AppDatabase.instance.database;
+    for (var i = 1; i <= 4; i++) {
+      await db.insert('treatments', {
+        'id': 't$i',
+        'name': 'Episode $i',
+        'start_date': '2026-03-0$i',
+        'is_active': 1,
+      });
+    }
+    int? switchedTo;
+    await pumpMedoraApp(
+      tester,
+      MainShellScope(
+        switchTab: (i) => switchedTo = i,
+        child: const HomeScreen(),
+      ),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+
+    final more = find.widgetWithText(ListTile, '1 more');
+    expect(more, findsOneWidget);
+    await tester.ensureVisible(more);
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(switchedTo, 2);
+  });
+
+  testWidgets('three low-stock medications have no "more" row', (tester) async {
+    useTallPhone(tester);
+    final db = await AppDatabase.instance.database;
+    for (var i = 1; i <= 3; i++) {
+      await db.insert('medications', {
+        'id': 'ls$i',
+        'name': 'LS$i',
+        'quantity': 0,
+        'minimum_stock_level': 0,
+      });
+    }
+    await pumpMedoraApp(
+      tester,
+      const HomeScreen(),
+      overrides: await overrides(),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('dashboardMoreRow')), findsNothing);
   });
 
   testWidgets('a failed cabinet read offers a Retry that actually recovers', (
