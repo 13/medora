@@ -16,13 +16,17 @@ import 'package:medora/domain/repositories/prescription_repository.dart';
 class PrescriptionRepositoryImpl implements PrescriptionRepository {
   /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
   /// failure only logs. Null in local-only mode, where nothing is pushed.
+  ///
+  /// [now] is the clock for the stamps a write sets.
   PrescriptionRepositoryImpl({
     required this.localDatasource,
     this._requestSync,
+    this._now = systemNow,
   });
 
   final PrescriptionLocalDatasource localDatasource;
   final RequestSync? _requestSync;
+  final Now _now;
 
   @override
   Future<Result<List<Prescription>>> getPrescriptionsByTreatment(
@@ -64,7 +68,7 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
     Prescription prescription,
   ) async {
     try {
-      final now = DateTime.now();
+      final now = _now();
       final updated = prescription.copyWith(createdAt: now, updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
@@ -80,10 +84,16 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
     Prescription prescription,
   ) async {
     try {
+      // An edit of a prescription deleted on this device would bring it
+      // back, and its doses with it.
+      final status = await localDatasource.syncStatusOf(prescription.id);
+      if (status == SyncStatus.pendingDelete) {
+        return const Result.failure('Prescription was deleted');
+      }
       final previous = await localDatasource.getPrescriptionById(
         prescription.id,
       );
-      final now = nextUpdatedAt(previous?.updatedAt, DateTime.now());
+      final now = nextUpdatedAt(previous?.updatedAt, _now());
       final updated = prescription.copyWith(updatedAt: now);
       final model = PrescriptionModel.fromDomain(updated);
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingUpdate);
@@ -108,7 +118,10 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   @override
   Future<Result<void>> deactivatePrescription(String id) async {
     try {
-      await localDatasource.deactivate(id);
+      // A missing or deleted prescription is left alone.
+      if (!await localDatasource.deactivate(id)) {
+        return const Result.failure('Prescription not found');
+      }
       _syncSoon();
       return const Result.success(null);
     } catch (e, st) {
@@ -119,7 +132,10 @@ class PrescriptionRepositoryImpl implements PrescriptionRepository {
   @override
   Future<Result<void>> reactivatePrescription(String id) async {
     try {
-      await localDatasource.reactivate(id);
+      // A missing or deleted prescription is left alone.
+      if (!await localDatasource.reactivate(id)) {
+        return const Result.failure('Prescription not found');
+      }
       _syncSoon();
       return const Result.success(null);
     } catch (e, st) {

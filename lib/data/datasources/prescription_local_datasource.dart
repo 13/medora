@@ -132,25 +132,43 @@ class PrescriptionLocalDatasource {
     await db.delete('prescriptions', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Pauses the prescription; false when there is no such row.
+  /// The row's `sync_status`, or null when there is no such row.
+  Future<String?> syncStatusOf(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'prescriptions',
+      columns: ['sync_status'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return rows.isEmpty ? null : rows.first['sync_status'] as String?;
+  }
+
+  /// Pauses the prescription; false, and nothing changed, when it is
+  /// missing or deleted.
   Future<bool> deactivate(String id) => _setActive(id, active: false);
 
-  /// Resumes the prescription; false when there is no such row.
+  /// Resumes the prescription; false, and nothing changed, when it is
+  /// missing or deleted.
   Future<bool> reactivate(String id) => _setActive(id, active: true);
 
   /// Stamped with [nextUpdatedAt], so the change looks newer than the row's
   /// current stamp to last-write-wins even when that stamp came from a
   /// server whose clock is ahead of this device's.
+  ///
+  /// A deleted (`pending_delete`) row is left alone: a pause must never
+  /// bring a deleted prescription back.
   Future<bool> _setActive(String id, {required bool active}) async {
     final db = await _db;
     return db.transaction((txn) async {
       final rows = await txn.query(
         'prescriptions',
         columns: ['updated_at'],
-        where: 'id = ?',
-        whereArgs: [id],
+        where: 'id = ? AND sync_status != ?',
+        whereArgs: [id, SyncStatus.pendingDelete],
       );
-      final raw = rows.isEmpty ? null : rows.first['updated_at'] as String?;
+      if (rows.isEmpty) return false;
+      final raw = rows.first['updated_at'] as String?;
       final previous = raw == null ? null : DateTime.tryParse(raw);
       final now = _now();
       final stamp = nextUpdatedAt(previous, now);
@@ -165,7 +183,7 @@ class PrescriptionLocalDatasource {
         where: 'id = ?',
         whereArgs: [id],
       );
-      return rows.isNotEmpty;
+      return true;
     });
   }
 
