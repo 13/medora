@@ -709,6 +709,7 @@
   "forcePullTitle": "Force Pull from Cloud",
   "forcePushConfirm": "This will overwrite all data in Supabase with your local data. This action cannot be undone. Continue?",
   "forcePullConfirm": "This replaces everything on this device with the data in Supabase. Local changes that have not been uploaded yet are lost and cannot be recovered. Continue?",
+  "forceSyncBusy": "A sync is running. Try again when it has finished.",
   "foreignDataTitle": "Data from another account",
   "foreignDataBody": "This device holds data saved under a different account. Upload and merge it into this account, or delete it from this device?",
   "foreignDataMerge": "Upload and merge",

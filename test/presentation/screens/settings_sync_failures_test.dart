@@ -402,4 +402,80 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('syncNeedsMigration')), findsNothing);
   });
+
+  for (final push in [true, false]) {
+    testWidgets('a force ${push ? 'push' : 'pull'} confirmed while a sync '
+        'started meanwhile says it did not run (review Minor 4)', (
+      tester,
+    ) async {
+      final now = DateTime.utc(2026, 3, 4, 12);
+      final server = FakeServer(() => now);
+      final service = SyncService(
+        medicationLocal: MedicationLocalDatasource(),
+        medicationRemote: server.meds,
+        treatmentLocal: TreatmentLocalDatasource(),
+        treatmentRemote: server.treatments,
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        prescriptionRemote: server.prescriptions,
+        doseLogLocal: DoseLogLocalDatasource(),
+        doseLogRemote: server.doses,
+        familyLocal: FamilyLocalDatasource(),
+        familyRemote: server.families,
+        syncState: server.state,
+        isOnline: () => true,
+        currentUserId: () => 'user-a',
+        onlineStream: const Stream<bool>.empty(),
+        now: () => now,
+      );
+      addTearDown(service.dispose);
+      await pumpMedoraApp(
+        tester,
+        const SettingsScreen(),
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          syncStartupDelayProvider.overrideWithValue(Duration.zero),
+          reminderPortProvider.overrideWithValue(FakePort()),
+          platformCapabilitiesProvider.overrideWithValue(
+            PlatformCapabilities.mobile,
+          ),
+          syncServiceProvider.overrideWithValue(service),
+        ],
+      );
+      await tester.pumpAndSettle();
+      final advanced = find.text('Advanced');
+      await tester.scrollUntilVisible(
+        advanced,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(advanced);
+      await tester.pumpAndSettle();
+      await tester.tap(advanced);
+      await tester.pumpAndSettle();
+      final button = find.text(push ? 'Force Push' : 'Force Pull');
+      await tester.scrollUntilVisible(
+        button,
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      final requests = server.core.requests.length;
+      // An automatic sync starts while the dialog is open.
+      service.debugSetStateForTest(SyncState.syncing);
+      await tester.tap(find.text('Continue'));
+      // The sync tile spins now, so the tree never settles.
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      expect(
+        find.text('A sync is running. Try again when it has finished.'),
+        findsOneWidget,
+      );
+      expect(server.core.requests.length, requests, reason: 'nothing ran');
+    });
+  }
 }

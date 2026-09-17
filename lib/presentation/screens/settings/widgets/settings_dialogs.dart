@@ -36,12 +36,20 @@ void showForceSyncDialog(
           child: Text(l10n.cancel),
         ),
         TextButton(
-          onPressed: () {
+          onPressed: () async {
             Navigator.pop(ctx);
-            if (isPush) {
-              ref.read(syncServiceProvider).forcePush();
-            } else {
-              ref.read(syncServiceProvider).forcePull();
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            final service = ref.read(syncServiceProvider);
+            // A cycle that started while this dialog was open: the force
+            // action does not run behind it, so say so.
+            final busy = service.currentState == SyncState.syncing;
+            final report = isPush
+                ? await service.forcePush()
+                : await service.forcePull();
+            if (report == null && busy) {
+              messenger?.showSnackBar(
+                SnackBar(content: Text(l10n.forceSyncBusy)),
+              );
             }
           },
           child: Text(

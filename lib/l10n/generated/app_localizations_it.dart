@@ -1563,6 +1563,10 @@ class AppLocalizationsIt extends AppLocalizations {
       'Questa operazione sostituisce tutto ciò che è su questo dispositivo con i dati di Supabase. Le modifiche locali non ancora caricate andranno perse in modo irreversibile. Continuare?';
 
   @override
+  String get forceSyncBusy =>
+      'È in corso una sincronizzazione. Riprova quando è terminata.';
+
+  @override
   String get foreignDataTitle => 'Dati di un altro account';
 
   @override

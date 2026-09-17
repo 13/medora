@@ -500,6 +500,7 @@
   "forcePullTitle": "Force Pull from Cloud",
   "forcePushConfirm": "Questo sovrascriverà tutti i dati in Supabase con i tuoi dati locali. Questa azione non può essere annullata. Continuare?",
   "forcePullConfirm": "Questa operazione sostituisce tutto ciò che è su questo dispositivo con i dati di Supabase. Le modifiche locali non ancora caricate andranno perse in modo irreversibile. Continuare?",
+  "forceSyncBusy": "È in corso una sincronizzazione. Riprova quando è terminata.",
   "foreignDataTitle": "Dati di un altro account",
   "foreignDataBody": "Questo dispositivo contiene dati salvati con un altro account. Vuoi caricarli e unirli a questo account oppure eliminarli dal dispositivo?",
   "foreignDataMerge": "Carica e unisci",

@@ -2803,6 +2803,12 @@ abstract class AppLocalizations {
   /// **'This replaces everything on this device with the data in Supabase. Local changes that have not been uploaded yet are lost and cannot be recovered. Continue?'**
   String get forcePullConfirm;
 
+  /// No description provided for @forceSyncBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'A sync is running. Try again when it has finished.'**
+  String get forceSyncBusy;
+
   /// No description provided for @foreignDataTitle.
   ///
   /// In en, this message translates to:

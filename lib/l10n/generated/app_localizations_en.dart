@@ -1552,6 +1552,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'This replaces everything on this device with the data in Supabase. Local changes that have not been uploaded yet are lost and cannot be recovered. Continue?';
 
   @override
+  String get forceSyncBusy =>
+      'A sync is running. Try again when it has finished.';
+
+  @override
   String get foreignDataTitle => 'Data from another account';
 
   @override
