@@ -1,14 +1,16 @@
 /// Medora - Keeps each prescription's dose rows in line with its schedule.
 ///
-/// Generated doses carry the weakest stamp (1970), so a delta pull never
-/// brings another device's copies: every device generates its own, with the
-/// same ids (see `dose_slot.dart`), and the sync cycle adopts the server's
-/// copy of each. This service is what makes a device generate:
+/// Every device generates the doses of a schedule with the same ids (see
+/// `dose_slot.dart`); the sync cycle pulls the copies other devices sent
+/// and inserts a generated dose only where the server lacks it. This
+/// service is what makes a device generate what it still lacks:
 ///
 /// - [applyPulled] when a pull brings a prescription that is new here, or
 ///   whose schedule changed on another device;
 /// - [ensureScheduled] on start, on resume and after every sync, for any
-///   prescription whose stored doses do not match its schedule.
+///   prescription whose stored doses do not match its schedule. It also
+///   moves a dose an older build stored hours off back to its slot's time
+///   (`DoseLogRepository.correctDoseTimes`).
 library;
 
 import 'package:flutter/foundation.dart';
@@ -105,6 +107,8 @@ class DoseScheduleService {
           p.id,
         )).dataOrNull;
         if (stored == null) continue;
+        final shifted = _shiftedSlots(p.id, times, stored);
+        if (shifted.isNotEmpty) await _doses.correctDoseTimes(shifted);
         final off = _offSchedule(p.id, times, stored);
         final attempted = _attempted.putIfAbsent(p.id, () => <String>{});
         if (attempted.containsAll(off)) continue;
@@ -120,6 +124,28 @@ class DoseScheduleService {
       debugPrint('⚠ Doses: checking the schedules failed: $e');
     }
     return regenerated;
+  }
+
+  /// The pending doses stored under a slot's own id at another time, with
+  /// the time that slot has: dose id → slot time. A slot another dose
+  /// already sits at is left out: moving the dose there would make two.
+  static Map<String, DateTime> _shiftedSlots(
+    String prescriptionId,
+    List<DateTime> times,
+    List<DoseLog> stored,
+  ) {
+    final byId = {for (final d in stored) d.id: d};
+    final storedKeys = {for (final d in stored) doseSlotKey(d.scheduledTime)};
+    final shifted = <String, DateTime>{};
+    for (final t in times) {
+      if (storedKeys.contains(doseSlotKey(t))) continue;
+      final dose = byId[scheduledDoseId(prescriptionId, t)];
+      if (dose == null || dose.status != DoseStatus.pending) continue;
+      if (doseSlotKey(dose.scheduledTime) != doseSlotKey(t)) {
+        shifted[dose.id] = t;
+      }
+    }
+    return shifted;
   }
 
   /// The ids of the scheduled doses [stored] lacks, and of the pending

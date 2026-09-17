@@ -1,30 +1,22 @@
 /// Medora - Sync Service
 ///
-/// Bidirectional sync between local SQLite and Supabase.
+/// Bidirectional sync between local SQLite and Supabase (sync v2, see
+/// `docs/superpowers/specs/2026-09-16-sync-v2-design.md`).
 ///
-/// Offline-first. A cycle pushes first, then pulls, and conflicts resolve
-/// **last write wins by `updated_at`**, on both sides:
+/// Offline-first. A cycle first asks the server for its sync state
+/// (`medora_sync_state`): a project without the sync v2 migration stops the
+/// cycle before anything is written ([MissingMigrationException]). Then it
+/// pushes, then it pulls.
 ///
-/// - On the **push** side a `pending_update` is compared against the remote
-///   row's `updated_at` first ([_staleAgainstRemote]); a strictly newer
-///   remote row is left alone and the local row stays pending, so the pull
-///   phase overwrites it — the pull cursor is rewound far enough to guarantee
-///   that ([_skipStale]). The skip is counted in [SyncReport.skippedStale],
-///   not as a failure. `pending_create` rows (the remote row does not exist yet) and
-///   `pending_delete` tombstones (a delete always wins) push unconditionally,
-///   and `forcePush` skips the comparison entirely.
-/// - A `pending_create` **dose log** is the exception: a dose has a
-///   deterministic id, so the server may already have it, taken on another
-///   device. New dose logs are inserted only where the server lacks them, in
-///   batches, and the server's rows are then stored locally
-///   ([_pushNewDoseLogs]). Generated doses and doses the app marked missed on
-///   its own carry the weakest stamps (see `generatedUpdatedAt` and
-///   `automaticUpdatedAt`), so any real change wins.
-/// - On the **pull** side [_localPendingIsNewer] keeps a locally pending row
-///   that is at least as new as the remote copy.
-/// - A pushed row is marked synced only if it is still the copy the push
-///   read ([_settlePushed]); a row edited meanwhile stays pending and the
-///   cycle runs once more.
+/// - **Push.** A pending row is sent as the columns that differ from its
+///   base (the server copy it was last in step with), and only if the server
+///   row is still that version. When the server moved on, the two copies are
+///   merged column group by column group (`row_merge.dart`) and the rest is
+///   sent again. Each attempt carries a write id stored before it is sent, so
+///   an answer that never arrived is recognised later. New dose logs go out
+///   in batches, inserted only where the server lacks them.
+/// - **Pull.** Each table is read from its stored key up to the server's
+///   horizon, in pages; a pending local row is merged, not overwritten.
 ///
 /// For medications, treatments, prescriptions and dose logs this is the only
 /// push path: the repositories write locally and ask for a [syncAll], which
@@ -34,12 +26,9 @@
 /// ([SyncService.requestTimeout]) and fails like a network error.
 ///
 /// After an upgrade, the first cycle that runs pulls every table from the
-/// beginning once ([SyncCursorStore.startPullRepair]): builds before the
-/// paged pull left their cursors past rows they never received. The pull
-/// uses the same merge rules as any other, so local changes still waiting
-/// to be pushed are kept, and nothing local is wiped.
+/// beginning once ([SyncCursorStore.startPullRepair]), so every row gets its
+/// merge base. Nothing local is wiped.
 ///
-/// Remote tombstones (`deleted_at`) always win and become local hard deletes.
 /// Every cycle produces a [SyncReport]; per-row failures never abort the
 /// cycle. A row that fails to push repeatedly is backed off exponentially
 /// (`SyncFailureStore`) so it stops poisoning every cycle, and the user can
@@ -58,24 +47,28 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
-import 'package:medora/data/datasources/pull_page.dart';
+import 'package:medora/data/datasources/schema_errors.dart';
+import 'package:medora/data/datasources/sync_page.dart';
+import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
-import 'package:medora/data/models/dose_log_model.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
-import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
-import 'package:medora/data/models/treatment_model.dart';
-import 'package:medora/data/sync/push_settle.dart';
-import 'package:medora/domain/entities/dose_slot.dart';
+import 'package:medora/data/sync/row_merge.dart';
+import 'package:medora/data/sync/row_settle.dart';
+import 'package:medora/data/sync/sync_meta.dart';
+import 'package:medora/data/sync/table_sync.dart';
 import 'package:medora/services/connectivity_service.dart';
 import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
 import 'package:medora/services/sync_report.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:uuid/uuid.dart';
 
 export 'package:medora/services/sync_report.dart';
 
@@ -94,6 +87,8 @@ class SyncService {
     required this.doseLogRemote,
     required this.familyLocal,
     required this.familyRemote,
+    required this.syncState,
+    String Function()? newWriteId,
     SyncCursorStore? cursors,
     SyncFailureStore? failures,
     bool Function()? isOnline,
@@ -111,7 +106,8 @@ class SyncService {
        _currentUserId = currentUserId ?? (() => SupabaseConfig.currentUserId),
        _onlineStream =
            onlineStream ?? ConnectivityService.instance.onlineStream,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _newWriteId = newWriteId ?? const Uuid().v4;
 
   final MedicationLocalDatasource medicationLocal;
   final MedicationRemoteDatasource? medicationRemote;
@@ -124,6 +120,10 @@ class SyncService {
   final FamilyLocalDatasource familyLocal;
   final FamilyRemoteDatasource? familyRemote;
 
+  /// `medora_sync_state`; null in local-only mode.
+  final SyncStateRemoteDatasource? syncState;
+  final String Function() _newWriteId;
+
   /// Called with the signed-in user id after a clean cycle. Belt and braces
   /// for the data-owner bookkeeping the auth screen normally does: if a sign
   /// in ever completed without the screen recording the owner, the first
@@ -132,18 +132,19 @@ class SyncService {
   final Future<void> Function(String userId)? onFirstSuccessfulSync;
 
   /// Called once per pull that stored a prescription new to this device or
-  /// one whose schedule changed, after the dose logs were pulled. The doses
-  /// the other device generated for it carry the 1970 stamp and never come
-  /// with a delta pull, so this device generates its own copies (see
-  /// `DoseScheduleService.applyPulled`); the sync they ask for runs as this
-  /// cycle's re-run and adopts the server's copies. A failure only logs.
+  /// one whose schedule changed, after the dose logs were pulled. The pull
+  /// brings the doses the other device generated for it, but not the ones
+  /// that device has not sent yet, so this device generates what is still
+  /// missing (see `DoseScheduleService.applyPulled`); the sync that asks
+  /// for runs as this cycle's re-run and adopts the server's copies. A
+  /// failure only logs.
   final Future<void> Function(PulledPrescriptions pulled)?
   onPrescriptionsPulled;
 
   /// How long one request to the server may take before the cycle gives up
   /// on it. A timed-out request counts as a network failure: the row stays
   /// pending (with backoff) and a table whose fetch timed out keeps its
-  /// cursor. The request itself may still land; see [_remote].
+  /// pull key. The request itself may still land; see [_remote].
   final Duration requestTimeout;
 
   /// How long after a [syncAll] stopped at [maxAutomaticReruns] the one
@@ -152,7 +153,7 @@ class SyncService {
 
   /// The most pages one table pulls in one cycle ([pullPageSize] rows each).
   /// A server that keeps answering full pages cannot hold the cycle for
-  /// ever; the next cycle continues from the stored cursor.
+  /// ever; the next cycle continues from the stored pull key.
   final int maxPullPages;
 
   final SyncCursorStore _cursors;
@@ -168,7 +169,8 @@ class SyncService {
       treatmentRemote != null &&
       prescriptionRemote != null &&
       doseLogRemote != null &&
-      familyRemote != null;
+      familyRemote != null &&
+      syncState != null;
 
   final _stateController = StreamController<SyncState>.broadcast();
   Stream<SyncState> get stateStream => _stateController.stream;
@@ -216,12 +218,18 @@ class SyncService {
   Future<SyncReport?> _syncAll({required bool retryAfterCap}) => _run(
     'sync',
     (report) async {
-      // Only here, past every guard in [_run]: local-only mode, an offline
-      // device and a signed-out user leave the repair for a later sync.
+      final state = await _remote(syncState!.read());
+      // Only here, past every guard in [_run] and the migration check:
+      // local-only mode, an offline device, a signed-out user and an
+      // unmigrated project leave the repair for a later sync.
       final repairing = await _cursors.startPullRepair();
       await _pushPendingChanges(report);
-      final fetchedAll = await _pullAll(report, force: false);
-      // A table whose fetch failed keeps the cursor of its last stored page
+      final fetchedAll = await _pullAll(
+        report,
+        force: false,
+        horizon: state.horizon,
+      );
+      // A table whose fetch failed keeps the key of its last stored page
       // (none, if it failed at once), so the next cycle still gets the rest;
       // the repair is recorded once a cycle has fetched every table.
       if (repairing && fetchedAll) await _cursors.finishPullRepair();
@@ -230,20 +238,23 @@ class SyncService {
     retryAfterCap: retryAfterCap,
   );
 
-  /// Push ALL local rows regardless of sync_status.
-  Future<SyncReport?> forcePush() => _run(
-    'force push',
-    (report) => _pushPendingChanges(report, forceAll: true),
-  );
+  /// Push ALL local rows regardless of sync_status: "my copy is the truth".
+  Future<SyncReport?> forcePush() => _run('force push', (report) async {
+    await _remote(syncState!.read());
+    await _pushPendingChanges(report, forceAll: true);
+  });
 
   /// Wipe local rows and pull everything again.
   Future<SyncReport?> forcePull() => _run('force pull', (report) async {
+    final state = await _remote(syncState!.read());
     await _cursors.clear();
     // Every local row is about to be replaced by the server's, so no row is
     // still waiting to be pushed and no backoff record means anything.
     await _failures.clearAll();
     await AppDatabase.instance.clearAllData();
-    await _pullAll(report, force: true);
+    await _pullAll(report, force: true, horizon: state.horizon);
+    // Everything was pulled from the start: that is the repair.
+    await _cursors.finishPullRepair();
   });
 
   /// How many times one [syncAll] runs another cycle on its own, for rows
@@ -355,6 +366,10 @@ class SyncService {
   ) async {
     try {
       await body(report);
+    } on MissingMigrationException catch (e) {
+      debugPrint('Sync: $label stopped — $e');
+      report.fatal = '$e';
+      report.missingMigration = e.migration;
     } on _FetchFailedFatally catch (e) {
       // Force pull already wiped the local database, so a whole-table fetch
       // failure leaves the device with a hole in its data. That is a failed
@@ -377,7 +392,8 @@ class SyncService {
     _lastReport = report;
     debugPrint(
       'Sync: $label done — pushed ${report.pushed}, pulled ${report.pulled}, '
-      'deleted ${report.deleted}, skipped-stale ${report.skippedStale}, '
+      'deleted ${report.deleted}, merged ${report.merged}, '
+      'overwritten ${report.overwritten}, '
       'skipped-backoff ${report.skippedBackoff}, '
       'failed ${report.failures.length}',
     );
@@ -409,6 +425,25 @@ class SyncService {
 
   // ── Push ───────────────────────────────────────────────────
 
+  /// The per-row sync of one of the four merged tables.
+  late final Map<String, TableSync> _tables = {
+    if (medicationRemote != null)
+      'medications': _tableSync('medications', medicationRemote!.rows),
+    if (treatmentRemote != null)
+      'treatments': _tableSync('treatments', treatmentRemote!.rows),
+    if (prescriptionRemote != null)
+      'prescriptions': _tableSync('prescriptions', prescriptionRemote!.rows),
+    if (doseLogRemote != null)
+      'dose_logs': _tableSync('dose_logs', doseLogRemote!.rows),
+  };
+
+  TableSync _tableSync(String table, SyncTable rows) => TableSync(
+    table: table,
+    remote: _TimedSyncTable(rows, requestTimeout),
+    newWriteId: _newWriteId,
+    now: _now,
+  );
+
   Future<void> _pushPendingChanges(
     SyncReport report, {
     bool forceAll = false,
@@ -434,7 +469,8 @@ class SyncService {
         ? [SyncStatus.pendingDelete]
         : [SyncStatus.synced, SyncStatus.pendingDelete];
 
-    // FK order: Families -> Medications -> Treatments -> Prescriptions -> DoseLogs
+    // FK order: Families -> Medications -> Treatments -> Prescriptions ->
+    // DoseLogs
     await _pushBatch('families', report, familyWhere, familyWhereArgs, (
       row,
     ) async {
@@ -486,116 +522,93 @@ class SyncService {
       },
     );
 
-    await _pushBatch('medications', report, where, whereArgs, (row) async {
-      final model = MedicationModel.fromLocalMap({...row, 'user_id': userId});
-      if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await _remote(medicationRemote!.deleteMedication(model.id));
-        await medicationLocal.hardDelete(model.id);
-      } else {
-        final staleAt = await _staleAgainstRemote(
-          row,
-          (id) => _remote(medicationRemote!.getUpdatedAt(id)),
-          force: forceAll,
-        );
-        if (staleAt != null) {
-          await _skipStale('medications', report, staleAt);
-          return false;
-        }
-        final serverAt = await _upsertStamped(
-          row,
-          () => medicationRemote!.upsertMedication(model),
-        );
-        await _settlePushed('medications', row, serverAt);
-      }
-      return true;
-    });
-
-    await _pushBatch('treatments', report, where, whereArgs, (row) async {
-      final model = TreatmentModel.fromLocalMap({...row, 'user_id': userId});
-      if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await _remote(treatmentRemote!.deleteTreatment(model.id));
-        await treatmentLocal.hardDelete(model.id);
-      } else {
-        final staleAt = await _staleAgainstRemote(
-          row,
-          (id) => _remote(treatmentRemote!.getUpdatedAt(id)),
-          force: forceAll,
-        );
-        if (staleAt != null) {
-          await _skipStale('treatments', report, staleAt);
-          return false;
-        }
-        final serverAt = await _upsertStamped(
-          row,
-          () => treatmentRemote!.upsertTreatment(model),
-        );
-        await _settlePushed('treatments', row, serverAt);
-      }
-      return true;
-    });
-
-    await _pushBatch('prescriptions', report, where, whereArgs, (row) async {
-      final model = PrescriptionModel.fromLocalMap(row);
-      if (row['sync_status'] == SyncStatus.pendingDelete) {
-        await _remote(prescriptionRemote!.deletePrescription(model.id));
-        await prescriptionLocal.hardDelete(model.id);
-      } else {
-        final staleAt = await _staleAgainstRemote(
-          row,
-          (id) => _remote(prescriptionRemote!.getUpdatedAt(id)),
-          force: forceAll,
-        );
-        if (staleAt != null) {
-          await _skipStale('prescriptions', report, staleAt);
-          return false;
-        }
-        final serverAt = await _upsertStamped(
-          row,
-          () => prescriptionRemote!.upsertPrescription(model),
-        );
-        await _settlePushed('prescriptions', row, serverAt);
-      }
-      return true;
-    });
-
+    await _pushTable('medications', report, userId, forceAll: forceAll);
+    await _pushTable('treatments', report, userId, forceAll: forceAll);
+    await _pushTable('prescriptions', report, userId, forceAll: forceAll);
     // A dose this device created is only ever inserted where the server does
     // not have it yet, in batches (see [_pushNewDoseLogs]); a forced push is
     // the exception, since it means "my copy is the truth".
     if (!forceAll) await _pushNewDoseLogs(report);
-    await _pushBatch(
+    await _pushTable(
       'dose_logs',
       report,
-      forceAll ? where : 'sync_status != ? AND sync_status != ?',
-      forceAll ? whereArgs : [SyncStatus.synced, SyncStatus.pendingCreate],
+      userId,
+      forceAll: forceAll,
+      skipCreates: !forceAll,
+    );
+  }
+
+  /// Pushes the pending rows of one merged [table] through its [TableSync].
+  /// A dose whose prescription the server refused this cycle waits for it.
+  Future<void> _pushTable(
+    String table,
+    SyncReport report,
+    String userId, {
+    required bool forceAll,
+    bool skipCreates = false,
+  }) async {
+    final sync = _tables[table]!;
+    final refused = table == 'dose_logs'
+        ? await _refusedPrescriptions()
+        : const <String>{};
+    await _pushBatch(
+      table,
+      report,
+      forceAll
+          ? null
+          : skipCreates
+          ? 'sync_status != ? AND sync_status != ?'
+          : 'sync_status != ?',
+      forceAll
+          ? null
+          : skipCreates
+          ? [SyncStatus.synced, SyncStatus.pendingCreate]
+          : [SyncStatus.synced],
       (row) async {
-        final model = DoseLogModel.fromLocalMap(row);
-        if (row['sync_status'] == SyncStatus.pendingDelete) {
-          await _remote(doseLogRemote!.deleteDoseLog(model.id));
-          await doseLogLocal.hardDelete(model.id);
-        } else {
-          final staleAt = await _staleAgainstRemote(
-            row,
-            (id) => _remote(doseLogRemote!.getUpdatedAt(id)),
-            force: forceAll,
-          );
-          if (staleAt != null) {
-            await _skipStale('dose_logs', report, staleAt);
-            return false;
-          }
-          final serverAt = await _upsertStamped(
-            row,
-            () => doseLogRemote!.upsertDoseLog(model),
-          );
-          await _settlePushed('dose_logs', row, serverAt);
+        if (refused.contains(row['prescription_id'])) {
+          report.skippedBackoff++;
+          return false;
         }
+        final result = await sync.pushRow(row, userId: userId, force: forceAll);
+        _recordConflicts(report, table, row['id']! as String, result.conflicts);
+        if (result.outcome == PushOutcome.pending) _rerunRequested = true;
         return true;
       },
     );
   }
 
-  /// Stamps at or before this are the app's own (`generatedUpdatedAt`,
-  /// `automaticUpdatedAt`), never a person's.
-  static final _weakStampCeiling = DateTime.utc(1970, 1, 2);
+  void _recordConflicts(
+    SyncReport report,
+    String table,
+    String id,
+    List<MergeConflict> conflicts,
+  ) {
+    if (conflicts.isEmpty) return;
+    report.merged++;
+    for (final c in conflicts) {
+      report.overwritten.add(
+        SyncOverwrite(table, id, c.columns, keptLocal: c.keptLocal),
+      );
+    }
+  }
+
+  /// Prescriptions that are not on the server yet and failed to go there:
+  /// their doses would be refused too (sick-branch review m-3 counts a
+  /// `pending_update` that never reached the server as well).
+  Future<Set<String>> _refusedPrescriptions() async {
+    final db = await AppDatabase.instance.database;
+    final refused = <String>{};
+    for (final p in await db.query(
+      'prescriptions',
+      columns: ['id'],
+      where: 'sync_status != ? AND sync_version IS NULL',
+      whereArgs: [SyncStatus.synced],
+    )) {
+      final id = p['id']! as String;
+      if (await _failures.get('prescriptions', id) != null) refused.add(id);
+    }
+    return refused;
+  }
 
   /// How many new dose logs one request inserts. The read-back lists their
   /// ids in the URL, which keeps it well under common URL limits.
@@ -605,23 +618,21 @@ class SyncService {
   /// hundreds of rows, and the same dose (deterministic id) can already be on
   /// the server, taken on another device.
   ///
-  /// Per batch: one insert that leaves existing rows alone, then one read of
-  /// the same ids. Each local row that is still the copy this cycle read is
-  /// replaced by the server's row, marked `synced` (or deleted if the server
-  /// has a tombstone). A row changed meanwhile stays pending and the cycle
-  /// runs again. A row missing from the read-back stays pending with backoff.
+  /// Per batch: each row gets a write id, stored before the request; one
+  /// insert that leaves existing rows alone; then one read of the same ids.
+  /// A row the server holds with this device's write id is settled
+  /// ([settlePushedRow]); a row someone else wrote is merged (a generated
+  /// copy always loses to it). A row missing from the read-back stays
+  /// pending with backoff.
   ///
-  /// - **The server refuses the batch** ([PostgrestException]): one row can
-  ///   do that to the whole statement (a constraint, the foreign key, the
-  ///   row-level policy), so each row is sent alone and only the rows the
-  ///   server refuses on their own stay pending with backoff.
+  /// - **The server refuses the batch** ([PostgrestException]): each row is
+  ///   sent alone and only the rows the server refuses on their own stay
+  ///   pending with backoff.
   /// - **No answer** (a network error or a timeout): every row of the batch
-  ///   stays pending with backoff. If the insert did land, the next attempt
-  ///   inserts nothing and reads the rows back, so the outcome is the same.
-  /// - **A dose whose prescription is new here and was refused this cycle**
-  ///   is not sent at all (the server would refuse it for the missing
-  ///   prescription); it waits, counted as backing off, without a failure of
-  ///   its own.
+  ///   stays pending with backoff; its write id recognises the insert if it
+  ///   landed.
+  /// - **A dose whose prescription the server refused** waits, counted as
+  ///   backing off, without a failure of its own.
   ///
   /// A failed batch never stops the batches after it.
   Future<void> _pushNewDoseLogs(SyncReport report) async {
@@ -632,16 +643,7 @@ class SyncService {
       whereArgs: [SyncStatus.pendingCreate],
       orderBy: 'scheduled_time',
     );
-    final refused = <String>{};
-    for (final p in await db.query(
-      'prescriptions',
-      columns: ['id'],
-      where: 'sync_status = ?',
-      whereArgs: [SyncStatus.pendingCreate],
-    )) {
-      final id = p['id'] as String;
-      if (await _failures.get('prescriptions', id) != null) refused.add(id);
-    }
+    final refused = await _refusedPrescriptions();
     final ready = <Map<String, dynamic>>[];
     final backedOff = <String>{};
     for (final row in rows) {
@@ -660,17 +662,20 @@ class SyncService {
       }
       ready.add(row);
     }
+    final sync = _tables['dose_logs']!;
     for (var start = 0; start < ready.length; start += doseLogInsertBatchSize) {
-      final batch = ready.sublist(
-        start,
-        (start + doseLogInsertBatchSize).clamp(0, ready.length),
+      final batch = await _withWriteIds(
+        ready.sublist(
+          start,
+          (start + doseLogInsertBatchSize).clamp(0, ready.length),
+        ),
       );
       final landed = await _insertNewDoseLogs(batch, report);
       if (landed.isEmpty) continue;
-      final List<DoseLogModel> server;
+      final List<Map<String, dynamic>> server;
       try {
         server = await _remote(
-          doseLogRemote!.getDoseLogsByIds([
+          doseLogRemote!.rows.fetchMany([
             for (final row in landed) row['id'] as String,
           ]),
         );
@@ -678,7 +683,7 @@ class SyncService {
         await _failNewDoseLogs(landed, report, e);
         continue;
       }
-      final byId = {for (final d in server) d.id: d};
+      final byId = {for (final d in server) d['id'] as String: d};
       for (final row in landed) {
         final id = row['id'] as String;
         final remote = byId[id];
@@ -693,70 +698,60 @@ class SyncService {
           );
           continue;
         }
-        final DoseLogModel adopted;
-        try {
-          adopted = await _stampRecordedDose(row, remote);
-        } catch (e) {
-          await _failNewDoseLogs([row], report, e);
-          continue;
+        final bool pending;
+        if (RemoteMeta.fromJson(remote).writeId == row['sync_write_id']) {
+          pending = await settlePushedRow(
+            db,
+            'dose_logs',
+            pushed: row,
+            server: remote,
+            newOpId: _newWriteId,
+          );
+        } else {
+          final applied = await sync.applyPulled(remote);
+          _recordConflicts(report, 'dose_logs', id, applied.conflicts);
+          pending = await _isLocallyPending('dose_logs', id);
         }
-        final settled = remote.deletedAt != null
-            ? await doseLogLocal.deletePushedCreate(
-                id,
-                pushedUpdatedAt: row['updated_at'],
-              )
-            : await doseLogLocal.adoptPushedCreate(
-                adopted,
-                pushedUpdatedAt: row['updated_at'],
-              );
-        if (settled) {
-          report.pushed++;
-          if (backedOff.contains(id)) await _failures.clear('dose_logs', id);
-        } else if (await _isLocallyPending('dose_logs', id)) {
-          _rerunRequested = true;
-        }
+        report.pushed++;
+        if (backedOff.contains(id)) await _failures.clear('dose_logs', id);
+        if (pending) _rerunRequested = true;
       }
       await Future<void>.delayed(Duration.zero);
     }
   }
 
-  /// [remote], with the server's own stamp when it is the copy of a dose a
-  /// person recorded on this device (an as-needed intake) that this device
-  /// just inserted: such a row is sent once more so that other devices'
-  /// delta pulls see it (see [_upsertStamped]). A generated dose (its id is
-  /// its slot's) keeps the weakest stamp, and a copy someone else wrote is
-  /// left as it is.
-  Future<DoseLogModel> _stampRecordedDose(
-    Map<String, dynamic> row,
-    DoseLogModel remote,
+  /// [rows] with a fresh write id each, stored on the local rows first.
+  Future<List<Map<String, dynamic>>> _withWriteIds(
+    List<Map<String, dynamic>> rows,
   ) async {
-    if (remote.deletedAt != null) return remote;
-    final local = DoseLogModel.fromLocalMap(row);
-    if (local.id ==
-        scheduledDoseId(local.prescriptionId, local.scheduledTime)) {
-      return remote;
-    }
-    final sent = local.updatedAt;
-    final landed = remote.updatedAt;
-    if (sent == null ||
-        landed == null ||
-        !landed.isAtSameMomentAs(sent) ||
-        !sent.isAfter(_weakStampCeiling)) {
-      return remote;
-    }
-    final stamp = await _remote(doseLogRemote!.upsertDoseLog(local));
-    if (stamp == null) return remote;
-    return DoseLogModel(
-      id: remote.id,
-      prescriptionId: remote.prescriptionId,
-      scheduledTime: remote.scheduledTime,
-      takenTime: remote.takenTime,
-      status: remote.status,
-      notes: remote.notes,
-      createdAt: remote.createdAt,
-      updatedAt: stamp,
-    );
+    final db = await AppDatabase.instance.database;
+    final stamped = <Map<String, dynamic>>[];
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        final writeId = _newWriteId();
+        await txn.update(
+          'dose_logs',
+          {'sync_write_id': writeId},
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+        stamped.add({...row, 'sync_write_id': writeId});
+      }
+    });
+    return stamped;
   }
+
+  /// The insert payload of the local dose row [row]: its data, its write
+  /// id, its edit time (the automatic one when it has none) and its column
+  /// times. Every payload of a batch has the same keys, as one insert
+  /// statement needs; an empty map means the edit time stands for every
+  /// column, as it does here.
+  static Map<String, Object?> _newDosePayload(Map<String, dynamic> row) => {
+    ...localWire('dose_logs', row),
+    'write_id': row['sync_write_id'],
+    'edited_at': (localRowTime(row) ?? automaticEditedAt).toIso8601String(),
+    'field_edited_at': FieldTimes.decode(row['field_edited_at']).toJson(),
+  };
 
   /// Inserts [batch] where the server lacks its rows and returns the rows
   /// the server now has (see [_pushNewDoseLogs]); the others are recorded
@@ -767,8 +762,8 @@ class SyncService {
   ) async {
     try {
       await _remote(
-        doseLogRemote!.insertDoseLogsIfAbsent([
-          for (final row in batch) DoseLogModel.fromLocalMap(row),
+        doseLogRemote!.rows.insertIfAbsent([
+          for (final row in batch) _newDosePayload(row),
         ]),
       );
       return batch;
@@ -790,9 +785,7 @@ class SyncService {
       final row = batch[i];
       try {
         await _remote(
-          doseLogRemote!.insertDoseLogsIfAbsent([
-            DoseLogModel.fromLocalMap(row),
-          ]),
+          doseLogRemote!.rows.insertIfAbsent([_newDosePayload(row)]),
         );
         landed.add(row);
       } on PostgrestException catch (e) {
@@ -818,94 +811,10 @@ class SyncService {
     }
   }
 
-  /// Sends a row with [upsert] and returns the stamp the server gave it.
-  ///
-  /// The server stamps an update with its own clock, but an insert keeps
-  /// the `updated_at` the row was sent with ([row]'s): a row created offline
-  /// would reach the server with a time other devices' delta pulls may
-  /// already be past, and they would never see it. An answer carrying
-  /// exactly the stamp that was sent is such an insert, so the row is sent
-  /// once more, and that update is stamped by the server.
-  Future<DateTime?> _upsertStamped(
-    Map<String, dynamic> row,
-    Future<DateTime?> Function() upsert,
-  ) async {
-    final raw = row['updated_at'] as String?;
-    final sent = raw == null ? null : DateTime.tryParse(raw);
-    final stamp = await _remote(upsert());
-    if (sent == null || stamp == null || !stamp.isAtSameMomentAs(sent)) {
-      return stamp;
-    }
-    return _remote(upsert());
-  }
-
   /// [call] with the cycle's [requestTimeout]. A request that times out
   /// throws [TimeoutException] and is handled like any network error; its
   /// result, if it ever arrives, is ignored, so it never settles a row.
   Future<T> _remote<T>(Future<T> call) => call.timeout(requestTimeout);
-
-  /// Settles a row this cycle has just pushed (see [settlePushedRow]): synced
-  /// only if nobody changed it since the push read it. A row edited meanwhile
-  /// stays pending, and a plain sync runs once more to send it.
-  Future<void> _settlePushed(
-    String table,
-    Map<String, dynamic> row,
-    DateTime? serverUpdatedAt,
-  ) async {
-    final stillPending = await settlePushedRow(
-      await AppDatabase.instance.database,
-      table,
-      id: row['id'] as String,
-      pushedUpdatedAt: row['updated_at'],
-      serverUpdatedAt: serverUpdatedAt,
-    );
-    if (stillPending) _rerunRequested = true;
-  }
-
-  /// The remote `updated_at` when the push of [row] must be skipped because
-  /// the remote copy is strictly newer than the local edit — the other half
-  /// of last-write-wins. Null when the push may go ahead.
-  ///
-  /// Only `pending_update` rows are compared: a `pending_create` has no remote
-  /// row to lose to, a `pending_delete` tombstone always wins, and a forced
-  /// push ([forcePush]) is an explicit "my copy is the truth" request. When
-  /// either side has no usable `updated_at`, or the remote row is gone, the
-  /// push goes ahead.
-  static Future<DateTime?> _staleAgainstRemote(
-    Map<String, dynamic> row,
-    Future<DateTime?> Function(String id) remoteUpdatedAt, {
-    required bool force,
-  }) async {
-    if (force || row['sync_status'] != SyncStatus.pendingUpdate) return null;
-    final localRaw = row['updated_at'] as String?;
-    final local = localRaw == null ? null : DateTime.tryParse(localRaw);
-    if (local == null) return null;
-    final remote = await remoteUpdatedAt(row['id'] as String);
-    if (remote == null) return null;
-    return remote.toUtc().isAfter(local.toUtc()) ? remote.toUtc() : null;
-  }
-
-  /// Records a push skipped as stale and makes sure the pull that is supposed
-  /// to replace the local row actually re-fetches it.
-  ///
-  /// The remote `updated_at` is stamped by the server (`BEFORE UPDATE`
-  /// trigger) while the cursor tracks rows this device has already seen, so
-  /// the cursor can easily sit *past* the remote row that just won: the delta
-  /// pull asks for `updated_at > cursor`, would not return it, and the local
-  /// row would stay pending for ever. Rewinding the cursor to just before the
-  /// winning row's stamp puts it back in the next pull's window.
-  Future<void> _skipStale(
-    String table,
-    SyncReport report,
-    DateTime remoteUpdatedAt,
-  ) async {
-    report.skippedStale++;
-    final current = await _cursors.lastPullAt(table);
-    // A null cursor already means "fetch everything".
-    if (current == null) return;
-    final target = remoteUpdatedAt.toUtc().subtract(const Duration(seconds: 1));
-    if (target.isBefore(current)) await _cursors.setLastPullAt(table, target);
-  }
 
   /// Runs [processRow] per row; a thrown error becomes a [SyncFailure] and the
   /// batch continues. [processRow] returns false when the row was skipped
@@ -948,52 +857,22 @@ class SyncService {
   /// the server's and forget its backoff. Exposed for the settings failures
   /// dialog.
   ///
-  /// Stamping the row `synced` and waiting for a pull to fix it is not enough
-  /// — a delta pull only returns rows newer than the table cursor, so the
-  /// abandoned local values could survive indefinitely. The server row is
-  /// fetched directly instead, and a row the server does not have (or has
-  /// tombstoned) is deleted locally. That is also what discarding a local
-  /// `pending_delete` means: keep the server's copy.
+  /// The server row is fetched directly and stored with its merge base; a
+  /// row the server does not have (or has tombstoned) is deleted locally.
+  /// That is also what discarding a local `pending_delete` means: keep the
+  /// server's copy.
   ///
   /// Throws when the fetch fails, leaving the row pending so the caller can
   /// surface the error and the user can try again.
   Future<void> discardFailedRow(String table, String id) async {
     switch (table) {
-      case 'medications':
-        final remote = await medicationRemote!.getMedicationById(id);
-        await _replaceLocal(
-          remote,
-          deletedAt: remote?.deletedAt,
-          delete: () => medicationLocal.hardDelete(id),
-          upsert: (m) =>
-              medicationLocal.upsert(m, syncStatus: SyncStatus.synced),
-        );
-      case 'treatments':
-        final remote = await treatmentRemote!.getTreatmentById(id);
-        await _replaceLocal(
-          remote,
-          deletedAt: remote?.deletedAt,
-          delete: () => treatmentLocal.hardDelete(id),
-          upsert: (t) =>
-              treatmentLocal.upsert(t, syncStatus: SyncStatus.synced),
-        );
-      case 'prescriptions':
-        final remote = await prescriptionRemote!.getPrescriptionById(id);
-        await _replaceLocal(
-          remote,
-          deletedAt: remote?.deletedAt,
-          delete: () => prescriptionLocal.hardDelete(id),
-          upsert: (p) =>
-              prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced),
-        );
-      case 'dose_logs':
-        final remote = await doseLogRemote!.getDoseLogById(id);
-        await _replaceLocal(
-          remote,
-          deletedAt: remote?.deletedAt,
-          delete: () => doseLogLocal.hardDelete(id),
-          upsert: (d) => doseLogLocal.upsert(d, syncStatus: SyncStatus.synced),
-        );
+      case 'medications' || 'treatments' || 'prescriptions' || 'dose_logs':
+        final remote = await _remote(_tables[table]!.remote.fetch(id));
+        final db = await AppDatabase.instance.database;
+        await db.delete(table, where: 'id = ?', whereArgs: [id]);
+        if (remote != null && remote['deleted_at'] == null) {
+          await _tables[table]!.applyPulled(remote);
+        }
       case 'families':
         final remote = await familyRemote!.getFamilyById(id);
         await _replaceLocal(
@@ -1059,59 +938,29 @@ class SyncService {
 
   /// Returns false when a fetch failed, so some table was not read to its
   /// end (or to [maxPullPages]).
-  Future<bool> _pullAll(SyncReport report, {required bool force}) async {
+  Future<bool> _pullAll(
+    SyncReport report, {
+    required bool force,
+    required int horizon,
+  }) async {
     final pulled = PulledPrescriptions();
     final families = await _pullFamilies(report, failFast: force);
     final both = await Future.wait([
-      _pullTable<MedicationModel>(
-        table: 'medications',
-        report: report,
-        force: force,
-        fetch: (since, after) =>
-            _remote(medicationRemote!.getMedicationsSince(since, after: after)),
-        idOf: (m) => m.id,
-        updatedAtOf: (m) => m.updatedAt,
-        deletedAtOf: (m) => m.deletedAt,
-        delete: medicationLocal.hardDelete,
-        upsert: (m) => _safeUpsertMedication(m, force: force),
-      ),
-      _pullTable<TreatmentModel>(
-        table: 'treatments',
-        report: report,
-        force: force,
-        fetch: (since, after) =>
-            _remote(treatmentRemote!.getTreatmentsSince(since, after: after)),
-        idOf: (t) => t.id,
-        updatedAtOf: (t) => t.updatedAt,
-        deletedAtOf: (t) => t.deletedAt,
-        delete: treatmentLocal.hardDelete,
-        upsert: (t) => _safeUpsertTreatment(t, force: force),
-      ),
+      _pullTable('medications', report, force: force, horizon: horizon),
+      _pullTable('treatments', report, force: force, horizon: horizon),
     ]);
-    final prescriptions = await _pullTable<PrescriptionModel>(
-      table: 'prescriptions',
-      report: report,
+    final prescriptions = await _pullTable(
+      'prescriptions',
+      report,
       force: force,
-      fetch: (since, after) => _remote(
-        prescriptionRemote!.getPrescriptionsSince(since, after: after),
-      ),
-      idOf: (p) => p.id,
-      updatedAtOf: (p) => p.updatedAt,
-      deletedAtOf: (p) => p.deletedAt,
-      delete: prescriptionLocal.hardDelete,
-      upsert: (p) => _safeUpsertPrescription(p, pulled, force: force),
+      horizon: horizon,
+      pulled: pulled,
     );
-    final doses = await _pullTable<DoseLogModel>(
-      table: 'dose_logs',
-      report: report,
+    final doses = await _pullTable(
+      'dose_logs',
+      report,
       force: force,
-      fetch: (since, after) =>
-          _remote(doseLogRemote!.getDoseLogsSince(since, after: after)),
-      idOf: (d) => d.id,
-      updatedAtOf: (d) => d.updatedAt,
-      deletedAtOf: (d) => d.deletedAt,
-      delete: doseLogLocal.hardDelete,
-      upsert: (d) => _safeUpsertDoseLog(d, force: force),
+      horizon: horizon,
     );
     final hook = onPrescriptionsPulled;
     if (hook != null && !pulled.isEmpty) {
@@ -1127,79 +976,81 @@ class SyncService {
   /// The default for [maxPullPages]: 50,000 rows per table per cycle.
   static const defaultMaxPullPages = 50;
 
-  /// Delta pull for one table: asks the remote only for rows newer than the
-  /// stored cursor, applies tombstones as hard deletes, and advances the
-  /// cursor (with a 1 s overlap) to the newest `updated_at` it stored.
+  /// Delta pull for one table: the rows from its stored key up to
+  /// [horizon], in pages of [pullPageSize] (see `pullPage`), each applied
+  /// through [TableSync.applyPulled].
   ///
-  /// The rows come in pages of [pullPageSize], oldest first, each page
-  /// starting after the last row of the one before (see `pullPage`), until a
-  /// page comes back short or [maxPullPages] pages were read. The cursor is
-  /// stored after every page, so a failure part-way leaves it at the end of
-  /// the last page that was fully stored, and the next cycle picks up from
-  /// there. Once a row of a page fails to apply, the cursor stays where it
-  /// was for the rest of the cycle, so that row is fetched again.
+  /// The key is stored after every page, so a failure part-way leaves it at
+  /// the end of the last page that was fully stored. Once a row fails to
+  /// apply, the key stays where it was for the rest of the cycle, so that
+  /// row is fetched again. Only an empty page ends the pull
+  /// ([afterPullPage]: a project may answer fewer rows than asked for) and
+  /// stores the horizon as the next start. A stored key above the horizon
+  /// (a restored server) starts the table over.
   ///
   /// A failure to fetch a page is normally recorded and ends this table's
-  /// pull, so the other tables still sync. When [force] is set the caller has
-  /// already cleared the local database, so the same failure is rethrown as
-  /// [_FetchFailedFatally] and aborts the whole cycle instead.
+  /// pull. When [force] is set the caller has already cleared the local
+  /// database, so the same failure aborts the whole cycle instead.
   ///
-  /// Returns false when a page could not be fetched or placed, true when
-  /// the pull read to the end or to [maxPullPages].
-  Future<bool> _pullTable<T>({
-    required String table,
-    required SyncReport report,
+  /// [pulled] collects prescriptions that are new here or whose schedule
+  /// changed.
+  Future<bool> _pullTable(
+    String table,
+    SyncReport report, {
     required bool force,
-    required Future<List<T>> Function(DateTime? since, PullKey? after) fetch,
-    required String Function(T) idOf,
-    required DateTime? Function(T) updatedAtOf,
-    required DateTime? Function(T) deletedAtOf,
-    required Future<void> Function(String id) delete,
-    required Future<void> Function(T row) upsert,
+    required int horizon,
+    PulledPrescriptions? pulled,
   }) async {
-    final since = force ? null : await _cursors.lastPullAt(table);
-    PullKey? after;
-    var cursorHeld = false;
+    final sync = _tables[table]!;
+    var after = force ? null : await _cursors.pullKey(table);
+    if (after != null && after.xid > horizon) {
+      debugPrint(
+        'Sync: $table key ${after.xid} is past the horizon $horizon; '
+        'pulling it from the start',
+      );
+      await _cursors.resetPullKey(table);
+      after = null;
+    }
+    var keyHeld = false;
     for (var page = 0; page < maxPullPages; page++) {
-      final List<T> rows;
+      final List<Map<String, dynamic>> rows;
       try {
-        rows = await fetch(since, after);
+        rows = await _remote(sync.remote.page(after: after, horizon: horizon));
       } catch (e) {
         report.failures.add(SyncFailure(table, '*', 'pull: $e'));
         if (force) throw _FetchFailedFatally(table, e);
         return false;
       }
       for (final row in rows) {
+        final id = row['id'] as String;
         try {
-          if (deletedAtOf(row) != null) {
-            await delete(idOf(row));
-            report.deleted++;
-          } else {
-            await upsert(row);
+          final before = pulled == null
+              ? null
+              : await prescriptionLocal.getPrescriptionById(id);
+          final applied = await sync.applyPulled(row);
+          _recordConflicts(report, table, id, applied.conflicts);
+          switch (applied.outcome) {
+            case PullOutcome.deleted:
+              report.deleted++;
+            case PullOutcome.kept:
+              break;
+            case PullOutcome.inserted ||
+                PullOutcome.replaced ||
+                PullOutcome.merged:
+              report.pulled++;
+              if (pulled != null) {
+                await _notePulledPrescription(pulled, id, before);
+              }
           }
-          report.pulled++;
         } catch (e) {
-          cursorHeld = true;
-          report.failures.add(SyncFailure(table, idOf(row), 'apply: $e'));
+          keyHeld = true;
+          report.failures.add(SyncFailure(table, id, 'apply: $e'));
         }
       }
-      final last = rows.isEmpty ? null : rows.last;
-      final lastStamp = last == null ? null : updatedAtOf(last)?.toUtc();
-      if (last != null && lastStamp == null) {
-        // No position to continue from; the rows are stored, the cursor
-        // stays, and the next cycle asks again.
-        report.failures.add(
-          SyncFailure(table, idOf(last), 'pull: row without updated_at'),
-        );
-        return false;
-      }
-      if (last != null) after = PullKey(lastStamp!, idOf(last));
-      final complete = rows.length < pullPageSize;
-      final stamp = after?.updatedAt;
-      if (!cursorHeld && stamp != null) {
-        await _storePullCursor(table, stamp, complete: complete);
-      }
-      if (complete) return true;
+      final next = afterPullPage(rows, horizon: horizon);
+      if (!keyHeld) await _cursors.setPullKey(table, next.key);
+      if (next.done) return true;
+      after = next.key;
     }
     debugPrint(
       'Sync: $table pull stopped after $maxPullPages pages; '
@@ -1208,24 +1059,20 @@ class SyncService {
     return true;
   }
 
-  /// Stores the cursor for a pull whose last stored row has [stamp].
-  ///
-  /// Rows stamped by the app itself (1970) are never meant to come with a
-  /// delta pull; once a pull has read to the end ([complete]), a cursor left
-  /// before them would fetch all of them again on every cycle while no real
-  /// change has been seen, so it is lifted past them. A pull that stopped
-  /// part-way keeps the cursor just before its last row even there, so the
-  /// app-stamped rows it has not read yet still come with the next cycle.
-  Future<void> _storePullCursor(
-    String table,
-    DateTime stamp, {
-    required bool complete,
-  }) async {
-    var cursor = stamp.subtract(const Duration(seconds: 1));
-    if (complete && cursor.isBefore(_weakStampCeiling)) {
-      cursor = _weakStampCeiling;
+  /// Records in [pulled] whether prescription [id] is new here or its
+  /// schedule changed from [before].
+  Future<void> _notePulledPrescription(
+    PulledPrescriptions pulled,
+    String id,
+    PrescriptionModel? before,
+  ) async {
+    final after = await prescriptionLocal.getPrescriptionById(id);
+    if (after == null) return;
+    if (before == null) {
+      pulled.added.add(id);
+    } else if (_scheduleChanged(before, after)) {
+      pulled.changed.add(id);
     }
-    await _cursors.setLastPullAt(table, cursor);
   }
 
   /// Returns false when a fetch failed.
@@ -1278,48 +1125,7 @@ class SyncService {
     return rows.isNotEmpty;
   }
 
-  // ── Merge helpers (last-write-wins for locally pending rows) ──
-
-  Future<void> _safeUpsertMedication(
-    MedicationModel m, {
-    bool force = false,
-  }) async {
-    if (!force &&
-        await _localPendingIsNewer('medications', m.id, m.updatedAt)) {
-      return;
-    }
-    await medicationLocal.upsert(m, syncStatus: SyncStatus.synced);
-  }
-
-  Future<void> _safeUpsertTreatment(
-    TreatmentModel t, {
-    bool force = false,
-  }) async {
-    if (!force && await _localPendingIsNewer('treatments', t.id, t.updatedAt)) {
-      return;
-    }
-    await treatmentLocal.upsert(t, syncStatus: SyncStatus.synced);
-  }
-
-  /// Also records in [pulled] whether the row is new here or its schedule
-  /// changed.
-  Future<void> _safeUpsertPrescription(
-    PrescriptionModel p,
-    PulledPrescriptions pulled, {
-    bool force = false,
-  }) async {
-    if (!force &&
-        await _localPendingIsNewer('prescriptions', p.id, p.updatedAt)) {
-      return;
-    }
-    final before = await prescriptionLocal.getPrescriptionById(p.id);
-    await prescriptionLocal.upsert(p, syncStatus: SyncStatus.synced);
-    if (before == null) {
-      pulled.added.add(p.id);
-    } else if (_scheduleChanged(before, p)) {
-      pulled.changed.add(p.id);
-    }
-  }
+  // ── Helpers ────────────────────────────────────────────────
 
   /// True when [after] generates other doses than [before] would.
   static bool _scheduleChanged(
@@ -1332,42 +1138,6 @@ class SyncService {
       before.startTime != after.startTime ||
       before.isActive != after.isActive ||
       !listEquals(before.scheduleTimes, after.scheduleTimes);
-
-  Future<void> _safeUpsertDoseLog(DoseLogModel d, {bool force = false}) async {
-    if (!force && await _localPendingIsNewer('dose_logs', d.id, d.updatedAt)) {
-      return;
-    }
-    // An overdue dose this device marked missed is not pushed, so the server
-    // still has the pending copy; that copy coming back must not undo it.
-    if (!force && await doseLogLocal.isAutomaticallyMissedCopyOf(d)) return;
-    await doseLogLocal.upsert(d, syncStatus: SyncStatus.synced);
-  }
-
-  /// True when the local row has unpushed changes that are at least as new as
-  /// the remote row (so the remote row must not overwrite it). A local
-  /// tombstone waiting to be pushed always wins over a live remote row — a
-  /// pull must never resurrect a row the user deleted.
-  Future<bool> _localPendingIsNewer(
-    String table,
-    String id,
-    DateTime? remoteUpdatedAt,
-  ) async {
-    final db = await AppDatabase.instance.database;
-    final rows = await db.query(
-      table,
-      columns: ['updated_at', 'sync_status'],
-      where: 'id = ? AND sync_status != ?',
-      whereArgs: [id, SyncStatus.synced],
-    );
-    if (rows.isEmpty) return false;
-    if (rows.first['sync_status'] == SyncStatus.pendingDelete) return true;
-    final localRaw = rows.first['updated_at'] as String?;
-    final local = localRaw == null ? null : DateTime.tryParse(localRaw);
-    if (local == null || remoteUpdatedAt == null) {
-      return true; // keep local when unsure
-    }
-    return !remoteUpdatedAt.toUtc().isAfter(local.toUtc());
-  }
 
   void _setState(SyncState state) {
     // A starting cycle outlives the previous one's return-to-idle timer.
@@ -1411,4 +1181,47 @@ class _FetchFailedFatally implements Exception {
 
   @override
   String toString() => '_FetchFailedFatally($table): $cause';
+}
+
+/// [SyncTable] with every request under [timeout].
+class _TimedSyncTable implements SyncTable {
+  _TimedSyncTable(this._inner, this._timeout);
+
+  final SyncTable _inner;
+  final Duration _timeout;
+
+  @override
+  Future<List<Map<String, dynamic>>> page({
+    required PullKey? after,
+    required int horizon,
+  }) => _inner.page(after: after, horizon: horizon).timeout(_timeout);
+
+  @override
+  Future<Map<String, dynamic>?> fetch(String id) =>
+      _inner.fetch(id).timeout(_timeout);
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMany(List<String> ids) =>
+      _inner.fetchMany(ids).timeout(_timeout);
+
+  @override
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) => _inner
+      .patch(
+        id,
+        changes,
+        ifVersion: ifVersion,
+        ifStatus: ifStatus,
+        ifLive: ifLive,
+      )
+      .timeout(_timeout);
+
+  @override
+  Future<void> insertIfAbsent(List<Map<String, Object?>> rows) =>
+      _inner.insertIfAbsent(rows).timeout(_timeout);
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,7 +7,7 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
-import 'package:medora/data/datasources/pull_page.dart';
+import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/dose_log_model.dart';
@@ -34,18 +35,27 @@ class Harness {
     DateTime? start,
     StreamController<bool>? online,
     FamilyLocalDatasource? familyLocal,
-    FakeMedicationRemote Function(DateTime Function() clock)? medicationRemote,
-    FakeDoseLogRemote Function(DateTime Function() clock)? doseLogRemote,
+    FakeSyncTable Function(FakeServerCore core)? medicationRows,
+    FakeSyncTable Function(FakeServerCore core)? doseRows,
+    FakeServer? server,
     Duration requestTimeout = const Duration(seconds: 30),
     Duration capRetryDelay = const Duration(seconds: 15),
     int maxPullPages = SyncService.defaultMaxPullPages,
     SyncCursorStore? cursors,
   }) : clock = TestClock(start ?? DateTime.utc(2026, 3, 4, 12)) {
-    meds = (medicationRemote ?? FakeMedicationRemote.new)(clock.now);
-    treatments = FakeTreatmentRemote(clock.now);
-    prescriptions = FakePrescriptionRemote(clock.now);
-    doses = (doseLogRemote ?? FakeDoseLogRemote.new)(clock.now);
-    family = FakeFamilyRemote(clock.now);
+    this.server =
+        server ??
+        FakeServer(
+          clock.now,
+          medicationRows: medicationRows,
+          doseRows: doseRows,
+        );
+    core = this.server.core;
+    meds = this.server.meds;
+    treatments = this.server.treatments;
+    prescriptions = this.server.prescriptions;
+    doses = this.server.doses;
+    family = this.server.families;
     this.cursors = cursors ?? SyncCursorStore.inMemory();
     failures = SyncFailureStore.inMemory();
     service = SyncService(
@@ -59,6 +69,7 @@ class Harness {
       doseLogRemote: doses,
       familyLocal: familyLocal ?? FamilyLocalDatasource(),
       familyRemote: family,
+      syncState: this.server.state,
       cursors: this.cursors,
       failures: failures,
       isOnline: () => this.online,
@@ -74,6 +85,8 @@ class Harness {
   }
 
   final TestClock clock;
+  late final FakeServer server;
+  late final FakeServerCore core;
   bool online = true;
   String? userId = 'user-a';
   late final FakeMedicationRemote meds;
@@ -94,64 +107,90 @@ class FailingFamilyDelete extends FamilyLocalDatasource {
       throw StateError('cannot drop family $id');
 }
 
-/// A medication server whose every upsert is joined by a local edit of the
+/// A medication table whose every write is joined by a local edit of the
 /// same row, as a writer that touches the row on every cycle would do: the
 /// cycle always finds the row changed after its push. Stops after [limit]
 /// edits so a missing cap fails the test instead of hanging it.
-class EditOnEveryPushRemote extends FakeMedicationRemote {
-  EditOnEveryPushRemote(super.clock, {this.limit = 50});
+class EditOnEveryPushTable extends FakeSyncTable {
+  EditOnEveryPushTable(FakeServerCore core, {this.limit = 50})
+    : super(core, 'medications');
 
   final int limit;
   int upserts = 0;
 
-  @override
-  Future<DateTime?> upsertMedication(MedicationModel model) async {
+  Future<void> _editLocally(String id) async {
     upserts++;
-    if (upserts <= limit) {
-      final db = await AppDatabase.instance.database;
-      final row = (await localRow('medications', model.id))!;
-      final stamp = DateTime.parse(row['updated_at'] as String);
-      await db.update(
-        'medications',
-        {
-          'name': 'edit $upserts',
-          'updated_at': stamp
-              .add(const Duration(milliseconds: 1))
-              .toIso8601String(),
-        },
-        where: 'id = ?',
-        whereArgs: [model.id],
-      );
+    if (upserts > limit) return;
+    final db = await AppDatabase.instance.database;
+    final row = (await localRow('medications', id))!;
+    final stamp = DateTime.parse(row['updated_at']! as String);
+    await db.update(
+      'medications',
+      {
+        'name': 'edit $upserts',
+        'updated_at': stamp
+            .add(const Duration(milliseconds: 1))
+            .toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    await _editLocally(id);
+    return super.patch(
+      id,
+      changes,
+      ifVersion: ifVersion,
+      ifStatus: ifStatus,
+      ifLive: ifLive,
+    );
+  }
+
+  @override
+  Future<void> insertIfAbsent(List<Map<String, Object?>> rows) async {
+    for (final r in rows) {
+      await _editLocally(r['id']! as String);
     }
-    return super.upsertMedication(model);
+    return super.insertIfAbsent(rows);
   }
 }
 
-/// A dose-log server whose batch insert lands and whose answer then never
-/// comes while [hang] is set — a response lost to a timeout.
-class HangingInsertRemote extends FakeDoseLogRemote {
-  HangingInsertRemote(super.clock);
+/// A dose table whose batch insert lands and whose answer then never comes
+/// while [hang] is set — a response lost to a timeout.
+class HangingInsertTable extends FakeSyncTable {
+  HangingInsertTable(FakeServerCore core) : super(core, 'dose_logs');
 
   Completer<void>? hang;
 
   @override
-  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
-    await super.insertDoseLogsIfAbsent(models);
+  Future<void> insertIfAbsent(List<Map<String, Object?>> rows) async {
+    await super.insertIfAbsent(rows);
     final gate = hang;
     if (gate != null) await gate.future;
   }
 }
 
-/// A dose-log server that refuses a whole insert statement, as PostgREST
-/// does, when one of its rows breaks a rule: an id in [rejectIds] (a
-/// constraint), or a prescription the server does not have (the foreign key
-/// and the row-level policy). Its read-back can leave out [hideIds].
-class RejectingDoseRemote extends FakeDoseLogRemote {
-  RejectingDoseRemote(super.clock);
+/// A dose table that refuses a whole insert statement, as PostgREST does,
+/// when one of its rows breaks a rule: an id in [rejectIds] (a constraint),
+/// or a prescription the server does not have (the foreign key and the
+/// row-level policy). Its read-back can leave out [hideIds].
+class RejectingDoseTable extends FakeSyncTable {
+  RejectingDoseTable(FakeServerCore core) : super(core, 'dose_logs');
 
   final Set<String> rejectIds = {};
   final Set<String> hideIds = {};
-  FakeRemoteTable? prescriptions;
+
+  /// When set, a dose whose prescription this table lacks is refused.
+  FakeSyncTable? prescriptions;
 
   /// When set, the read-back never answers.
   Object? readBackError;
@@ -159,48 +198,60 @@ class RejectingDoseRemote extends FakeDoseLogRemote {
   /// Every insert request, as the ids it carried.
   final List<List<String>> inserts = [];
 
-  /// The ids sent with a plain upsert, in order.
+  /// The ids sent with a row update, in order.
   final List<String> upserted = [];
 
-  /// When set, a plain upsert gets no answer.
+  /// When set, a row update gets no answer.
   Object? upsertError;
 
   @override
-  Future<DateTime?> upsertDoseLog(DoseLogModel model) {
-    upserted.add(model.id);
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) {
+    upserted.add(id);
     final error = upsertError;
     if (error != null) throw error;
-    return super.upsertDoseLog(model);
+    return super.patch(
+      id,
+      changes,
+      ifVersion: ifVersion,
+      ifStatus: ifStatus,
+      ifLive: ifLive,
+    );
   }
 
   @override
-  Future<void> insertDoseLogsIfAbsent(List<DoseLogModel> models) async {
-    inserts.add([for (final m in models) m.id]);
-    for (final m in models) {
-      if (rejectIds.contains(m.id)) {
+  Future<void> insertIfAbsent(List<Map<String, Object?>> rows) async {
+    inserts.add([for (final r in rows) r['id']! as String]);
+    for (final r in rows) {
+      if (rejectIds.contains(r['id'])) {
         throw const PostgrestException(
           message: 'check violation',
           code: '23514',
         );
       }
       final known = prescriptions;
-      if (known != null && !known.rows.containsKey(m.prescriptionId)) {
+      if (known != null && !known.rows.containsKey(r['prescription_id'])) {
         throw const PostgrestException(
           message: 'insert or update violates foreign key constraint',
           code: '23503',
         );
       }
     }
-    return super.insertDoseLogsIfAbsent(models);
+    return super.insertIfAbsent(rows);
   }
 
   @override
-  Future<List<DoseLogModel>> getDoseLogsByIds(List<String> ids) async {
+  Future<List<Map<String, dynamic>>> fetchMany(List<String> ids) async {
     final error = readBackError;
     if (error != null) throw error;
     return [
-      for (final d in await super.getDoseLogsByIds(ids))
-        if (!hideIds.contains(d.id)) d,
+      for (final d in await super.fetchMany(ids))
+        if (!hideIds.contains(d['id'])) d,
     ];
   }
 }
@@ -240,16 +291,16 @@ Future<Map<String, dynamic>?> localRow(String table, String id) async {
 
 int cycles() => 1 + SyncService.maxAutomaticReruns;
 
-/// A dose-log server that ignores where a page should start and answers the
+/// A dose table that ignores where a page should start and answers the
 /// first page every time, so a pull that trusted it would never end.
-class EndlessPagesRemote extends FakeDoseLogRemote {
-  EndlessPagesRemote(super.clock);
+class EndlessPagesTable extends FakeSyncTable {
+  EndlessPagesTable(FakeServerCore core) : super(core, 'dose_logs');
 
   @override
-  Future<List<DoseLogModel>> getDoseLogsSince(
-    DateTime? since, {
-    PullKey? after,
-  }) => super.getDoseLogsSince(since);
+  Future<List<Map<String, dynamic>>> page({
+    required PullKey? after,
+    required int horizon,
+  }) => super.page(after: null, horizon: horizon);
 }
 
 /// Seeds [count] dose rows of one local prescription on the server, the
@@ -297,6 +348,7 @@ void main() {
   SyncService makeLocalOnly() => SyncService(
     medicationLocal: MedicationLocalDatasource(),
     medicationRemote: null,
+    syncState: null,
     treatmentLocal: TreatmentLocalDatasource(),
     treatmentRemote: null,
     prescriptionLocal: PrescriptionLocalDatasource(),
@@ -588,153 +640,133 @@ void main() {
       },
     );
 
-    test(
-      'a stale pending update is not pushed and the remote copy wins',
-      () async {
-        final h = Harness();
-        // Local edit at T+10min, remote edit at T+20min. No failIds trick:
-        // the push itself must notice the remote row is newer and stand down.
-        await MedicationLocalDatasource().upsert(
-          MedicationModel(
-            id: 'm9',
-            name: 'Local',
-            quantity: 1,
-            updatedAt: h.clock.now().add(const Duration(minutes: 10)),
-          ),
-          syncStatus: SyncStatus.pendingUpdate,
-        );
-        h.meds.table.seed(
-          const MedicationModel(id: 'm9', name: 'Remote', quantity: 1).toJson(),
-          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
-        );
+    test('a pending update with no base meets a newer server copy and takes '
+        'it', () async {
+      final h = Harness();
+      // Local edit at T+10min, remote edit at T+20min, and nothing known
+      // about the server copy (a row from before sync v2): the push reads
+      // the server copy and merges by edit time.
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm9',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().add(const Duration(minutes: 10)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm9', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+      );
 
-        final report = (await h.service.syncAll())!;
+      final report = (await h.service.syncAll())!;
 
-        expect(report.skippedStale, 1);
-        expect(report.pushed, 0);
-        expect(report.failures, isEmpty);
-        expect(h.service.currentState, SyncState.success);
-        expect(h.meds.table.rows['m9']?['name'], 'Remote');
-        final row = await localRow('medications', 'm9');
-        expect(row?['name'], 'Remote');
-        expect(row?['sync_status'], SyncStatus.synced);
-      },
-    );
+      expect(report.merged, 1);
+      final overwrite = report.overwritten.single;
+      expect(overwrite.id, 'm9');
+      expect(overwrite.columns, {'name'});
+      expect(overwrite.keptLocal, isFalse);
+      expect(report.failures, isEmpty);
+      expect(h.service.currentState, SyncState.success);
+      expect(h.meds.table.rows['m9']?['name'], 'Remote');
+      final row = await localRow('medications', 'm9');
+      expect(row?['name'], 'Remote');
+      expect(row?['sync_status'], SyncStatus.synced);
+    });
 
-    test(
-      'a stale skipped push rewinds the cursor so the pull refetches the row',
-      () async {
-        final h = Harness();
-        final t = h.clock.now();
-        // The server stamped the winning remote row at T+20 …
-        h.meds.table.seed(
-          const MedicationModel(
-            id: 'm9b',
-            name: 'Remote',
-            quantity: 1,
-          ).toJson(),
-          updatedAt: t.add(const Duration(minutes: 20)),
-        );
-        // … but this device's cursor already sits past it: `updated_at` is
-        // server-clock on the remote side and device-clock locally, so a
-        // delta pull asking for `> cursor` would never return the row again.
-        await h.cursors.setLastPullAt(
-          'medications',
-          t.add(const Duration(minutes: 30)),
-        );
-        await MedicationLocalDatasource().upsert(
-          MedicationModel(
-            id: 'm9b',
-            name: 'Local',
-            quantity: 1,
-            updatedAt: t.add(const Duration(minutes: 10)),
-          ),
-          syncStatus: SyncStatus.pendingUpdate,
-        );
+    test('a server copy the pull already went past is merged by the push, '
+        'not skipped', () async {
+      final h = Harness();
+      final t = h.clock.now();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm9b', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: t.add(const Duration(minutes: 20)),
+      );
+      // This device's pull key is already past that row.
+      await h.cursors.setPullKey('medications', PullKey(h.core.horizon));
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm9b',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: t.add(const Duration(minutes: 10)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
 
-        final report = (await h.service.syncAll())!;
+      final report = (await h.service.syncAll())!;
 
-        expect(report.skippedStale, 1);
-        expect(report.failures, isEmpty);
-        final row = await localRow('medications', 'm9b');
-        expect(
-          row?['name'],
-          'Remote',
-          reason: 'the skipped row must be replaced by the pull it relies on',
-        );
-        expect(row?['sync_status'], SyncStatus.synced);
-      },
-    );
+      expect(report.failures, isEmpty);
+      expect(report.merged, 1);
+      final row = await localRow('medications', 'm9b');
+      expect(row?['name'], 'Remote');
+      expect(row?['sync_status'], SyncStatus.synced);
+    });
 
-    test('a pending update newer than the remote row is pushed', () async {
+    test('a pending update edited after the server copy is pushed', () async {
       final h = Harness();
       await MedicationLocalDatasource().upsert(
         MedicationModel(
           id: 'm10',
           name: 'Local',
           quantity: 1,
-          updatedAt: h.clock.now().add(const Duration(minutes: 20)),
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 5)),
         ),
         syncStatus: SyncStatus.pendingUpdate,
       );
       h.meds.table.seed(
         const MedicationModel(id: 'm10', name: 'Remote', quantity: 1).toJson(),
-        updatedAt: h.clock.now().add(const Duration(minutes: 5)),
+        updatedAt: h.clock.now().subtract(const Duration(minutes: 20)),
       );
 
       final report = (await h.service.syncAll())!;
 
-      expect(report.skippedStale, 0);
       expect(report.pushed, 1);
+      expect(report.overwritten.single.keptLocal, isTrue);
       expect(h.meds.table.rows['m10']?['name'], 'Local');
-      expect((await localRow('medications', 'm10'))?['name'], 'Local');
+      final row = (await localRow('medications', 'm10'))!;
+      expect(row['name'], 'Local');
+      expect(row['sync_status'], SyncStatus.synced);
+      expect(row['sync_version'], h.meds.table.rows['m10']!['row_version']);
     });
 
-    test(
-      'a pending create and a tombstone push even against a newer remote row',
-      () async {
-        final h = Harness();
-        final local = MedicationLocalDatasource();
-        // pending_create whose id already exists remotely, newer.
-        await local.upsert(
-          MedicationModel(
-            id: 'm11',
-            name: 'Local',
-            quantity: 1,
-            updatedAt: h.clock.now(),
-          ),
-          syncStatus: SyncStatus.pendingCreate,
-        );
-        h.meds.table.seed(
-          const MedicationModel(
-            id: 'm11',
-            name: 'Remote',
-            quantity: 1,
-          ).toJson(),
-          updatedAt: h.clock.now().add(const Duration(hours: 1)),
-        );
-        // pending_delete against a newer remote row.
-        h.meds.table.seed(
-          const MedicationModel(
-            id: 'm12',
-            name: 'Doomed',
-            quantity: 1,
-          ).toJson(),
-          updatedAt: h.clock.now().add(const Duration(hours: 1)),
-        );
-        await local.upsert(
-          const MedicationModel(id: 'm12', name: 'Doomed', quantity: 1),
-          syncStatus: SyncStatus.synced,
-        );
-        await local.markDeleted('m12');
+    test('a pending create meets a newer server copy and takes it; a '
+        'tombstone still wins over a newer live row', () async {
+      final h = Harness();
+      final local = MedicationLocalDatasource();
+      // pending_create whose id already exists remotely, edited later.
+      await local.upsert(
+        MedicationModel(
+          id: 'm11',
+          name: 'Local',
+          quantity: 1,
+          updatedAt: h.clock.now().subtract(const Duration(hours: 1)),
+        ),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      h.meds.table.seed(
+        const MedicationModel(id: 'm11', name: 'Remote', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
+      );
+      // pending_delete against a newer remote row.
+      h.meds.table.seed(
+        const MedicationModel(id: 'm12', name: 'Doomed', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
+      );
+      await local.upsert(
+        const MedicationModel(id: 'm12', name: 'Doomed', quantity: 1),
+        syncStatus: SyncStatus.synced,
+      );
+      await local.markDeleted('m12');
 
-        final report = (await h.service.syncAll())!;
+      await h.service.syncAll();
 
-        expect(report.skippedStale, 0);
-        expect(h.meds.table.rows['m11']?['name'], 'Local');
-        expect(h.meds.table.rows['m12']?['deleted_at'], isNotNull);
-      },
-    );
+      expect(h.meds.table.rows['m11']?['name'], 'Remote');
+      expect((await localRow('medications', 'm11'))?['name'], 'Remote');
+      expect(h.meds.table.rows['m12']?['deleted_at'], isNotNull);
+      expect(await localRow('medications', 'm12'), isNull);
+    });
 
     test('force push ignores a newer remote row', () async {
       final h = Harness();
@@ -754,7 +786,6 @@ void main() {
 
       final report = (await h.service.forcePush())!;
 
-      expect(report.skippedStale, 0);
       expect(report.pushed, 1);
       expect(h.meds.table.rows['m13']?['name'], 'Local');
     });
@@ -787,14 +818,40 @@ void main() {
       final report = await h.service.syncAll();
       expect(report, isNotNull);
       expect(report!.pushed, 1);
-      expect(
-        report.pulled,
-        greaterThanOrEqualTo(2),
-      ); // 'a' comes back from the fake + 't'
+      // Only 't': 'a' was written after this cycle's horizon, so the next
+      // cycle sees it (and keeps it, being the same version).
+      expect(report.pulled, 1);
       expect(report.failures, isEmpty);
       expect(report.finishedAt, isNotNull);
       expect(h.service.lastReport, same(report));
       expect(h.service.currentState, SyncState.success);
+    });
+
+    test('a project without the sync migration stops the cycle before any '
+        'table request', () async {
+      final h = Harness();
+      h.server.state.migrated = false;
+      await MedicationLocalDatasource().upsert(
+        const MedicationModel(id: 'a', name: 'A', quantity: 1),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(
+        report.missingMigration,
+        'supabase/migrations/20260918000000_sync_v2.sql',
+      );
+      expect(
+        report.fatal,
+        contains('Apply supabase/migrations/20260918000000_sync_v2.sql'),
+      );
+      expect(h.core.requests, isEmpty);
+      expect(h.service.currentState, SyncState.error);
+      expect(
+        (await localRow('medications', 'a'))!['sync_status'],
+        SyncStatus.pendingCreate,
+      );
     });
 
     test('a failing row is recorded and the state is partial', () async {
@@ -1001,34 +1058,236 @@ void main() {
     });
   });
 
+  group('edit times on the wire and from the server', () {
+    test("a pulled row takes the server's edit times, not the ones held "
+        'here (M-7)', () async {
+      final h = Harness();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm1', name: 'A', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(days: 2)),
+      );
+      await h.service.syncAll();
+      final first = (await localRow('medications', 'm1'))!;
+      expect(first['edited_at'], h.meds.table.rows['m1']!['edited_at']);
+      expect(first['field_edited_at'], isNull); // the server's map is empty
+
+      // What this device holds is older than what comes next.
+      final db = await AppDatabase.instance.database;
+      await db.update(
+        'medications',
+        {
+          'edited_at': '2020-01-01T00:00:00.000Z',
+          'field_edited_at':
+              '{"name":{"at":"2020-01-01T00:00:00.000Z","auto":false}}',
+        },
+        where: 'id = ?',
+        whereArgs: ['m1'],
+      );
+      h.clock.advance(const Duration(minutes: 5));
+      h.meds.table.editFromOtherDevice('m1', {
+        'name': 'B',
+      }, editedAt: h.clock.now().subtract(const Duration(minutes: 1)));
+      h.service.debugSetStateForTest(SyncState.idle);
+
+      await h.service.syncAll();
+
+      final server = h.meds.table.rows['m1']!;
+      final local = (await localRow('medications', 'm1'))!;
+      expect(local['name'], 'B');
+      expect(local['sync_status'], SyncStatus.synced);
+      expect(local['edited_at'], server['edited_at']);
+      expect(
+        jsonDecode(local['field_edited_at']! as String),
+        server['field_edited_at'],
+      );
+      expect(
+        (server['field_edited_at'] as Map)['name'],
+        isNot(containsPair('at', '2020-01-01T00:00:00.000Z')),
+      );
+    });
+
+    test('a change here that the server already holds settles with the '
+        "server's edit times", () async {
+      final h = Harness();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm1', name: 'A', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(days: 2)),
+      );
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      // The same edit, made here earlier and on the other device later.
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm1',
+          name: 'B',
+          quantity: 1,
+          updatedAt: h.clock.now().subtract(const Duration(hours: 2)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      h.meds.table.editFromOtherDevice('m1', {
+        'name': 'B',
+      }, editedAt: h.clock.now().subtract(const Duration(hours: 1)));
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.overwritten, isEmpty);
+      final server = h.meds.table.rows['m1']!;
+      final local = (await localRow('medications', 'm1'))!;
+      expect(local['sync_status'], SyncStatus.synced);
+      expect(local['sync_version'], server['row_version']);
+      expect(local['edited_at'], server['edited_at']);
+      expect(
+        jsonDecode(local['field_edited_at']! as String),
+        server['field_edited_at'],
+      );
+    });
+
+    test('a force push is a change made the moment it runs, column by '
+        'column', () async {
+      final h = Harness();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm1', name: 'Server', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(days: 2)),
+      );
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm1',
+          name: 'Mine',
+          quantity: 1,
+          updatedAt: h.clock.now().subtract(const Duration(days: 3)),
+        ),
+        syncStatus: SyncStatus.synced,
+      );
+
+      await h.service.forcePush();
+
+      final now = h.clock.now().toUtc().toIso8601String();
+      final sent = h.meds.table.sent.single;
+      expect(sent['edited_at'], now);
+      expect((sent['field_edited_at']! as Map)['name'], {
+        'at': now,
+        'auto': false,
+      });
+      final server = h.meds.table.rows['m1']!;
+      expect(server['name'], 'Mine');
+      expect(server['edited_at'], now);
+      expect((server['field_edited_at'] as Map)['name'], {
+        'at': now,
+        'auto': false,
+      });
+    });
+
+    test('every write the cycle sends carries its edit time and column '
+        'times', () async {
+      final h = Harness();
+      final local = MedicationLocalDatasource();
+      for (final id in ['m-edit', 'm-gone']) {
+        h.meds.table.seed(
+          MedicationModel(id: id, name: id, quantity: 1).toJson(),
+          updatedAt: h.clock.now().subtract(const Duration(days: 1)),
+        );
+      }
+      await local.upsert(
+        MedicationModel(
+          id: 'm-new',
+          name: 'New',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingCreate,
+      );
+      final (prescriptionId, ids) = await seedSchedule(durationDays: 1);
+      // One generated dose is already overdue when the first push runs.
+      final doses = DoseLogLocalDatasource();
+      await doses.markOverduePendingAsMissed(DateTime(2026, 3, 1, 9));
+      await h.service.syncAll();
+
+      await local.upsert(
+        MedicationModel(
+          id: 'm-edit',
+          name: 'Edited',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      await local.markDeleted('m-gone');
+      // The schedule changed: its pending doses go as guarded deletes.
+      expect(await doses.dropPendingByPrescription(prescriptionId), 2);
+      h.clock.advance(const Duration(minutes: 5));
+      h.service.debugSetStateForTest(SyncState.idle);
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      await h.service.forcePush();
+
+      final sent = [...h.meds.table.sent, ...h.doses.table.sent];
+      // Creates, the batch, an edit, both kinds of delete, force pushes.
+      expect(h.meds.table.sent.length, greaterThanOrEqualTo(5));
+      expect(h.doses.table.sent.length, greaterThanOrEqualTo(ids.length + 2));
+      for (final write in sent) {
+        expect(
+          write,
+          containsPair('field_edited_at', isA<Map<String, Object?>>()),
+        );
+        expect(write['edited_at'], isA<String>(), reason: '$write');
+        expect(write['write_id'], isA<String>(), reason: '$write');
+      }
+    });
+
+    test('a new dose goes out with its column times, in a batch with doses '
+        'that have none', () async {
+      final h = Harness();
+      final (_, ids) = await seedSchedule(durationDays: 1);
+      // Overdue before it was ever sent: the app marked it missed.
+      expect(
+        (await DoseLogLocalDatasource().markOverduePendingAsMissed(
+          DateTime(2026, 3, 1, 9),
+        )).changed,
+        1,
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(h.doses.table.insertBatches, [ids.length]);
+      const auto = {'at': '1970-01-01T00:00:00.000Z', 'auto': true};
+      final swept = h.doses.table.rows[ids.first]!;
+      expect(swept['status'], 'missed');
+      expect((swept['field_edited_at'] as Map)['status'], auto);
+      expect(swept['edited_at'], '1970-01-01T00:00:00.000Z');
+      for (final id in ids.skip(1)) {
+        expect(h.doses.table.rows[id]!['field_edited_at'], isEmpty);
+      }
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+    });
+  });
+
   group('delta pull', () {
     test(
-      'first pull is full, second pull asks since the newest updated_at minus 1s',
+      'first pull is full; the next starts at the first one\'s horizon',
       () async {
         final h = Harness();
         h.meds.table.seed(
           const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson(),
         );
+        final horizon = h.core.horizon;
+        final xidA = h.meds.table.rows['a']!['sync_xid'] as int;
         await h.service.syncAll();
-        expect(h.meds.table.sinceCalls, [null]);
-        final cursor = await h.cursors.lastPullAt('medications');
-        expect(
-          cursor,
-          h.clock.now().toUtc().subtract(const Duration(seconds: 1)),
-        );
+        // One page with the row, and the empty page that ends the table.
+        expect(h.meds.table.sinceCalls, [null, PullKey(xidA, 'a')]);
+        expect(await h.cursors.pullKey('medications'), PullKey(horizon));
 
         h.clock.advance(const Duration(minutes: 5));
         h.meds.table.seed(
           const MedicationModel(id: 'b', name: 'B', quantity: 1).toJson(),
         );
         h.service.debugSetStateForTest(SyncState.idle);
+        final calls = h.meds.table.sinceCalls.length;
         final report = (await h.service.syncAll())!;
-        expect(h.meds.table.sinceCalls.last, cursor);
-        // 'a's own updated_at sits exactly at cursor + 1s (the deliberate overlap),
-        // so it is legitimately re-fetched and idempotently re-applied alongside
-        // the genuinely new 'b' — the 1 s overlap always re-includes the row it
-        // was computed from, by construction, regardless of elapsed wall time.
-        expect(report.pulled, 2);
+        expect(h.meds.table.sinceCalls[calls], PullKey(horizon));
+        // Only the new row: nothing overlaps.
+        expect(report.pulled, 1);
         expect((await localRow('medications', 'b'))?['name'], 'B');
       },
     );
@@ -1049,12 +1308,11 @@ void main() {
 
       final first = (await h.service.syncAll())!;
       expect(first.pulled, ids.length);
-      expect(await h.cursors.lastPullAt('dose_logs'), DateTime.utc(1970, 1, 2));
 
       h.clock.advance(const Duration(minutes: 5));
       final second = (await h.service.syncAll())!;
       expect(second.pulled, 0);
-      expect(h.doses.table.sinceCalls.last, DateTime.utc(1970, 1, 2));
+      expect(h.doses.table.sinceCalls.last, PullKey(h.core.horizon));
     });
 
     test('force pull clears cursors and pulls everything again', () async {
@@ -1064,8 +1322,9 @@ void main() {
       );
       await h.service.syncAll();
       h.service.debugSetStateForTest(SyncState.idle);
+      final calls = h.meds.table.sinceCalls.length;
       await h.service.forcePull();
-      expect(h.meds.table.sinceCalls.last, isNull);
+      expect(h.meds.table.sinceCalls[calls], isNull);
       expect((await localRow('medications', 'a'))?['name'], 'A');
     });
 
@@ -1111,23 +1370,16 @@ void main() {
         const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson(),
       );
       await h.service.syncAll();
-      final before = await h.cursors.lastPullAt('medications');
+      final before = await h.cursors.pullKey('medications');
       h.service.debugSetStateForTest(SyncState.idle);
-      // Make apply fail for a new row: seed a row whose JSON breaks fromJson.
-      h.meds.table.rows['broken'] = {
-        'id': 'broken',
-        'updated_at': h.clock
-            .now()
-            .add(const Duration(minutes: 1))
-            .toUtc()
-            .toIso8601String(),
-      };
+      // Make apply fail for a new row: a row with no name breaks fromJson.
+      h.meds.table.seed({'id': 'broken'});
       final report = (await h.service.syncAll())!;
       expect(
         report.failures.where((f) => f.table == 'medications'),
         isNotEmpty,
       );
-      expect(await h.cursors.lastPullAt('medications'), before);
+      expect(await h.cursors.pullKey('medications'), before);
     });
 
     test('cursor does not advance when a row fails to apply', () async {
@@ -1158,7 +1410,7 @@ void main() {
       );
       expect(failure.error, startsWith('apply:'));
       expect(report.pulled, 1); // only the valid prescription applied
-      expect(await h.cursors.lastPullAt('prescriptions'), isNull);
+      expect(await h.cursors.pullKey('prescriptions'), isNull);
     });
   });
 
@@ -1561,13 +1813,21 @@ void main() {
     Future<void> runCase(
       Harness h, {
       required String table,
-      required FakeRemoteTable remote,
+      required FakeSyncTable remote,
       required String column,
       required Future<String> Function(Database db) seed,
       required Map<String, dynamic> Function(Map<String, dynamic> row) toServer,
     }) async {
       final db = await AppDatabase.instance.database;
       final id = await seed(db);
+      remote.seed({
+        ...toServer((await localRow(table, id))!),
+        column: 'server copy',
+      }, updatedAt: h.clock.now().subtract(const Duration(hours: 1)));
+      // This device pulls the server copy: the row has its base.
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      remote.pageCalls.clear();
       final pushedAt = h.clock.now().subtract(const Duration(minutes: 2));
       await db.update(
         table,
@@ -1575,14 +1835,11 @@ void main() {
           column: 'pushed copy',
           'sync_status': SyncStatus.pendingUpdate,
           'updated_at': pushedAt.toIso8601String(),
+          'edited_at': pushedAt.toIso8601String(),
         },
         where: 'id = ?',
         whereArgs: [id],
       );
-      remote.seed({
-        ...toServer((await localRow(table, id))!),
-        column: 'server copy',
-      }, updatedAt: h.clock.now().subtract(const Duration(hours: 1)));
 
       // Hold the push; edit the row meanwhile. The edit is stamped before the
       // server stamps the held push, as it is on a device in step with the
@@ -1682,6 +1939,95 @@ void main() {
       );
     });
 
+    test('a row deleted while its push waits for the server is deleted, '
+        'not marked synced', () async {
+      final h = Harness();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm-del', name: 'A', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(hours: 1)),
+      );
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      // An earlier attempt got no answer, and the edit it carried was
+      // undone since: nothing is left to send but the unknown outcome.
+      final db = await AppDatabase.instance.database;
+      await db.update(
+        'medications',
+        {'sync_status': SyncStatus.pendingUpdate, 'sync_write_id': 'lost-1'},
+        where: 'id = ?',
+        whereArgs: ['m-del'],
+      );
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        // The person deletes the medication while the push asks the server
+        // what became of that attempt.
+        await MedicationLocalDatasource().markDeleted('m-del');
+      };
+
+      final report = (await h.service.syncAll())!;
+      await h.service.syncAll();
+
+      expect(report.failures, isEmpty);
+      expect(h.meds.table.rows['m-del']!['deleted_at'], isNotNull);
+      expect(await localRow('medications', 'm-del'), isNull);
+    });
+
+    test('a row with nothing to send that is edited while an earlier row '
+        'is pushed is not marked synced', () async {
+      final h = Harness();
+      for (final id in ['m-first', 'm-second']) {
+        h.meds.table.seed(
+          MedicationModel(id: id, name: id, quantity: 1).toJson(),
+          updatedAt: h.clock.now().subtract(const Duration(hours: 1)),
+        );
+      }
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      final db = await AppDatabase.instance.database;
+      final local = MedicationLocalDatasource();
+      await local.upsert(
+        MedicationModel(
+          id: 'm-first',
+          name: 'first edited',
+          quantity: 1,
+          updatedAt: h.clock.now().subtract(const Duration(minutes: 3)),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      // Edited and edited back: pending, with nothing to send.
+      await db.update(
+        'medications',
+        {'sync_status': SyncStatus.pendingUpdate},
+        where: 'id = ?',
+        whereArgs: ['m-second'],
+      );
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        // While the first row goes out, the second is edited for real.
+        await local.upsert(
+          MedicationModel(
+            id: 'm-second',
+            name: 'second edited',
+            quantity: 1,
+            updatedAt: h.clock.now().subtract(const Duration(minutes: 1)),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
+      };
+
+      await h.service.syncAll();
+
+      expect(h.meds.table.rows['m-first']!['name'], 'first edited');
+      expect(h.meds.table.rows['m-second']!['name'], 'second edited');
+      final second = (await localRow('medications', 'm-second'))!;
+      expect(second['name'], 'second edited');
+      expect(second['sync_status'], SyncStatus.synced);
+    });
+
     test('an unchanged pushed row takes the server stamp', () async {
       final h = Harness();
       await MedicationLocalDatasource().upsert(
@@ -1768,9 +2114,9 @@ void main() {
         ).toJson(),
         'deleted_at': deletedAt.toIso8601String(),
       }, updatedAt: deletedAt);
-      // The pull has already seen that tombstone go by, so only the push
+      // The pull has already gone past that tombstone, so only the push
       // can act on it.
-      await h.cursors.setLastPullAt('dose_logs', h.clock.now());
+      await h.cursors.setPullKey('dose_logs', PullKey(h.core.horizon));
 
       await h.service.syncAll();
 
@@ -1840,12 +2186,12 @@ void main() {
   });
 
   group('new dose logs the server refuses', () {
-    Harness rejecting() => Harness(doseLogRemote: RejectingDoseRemote.new);
+    Harness rejecting() => Harness(doseRows: RejectingDoseTable.new);
 
     test('a row the server rejects fails alone; the rest of its batch '
         'lands', () async {
       final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
+      final remote = h.doses.rows as RejectingDoseTable;
       final (_, ids) = await seedSchedule(durationDays: 1);
       remote.rejectIds.add(ids[1]);
 
@@ -1888,7 +2234,7 @@ void main() {
     test('the doses of a prescription the server refused wait for it, '
         'without a request', () async {
       final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
+      final remote = h.doses.rows as RejectingDoseTable;
       remote.prescriptions = h.prescriptions.table;
       final db = await AppDatabase.instance.database;
       final (goodId, good) = await seedSchedule(durationDays: 1);
@@ -1923,7 +2269,7 @@ void main() {
     test('a row missing from the read-back stays pending with a failure '
         'record', () async {
       final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
+      final remote = h.doses.rows as RejectingDoseTable;
       final (_, ids) = await seedSchedule(durationDays: 1);
       remote.hideIds.add(ids.first);
 
@@ -1941,7 +2287,7 @@ void main() {
     test('a read-back without an answer leaves the rows pending with '
         'backoff', () async {
       final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
+      final remote = h.doses.rows as RejectingDoseTable;
       final (_, ids) = await seedSchedule(durationDays: 1);
       remote.readBackError = TimeoutException('no answer');
 
@@ -1954,106 +2300,10 @@ void main() {
       }
     });
 
-    test('only a dose a person recorded here is sent again for a server '
-        'stamp', () async {
-      final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
-      final db = await AppDatabase.instance.database;
-      final (prescriptionId, ids) = await seedSchedule(durationDays: 1);
-      final recordedAt = h.clock.now().subtract(const Duration(hours: 1));
-      // A generated dose an older build stamped with the current time.
-      await db.update(
-        'dose_logs',
-        {'updated_at': recordedAt.toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [ids.first],
-      );
-      final intake = await seedDoseLog(
-        db,
-        prescriptionId,
-        recordedAt,
-        id: 'intake',
-        status: 'taken',
-        takenTime: recordedAt,
-      );
-      final weak = await seedDoseLog(
-        db,
-        prescriptionId,
-        recordedAt,
-        id: 'weak',
-      );
-      await db.update(
-        'dose_logs',
-        {'updated_at': recordedAt.toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [intake],
-      );
-      await db.update(
-        'dose_logs',
-        {'updated_at': DateTime.utc(1970).toIso8601String()},
-        where: 'id = ?',
-        whereArgs: [weak],
-      );
-      await db.update('dose_logs', {'sync_status': SyncStatus.pendingCreate});
-
-      final report = (await h.service.syncAll())!;
-
-      expect(report.failures, isEmpty);
-      expect(remote.upserted, [intake]);
-      expect(
-        h.doses.table.updatedAt(intake),
-        h.clock.now(),
-        reason: 'the server stamped it',
-      );
-      final stored = (await localRow('dose_logs', intake))!['updated_at'];
-      expect(
-        DateTime.parse(stored! as String).isAtSameMomentAs(h.clock.now()),
-        isTrue,
-      );
-      expect(h.doses.table.updatedAt(ids.first), recordedAt.toUtc());
-    });
-
-    test('a recorded dose whose second send fails stays pending and is sent '
-        'again', () async {
-      final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
-      final db = await AppDatabase.instance.database;
-      final seeded = await seedPrescription(db);
-      final recordedAt = h.clock.now().subtract(const Duration(hours: 1));
-      final intake = await seedDoseLog(
-        db,
-        seeded.prescriptionId,
-        recordedAt,
-        id: 'intake',
-        status: 'taken',
-        takenTime: recordedAt,
-      );
-      await db.update('dose_logs', {
-        'updated_at': recordedAt.toIso8601String(),
-        'sync_status': SyncStatus.pendingCreate,
-      });
-      remote.upsertError = TimeoutException('no answer');
-
-      final report = (await h.service.syncAll())!;
-
-      expect(report.failures.map((f) => f.id), [intake]);
-      final row = (await localRow('dose_logs', intake))!;
-      expect(row['sync_status'], SyncStatus.pendingCreate);
-
-      remote.upsertError = null;
-      h.clock.advance(const Duration(hours: 1));
-      await h.service.syncAll();
-      expect(
-        (await localRow('dose_logs', intake))!['sync_status'],
-        SyncStatus.synced,
-      );
-      expect(h.doses.table.updatedAt(intake), h.clock.now());
-    });
-
     test('a recorded dose the server holds in a newer copy is adopted, not '
         'sent again', () async {
       final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
+      final remote = h.doses.rows as RejectingDoseTable;
       final db = await AppDatabase.instance.database;
       final seeded = await seedPrescription(db);
       final recordedAt = h.clock.now().subtract(const Duration(hours: 1));
@@ -2106,7 +2356,7 @@ void main() {
 
     test('a network error while rows go out one by one stops there', () async {
       final h = rejecting();
-      final remote = h.doses as RejectingDoseRemote;
+      final remote = h.doses.rows as RejectingDoseTable;
       final (_, ids) = await seedSchedule(durationDays: 1);
       remote.rejectIds.add(ids[0]);
       // The second row's own request never gets an answer.
@@ -2127,10 +2377,10 @@ void main() {
   group('request timeout', () {
     test('a batch that lands but whose answer times out converges on the '
         'next attempt', () async {
-      late HangingInsertRemote remote;
+      late HangingInsertTable remote;
       final h = Harness(
         requestTimeout: const Duration(milliseconds: 50),
-        doseLogRemote: (clock) => remote = HangingInsertRemote(clock),
+        doseRows: (core) => remote = HangingInsertTable(core),
       );
       final (_, ids) = await seedSchedule(durationDays: 1);
       remote.hang = Completer<void>();
@@ -2143,9 +2393,9 @@ void main() {
       expect(report.failures.first.error, contains('TimeoutException'));
       expect(await syncStatuses(ids), everyElement(SyncStatus.pendingCreate));
       // The insert did land; another device then took the first dose.
-      expect(remote.table.rows, hasLength(ids.length));
-      remote.table.rows[ids.first] = {
-        ...remote.table.rows[ids.first]!,
+      expect(remote.rows, hasLength(ids.length));
+      remote.rows[ids.first] = {
+        ...remote.rows[ids.first]!,
         'status': 'taken',
         'updated_at': h.clock.now().toIso8601String(),
       };
@@ -2158,7 +2408,7 @@ void main() {
       expect(retry.failures, isEmpty);
       expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
       expect((await localRow('dose_logs', ids.first))!['status'], 'taken');
-      expect(remote.table.rows[ids.first]!['status'], 'taken');
+      expect(remote.rows[ids.first]!['status'], 'taken');
     });
 
     test('an upsert that times out keeps the row pending', () async {
@@ -2190,8 +2440,8 @@ void main() {
 
     test('a pull that times out keeps its cursor', () async {
       final h = Harness(requestTimeout: const Duration(milliseconds: 50));
-      final cursor = DateTime.utc(2026, 3, 2);
-      await h.cursors.setLastPullAt('dose_logs', cursor);
+      final cursor = PullKey(h.core.horizon);
+      await h.cursors.setPullKey('dose_logs', cursor);
       final never = Completer<void>();
       h.doses.table.beforeCall = () => never.future;
 
@@ -2203,7 +2453,7 @@ void main() {
         report.failures.where((f) => f.table == 'dose_logs' && f.id == '*'),
         hasLength(1),
       );
-      expect(await h.cursors.lastPullAt('dose_logs'), cursor);
+      expect(await h.cursors.pullKey('dose_logs'), cursor);
     });
   });
 
@@ -2278,9 +2528,9 @@ void main() {
       'automatic re-runs stop after '
       '${SyncService.maxAutomaticReruns}; the row waits for the next sync',
       () async {
-        late EditOnEveryPushRemote remote;
+        late EditOnEveryPushTable remote;
         final h = Harness(
-          medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+          medicationRows: (core) => remote = EditOnEveryPushTable(core),
         );
         await MedicationLocalDatasource().upsert(
           MedicationModel(
@@ -2311,9 +2561,9 @@ void main() {
     );
 
     test('a sync stopped at the cap retries once after a delay', () async {
-      late EditOnEveryPushRemote remote;
+      late EditOnEveryPushTable remote;
       final h = Harness(
-        medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        medicationRows: (core) => remote = EditOnEveryPushTable(core),
         capRetryDelay: const Duration(milliseconds: 40),
       );
       await MedicationLocalDatasource().upsert(
@@ -2344,10 +2594,10 @@ void main() {
     });
 
     test('a sync that finishes cancels a pending cap retry', () async {
-      late EditOnEveryPushRemote remote;
+      late EditOnEveryPushTable remote;
       final h = Harness(
-        medicationRemote: (clock) =>
-            remote = EditOnEveryPushRemote(clock, limit: cycles()),
+        medicationRows: (core) =>
+            remote = EditOnEveryPushTable(core, limit: cycles()),
         capRetryDelay: const Duration(milliseconds: 40),
       );
       await MedicationLocalDatasource().upsert(
@@ -2378,9 +2628,9 @@ void main() {
     });
 
     test('dispose cancels a pending cap retry', () async {
-      late EditOnEveryPushRemote remote;
+      late EditOnEveryPushTable remote;
       final h = Harness(
-        medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        medicationRows: (core) => remote = EditOnEveryPushTable(core),
         capRetryDelay: const Duration(milliseconds: 40),
       );
       await MedicationLocalDatasource().upsert(
@@ -2403,9 +2653,9 @@ void main() {
 
     test('a cycle still running when the service is disposed stops there '
         'and arms no retry', () async {
-      late EditOnEveryPushRemote remote;
+      late EditOnEveryPushTable remote;
       final h = Harness(
-        medicationRemote: (clock) => remote = EditOnEveryPushRemote(clock),
+        medicationRows: (core) => remote = EditOnEveryPushTable(core),
         capRetryDelay: const Duration(milliseconds: 40),
       );
       await MedicationLocalDatasource().upsert(
@@ -2463,8 +2713,9 @@ void main() {
       gate.complete();
       await force;
 
-      // A force push does not pull; the pull is the requested sync's.
-      expect(h.meds.table.sinceCalls.length, 1);
+      // A force push does not pull; the pull is the requested sync's: a
+      // page with the row, and the empty page that ends the table.
+      expect(h.meds.table.sinceCalls, [null, isNotNull]);
     });
 
     test('a sync asked for during a force pull runs once it ends', () async {
@@ -2626,7 +2877,8 @@ void main() {
         h.online = true;
         controller.add(true);
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(h.meds.table.sinceCalls.length, 1);
+        // One pull: a page with the row, and the empty page after it.
+        expect(h.meds.table.sinceCalls.length, 2);
 
         h.service.stopAutoSync();
         h.online = false;
@@ -2634,44 +2886,45 @@ void main() {
         h.online = true;
         controller.add(true);
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(h.meds.table.sinceCalls.length, 1);
+        expect(h.meds.table.sinceCalls.length, 2);
         await controller.close();
       },
     );
   });
 
   group('paged pull (the server answers at most 1000 rows)', () {
-    test(
-      'a first pull of 2,500 dose rows stores all of them in one cycle',
-      () async {
-        final h = Harness();
-        final base = h.clock.now().subtract(const Duration(days: 1));
-        DateTime stamp(int i) => base.add(Duration(milliseconds: i));
-        await seedRemoteDoses(h, 2500, stamp);
-
-        final report = (await h.service.syncAll())!;
-
-        expect(report.failures, isEmpty);
-        expect(report.pulled, 2500);
-        expect(await localDoseCount(), 2500);
-        expect(h.doses.table.pageCalls, hasLength(3));
-        expect(
-          await h.cursors.lastPullAt('dose_logs'),
-          stamp(2499).toUtc().subtract(const Duration(seconds: 1)),
-        );
-      },
-    );
-
-    test('rows sharing one updated_at across a page boundary are each stored '
-        'exactly once', () async {
+    test('a first pull of 2,500 dose rows stores all of them in one cycle, '
+        'and the next pull starts at the horizon', () async {
       final h = Harness();
-      final shared = h.clock.now().subtract(const Duration(hours: 2));
-      final later = h.clock.now().subtract(const Duration(hours: 1));
-      final ids = await seedRemoteDoses(
-        h,
-        1800,
-        (i) => i < 1500 ? shared : later.add(Duration(milliseconds: i)),
-      );
+      await seedRemoteDoses(h, 2500, (_) => h.clock.now());
+      final horizon = h.core.horizon;
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(report.pulled, 2500);
+      expect(await localDoseCount(), 2500);
+      // Three full or short pages, and the empty one that ends the table.
+      expect(h.doses.table.pageCalls, hasLength(4));
+      expect(h.doses.table.pageCalls.map((c) => c.horizon).toSet(), {horizon});
+      expect(await h.cursors.pullKey('dose_logs'), PullKey(horizon));
+    });
+
+    test('rows written in one transaction across a page boundary are each '
+        'stored exactly once', () async {
+      final h = Harness();
+      final db = await AppDatabase.instance.database;
+      final presc = await seedPrescription(db);
+      // One insert of 1,500 rows is one transaction: they share a sync_xid.
+      h.core.insertIfAbsent('dose_logs', [
+        for (var i = 0; i < 1500; i++)
+          DoseLogModel(
+            id: 'shared-${i.toString().padLeft(4, '0')}',
+            prescriptionId: presc.prescriptionId,
+            scheduledTime: DateTime.utc(2026, 3).add(Duration(minutes: i)),
+          ).toJson(),
+      ]);
+      await seedRemoteDoses(h, 300, (_) => h.clock.now());
 
       final report = (await h.service.syncAll())!;
 
@@ -2680,40 +2933,32 @@ void main() {
       // would count twice, a skipped one not at all.
       expect(report.pulled, 1800);
       expect(await localDoseCount(), 1800);
-      for (final id in ids) {
-        expect(await localRow('dose_logs', id), isNotNull, reason: id);
-      }
-      expect(h.doses.table.pageCalls, hasLength(2));
-      expect(h.doses.table.pageCalls[1].after?.updatedAt, shared.toUtc());
-      expect(
-        await h.cursors.lastPullAt('dose_logs'),
-        later
-            .add(const Duration(milliseconds: 1799))
-            .toUtc()
-            .subtract(const Duration(seconds: 1)),
-      );
+      expect(h.doses.table.pageCalls, hasLength(3));
+      final shared = h.doses.table.rows['shared-0999']!['sync_xid'] as int;
+      expect(h.doses.table.pageCalls[1].after, PullKey(shared, 'shared-0999'));
     });
 
-    test('1,500 generated doses all arrive on a first pull, and the cursor '
-        'then passes them', () async {
+    test('1,500 generated doses all arrive on a first pull, and the next '
+        'pull brings none of them again', () async {
       final h = Harness();
       await seedRemoteDoses(h, 1500, (_) => DateTime.utc(1970));
 
       final report = (await h.service.syncAll())!;
-
       expect(report.pulled, 1500);
       expect(await localDoseCount(), 1500);
-      expect(await h.cursors.lastPullAt('dose_logs'), DateTime.utc(1970, 1, 2));
+
+      h.doses.table.pageCalls.clear();
+      final second = (await h.service.syncAll())!;
+      expect(second.pulled, 0);
+      expect(h.doses.table.pageCalls, hasLength(1));
     });
 
-    test('a failure on page 2 keeps page 1 and its cursor; the next cycle '
+    test('a failure on page 2 keeps page 1 and its key; the next cycle '
         'completes', () async {
       final h = Harness();
-      final base = h.clock.now().subtract(const Duration(days: 1));
-      DateTime stamp(int i) => base.add(Duration(seconds: i));
-      final ids = await seedRemoteDoses(h, 2500, stamp);
+      final ids = await seedRemoteDoses(h, 2500, (_) => h.clock.now());
       var failed = false;
-      h.doses.table.onPage = (call, since, after) {
+      h.doses.table.onPage = (call, after) {
         if (after != null && !failed) {
           failed = true;
           throw StateError('connection reset');
@@ -2728,13 +2973,14 @@ void main() {
         ['*'],
       );
       expect(await localDoseCount(), 1000);
-      // Page 1 is the 1000 oldest rows.
+      // Page 1 is the 1000 rows written first.
       expect(await localRow('dose_logs', ids[999]), isNotNull);
       expect(await localRow('dose_logs', ids[1000]), isNull);
-      final pageOneEnd = stamp(
-        999,
-      ).toUtc().subtract(const Duration(seconds: 1));
-      expect(await h.cursors.lastPullAt('dose_logs'), pageOneEnd);
+      final pageOneEnd = PullKey(
+        h.doses.table.rows[ids[999]]!['sync_xid'] as int,
+        ids[999],
+      );
+      expect(await h.cursors.pullKey('dose_logs'), pageOneEnd);
 
       h.clock.advance(const Duration(minutes: 5));
       h.doses.table.pageCalls.clear();
@@ -2742,47 +2988,14 @@ void main() {
 
       expect(second.failures, isEmpty);
       expect(await localDoseCount(), 2500);
-      expect(h.doses.table.pageCalls.first.since, pageOneEnd);
-      expect(
-        await h.cursors.lastPullAt('dose_logs'),
-        stamp(2499).toUtc().subtract(const Duration(seconds: 1)),
-      );
+      expect(h.doses.table.pageCalls.first.after, pageOneEnd);
+      expect(await h.cursors.pullKey('dose_logs'), PullKey(h.core.horizon));
     });
 
-    test('a failure on page 2 among generated doses keeps the cursor before '
-        'them, so the next cycle still gets the rest', () async {
-      final h = Harness();
-      await seedRemoteDoses(h, 1500, (_) => DateTime.utc(1970));
-      var failed = false;
-      h.doses.table.onPage = (call, since, after) {
-        if (after != null && !failed) {
-          failed = true;
-          throw StateError('connection reset');
-        }
-      };
-
-      await h.service.syncAll();
-
-      expect(await localDoseCount(), 1000);
-      expect(
-        await h.cursors.lastPullAt('dose_logs'),
-        DateTime.utc(1969, 12, 31, 23, 59, 59),
-      );
-
-      h.clock.advance(const Duration(minutes: 5));
-      final second = (await h.service.syncAll())!;
-
-      expect(second.failures, isEmpty);
-      expect(await localDoseCount(), 1500);
-      expect(await h.cursors.lastPullAt('dose_logs'), DateTime.utc(1970, 1, 2));
-    });
-
-    test('a row on page 2 that fails to apply holds the cursor at page 1 while '
+    test('a row on page 2 that fails to apply holds the key at page 1 while '
         'later pages are still stored', () async {
       final h = Harness();
-      final base = h.clock.now().subtract(const Duration(days: 1));
-      DateTime stamp(int i) => base.add(Duration(seconds: i));
-      final ids = await seedRemoteDoses(h, 2500, stamp);
+      final ids = await seedRemoteDoses(h, 2500, (_) => h.clock.now());
       // Its prescription is nowhere, so the local insert breaks the foreign
       // key and throws.
       h.doses.table.rows[ids[1500]]!['prescription_id'] = 'no-such';
@@ -2796,14 +3009,27 @@ void main() {
       expect(await localDoseCount(), 2499);
       expect(await localRow('dose_logs', ids[2499]), isNotNull);
       expect(
-        await h.cursors.lastPullAt('dose_logs'),
-        stamp(999).toUtc().subtract(const Duration(seconds: 1)),
+        await h.cursors.pullKey('dose_logs'),
+        PullKey(h.doses.table.rows[ids[999]]!['sync_xid'] as int, ids[999]),
       );
+    });
+
+    test('a key above the server horizon (a restored server) starts the '
+        'table over', () async {
+      final h = Harness();
+      await seedRemoteDoses(h, 3, (_) => h.clock.now());
+      await h.cursors.setPullKey('dose_logs', PullKey(h.core.horizon + 500));
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.pulled, 3);
+      expect(h.doses.table.pageCalls.first.after, isNull);
+      expect(await h.cursors.pullKey('dose_logs'), PullKey(h.core.horizon));
     });
 
     test('a server that never ends a page stops the pull after the page '
         'limit', () async {
-      final h = Harness(doseLogRemote: EndlessPagesRemote.new, maxPullPages: 3);
+      final h = Harness(doseRows: EndlessPagesTable.new, maxPullPages: 3);
       await seedRemoteDoses(
         h,
         1200,
@@ -2819,6 +3045,7 @@ void main() {
       expect(await localDoseCount(), 1000);
     });
   });
+
   group('pull repair after an upgrade', () {
     // What an older build left in the preferences: every table's cursor
     // where its newest-first, capped pull put it, and no repair marker.
@@ -2925,7 +3152,7 @@ void main() {
       }
     }
 
-    List<FakeRemoteTable> remoteTables(Harness h) => [
+    List<FakeSyncTable> remoteTables(Harness h) => [
       h.meds.table,
       h.treatments.table,
       h.prescriptions.table,
@@ -2963,14 +3190,15 @@ void main() {
         'taken',
       );
       for (final table in remoteTables(h)) {
-        expect(table.pageCalls.first.since, isNull);
+        expect(table.pageCalls.first.after, isNull);
       }
-      expect(h.doses.table.pageCalls, hasLength(2));
-      expect(prefs.getInt(doneKey), 1);
-      // The cursors are the full pull's own again.
+      expect(h.doses.table.pageCalls, hasLength(3));
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
+      // The keys are the full pull's own: the old timestamps are gone.
+      expect(await h.cursors.pullKey('medications'), PullKey(h.core.horizon));
       expect(
-        await h.cursors.lastPullAt('medications'),
-        clock.subtract(const Duration(days: 2, seconds: 1)),
+        prefs.getKeys().where((k) => k.startsWith('sync.last_pull_at.')),
+        isEmpty,
       );
     });
 
@@ -2983,24 +3211,28 @@ void main() {
       final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
       await seedServerOnly(h, clock.subtract(const Duration(days: 2)));
       await h.service.syncAll();
-      final cursor = await h.cursors.lastPullAt('medications');
+      final cursor = await h.cursors.pullKey('medications');
       expect(cursor, isNotNull);
 
       h.clock.advance(const Duration(minutes: 5));
       await h.service.syncAll();
-      expect(h.meds.table.pageCalls.last.since, cursor);
+      expect(h.meds.table.pageCalls.last.after, cursor);
 
-      // A restart: a new service over the same preferences.
+      // A restart: a new service over the same preferences and server.
+      for (final table in remoteTables(h)) {
+        table.pageCalls.clear();
+      }
       final restarted = Harness(
         start: h.clock.now(),
         cursors: SyncCursorStore(prefs),
+        server: h.server,
       );
       await restarted.service.syncAll();
       for (final table in remoteTables(restarted)) {
-        expect(table.pageCalls.first.since, isNotNull);
+        expect(table.pageCalls.first.after, isNotNull);
       }
-      expect(restarted.meds.table.pageCalls.single.since, cursor);
-      expect(prefs.getInt(doneKey), 1);
+      expect(restarted.meds.table.pageCalls.single.after, cursor);
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
     });
 
     test('a sync that cannot run (offline, signed out) leaves the repair for '
@@ -3028,7 +3260,7 @@ void main() {
       final report = (await h.service.syncAll())!;
       expect(report.failures, isEmpty);
       await expectAllLocal(missing);
-      expect(prefs.getInt(doneKey), 1);
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
     });
 
     test('a repair sync whose pull fails is not recorded; a later sync '
@@ -3055,16 +3287,18 @@ void main() {
         expect(await localRow('dose_logs', id), isNull);
       }
       expect(prefs.getInt(doneKey), isNull);
-      final medCursor = await h.cursors.lastPullAt('medications');
+      final medCursor = await h.cursors.pullKey('medications');
 
       h.doses.table.throwOnFetch = null;
       h.clock.advance(const Duration(minutes: 5));
+      final dosePages = h.doses.table.pageCalls.length;
+      final medPages = h.meds.table.pageCalls.length;
       final second = (await h.service.syncAll())!;
       expect(second.failures, isEmpty);
       await expectAllLocal(missing);
-      expect(h.doses.table.pageCalls.last.since, isNull);
-      expect(h.meds.table.pageCalls.last.since, medCursor);
-      expect(prefs.getInt(doneKey), 1);
+      expect(h.doses.table.pageCalls[dosePages].after, isNull);
+      expect(h.meds.table.pageCalls[medPages].after, medCursor);
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
     });
 
     test('a failed family fetch leaves the repair unfinished too', () async {
@@ -3084,7 +3318,7 @@ void main() {
       h.clock.advance(const Duration(minutes: 5));
       final second = (await h.service.syncAll())!;
       expect(second.failures, isEmpty);
-      expect(prefs.getInt(doneKey), 1);
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
     });
 
     test('local-only mode leaves the cursors and the marker alone', () async {
@@ -3093,6 +3327,7 @@ void main() {
       final service = SyncService(
         medicationLocal: MedicationLocalDatasource(),
         medicationRemote: null,
+        syncState: null,
         treatmentLocal: TreatmentLocalDatasource(),
         treatmentRemote: null,
         prescriptionLocal: PrescriptionLocalDatasource(),
@@ -3113,6 +3348,32 @@ void main() {
       expect(snapshot(prefs), before);
     });
 
+    test(
+      'a device that finished the first repair runs this one once more',
+      () async {
+        final clock = DateTime.utc(2026, 3, 4, 12);
+        final prefs = await prefsWith({
+          for (final t in tables)
+            'sync.last_pull_at.$t': clock
+                .subtract(const Duration(hours: 1))
+                .toIso8601String(),
+          'sync.pull_repair.reset': 1,
+          'sync.pull_repair.done': 1,
+        });
+        final h = Harness(start: clock, cursors: SyncCursorStore(prefs));
+        final missing = await seedServerOnly(
+          h,
+          clock.subtract(const Duration(days: 2)),
+        );
+
+        await h.service.syncAll();
+
+        await expectAllLocal(missing);
+        expect(h.meds.table.pageCalls.first.after, isNull);
+        expect(prefs.getInt(doneKey), 2);
+      },
+    );
+
     test('a fresh install records the repair with its first pull', () async {
       final prefs = await prefsWith({});
       final h = Harness(cursors: SyncCursorStore(prefs));
@@ -3120,13 +3381,18 @@ void main() {
         const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson(),
       );
 
+      final xidA = h.meds.table.rows['a']!['sync_xid'] as int;
       await h.service.syncAll();
-      expect(prefs.getInt(doneKey), 1);
-      final cursor = await h.cursors.lastPullAt('medications');
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
+      final cursor = await h.cursors.pullKey('medications');
 
       h.clock.advance(const Duration(minutes: 5));
       await h.service.syncAll();
-      expect(h.meds.table.pageCalls.map((c) => c.since), [null, cursor]);
+      expect(h.meds.table.pageCalls.map((c) => c.after), [
+        null,
+        PullKey(xidA, 'a'),
+        cursor,
+      ]);
     });
 
     test('the repair pull keeps local changes still waiting to be pushed, '
@@ -3182,8 +3448,8 @@ void main() {
       final report = (await h.service.syncAll())!;
 
       expect(report.skippedBackoff, 2);
-      expect(prefs.getInt(doneKey), 1);
-      expect(h.meds.table.pageCalls.first.since, isNull);
+      expect(prefs.getInt(doneKey), SyncCursorStore.pullRepairVersion);
+      expect(h.meds.table.pageCalls.first.after, isNull);
       final edited = (await localRow('medications', 'm-edit'))!;
       expect(edited['name'], 'Local');
       expect(edited['sync_status'], SyncStatus.pendingUpdate);

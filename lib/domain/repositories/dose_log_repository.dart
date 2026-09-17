@@ -63,4 +63,9 @@ abstract class DoseLogRepository {
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
     String prescriptionId,
   );
+
+  /// Moves doses stored under a slot's id at another time to that slot's
+  /// time ([slotTimes]: dose id → slot time), when nobody touched them.
+  /// Returns how many moved.
+  Future<Result<int>> correctDoseTimes(Map<String, DateTime> slotTimes);
 }

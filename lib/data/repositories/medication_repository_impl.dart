@@ -12,8 +12,9 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 
 /// Writes go to the local database only: each one stores the row as pending
 /// and asks for a sync cycle, which is the one place that pushes (see
-/// `TreatmentRepositoryImpl`). A stock change is pushed as the new quantity,
-/// under last-write-wins, like every other column.
+/// `TreatmentRepositoryImpl`). A stock change is still pushed as the new
+/// quantity, like any other changed column, until stock changes go through
+/// the server's stock ledger.
 class MedicationRepositoryImpl implements MedicationRepository {
   /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
   /// failure only logs. Null in local-only mode, where nothing is pushed.

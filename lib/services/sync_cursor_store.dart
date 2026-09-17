@@ -1,7 +1,7 @@
-/// Medora - Per-table pull cursors for delta sync.
+/// Medora - Per-table pull keys for delta sync (sync v2).
 ///
-/// Stores the newest remote `updated_at` seen per table (minus a 1 s overlap,
-/// applied by the caller) so the next pull can ask only for newer rows.
+/// Stores, per table, where the next pull starts (`PullKey`: a transaction
+/// id and a row id), so a pull asks only for rows written since.
 ///
 /// It also keeps the markers of the one-time pull repair
 /// ([startPullRepair]): builds before the paged pull read each table newest
@@ -9,6 +9,7 @@
 /// past older rows that never arrived.
 library;
 
+import 'package:medora/data/datasources/sync_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SyncCursorStore {
@@ -17,11 +18,18 @@ class SyncCursorStore {
   /// Non-persistent store for tests and for builds without cloud sync.
   SyncCursorStore.inMemory() : _prefs = null;
 
+  /// The `updated_at` cursors of builds before sync v2. Still cleared by
+  /// [clear], never written.
   static const keyPrefix = 'sync.last_pull_at.';
 
+  /// The sync v2 pull keys (`PullKey.toStorage`).
+  static const pullKeyPrefix = 'sync.pull_key.';
+
   /// The pull repair this build runs once per device. A later build that
-  /// needs every table pulled in full once more raises it.
-  static const pullRepairVersion = 1;
+  /// needs every table pulled in full once more raises it. Version 2 is the
+  /// switch to sync v2: every table is pulled once from the start, so every
+  /// row gets its merge base.
+  static const pullRepairVersion = 2;
 
   /// The repair version whose cursor reset was applied. Outside [keyPrefix],
   /// so [clear] and a local data wipe keep it.
@@ -31,7 +39,7 @@ class SyncCursorStore {
   static const pullRepairDoneKey = 'sync.pull_repair.done';
 
   final SharedPreferences? _prefs;
-  final Map<String, DateTime> _memory = {};
+  final Map<String, PullKey> _memoryKeys = {};
 
   /// An in-memory store holds nothing an older build wrote, so it has
   /// nothing to repair.
@@ -40,29 +48,40 @@ class SyncCursorStore {
     pullRepairDoneKey: pullRepairVersion,
   };
 
-  Future<DateTime?> lastPullAt(String table) async {
+  /// Where the next pull of [table] starts; null = from the beginning.
+  Future<PullKey?> pullKey(String table) async {
     final prefs = _prefs;
-    if (prefs == null) return _memory[table];
-    final raw = prefs.getString('$keyPrefix$table');
-    return raw == null ? null : DateTime.tryParse(raw)?.toUtc();
+    if (prefs == null) return _memoryKeys[table];
+    return PullKey.fromStorage(prefs.getString('$pullKeyPrefix$table'));
   }
 
-  Future<void> setLastPullAt(String table, DateTime at) async {
-    final utc = at.toUtc();
+  Future<void> setPullKey(String table, PullKey key) async {
     final prefs = _prefs;
     if (prefs == null) {
-      _memory[table] = utc;
+      _memoryKeys[table] = key;
       return;
     }
-    await prefs.setString('$keyPrefix$table', utc.toIso8601String());
+    await prefs.setString('$pullKeyPrefix$table', key.toStorage());
   }
 
+  /// Forgets [table]'s pull key: its next pull starts from the beginning.
+  Future<void> resetPullKey(String table) async {
+    _memoryKeys.remove(table);
+    await _prefs?.remove('$pullKeyPrefix$table');
+  }
+
+  /// Forgets every cursor, old and new.
   Future<void> clear() async {
-    _memory.clear();
+    _memoryKeys.clear();
     final prefs = _prefs;
     if (prefs == null) return;
     for (final key
-        in prefs.getKeys().where((k) => k.startsWith(keyPrefix)).toList()) {
+        in prefs
+            .getKeys()
+            .where(
+              (k) => k.startsWith(keyPrefix) || k.startsWith(pullKeyPrefix),
+            )
+            .toList()) {
       await prefs.remove(key);
     }
   }
@@ -100,8 +119,10 @@ class SyncCursorStore {
 
   bool _hasCursor() {
     final prefs = _prefs;
-    if (prefs == null) return _memory.isNotEmpty;
-    return prefs.getKeys().any((k) => k.startsWith(keyPrefix));
+    if (prefs == null) return _memoryKeys.isNotEmpty;
+    return prefs.getKeys().any(
+      (k) => k.startsWith(keyPrefix) || k.startsWith(pullKeyPrefix),
+    );
   }
 
   int _marker(String key) {

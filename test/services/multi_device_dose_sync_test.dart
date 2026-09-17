@@ -30,13 +30,8 @@ import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
 /// The shared server.
-class _Server {
-  DateTime now() => DateTime.now().toUtc();
-  late final meds = FakeMedicationRemote(now);
-  late final treatments = FakeTreatmentRemote(now);
-  late final prescriptions = FakePrescriptionRemote(now);
-  late final doses = FakeDoseLogRemote(now);
-  late final families = FakeFamilyRemote(now);
+class _Server extends FakeServer {
+  _Server() : super(() => DateTime.now().toUtc());
 
   Map<String, dynamic> dose(String id) => doses.table.rows[id]!;
 }
@@ -54,6 +49,7 @@ class _Device {
       doseLogRemote: server.doses,
       familyLocal: FamilyLocalDatasource(),
       familyRemote: server.families,
+      syncState: server.state,
       isOnline: () => online,
       currentUserId: () => 'user-a',
       onlineStream: const Stream<bool>.empty(),
@@ -220,16 +216,17 @@ void main() {
       await expectTakenEverywhere();
     });
 
-    test('pulling the pending copy again does not undo "missed"', () async {
+    test('pulling the dose again does not undo "missed"', () async {
       await b.run((_) => b.startup.run());
-      // A full pull returns the server's pending copy the conclusion was
-      // drawn from (a stale skip rewinds the cursor the same way).
+      // The conclusion reached the server, as the app's own change.
+      expect(server.dose(doseId)['status'], 'missed');
+      expect(server.dose(doseId)['edited_at'], '1970-01-01T00:00:00.000Z');
+      // A full pull brings it back unchanged.
       await b.cursors.clear();
       await b.sync();
       final row = await b.dose(doseId);
       expect(row['status'], 'missed');
       expect(row['sync_status'], SyncStatus.synced);
-      expect(server.dose(doseId)['status'], 'pending');
 
       // A real change on the server still wins.
       await a.run((_) => a.doses.markDoseTaken(doseId));
@@ -238,6 +235,7 @@ void main() {
 
     test('an undo still waiting to be pushed is not marked missed', () async {
       await a.run((_) => a.doses.markDoseTaken(doseId));
+      final takenVersion = server.dose(doseId)['row_version'] as int;
       a.online = false;
       await a.run((_) => a.doses.markDosePending(doseId));
       // Past the grace period, still offline.
@@ -246,16 +244,16 @@ void main() {
       expect(offline['status'], 'pending');
       expect(offline['sync_status'], SyncStatus.pendingUpdate);
 
-      // The undo reaches the server as what the user did.
+      // Online: the undo reaches the server first, as what the user did;
+      // then the start draws its conclusion and sends it as the app's own.
       a.online = true;
-      await a.run((_) => a.startup.run());
-      expect(server.dose(doseId)['status'], 'pending');
-      // Once it is synced, the next start draws the local conclusion.
       await a.run((_) => a.startup.run());
       final after = await a.dose(doseId);
       expect(after['status'], 'missed');
       expect(after['sync_status'], SyncStatus.synced);
-      expect(server.dose(doseId)['status'], 'pending');
+      expect(server.dose(doseId)['status'], 'missed');
+      expect(server.dose(doseId)['edited_at'], '1970-01-01T00:00:00.000Z');
+      expect(server.dose(doseId)['row_version'], takenVersion + 2);
     });
 
     test('startup marks doses missed only after its sync', () async {
@@ -375,10 +373,10 @@ void main() {
     });
   });
 
-  // The server stamps every update with its own clock, so of two explicit
-  // changes the one that reaches the server last wins, whenever it was
-  // made.
-  group('an explicit status wins in the order the devices sync', () {
+  // Of two explicit changes of the same dose, the one made later wins,
+  // whichever device syncs first (the edit time, capped at the moment the
+  // server received it).
+  group('of two explicit statuses the later one wins', () {
     test('B skips the dose after A took it', () async {
       await a.run((_) => a.doses.markDoseTaken(doseId));
       await b.sync();
@@ -401,6 +399,21 @@ void main() {
       expect(onA['status'], 'missed');
       expect(onA['sync_status'], SyncStatus.synced);
       expect((await b.dose(doseId))['status'], 'missed');
+    });
+
+    test('PR5: A marks the dose missed offline, B takes it later and syncs '
+        'first', () async {
+      a.online = false;
+      await a.run((_) => a.doses.markDoseMissed(doseId));
+      await b.run((_) => b.doses.markDoseTaken(doseId));
+      expect(server.dose(doseId)['status'], 'taken');
+      a.online = true;
+      await a.sync();
+      expect(server.dose(doseId)['status'], 'taken');
+      final onA = await a.dose(doseId);
+      expect(onA['status'], 'taken');
+      expect(onA['sync_status'], SyncStatus.synced);
+      await expectTakenEverywhere();
     });
 
     test('A takes the dose after B explicitly marked it missed', () async {

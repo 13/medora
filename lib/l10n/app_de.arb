@@ -285,6 +285,7 @@
   "syncPartial": "Mit Fehlern abgeschlossen",
   "syncNever": "Noch nicht synchronisiert",
   "lastSyncSummary": "Letzte Synchronisierung {time}: {pushed} gesendet, {pulled} empfangen, {deleted} gelöscht, {failed} fehlgeschlagen",
+  "syncNeedsMigration": "Das Cloud-Projekt braucht ein Update: {file} anwenden",
   "syncFailedItems": "Fehlgeschlagene Einträge",
   "syncSkippedBackoff": "{n} warten auf einen neuen Versuch",
   "discardLocalChange": "Lokale Änderung verwerfen",

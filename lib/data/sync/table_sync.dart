@@ -260,6 +260,12 @@ class TableSync {
     for (var attempt = 0; attempt < maxAttempts && local != null; attempt++) {
       final status = local['sync_status'] as String?;
       if (status == SyncStatus.synced) break;
+      // Deleted here while this push waited for the server: the delete is
+      // what goes out now.
+      if (status == SyncStatus.pendingDelete) {
+        await _pushDelete(local, userId: userId);
+        return PushResult(PushOutcome.settled, conflicts);
+      }
       final meta = LocalSyncMeta.fromRow(local);
       if (status == SyncStatus.pendingCreate || meta.version == null) {
         local = await _pushCreate(local, userId: userId, conflicts: conflicts);
@@ -267,8 +273,12 @@ class TableSync {
       }
       final changes = patchColumns(policy, meta.base, localWire(table, local));
       if (changes.isEmpty) {
-        await _markSynced(id, local['updated_at']);
-        return PushResult(PushOutcome.settled, conflicts);
+        // Edited again since it was read: the next pass sends that edit.
+        final marked = await _markSynced(id, local['updated_at']);
+        return PushResult(
+          marked ? PushOutcome.settled : PushOutcome.pending,
+          conflicts,
+        );
       }
       final writeId = await _beginWrite(local);
       final times = _sentTimes(local, changes.keys);
@@ -314,9 +324,20 @@ class TableSync {
     final id = row['id']! as String;
     final wire = localWire(table, row, userId: userId);
     final writeId = await _beginWrite(row);
-    final stamp = {'write_id': writeId, 'edited_at': _wireTime(now())};
+    final at = now();
+    final columns = writableColumns(policy, wire);
+    // Every column it writes is a change made now.
+    final times = FieldTimes({
+      for (final column in columns.keys)
+        if (!untimedColumns.contains(column)) column: FieldTime(at),
+    });
+    final stamp = {
+      'write_id': writeId,
+      'edited_at': _wireTime(at),
+      'field_edited_at': times.toJson(),
+    };
     var server = await remote.patch(id, {
-      ...writableColumns(policy, wire),
+      ...columns,
       // A live row here is live on the server too, whoever deleted it there.
       'deleted_at': null,
       ...stamp,
@@ -410,7 +431,13 @@ class TableSync {
     final editedAt = _wireTime(guarded ? automaticEditedAt : now());
     final written = await remote.patch(
       id,
-      {'deleted_at': deletedAt, 'write_id': writeId, 'edited_at': editedAt},
+      {
+        'deleted_at': deletedAt,
+        'write_id': writeId,
+        'edited_at': editedAt,
+        // A delete changes no column that has an edit time.
+        'field_edited_at': const <String, Object?>{},
+      },
       ifStatus: guarded ? 'pending' : null,
       ifLive: guarded,
     );
@@ -425,6 +452,9 @@ class TableSync {
               'deleted_at': deletedAt,
               'write_id': writeId,
               'edited_at': editedAt,
+              'field_edited_at': FieldTimes.decode(
+                row['field_edited_at'],
+              ).toJson(),
             },
           ]);
         }
@@ -490,24 +520,31 @@ class TableSync {
     return _read(server['id']! as String);
   }
 
-  /// The server no longer has the row (a purge): send it as new.
+  /// The server no longer has the row (a purge): send it as new, unless it
+  /// was deleted here meanwhile.
   Future<Map<String, Object?>?> _asCreate(Map<String, Object?> local) async {
     final id = local['id']! as String;
-    await _update(id, {
-      ...clearedSyncMeta,
-      'sync_status': SyncStatus.pendingCreate,
-    });
-    return _read(id);
-  }
-
-  Future<void> _markSynced(String id, Object? pushedUpdatedAt) async {
     final db = await _db;
     await db.update(
       table,
-      {'sync_status': SyncStatus.synced, 'sync_write_id': null},
-      where: 'id = ? AND updated_at IS ?',
-      whereArgs: [id, pushedUpdatedAt],
+      {...clearedSyncMeta, 'sync_status': SyncStatus.pendingCreate},
+      where: 'id = ? AND sync_status != ?',
+      whereArgs: [id, SyncStatus.pendingDelete],
     );
+    return _read(id);
+  }
+
+  /// Marks the row synced if it is still the update this push read (same
+  /// `updated_at`, and not deleted since); false when it is not.
+  Future<bool> _markSynced(String id, Object? pushedUpdatedAt) async {
+    final db = await _db;
+    final marked = await db.update(
+      table,
+      {'sync_status': SyncStatus.synced, 'sync_write_id': null},
+      where: 'id = ? AND updated_at IS ? AND sync_status = ?',
+      whereArgs: [id, pushedUpdatedAt, SyncStatus.pendingUpdate],
+    );
+    return marked > 0;
   }
 
   Future<void> _update(String id, Map<String, Object?> values) async {

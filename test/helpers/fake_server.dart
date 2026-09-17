@@ -470,6 +470,10 @@ class FakeSyncTable implements SyncTable {
   /// The size of every insert request, in order.
   final List<int> insertBatches = [];
 
+  /// Every row a write sent, in order: a patch's changes, or one inserted
+  /// row.
+  final List<Map<String, Object?>> sent = [];
+
   Map<String, Map<String, dynamic>> get rows => core.rowsOf(table);
 
   void _guard(String id) {
@@ -525,6 +529,7 @@ class FakeSyncTable implements SyncTable {
   }) async {
     await beforeCall?.call();
     _guard(id);
+    sent.add(Map.of(changes));
     final written = core.patch(
       table,
       id,
@@ -543,7 +548,15 @@ class FakeSyncTable implements SyncTable {
     for (final r in rows) {
       _guard(r['id']! as String);
     }
+    // One insert statement names one column list (PostgREST).
+    final keys = rows.isEmpty ? const <String>{} : rows.first.keys.toSet();
+    for (final r in rows) {
+      if (r.keys.toSet().length != keys.length || !keys.containsAll(r.keys)) {
+        throw ArgumentError('the rows of one insert have different keys');
+      }
+    }
     insertBatches.add(rows.length);
+    sent.addAll(rows.map(Map.of));
     core.insertIfAbsent(table, [for (final r in rows) Map.of(r)]);
     for (final r in rows) {
       _maybeLose(r['id']! as String);

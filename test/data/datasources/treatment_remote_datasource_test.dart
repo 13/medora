@@ -66,7 +66,7 @@ void main() {
     );
 
     await expectLater(
-      remote.upsertTreatment(treatment),
+      remote.rows.insertIfAbsent([treatment.toJson()]),
       throwsA(
         isA<MissingColumnException>()
             .having((e) => e.table, 'table', 'treatments')
@@ -100,25 +100,25 @@ void main() {
     );
 
     await expectLater(
-      remote.upsertTreatment(treatment),
+      remote.rows.insertIfAbsent([treatment.toJson()]),
       throwsA(isA<PostgrestException>().having((e) => e.code, 'code', '42501')),
     );
   });
 
-  test('a push that succeeds returns the server stamp', () async {
+  test('an update to such a project names the migration too', () async {
     final remote = TreatmentRemoteDatasource(
-      stubClient(
-        () => http.Response(
-          jsonEncode({'updated_at': '2026-03-01T10:00:00+00:00'}),
-          201,
-          headers: {'content-type': 'application/json'},
-        ),
-      ),
+      stubClient(() => missingColumnAnswer('sick_leave_ref')),
     );
 
-    expect(
-      await remote.upsertTreatment(treatment),
-      DateTime.utc(2026, 3, 1, 10),
+    await expectLater(
+      remote.rows.patch('t1', {'sick_leave_ref': 'A'}, ifVersion: 2),
+      throwsA(
+        isA<MissingColumnException>().having(
+          (e) => e.column,
+          'column',
+          'sick_leave_ref',
+        ),
+      ),
     );
   });
 }

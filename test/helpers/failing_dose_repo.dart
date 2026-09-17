@@ -72,4 +72,8 @@ class FailingTakeRepo implements DoseLogRepository {
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
     String prescriptionId,
   ) => inner.regenerateDoseLogsForPrescription(prescriptionId);
+
+  @override
+  Future<Result<int>> correctDoseTimes(Map<String, DateTime> slotTimes) =>
+      inner.correctDoseTimes(slotTimes);
 }

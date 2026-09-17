@@ -1675,6 +1675,12 @@ abstract class AppLocalizations {
     int failed,
   );
 
+  /// No description provided for @syncNeedsMigration.
+  ///
+  /// In en, this message translates to:
+  /// **'The cloud project needs an update: apply {file}'**
+  String syncNeedsMigration(String file);
+
   /// No description provided for @syncFailedItems.
   ///
   /// In en, this message translates to:

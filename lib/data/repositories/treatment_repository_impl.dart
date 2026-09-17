@@ -12,8 +12,9 @@ import 'package:medora/domain/repositories/treatment_repository.dart';
 
 /// Writes go to the local database only. Every add, update, End and delete
 /// stores the row as pending and then asks for a sync cycle, which is the
-/// one place that pushes: it applies last-write-wins, stamps the signed-in
-/// user, and marks a row synced only while it is still the copy it pushed.
+/// one place that pushes: it sends the columns that changed and merges them
+/// with the server's copy (sync v2), stamps the signed-in user, and marks a
+/// row synced only while it is still the copy it pushed.
 /// The cycle queues behind one that is already running, so an edit made
 /// mid-cycle goes out on the re-run.
 class TreatmentRepositoryImpl implements TreatmentRepository {

@@ -466,6 +466,8 @@
   "syncNever": "Not synced yet",
   "lastSyncSummary": "Last sync {time}: {pushed} sent, {pulled} received, {deleted} deleted, {failed} failed",
   "@lastSyncSummary": { "placeholders": { "time": { "type": "String" }, "pushed": { "type": "int" }, "pulled": { "type": "int" }, "deleted": { "type": "int" }, "failed": { "type": "int" } } },
+  "syncNeedsMigration": "The cloud project needs an update: apply {file}",
+  "@syncNeedsMigration": { "placeholders": { "file": { "type": "String" } } },
   "syncFailedItems": "Failed items",
   "syncSkippedBackoff": "{n} waiting to retry",
   "@syncSkippedBackoff": { "placeholders": { "n": { "type": "int" } } },

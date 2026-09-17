@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
@@ -22,6 +24,13 @@ class _CountingDoses extends DoseLogRepositoryImpl {
 
   int regenerations = 0;
   int generations = 0;
+  final corrections = <Map<String, DateTime>>[];
+
+  @override
+  Future<Result<int>> correctDoseTimes(Map<String, DateTime> slotTimes) {
+    corrections.add(slotTimes);
+    return super.correctDoseTimes(slotTimes);
+  }
 
   @override
   Future<Result<List<DoseLog>>> regenerateDoseLogsForPrescription(
@@ -108,6 +117,103 @@ void main() {
 
     expect(await service.ensureScheduled(), 0);
     expect(await db.query('dose_logs'), hasLength(3));
+  });
+
+  group('a slot an older build stored hours off (S-1)', () {
+    final slot = DateTime(2026, 3, 1, 16);
+
+    /// A day of generated doses, synced as a pull stores them, with the
+    /// [slot] dose moved to [at]; returns the prescription and that dose.
+    Future<(String, String)> seedShifted(DateTime at) async {
+      final db = await AppDatabase.instance.database;
+      final p = await seedPrescription(db, startTime: start, durationDays: 1);
+      await doses.generateDoseLogsForPrescription(p.prescriptionId);
+      await db.update('dose_logs', {
+        'sync_status': 'synced',
+        'sync_version': 1,
+      });
+      final id = scheduledDoseId(p.prescriptionId, slot);
+      await db.update(
+        'dose_logs',
+        {'scheduled_time': at.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return (p.prescriptionId, id);
+    }
+
+    Future<Map<String, Object?>> row(String id) async =>
+        (await (await AppDatabase.instance.database).query(
+          'dose_logs',
+          where: 'id = ?',
+          whereArgs: [id],
+        )).single;
+
+    test('moves back to its time as a change the app made', () async {
+      final (_, id) = await seedShifted(DateTime(2026, 3, 1, 18));
+
+      expect(await service.ensureScheduled(), 0);
+
+      expect(doses.corrections, [
+        {id: slot},
+      ]);
+      final moved = await row(id);
+      expect(DateTime.parse(moved['scheduled_time']! as String), slot);
+      expect(moved['sync_status'], 'pending_update');
+      expect(moved['edited_at'], '1970-01-01T00:00:00.000Z');
+      expect(
+        (jsonDecode(moved['field_edited_at']! as String)
+            as Map)['scheduled_time'],
+        {'at': '1970-01-01T00:00:00.000Z', 'auto': true},
+      );
+      expect(await service.ensureScheduled(), 0);
+      expect(doses.corrections, hasLength(1));
+    });
+
+    test('a dose a person touched stays where it is', () async {
+      final (_, id) = await seedShifted(DateTime(2026, 3, 1, 18));
+      final db = await AppDatabase.instance.database;
+      await db.update(
+        'dose_logs',
+        {'edited_at': '2026-03-01T09:00:00.000Z'},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+      await service.ensureScheduled();
+
+      final kept = await row(id);
+      expect(
+        DateTime.parse(kept['scheduled_time']! as String),
+        DateTime(2026, 3, 1, 18),
+      );
+      expect(kept['sync_status'], 'synced');
+    });
+
+    test('a slot another dose already sits at is not given a second '
+        'one', () async {
+      final (p, id) = await seedShifted(DateTime(2026, 3, 1, 18));
+      final db = await AppDatabase.instance.database;
+      await seedDoseLog(db, p, slot, id: 'older-copy');
+
+      await service.ensureScheduled();
+
+      expect(doses.corrections, isEmpty);
+      expect(
+        await db.query(
+          'dose_logs',
+          where: 'scheduled_time = ?',
+          whereArgs: [slot.toIso8601String()],
+        ),
+        hasLength(1),
+      );
+      // The stray copy is off schedule, so the regeneration drops it (here,
+      // without sync, at once).
+      expect(
+        await db.query('dose_logs', where: 'id = ?', whereArgs: [id]),
+        isEmpty,
+      );
+    });
   });
 
   test('a pulled prescription that is paused gets no doses', () async {

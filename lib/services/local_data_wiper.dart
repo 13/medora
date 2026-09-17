@@ -50,6 +50,7 @@ class LocalDataWiper {
             .where(
               (k) =>
                   k.startsWith(SyncCursorStore.keyPrefix) ||
+                  k.startsWith(SyncCursorStore.pullKeyPrefix) ||
                   k.startsWith(SyncFailureStore.keyPrefix),
             )
             .toList()) {

@@ -36,18 +36,20 @@ void main() {
   ) async {
     final now = DateTime.utc(2026, 3, 4, 12);
     final failures = SyncFailureStore.inMemory();
-    final meds = FakeMedicationRemote(() => now);
+    final server = FakeServer(() => now);
+    final meds = server.meds;
     final service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
       medicationRemote: meds,
       treatmentLocal: TreatmentLocalDatasource(),
-      treatmentRemote: FakeTreatmentRemote(() => now),
+      treatmentRemote: server.treatments,
       prescriptionLocal: PrescriptionLocalDatasource(),
-      prescriptionRemote: FakePrescriptionRemote(() => now),
+      prescriptionRemote: server.prescriptions,
       doseLogLocal: DoseLogLocalDatasource(),
-      doseLogRemote: FakeDoseLogRemote(() => now),
+      doseLogRemote: server.doses,
       familyLocal: FamilyLocalDatasource(),
-      familyRemote: FakeFamilyRemote(() => now),
+      familyRemote: server.families,
+      syncState: server.state,
       failures: failures,
       isOnline: () => true,
       currentUserId: () => 'user-a',
@@ -126,18 +128,20 @@ void main() {
     final now = DateTime.utc(2026, 3, 4, 12);
     var clock = now;
     final failures = SyncFailureStore.inMemory();
-    final meds = FakeMedicationRemote(() => clock);
+    final server = FakeServer(() => clock);
+    final meds = server.meds;
     final service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
       medicationRemote: meds,
       treatmentLocal: TreatmentLocalDatasource(),
-      treatmentRemote: FakeTreatmentRemote(() => clock),
+      treatmentRemote: server.treatments,
       prescriptionLocal: PrescriptionLocalDatasource(),
-      prescriptionRemote: FakePrescriptionRemote(() => clock),
+      prescriptionRemote: server.prescriptions,
       doseLogLocal: DoseLogLocalDatasource(),
-      doseLogRemote: FakeDoseLogRemote(() => clock),
+      doseLogRemote: server.doses,
       familyLocal: FamilyLocalDatasource(),
-      familyRemote: FakeFamilyRemote(() => clock),
+      familyRemote: server.families,
+      syncState: server.state,
       failures: failures,
       isOnline: () => true,
       currentUserId: () => 'user-a',
@@ -192,18 +196,20 @@ void main() {
     final now = DateTime.utc(2026, 3, 4, 12);
     var clock = now;
     final failures = SyncFailureStore.inMemory();
-    final meds = FakeMedicationRemote(() => clock);
+    final server = FakeServer(() => clock);
+    final meds = server.meds;
     final service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
       medicationRemote: meds,
       treatmentLocal: TreatmentLocalDatasource(),
-      treatmentRemote: FakeTreatmentRemote(() => clock),
+      treatmentRemote: server.treatments,
       prescriptionLocal: PrescriptionLocalDatasource(),
-      prescriptionRemote: FakePrescriptionRemote(() => clock),
+      prescriptionRemote: server.prescriptions,
       doseLogLocal: DoseLogLocalDatasource(),
-      doseLogRemote: FakeDoseLogRemote(() => clock),
+      doseLogRemote: server.doses,
       familyLocal: FamilyLocalDatasource(),
-      familyRemote: FakeFamilyRemote(() => clock),
+      familyRemote: server.families,
+      syncState: server.state,
       failures: failures,
       isOnline: () => true,
       currentUserId: () => 'user-a',
@@ -279,5 +285,121 @@ void main() {
     );
     expect(rows.single['name'], 'Server');
     expect(await failures.get('medications', 'bad'), isNull);
+  });
+
+  for (final (locale, text) in const [
+    (
+      'en',
+      'The cloud project needs an update: apply '
+          'supabase/migrations/20260918000000_sync_v2.sql',
+    ),
+    (
+      'de',
+      'Das Cloud-Projekt braucht ein Update: '
+          'supabase/migrations/20260918000000_sync_v2.sql anwenden',
+    ),
+    (
+      'it',
+      'Il progetto cloud va aggiornato: applica '
+          'supabase/migrations/20260918000000_sync_v2.sql',
+    ),
+  ]) {
+    testWidgets('a project without the sync migration is named in Settings '
+        '($locale)', (tester) async {
+      final now = DateTime.utc(2026, 3, 4, 12);
+      final server = FakeServer(() => now);
+      server.state.migrated = false;
+      final service = SyncService(
+        medicationLocal: MedicationLocalDatasource(),
+        medicationRemote: server.meds,
+        treatmentLocal: TreatmentLocalDatasource(),
+        treatmentRemote: server.treatments,
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        prescriptionRemote: server.prescriptions,
+        doseLogLocal: DoseLogLocalDatasource(),
+        doseLogRemote: server.doses,
+        familyLocal: FamilyLocalDatasource(),
+        familyRemote: server.families,
+        syncState: server.state,
+        isOnline: () => true,
+        currentUserId: () => 'user-a',
+        onlineStream: const Stream<bool>.empty(),
+        now: () => now,
+      );
+      addTearDown(service.dispose);
+      final report = (await service.syncAll())!;
+      expect(report.missingMigration, isNotNull);
+      await tester.pump(const Duration(seconds: 3));
+
+      await pumpMedoraApp(
+        tester,
+        const SettingsScreen(),
+        locale: Locale(locale),
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          syncStartupDelayProvider.overrideWithValue(Duration.zero),
+          reminderPortProvider.overrideWithValue(FakePort()),
+          platformCapabilitiesProvider.overrideWithValue(
+            PlatformCapabilities.mobile,
+          ),
+          syncServiceProvider.overrideWithValue(service),
+        ],
+      );
+      await tester.pumpAndSettle();
+      final line = find.byKey(const Key('syncNeedsMigration'));
+      await tester.scrollUntilVisible(
+        line,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(
+        find.descendant(of: line, matching: find.text(text)),
+        findsOneWidget,
+      );
+    });
+  }
+
+  testWidgets('a migrated project shows no migration line', (tester) async {
+    final now = DateTime.utc(2026, 3, 4, 12);
+    final server = FakeServer(() => now);
+    final service = SyncService(
+      medicationLocal: MedicationLocalDatasource(),
+      medicationRemote: server.meds,
+      treatmentLocal: TreatmentLocalDatasource(),
+      treatmentRemote: server.treatments,
+      prescriptionLocal: PrescriptionLocalDatasource(),
+      prescriptionRemote: server.prescriptions,
+      doseLogLocal: DoseLogLocalDatasource(),
+      doseLogRemote: server.doses,
+      familyLocal: FamilyLocalDatasource(),
+      familyRemote: server.families,
+      syncState: server.state,
+      isOnline: () => true,
+      currentUserId: () => 'user-a',
+      onlineStream: const Stream<bool>.empty(),
+      now: () => now,
+    );
+    addTearDown(service.dispose);
+    expect((await service.syncAll())!.isClean, isTrue);
+    await tester.pump(const Duration(seconds: 3));
+    await pumpMedoraApp(
+      tester,
+      const SettingsScreen(),
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(
+          await SharedPreferences.getInstance(),
+        ),
+        syncStartupDelayProvider.overrideWithValue(Duration.zero),
+        reminderPortProvider.overrideWithValue(FakePort()),
+        platformCapabilitiesProvider.overrideWithValue(
+          PlatformCapabilities.mobile,
+        ),
+        syncServiceProvider.overrideWithValue(service),
+      ],
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('syncNeedsMigration')), findsNothing);
   });
 }

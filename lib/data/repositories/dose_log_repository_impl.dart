@@ -99,9 +99,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
   Future<Result<int>> markOverduePendingAsMissed(DateTime cutoff) async {
     try {
       final (:changed, :unpushed) = await localDatasource
-          .markOverduePendingAsMissed(cutoff);
-      // A dose the server already has stays `synced`: the change is local
-      // only (see the datasource), so there is nothing to push.
+          .markOverduePendingAsMissed(cutoff, pushable: _requestSync != null);
       if (unpushed > 0) _syncSoon();
       return Result.success(changed);
     } catch (e, st) {
@@ -321,17 +319,31 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
                   unmatchedIds.contains(dose.id)))
             dose.id,
       };
-      // Delete only pending (not yet taken/skipped/missed) dose logs
-      await localDatasource.deletePendingByPrescription(
+      // Drop only pending (not yet taken/skipped/missed) dose logs; the
+      // server copies go with a guarded delete.
+      final dropped = await localDatasource.dropPendingByPrescription(
         prescriptionId,
         keepIds: keepIds,
+        pushable: _requestSync != null,
       );
 
+      if (dropped > 0) _syncSoon();
       // Generate fresh dose logs
       return await generateDoseLogsForPrescription(prescriptionId);
     } catch (e, st) {
       debugPrint('❌ regenerateDoseLogs FAILED: $e\n$st');
       return Result.failure('Failed to regenerate dose logs: $e', st);
+    }
+  }
+
+  @override
+  Future<Result<int>> correctDoseTimes(Map<String, DateTime> slotTimes) async {
+    try {
+      final moved = await localDatasource.correctScheduledTimes(slotTimes);
+      if (moved > 0) _syncSoon();
+      return Result.success(moved);
+    } catch (e, st) {
+      return Result.failure('Failed to correct dose times: $e', st);
     }
   }
 

@@ -150,6 +150,18 @@ class SettingsCloudSection extends ConsumerWidget {
                 ? () => showSyncFailures(ref, context, l10n, lastReport!)
                 : null,
           ),
+          // A project without the sync migration syncs nothing until the
+          // file is applied; say which file, where the owner looks.
+          if (lastReport?.missingMigration case final file?)
+            ListTile(
+              key: const Key('syncNeedsMigration'),
+              dense: true,
+              leading: Icon(Icons.error_outline, color: context.colors.error),
+              title: Text(
+                l10n.syncNeedsMigration(file),
+                style: TextStyle(color: context.colors.error),
+              ),
+            ),
           ExpansionTile(
             title: Text(l10n.advanced),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

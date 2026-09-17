@@ -34,6 +34,7 @@ class _CountingSyncService extends SyncService {
         doseLogRemote: null,
         familyLocal: FamilyLocalDatasource(),
         familyRemote: null,
+        syncState: null,
         isOnline: () => true,
         currentUserId: () => 'user-a',
         onlineStream: const Stream<bool>.empty(),
@@ -52,7 +53,7 @@ void main() {
   setUp(setUpTestDatabase);
   tearDown(tearDownTestDatabase);
 
-  DateTime clock() => DateTime.now().toUtc();
+  final core = FakeServerCore(() => DateTime.now().toUtc());
 
   /// A container whose remote datasources exist only for the tables in
   /// [remotes] (all four: cloud mode; none: local-only mode), with [sync]
@@ -65,18 +66,18 @@ void main() {
       overrides: [
         syncServiceProvider.overrideWithValue(sync),
         medicationDatasourceProvider.overrideWithValue(
-          remotes.contains('medications') ? FakeMedicationRemote(clock) : null,
+          remotes.contains('medications') ? FakeMedicationRemote(core) : null,
         ),
         treatmentDatasourceProvider.overrideWithValue(
-          remotes.contains('treatments') ? FakeTreatmentRemote(clock) : null,
+          remotes.contains('treatments') ? FakeTreatmentRemote(core) : null,
         ),
         prescriptionDatasourceProvider.overrideWithValue(
           remotes.contains('prescriptions')
-              ? FakePrescriptionRemote(clock)
+              ? FakePrescriptionRemote(core)
               : null,
         ),
         doseLogDatasourceProvider.overrideWithValue(
-          remotes.contains('dose_logs') ? FakeDoseLogRemote(clock) : null,
+          remotes.contains('dose_logs') ? FakeDoseLogRemote(core) : null,
         ),
       ],
     );

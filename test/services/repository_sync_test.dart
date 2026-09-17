@@ -28,22 +28,25 @@ import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
 class _Rig {
+  late final FakeServerCore core;
   _Rig() {
     DateTime serverNow() => DateTime.now().toUtc();
-    meds = FakeMedicationRemote(serverNow);
-    prescriptions = FakePrescriptionRemote(serverNow);
-    doses = FakeDoseLogRemote(serverNow);
+    core = FakeServerCore(serverNow);
+    meds = FakeMedicationRemote(core);
+    prescriptions = FakePrescriptionRemote(core);
+    doses = FakeDoseLogRemote(core);
     service = SyncService(
       medicationLocal: medicationLocal,
       medicationRemote: meds,
       treatmentLocal: TreatmentLocalDatasource(),
-      treatmentRemote: FakeTreatmentRemote(serverNow),
+      treatmentRemote: FakeTreatmentRemote(core),
       prescriptionLocal: prescriptionLocal,
       prescriptionRemote: prescriptions,
       doseLogLocal: doseLogLocal,
       doseLogRemote: doses,
       familyLocal: FamilyLocalDatasource(),
       familyRemote: FakeFamilyRemote(serverNow),
+      syncState: FakeSyncState(core),
       isOnline: () => true,
       currentUserId: () => 'user-a',
       onlineStream: const Stream<bool>.empty(),
@@ -96,7 +99,7 @@ class _Rig {
   /// Runs a sync cycle whose first call into [table] (its push of the
   /// pending row) is held until [write] has run.
   Future<void> writeWhileCyclePushes(
-    FakeRemoteTable table,
+    FakeSyncTable table,
     Future<void> Function() write,
   ) async {
     final release = Completer<void>();
@@ -218,6 +221,12 @@ void main() {
           ).toJson(),
           updatedAt: longAgo,
         );
+        // This device pulled that copy, so it holds its merge base. (The
+        // stock has no edit time of its own until it moves to the stock
+        // ledger: a pending stock change with no base is judged by the row
+        // time only while nothing else was written to the row.)
+        await r.service.syncAll();
+        await r.idle();
         await _pendingOffline('medications', id, {'quantity': 8}, offline);
 
         await r.writeWhileCyclePushes(

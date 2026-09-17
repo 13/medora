@@ -19,6 +19,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -130,6 +131,11 @@ final doseLogDatasourceProvider = Provider<DoseLogRemoteDatasource?>((ref) {
 final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : FamilyRemoteDatasource(client);
+});
+
+final syncStateDatasourceProvider = Provider<SyncStateRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : SyncStateRemoteDatasource(client);
 });
 
 // ============================================================
@@ -319,6 +325,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     doseLogRemote: ref.watch(doseLogDatasourceProvider),
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
+    syncState: ref.watch(syncStateDatasourceProvider),
     cursors: ref.watch(syncCursorStoreProvider),
     failures: ref.watch(syncFailureStoreProvider),
     now: ref.watch(nowProvider),

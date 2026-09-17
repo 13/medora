@@ -13,6 +13,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -85,6 +86,7 @@ void main() {
       doseLogRemote: DoseLogRemoteDatasource(c),
       familyLocal: FamilyLocalDatasource(),
       familyRemote: FamilyRemoteDatasource(c),
+      syncState: SyncStateRemoteDatasource(c),
       cursors: SyncCursorStore.inMemory(),
       isOnline: () => true,
       currentUserId: () => uid,

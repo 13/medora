@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/services/local_upload_marker.dart';
 import 'package:medora/services/sync_cursor_store.dart';
@@ -29,7 +30,7 @@ void main() {
     final seeded = await seedPrescription(db);
     await seedDoseLog(db, seeded.prescriptionId, DateTime(2026, 3, 1, 8));
     final cursors = SyncCursorStore.inMemory();
-    await cursors.setLastPullAt('medications', DateTime.utc(2026));
+    await cursors.setPullKey('medications', const PullKey(1234));
 
     final n = await makeMarker(cursors: cursors).markAllForUpload('user-a');
 
@@ -47,7 +48,7 @@ void main() {
         reason: table,
       );
     }
-    expect(await cursors.lastPullAt('medications'), isNull);
+    expect(await cursors.pullKey('medications'), isNull);
   });
 
   group('stock changes still waiting', () {

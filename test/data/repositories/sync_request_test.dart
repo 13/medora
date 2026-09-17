@@ -303,8 +303,8 @@ void main() {
       expect(requests.statuses, isEmpty);
     });
 
-    test('marking overdue doses asks for a sync only when a changed dose is '
-        'not on the server yet', () async {
+    test('marking overdue doses asks for a sync after each marked dose is '
+        'queued', () async {
       final db = await AppDatabase.instance.database;
       final prescriptionId = (await seedPrescription(db)).prescriptionId;
       final synced = await seedDoseLog(
@@ -319,31 +319,35 @@ void main() {
         where: 'id = ?',
         whereArgs: [id],
       );
-      final requests = _Requests('dose_logs')..id = id;
+      final requests = _Requests('dose_logs')..id = synced;
       final repo = DoseLogRepositoryImpl(
         localDatasource: DoseLogLocalDatasource(),
         prescriptionLocal: PrescriptionLocalDatasource(),
         requestSync: requests.call,
       );
 
-      // Only the synced dose is overdue: marked, but nothing to push.
+      // The synced dose is overdue: marked, and queued as an automatic
+      // change so the server stops showing it as pending.
       final first = await repo.markOverduePendingAsMissed(
         DateTime(2026, 3, 1, 7),
       );
       await pumpEventQueue();
       expect(first.dataOrNull, 1);
-      expect(requests.statuses, isEmpty);
       final syncedRow = (await db.query(
         'dose_logs',
         where: 'id = ?',
         whereArgs: [synced],
       )).single;
       expect(syncedRow['status'], 'missed');
-      expect(syncedRow['sync_status'], 'synced');
+      expect(syncedRow['edited_at'], '1970-01-01T00:00:00.000Z');
 
-      await repo.markOverduePendingAsMissed(DateTime(2026, 3, 1, 9));
+      requests.id = id;
+      final second = await repo.markOverduePendingAsMissed(
+        DateTime(2026, 3, 1, 9),
+      );
       await pumpEventQueue();
-      expect(requests.statuses, [pendingCreate]);
+      expect(second.dataOrNull, 1);
+      expect(requests.statuses, [pendingUpdate, pendingCreate]);
     });
 
     test('deleting asks for one sync after the tombstone, and a missing '
@@ -374,6 +378,111 @@ void main() {
         (await repo.getDoseLogsByPrescription(prescriptionId)).dataOrNull,
         isEmpty,
       );
+    });
+
+    test('a regeneration asks for a sync after its guarded deletes are '
+        'queued', () async {
+      final db = await AppDatabase.instance.database;
+      final prescriptionId = (await seedPrescription(
+        db,
+        durationDays: 1,
+      )).prescriptionId;
+      // A dose the server has, at a time the schedule no longer has.
+      final dropped = await seedDoseLog(
+        db,
+        prescriptionId,
+        DateTime(2026, 3, 1, 9),
+      );
+      await db.update(
+        'dose_logs',
+        {'sync_version': 1},
+        where: 'id = ?',
+        whereArgs: [dropped],
+      );
+      final requests = _Requests('dose_logs')..id = dropped;
+      final repo = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        requestSync: requests.call,
+      );
+
+      await repo.regenerateDoseLogsForPrescription(prescriptionId);
+      await pumpEventQueue();
+
+      // One request for the drop, one for the doses it generated.
+      expect(requests.statuses, [pendingDelete, pendingDelete]);
+    });
+
+    test('correcting dose times asks for one sync after the move, and none '
+        'when nothing moved', () async {
+      final db = await AppDatabase.instance.database;
+      final prescriptionId = (await seedPrescription(db)).prescriptionId;
+      final id = await seedDoseLog(db, prescriptionId, DateTime(2026, 3, 1, 9));
+      final requests = _Requests('dose_logs')..id = id;
+      final repo = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        requestSync: requests.call,
+      );
+
+      final moved = await repo.correctDoseTimes({id: DateTime(2026, 3, 1, 8)});
+      await pumpEventQueue();
+      expect(moved.dataOrNull, 1);
+      expect(requests.statuses, [pendingUpdate]);
+
+      // Now waiting to be pushed, so it is left alone.
+      final again = await repo.correctDoseTimes({
+        id: DateTime(2026, 3, 1, 7),
+        'missing': DateTime(2026, 3, 1, 7),
+      });
+      await pumpEventQueue();
+      expect(again.dataOrNull, 0);
+      expect(requests.statuses, hasLength(1));
+    });
+
+    test('without sync, a dropped dose is deleted and an undone overdue '
+        'dose is swept, with nothing queued', () async {
+      final db = await AppDatabase.instance.database;
+      final prescriptionId = (await seedPrescription(
+        db,
+        durationDays: 1,
+      )).prescriptionId;
+      final dropped = await seedDoseLog(
+        db,
+        prescriptionId,
+        DateTime(2026, 3, 1, 9),
+      );
+      final undone = await seedDoseLog(
+        db,
+        prescriptionId,
+        DateTime(2026, 3, 1, 8),
+      );
+      // Rows an earlier cloud session left: the server had them.
+      await db.update('dose_logs', {'sync_version': 1});
+      await db.update(
+        'dose_logs',
+        {'sync_status': pendingUpdate},
+        where: 'id = ?',
+        whereArgs: [undone],
+      );
+      final repo = DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+      );
+
+      await repo.regenerateDoseLogsForPrescription(prescriptionId);
+      final swept = await repo.markOverduePendingAsMissed(
+        DateTime(2026, 3, 1, 10),
+      );
+
+      expect(await _status('dose_logs', dropped), isNull);
+      expect(swept.dataOrNull, 1);
+      final row = (await db.query(
+        'dose_logs',
+        where: 'id = ?',
+        whereArgs: [undone],
+      )).single;
+      expect([row['status'], row['sync_status']], ['missed', pendingUpdate]);
     });
 
     test('a failed status change asks for none', () async {

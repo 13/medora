@@ -973,6 +973,11 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String syncNeedsMigration(String file) {
+    return 'Das Cloud-Projekt braucht ein Update: $file anwenden';
+  }
+
+  @override
   String get syncFailedItems => 'Fehlgeschlagene Einträge';
 
   @override

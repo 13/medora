@@ -958,6 +958,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String syncNeedsMigration(String file) {
+    return 'The cloud project needs an update: apply $file';
+  }
+
+  @override
   String get syncFailedItems => 'Failed items';
 
   @override

@@ -16,6 +16,7 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -29,23 +30,26 @@ import '../helpers/fake_remotes.dart';
 import '../helpers/test_database.dart';
 
 class _Rig {
+  late final FakeServerCore core;
   _Rig({
     this.serverSkew = Duration.zero,
-    FakeTreatmentRemote Function(DateTime Function() clock)? treatmentRemote,
+    FakeTreatmentRemote Function(FakeServerCore core)? treatmentRemote,
   }) {
     DateTime serverNow() => DateTime.now().toUtc().add(serverSkew);
-    remote = (treatmentRemote ?? FakeTreatmentRemote.new)(serverNow);
+    core = FakeServerCore(serverNow);
+    remote = (treatmentRemote ?? FakeTreatmentRemote.new)(core);
     service = SyncService(
       medicationLocal: MedicationLocalDatasource(),
-      medicationRemote: FakeMedicationRemote(serverNow),
+      medicationRemote: FakeMedicationRemote(core),
       treatmentLocal: local,
       treatmentRemote: remote,
       prescriptionLocal: PrescriptionLocalDatasource(),
-      prescriptionRemote: FakePrescriptionRemote(serverNow),
+      prescriptionRemote: FakePrescriptionRemote(core),
       doseLogLocal: DoseLogLocalDatasource(),
-      doseLogRemote: FakeDoseLogRemote(serverNow),
+      doseLogRemote: FakeDoseLogRemote(core),
       familyLocal: FamilyLocalDatasource(),
       familyRemote: FakeFamilyRemote(serverNow),
+      syncState: FakeSyncState(core),
       isOnline: () => online,
       currentUserId: () => 'user-a',
       onlineStream: const Stream<bool>.empty(),
@@ -106,12 +110,17 @@ class _Rig {
 }
 
 /// A server that has not had `20260917000000_treatment_sick_leave.sql`
-/// applied: every treatment push goes through the real datasource, and
-/// PostgREST answers PGRST204 for the first sick-leave key. Reads still come
-/// from the fake table. No Supabase project is contacted.
+/// applied: every treatment write goes through the real
+/// `PostgrestSyncTable`, and PostgREST answers PGRST204 for the first
+/// sick-leave key. Reads still come from the fake table. No Supabase project
+/// is contacted.
 class _UnmigratedTreatmentRemote extends FakeTreatmentRemote {
-  _UnmigratedTreatmentRemote(super.clock) {
-    _client = SupabaseClient(
+  _UnmigratedTreatmentRemote(super.core) : super(rows: _UnmigratedRows(core));
+}
+
+class _UnmigratedRows extends FakeSyncTable {
+  _UnmigratedRows(FakeServerCore core) : super(core, 'treatments') {
+    final client = SupabaseClient(
       'http://supabase.invalid',
       'anon-key',
       httpClient: MockClient(
@@ -130,14 +139,30 @@ class _UnmigratedTreatmentRemote extends FakeTreatmentRemote {
       ),
       authOptions: const AuthClientOptions(autoRefreshToken: false),
     );
-    addTearDown(_client.dispose);
+    addTearDown(client.dispose);
+    _real = TreatmentRemoteDatasource(client).rows;
   }
 
-  late final SupabaseClient _client;
+  late final SyncTable _real;
 
   @override
-  Future<DateTime?> upsertTreatment(TreatmentModel model) =>
-      TreatmentRemoteDatasource(_client).upsertTreatment(model);
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) => _real.patch(
+    id,
+    changes,
+    ifVersion: ifVersion,
+    ifStatus: ifStatus,
+    ifLive: ifLive,
+  );
+
+  @override
+  Future<void> insertIfAbsent(List<Map<String, Object?>> rows) =>
+      _real.insertIfAbsent(rows);
 }
 
 void main() {
@@ -162,10 +187,13 @@ void main() {
     updatedAt: longAgo,
   );
 
-  /// The server and this device agree on [episode], last synced long ago.
+  /// The server and this device agree on [episode], last synced long ago;
+  /// the device holds the server copy as its merge base, as every device
+  /// does after its first sync v2 cycle.
   Future<void> seedInSync(_Rig r) async {
     r.remote.table.seed(episode.toJson(), updatedAt: longAgo);
     await r.local.upsert(episode, syncStatus: SyncStatus.synced);
+    await r.service.syncAll();
   }
 
   test('End sends every column, sick leave included', () async {
@@ -295,18 +323,15 @@ void main() {
     expect((await r.localRow('t1'))['sync_status'], SyncStatus.synced);
   });
 
-  test('End does not overwrite a newer server row from another device '
-      '(last write wins)', () async {
+  test('End and a certificate number added on another device are both '
+      'kept (I-1)', () async {
     final r = _Rig();
-    // This device still holds the pre-edit copy ...
-    await r.local.upsert(episode, syncStatus: SyncStatus.synced);
-    // ... while another device recorded a new certificate number, and the
-    // server stamped that edit later than this device's End will be.
-    r.remote.table.seed({
-      ...episode.toJson(),
+    await seedInSync(r);
+    // Another device records a new certificate number and a note.
+    r.remote.table.editFromOtherDevice('t1', {
       'notes': 'edited on the other phone',
       'sick_leave_ref': 'A-REF',
-    }, updatedAt: DateTime.now().toUtc().add(const Duration(hours: 1)));
+    }, editedAt: DateTime.now().toUtc());
 
     await r.repo.endTreatment('t1');
     await r.idle();
@@ -314,11 +339,12 @@ void main() {
     final row = r.remote.table.rows['t1']!;
     expect(row['notes'], 'edited on the other phone');
     expect(row['sick_leave_ref'], 'A-REF');
-    expect(row['is_active'], isTrue);
-    expect(r.service.lastReport?.skippedStale, 1);
-    // The cycle's pull brought the winner home.
+    expect(row['is_active'], isFalse);
+    expect(row['end_date'], isNotNull);
+    expect(r.service.lastReport?.overwritten, isEmpty);
     final stored = (await r.local.getTreatmentById('t1'))!;
     expect(stored.sickLeaveRef, 'A-REF');
+    expect(stored.isActive, isFalse);
     expect((await r.localRow('t1'))['sync_status'], SyncStatus.synced);
   });
 

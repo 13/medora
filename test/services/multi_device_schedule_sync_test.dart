@@ -39,13 +39,8 @@ import '../helpers/fake_remotes.dart';
 import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
-class _Server {
-  DateTime now() => DateTime.now().toUtc();
-  late final meds = FakeMedicationRemote(now);
-  late final treatments = FakeTreatmentRemote(now);
-  late final prescriptions = FakePrescriptionRemote(now);
-  late final doses = FakeDoseLogRemote(now);
-  late final families = FakeFamilyRemote(now);
+class _Server extends FakeServer {
+  _Server() : super(() => DateTime.now().toUtc());
 
   Iterable<Map<String, dynamic>> dosesOf(String prescriptionId) => doses
       .table
@@ -93,6 +88,7 @@ class _Device {
       doseLogRemote: server.doses,
       familyLocal: FamilyLocalDatasource(),
       familyRemote: server.families,
+      syncState: server.state,
       isOnline: () => online,
       currentUserId: () => 'user-a',
       onlineStream: const Stream<bool>.empty(),
@@ -235,6 +231,7 @@ class _Harness {
     int intervalHours = 8,
     String scheduleType = 'fixed_interval',
     String? times,
+    Future<void> Function(Database db, SeededPrescription p)? beforePush,
   }) async {
     late SeededPrescription seeded;
     await a.run((db) async {
@@ -265,6 +262,7 @@ class _Harness {
       // The sheet saves the prescription and generates its schedule at
       // once; the sync both of them ask for runs afterwards.
       await a.doses.generateDoseLogsForPrescription(seeded.prescriptionId);
+      await beforePush?.call(db, seeded);
       await a.service.syncAll();
     });
     return seeded;
@@ -282,8 +280,8 @@ class _Harness {
     await b.sync();
     await a.sync();
     for (final device in [a, b]) {
-      final cursor = await device.cursors.lastPullAt('dose_logs');
-      expect(cursor!.year, greaterThan(2000), reason: device.name);
+      final key = await device.cursors.pullKey('dose_logs');
+      expect(key!.xid, greaterThan(1000), reason: device.name);
     }
   }
 }
@@ -385,7 +383,7 @@ void main() {
       expect(upcoming, isNotEmpty);
       expect(await h.b.remindersFor(prescriptionId), upcoming);
       // Every dose reached the server once; a schedule change leaves the
-      // old pending rows there, at other times.
+      // old pending rows there as tombstones, at other times.
       final onServer = h.server.dosesOf(prescriptionId).toList();
       final serverIds = {for (final r in onServer) r['id']};
       expect(serverIds, containsAll(onA.map((s) => s.split('@').first)));
@@ -457,7 +455,7 @@ void main() {
           reason: device.name,
         );
       }
-      // The old times are only left on the server, as A left them.
+      // The taken dose keeps its old time on both devices.
       expect(await h.b.slots(p.prescriptionId), contains(startsWith(takenId)));
     });
 
@@ -511,14 +509,34 @@ void main() {
       expect(await h.b.remindersFor(p.prescriptionId), isEmpty);
     });
 
+    test(
+      'B pulls the doses A generated, with no generation of its own',
+      () async {
+        h.b.pullHook = false;
+        final p = await h.createOnA(
+          start: DateTime(today.year, today.month, today.day + 1, 8),
+          durationDays: 3,
+        );
+        await h.b.appSync(ensure: false);
+        await expectBMatchesA(p.prescriptionId);
+      },
+    );
+
     test('a prescription B holds without doses gets them on resume', () async {
-      // B pulled it with a build that generated nothing.
+      // B holds it without its doses, as a build before sync v2 left it.
       h.b.pullHook = false;
       final p = await h.createOnA(
         start: DateTime(today.year, today.month, today.day + 1, 8),
         durationDays: 3,
       );
       await h.b.appSync(ensure: false);
+      await h.b.run(
+        (db) => db.delete(
+          'dose_logs',
+          where: 'prescription_id = ?',
+          whereArgs: [p.prescriptionId],
+        ),
+      );
       expect(await h.b.slots(p.prescriptionId), isEmpty);
       h.b.pullHook = true;
 
@@ -558,6 +576,8 @@ void main() {
       });
       await h.b.appSync(ensure: false);
       h.b.pullHook = true;
+      // A's regeneration dropped the old six on the server too, so B holds
+      // only the new ones.
       expect(await h.b.slots(p.prescriptionId), hasLength(6));
 
       await h.b.resume();
@@ -585,6 +605,163 @@ void main() {
       await h.b.resume();
       await expectBMatchesA(p.prescriptionId);
     });
+
+    for (final correctsFirst in [true, false]) {
+      test('a slot an older build stored hours off moves back, and a take '
+          'made on the other device is kept (S-1, '
+          '${correctsFirst ? 'A corrects' : 'B takes'} first)', () async {
+        final start = DateTime(today.year, today.month, today.day + 1, 8);
+        final slot = start.add(const Duration(hours: 8));
+        final shifted = slot.add(const Duration(hours: 2));
+        late String doseId;
+        // As an older build left it: one generated slot reached the server
+        // two hours off, under its own id.
+        h.a.online = false;
+        await h.createOnA(
+          start: start,
+          beforePush: (db, p) async {
+            doseId = scheduledDoseId(p.prescriptionId, slot);
+            await db.update(
+              'dose_logs',
+              {'scheduled_time': shifted.toIso8601String()},
+              where: 'id = ?',
+              whereArgs: [doseId],
+            );
+          },
+        );
+        h.a.online = true;
+        await h.a.sync();
+        await h.b.appSync(ensure: false);
+        expect(
+          DateTime.parse(
+            (await h.b.row('dose_logs', doseId))['scheduled_time'] as String,
+          ),
+          shifted,
+        );
+
+        if (correctsFirst) {
+          // B takes the dose before it hears of the correction.
+          h.b.online = false;
+          await h.b.run((_) => h.b.doses.markDoseTaken(doseId));
+          await h.a.resume();
+          expect(
+            DateTime.parse(
+              h.server.doses.table.rows[doseId]!['scheduled_time'] as String,
+            ).toLocal(),
+            slot,
+          );
+          h.b.online = true;
+          await h.b.sync();
+        } else {
+          // B's take reaches the server; A corrects its stale copy offline.
+          await h.b.run((_) => h.b.doses.markDoseTaken(doseId));
+          h.a.online = false;
+          await h.a.resume();
+          h.a.online = true;
+          await h.a.sync();
+        }
+        await h.b.sync();
+        await h.a.sync();
+
+        final server = h.server.doses.table.rows[doseId]!;
+        expect(server['status'], 'taken');
+        expect(
+          DateTime.parse(server['scheduled_time'] as String).toLocal(),
+          slot,
+        );
+        final times = server['field_edited_at'] as Map;
+        expect(times['scheduled_time'], containsPair('auto', true));
+        expect(times['status'], containsPair('auto', false));
+        for (final device in [h.a, h.b]) {
+          final row = await device.row('dose_logs', doseId);
+          expect(
+            [
+              row['status'],
+              DateTime.parse(row['scheduled_time'] as String),
+              row['sync_status'],
+            ],
+            ['taken', slot, SyncStatus.synced],
+            reason: device.name,
+          );
+        }
+        // Nothing is left to correct or to send.
+        await h.a.resume();
+        await h.b.resume();
+        expect(
+          h.server.doses.table.rows[doseId]!['row_version'],
+          server['row_version'],
+        );
+      });
+
+      test(
+        'a slot A drops from its schedule while B takes it stays taken '
+        'everywhere (S-6, ${correctsFirst ? 'A' : 'B'} syncs first)',
+        () async {
+          final p = await h.createOnA(
+            start: today.add(const Duration(days: 1)),
+            durationDays: 2,
+            scheduleType: 'times_per_day',
+            times: '["08:00","20:00"]',
+          );
+          await h.b.appSync();
+          final doseId = scheduledDoseId(
+            p.prescriptionId,
+            DateTime(today.year, today.month, today.day + 1, 20),
+          );
+          final dropped = scheduledDoseId(
+            p.prescriptionId,
+            DateTime(today.year, today.month, today.day + 2, 20),
+          );
+          // Both change the dose before either hears of the other's change.
+          h.a.online = false;
+          h.b.online = false;
+          await h.b.run((_) => h.b.doses.markDoseTaken(doseId));
+          await h.a.run((db) async {
+            await db.update(
+              'prescriptions',
+              {
+                'schedule_times': '["08:00","21:00"]',
+                'sync_status': SyncStatus.pendingUpdate,
+                'updated_at': DateTime.now().toIso8601String(),
+              },
+              where: 'id = ?',
+              whereArgs: [p.prescriptionId],
+            );
+            await h.a.doses.regenerateDoseLogsForPrescription(p.prescriptionId);
+          });
+          h.a.online = true;
+          h.b.online = true;
+          for (final device in correctsFirst ? [h.a, h.b] : [h.b, h.a]) {
+            await device.sync();
+          }
+          await h.a.appSync();
+          await h.b.appSync();
+          await h.a.sync();
+
+          final server = h.server.doses.table.rows[doseId]!;
+          expect([server['status'], server['deleted_at']], ['taken', null]);
+          // The slot nobody took is gone from the server.
+          expect(h.server.doses.table.rows[dropped]!['deleted_at'], isNotNull);
+          for (final device in [h.a, h.b]) {
+            final row = await device.row('dose_logs', doseId);
+            expect(
+              [row['status'], row['sync_status']],
+              ['taken', SyncStatus.synced],
+              reason: device.name,
+            );
+            expect(
+              await device.slots(p.prescriptionId),
+              isNot(contains(startsWith(dropped))),
+              reason: device.name,
+            );
+          }
+          expect(
+            await h.b.slots(p.prescriptionId),
+            await h.a.slots(p.prescriptionId),
+          );
+        },
+      );
+    }
 
     test('a slot the server holds a tombstone for is not generated again '
         'after every sync', () async {
