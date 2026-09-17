@@ -45,9 +45,11 @@ class DoseScheduleService {
   final DateTime Function() _now;
 
   /// Dose ids [ensureScheduled] already acted on in this process, per
-  /// prescription. A slot that keeps disappearing (the server holds a
-  /// tombstone for its id, so the sync deletes it again) is then not
-  /// generated again after every sync, which would never end.
+  /// prescription. A slot that keeps disappearing (a person deleted that
+  /// dose, so the server's tombstone deletes it again after every sync) is
+  /// then not generated again after every sync, which would never end. A
+  /// slot only the app dropped (an earlier schedule) comes back with the
+  /// sync instead (`TableSync`).
   final Map<String, Set<String>> _attempted = {};
 
   Future<int>? _running;

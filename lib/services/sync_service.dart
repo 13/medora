@@ -539,7 +539,8 @@ class SyncService {
   }
 
   /// Pushes the pending rows of one merged [table] through its [TableSync].
-  /// A dose whose prescription the server refused this cycle waits for it.
+  /// A row under a parent deleted here goes with it, unsent. A dose whose
+  /// prescription the server refused this cycle waits for it.
   Future<void> _pushTable(
     String table,
     SyncReport report,
@@ -565,6 +566,8 @@ class SyncService {
           ? [SyncStatus.synced, SyncStatus.pendingCreate]
           : [SyncStatus.synced],
       (row) async {
+        // Under a parent deleted here: it goes with it, unsent.
+        if (!forceAll && await sync.dropUnderDeletedParent(row)) return false;
         if (refused.contains(row['prescription_id'])) {
           report.skippedBackoff++;
           return false;
@@ -633,6 +636,8 @@ class SyncService {
   ///   landed.
   /// - **A dose whose prescription the server refused** waits, counted as
   ///   backing off, without a failure of its own.
+  /// - **A dose whose prescription is deleted here** (its delete could not
+  ///   be sent yet) is not sent, and is deleted here with it.
   ///
   /// A failed batch never stops the batches after it.
   Future<void> _pushNewDoseLogs(SyncReport report) async {
@@ -646,8 +651,11 @@ class SyncService {
     final refused = await _refusedPrescriptions();
     final ready = <Map<String, dynamic>>[];
     final backedOff = <String>{};
+    final sync = _tables['dose_logs']!;
     for (final row in rows) {
       final id = row['id'] as String;
+      // Its prescription is deleted here: it goes with it, unsent.
+      if (await sync.dropUnderDeletedParent(row)) continue;
       if (refused.contains(row['prescription_id'])) {
         report.skippedBackoff++;
         continue;
@@ -662,7 +670,6 @@ class SyncService {
       }
       ready.add(row);
     }
-    final sync = _tables['dose_logs']!;
     for (var start = 0; start < ready.length; start += doseLogInsertBatchSize) {
       final batch = await _withWriteIds(
         ready.sublist(
@@ -853,12 +860,21 @@ class SyncService {
     }
   }
 
+  /// The synced tables below each one.
+  static const _childTables = {
+    'medications': ['prescriptions', 'dose_logs'],
+    'treatments': ['prescriptions', 'dose_logs'],
+    'prescriptions': ['dose_logs'],
+    'dose_logs': <String>[],
+  };
+
   /// Give up on a row that keeps failing to push: replace the local copy with
   /// the server's and forget its backoff. Exposed for the settings failures
   /// dialog.
   ///
   /// The server row is fetched directly and stored with its merge base; a
   /// row the server does not have (or has tombstoned) is deleted locally.
+  /// The tables below a discarded row are pulled again from the start.
   /// That is also what discarding a local `pending_delete` means: keep the
   /// server's copy.
   ///
@@ -872,6 +888,12 @@ class SyncService {
         await db.delete(table, where: 'id = ?', whereArgs: [id]);
         if (remote != null && remote['deleted_at'] == null) {
           await _tables[table]!.applyPulled(remote);
+        }
+        // The local delete took the rows below with it, and a pull may have
+        // passed over rows under a parent that was being deleted here: the
+        // tables below are pulled again from the start.
+        for (final child in _childTables[table]!) {
+          await _cursors.resetPullKey(child);
         }
       case 'families':
         final remote = await familyRemote!.getFamilyById(id);
@@ -961,6 +983,7 @@ class SyncService {
       report,
       force: force,
       horizon: horizon,
+      pulled: pulled,
     );
     final hook = onPrescriptionsPulled;
     if (hook != null && !pulled.isEmpty) {
@@ -991,6 +1014,11 @@ class SyncService {
   /// A failure to fetch a page is normally recorded and ends this table's
   /// pull. When [force] is set the caller has already cleared the local
   /// database, so the same failure aborts the whole cycle instead.
+  ///
+  /// A live row whose parent this device lacks ([PullOutcome.orphaned]) is
+  /// stored with that parent when the server still has it live; otherwise
+  /// the row can never be stored (its parent is deleted) and is passed
+  /// over, and the key moves on.
   ///
   /// [pulled] collects prescriptions that are new here or whose schedule
   /// changed.
@@ -1024,24 +1052,7 @@ class SyncService {
       for (final row in rows) {
         final id = row['id'] as String;
         try {
-          final before = pulled == null
-              ? null
-              : await prescriptionLocal.getPrescriptionById(id);
-          final applied = await sync.applyPulled(row);
-          _recordConflicts(report, table, id, applied.conflicts);
-          switch (applied.outcome) {
-            case PullOutcome.deleted:
-              report.deleted++;
-            case PullOutcome.kept:
-              break;
-            case PullOutcome.inserted ||
-                PullOutcome.replaced ||
-                PullOutcome.merged:
-              report.pulled++;
-              if (pulled != null) {
-                await _notePulledPrescription(pulled, id, before);
-              }
-          }
+          await _applyPulledRow(table, row, report, pulled);
         } catch (e) {
           keyHeld = true;
           report.failures.add(SyncFailure(table, id, 'apply: $e'));
@@ -1057,6 +1068,63 @@ class SyncService {
       'the next cycle continues',
     );
     return true;
+  }
+
+  /// Applies the pulled row [row] of [table] and counts it in [report]; a
+  /// row whose parents this device lacks is stored after them when the
+  /// server still has them live ([_pullTable]). [depth] bounds how far up
+  /// that goes (a dose, its prescription, their treatment and medication).
+  Future<void> _applyPulledRow(
+    String table,
+    Map<String, dynamic> row,
+    SyncReport report,
+    PulledPrescriptions? pulled, {
+    int depth = 0,
+  }) async {
+    final id = row['id'] as String;
+    final sync = _tables[table]!;
+    final before = pulled != null && table == 'prescriptions'
+        ? await prescriptionLocal.getPrescriptionById(id)
+        : null;
+    var applied = await sync.applyPulled(row);
+    if (applied.outcome == PullOutcome.orphaned && depth < 2) {
+      var found = false;
+      for (final (parent, parentId) in parentsOf(table, row)) {
+        if (await _hasLocal(parent, parentId)) continue;
+        final remote = await _remote(_tables[parent]!.remote.fetch(parentId));
+        if (remote == null || remote['deleted_at'] != null) continue;
+        await _applyPulledRow(parent, remote, report, pulled, depth: depth + 1);
+        found = true;
+      }
+      if (found) applied = await sync.applyPulled(row);
+    }
+    _recordConflicts(report, table, id, applied.conflicts);
+    switch (applied.outcome) {
+      case PullOutcome.deleted:
+        report.deleted++;
+      case PullOutcome.kept:
+        break;
+      case PullOutcome.orphaned:
+        debugPrint('Sync: $table/$id belongs under a deleted row; passed over');
+      case PullOutcome.inserted || PullOutcome.replaced || PullOutcome.merged:
+        report.pulled++;
+        if (pulled != null && table == 'prescriptions') {
+          await _notePulledPrescription(pulled, id, before);
+        }
+    }
+  }
+
+  /// True when [table] holds a row [id] here, whatever its state.
+  Future<bool> _hasLocal(String table, String id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      table,
+      columns: ['id'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
   }
 
   /// Records in [pulled] whether prescription [id] is new here or its

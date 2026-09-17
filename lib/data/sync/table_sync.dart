@@ -32,9 +32,14 @@ enum PullOutcome {
   /// The local row was deleted (a tombstone).
   deleted,
 
-  /// Nothing changed: a local delete waits to be pushed, or the server copy
-  /// is one this device already merged.
+  /// Nothing changed: a local delete waits to be pushed, the server copy
+  /// is one this device already merged, or the row belongs under a parent
+  /// deleted here.
   kept,
+
+  /// Not stored: the live row names a parent this device does not hold.
+  /// The caller finds out whether that parent is still to come.
+  orphaned,
 }
 
 class PullApplied {
@@ -59,6 +64,35 @@ class PushResult {
   const PushResult(this.outcome, [this.conflicts = const []]);
   final PushOutcome outcome;
   final List<MergeConflict> conflicts;
+}
+
+/// The parents a row of [table] names, as `(parent table, id)`, in
+/// foreign-key order. A row of a table with no parent names none.
+List<(String, String)> parentsOf(String table, Map<String, Object?> row) {
+  (String, String)? parent(String parentTable, String column) =>
+      row[column] is String ? (parentTable, row[column]! as String) : null;
+  return [
+    ...?switch (table) {
+      'prescriptions' => [
+        parent('treatments', 'treatment_id'),
+        parent('medications', 'medication_id'),
+      ],
+      'dose_logs' => [parent('prescriptions', 'prescription_id')],
+      _ => null,
+    }?.nonNulls,
+  ];
+}
+
+/// How the parents a row names stand on this device.
+enum _Parents {
+  /// Every parent is here and not deleted.
+  live,
+
+  /// A parent is deleted here, its delete waiting to be pushed.
+  deleted,
+
+  /// A parent is not here at all.
+  absent,
 }
 
 class TableSync {
@@ -100,6 +134,22 @@ class TableSync {
     final local = rows.isEmpty ? null : rows.first;
     final tombstone = meta.deletedAt != null;
 
+    // A live row belongs under live parents. Under a parent deleted here it
+    // goes with that parent (a person's delete wins); a parent this device
+    // lacks may still be on its way, which only the caller can find out.
+    if (!tombstone) {
+      switch (await _parentsOf(txn, json)) {
+        case _Parents.live:
+          break;
+        case _Parents.deleted:
+          if (local == null) return const PullApplied(PullOutcome.kept);
+          await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+          return const PullApplied(PullOutcome.deleted);
+        case _Parents.absent:
+          return const PullApplied(PullOutcome.orphaned);
+      }
+    }
+
     if (local == null) {
       if (tombstone) return const PullApplied(PullOutcome.kept);
       await _storeServer(txn, json, meta, SyncStatus.synced, exists: false);
@@ -113,13 +163,24 @@ class TableSync {
     final pending =
         status == SyncStatus.pendingCreate ||
         status == SyncStatus.pendingUpdate;
-    // An automatic tombstone (a dose dropped from a changed schedule) loses
-    // to a person's change still waiting here; every other tombstone wins.
+    // The app's own delete of a dose (dropped from a changed schedule, or
+    // deleted with its prescription) loses to a person's change still
+    // waiting here, and to the schedule generating the dose again after it.
+    // A dose has no children, so bringing it back leaves none behind. It
+    // never comes back under a prescription deleted or missing here, nor
+    // when the tombstone carries this device's own write (the server
+    // deleted what it sent). Every other tombstone wins.
+    final ownWrite =
+        localMeta.writeId != null && meta.writeId == localMeta.writeId;
     final resurrect =
         tombstone &&
+        table == 'dose_logs' &&
         isAutomaticEdit(meta.editedAt) &&
         pending &&
-        _hasPersonsChange(local, localMeta, localTimes);
+        !ownWrite &&
+        (_hasPersonsChange(local, localMeta, localTimes) ||
+            _generatedSince(local, meta.deletedAt)) &&
+        await _parentsOf(txn, local) == _Parents.live;
     if (tombstone && !resurrect) {
       await txn.delete(table, where: 'id = ?', whereArgs: [id]);
       return const PullApplied(PullOutcome.deleted);
@@ -146,7 +207,7 @@ class TableSync {
 
     final remoteWire = canonicalWire(table, json);
     final localCopy = localWire(table, local);
-    if (localMeta.writeId != null && meta.writeId == localMeta.writeId) {
+    if (ownWrite) {
       return _adoptOwnWrite(txn, json, meta, remoteWire, localCopy);
     }
     if (knownVersion != null && meta.rowVersion <= knownVersion) {
@@ -255,6 +316,9 @@ class TableSync {
       return const PushResult(PushOutcome.settled);
     }
     if (force) return _forcePush(row, userId: userId);
+    if (await dropUnderDeletedParent(row)) {
+      return const PushResult(PushOutcome.settled);
+    }
     final conflicts = <MergeConflict>[];
     var local = await _resolveUnknownWrite(row, conflicts);
     for (var attempt = 0; attempt < maxAttempts && local != null; attempt++) {
@@ -350,6 +414,11 @@ class TableSync {
       if (server == null) {
         throw StateError('$table/$id is not on the server after insert');
       }
+    }
+    if (server['deleted_at'] != null) {
+      // Its parent is deleted there (its own force push failed): keep this
+      // copy for the next try.
+      throw StateError('$table/$id: a parent is deleted on the server');
     }
     return _settle(row, server, const []);
   }
@@ -459,7 +528,8 @@ class TableSync {
           ]);
         }
       } else if (server['deleted_at'] == null) {
-        if (!guarded) {
+        if (!guarded || server['status'] == 'pending') {
+          // Still live and still pending: the delete is tried again later.
           throw StateError('$table/$id: the server refused the delete');
         }
         // Taken or skipped elsewhere meanwhile: keep that copy.
@@ -481,6 +551,50 @@ class TableSync {
   }
 
   // ── Helpers ────────────────────────────────────────────────
+
+  /// Deletes the pending row [row] here, unsent, when a parent it names is
+  /// deleted here or missing: that delete wins, and the server deletes the
+  /// row with its parent. Returns whether it did.
+  Future<bool> dropUnderDeletedParent(Map<String, Object?> row) async {
+    final db = await _db;
+    return db.transaction((txn) async {
+      if (await _parentsOf(txn, row) == _Parents.live) return false;
+      await txn.delete(table, where: 'id = ?', whereArgs: [row['id']]);
+      return true;
+    });
+  }
+
+  /// How the parents [row] names stand here.
+  Future<_Parents> _parentsOf(
+    DatabaseExecutor db,
+    Map<String, Object?> row,
+  ) async {
+    var state = _Parents.live;
+    for (final (parent, id) in parentsOf(table, row)) {
+      final rows = await db.query(
+        parent,
+        columns: ['sync_status'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      if (rows.isEmpty) {
+        state = _Parents.absent;
+      } else if (rows.first['sync_status'] == SyncStatus.pendingDelete) {
+        return _Parents.deleted;
+      }
+    }
+    return state;
+  }
+
+  /// True when [local] is a dose the schedule generated here, not sent yet,
+  /// after the app's own delete at [deletedAt]: the newer of two changes
+  /// the app made. A row without a creation time counts as newer.
+  static bool _generatedSince(Map<String, Object?> local, DateTime? deletedAt) {
+    if (local['sync_status'] != SyncStatus.pendingCreate) return false;
+    final raw = local['created_at'];
+    final created = raw is String ? DateTime.tryParse(raw) : null;
+    return created == null || deletedAt == null || created.isAfter(deletedAt);
+  }
 
   /// Stores a fresh write id on the row before it is sent, so an answer
   /// that never arrives can be recognised later.

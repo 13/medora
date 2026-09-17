@@ -57,20 +57,44 @@ class _Device {
     now: now,
   );
 
+  /// What each pulled row did, in order, as `table/id outcome`.
+  final List<String> pulled = [];
+
   /// One cycle: push every pending row in foreign-key order, then pull
   /// every table to the horizon.
   Future<void> sync() async {
+    await push();
+    await pull();
+  }
+
+  /// Pushes every pending row in foreign-key order, each row as the table
+  /// holds it when its turn comes (a parent's delete may have removed it).
+  Future<void> push() async {
     final db = await open();
     for (final table in syncedTables) {
       final engine = _engine(table);
-      for (final row in await db.query(
+      for (final listed in await db.query(
         table,
+        columns: ['id'],
         where: 'sync_status != ?',
         whereArgs: [SyncStatus.synced],
       )) {
-        conflicts.addAll((await engine.pushRow(row, userId: 'u')).conflicts);
+        final rows = await db.query(
+          table,
+          where: 'id = ?',
+          whereArgs: [listed['id']],
+        );
+        if (rows.isEmpty) continue;
+        conflicts.addAll(
+          (await engine.pushRow(rows.single, userId: 'u')).conflicts,
+        );
       }
     }
+  }
+
+  /// Pulls every table to the horizon.
+  Future<void> pull() async {
+    await open();
     final horizon = core.horizon;
     for (final table in syncedTables) {
       final engine = _engine(table);
@@ -78,7 +102,9 @@ class _Device {
       while (true) {
         final rows = await remote.page(after: _keys[table], horizon: horizon);
         for (final row in rows) {
-          conflicts.addAll((await engine.applyPulled(row)).conflicts);
+          final applied = await engine.applyPulled(row);
+          pulled.add('$table/${row['id']} ${applied.outcome.name}');
+          conflicts.addAll(applied.conflicts);
         }
         final next = afterPullPage(rows, horizon: horizon);
         _keys[table] = next.key;
@@ -871,6 +897,291 @@ void main() {
         List.filled(4, 'Dr. Bianchi'),
       );
       expect(serverTime('treatments', 't1', 'notes'), FieldTime(at(9)));
+    });
+  });
+
+  group('deletes and the rows under them (review C-1, I-1, I-2)', () {
+    const epoch = '1970-01-01T00:00:00.000Z';
+    final slot = DateTime.utc(2026, 3, 5, 7);
+
+    /// The schedule on [d] no longer has [id]: the app's own, guarded
+    /// delete.
+    Future<void> drop(_Device d, String id) => d.automatic('dose_logs', id, {
+      'delete_guard': 'if_pending',
+      'deleted_at': d.now().toIso8601String(),
+    }, status: SyncStatus.pendingDelete);
+
+    /// A person deletes [id] of [table] on [d].
+    Future<void> delete(_Device d, String table, String id) async {
+      final db = await d.open();
+      await db.update(
+        table,
+        {
+          'sync_status': SyncStatus.pendingDelete,
+          'deleted_at': d.now().toIso8601String(),
+          'edited_at': d.now().toUtc().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+
+    /// The schedule on [d] generates [id] now.
+    Future<void> generate(_Device d, String id, DateTime at) => d.insert(
+      'dose_logs',
+      {...generated(id, at), 'created_at': d.now().toLocal().toIso8601String()},
+    );
+
+    Future<void> take(_Device d, String id) => d.edit('dose_logs', id, {
+      'status': 'taken',
+      'taken_time': d.now().toIso8601String(),
+    });
+
+    /// Whether each device, then the server, holds [id] of [table] live.
+    Future<List<bool>> live(
+      List<_Device> devices,
+      String table,
+      String id,
+    ) async {
+      final server = core.rowsOf(table)[id];
+      return [
+        for (final d in devices) await d.row(table, id) != null,
+        server != null && server['deleted_at'] == null,
+      ];
+    }
+
+    /// Another round on every device changes nothing on the server and
+    /// leaves nothing to send: nothing loops.
+    Future<void> expectSettled(List<_Device> devices) async {
+      Map<String, Object?> versions() => {
+        for (final table in syncedTables)
+          for (final row in core.rowsOf(table).values)
+            '$table/${row['id']}': row['row_version'],
+      };
+      final before = versions();
+      for (final d in [...devices, ...devices]) {
+        await d.sync();
+      }
+      expect(versions(), before);
+      for (final d in devices) {
+        final db = await d.open();
+        for (final table in syncedTables) {
+          expect(
+            await db.query(
+              table,
+              where: 'sync_status != ?',
+              whereArgs: [SyncStatus.synced],
+            ),
+            isEmpty,
+            reason: '${d.name} $table',
+          );
+        }
+      }
+    }
+
+    for (final who in ['A', 'B']) {
+      test('a slot dropped, then generated again on $who, stays on every '
+          'device (I-1, P1)', () async {
+        serverNow = DateTime.utc(2026, 3, 5, 5);
+        await drop(a, 'd1');
+        await a.sync();
+        await b.sync();
+        expect(await live([a, b], 'dose_logs', 'd1'), [false, false, false]);
+        // The schedule is changed back: the same slot is generated again.
+        serverNow = DateTime.utc(2026, 3, 5, 5, 30);
+        final regenerating = who == 'A' ? a : b;
+        await generate(regenerating, 'd1', slot);
+        await syncAll(who == 'A' ? [a, b] : [b, a]);
+        expect(await live([a, b], 'dose_logs', 'd1'), [true, true, true]);
+        final server = core.rowsOf('dose_logs')['d1']!;
+        // Still the app's own change: 0.3.0 never sees it.
+        expect([server['edited_at'], server['updated_at']], [epoch, epoch]);
+        await expectSettled([a, b]);
+      });
+    }
+
+    for (final after in [true, false]) {
+      test('a slot generated offline ${after ? 'after' : 'before'} another '
+          'device dropped it ${after ? 'comes back' : 'stays dropped'} '
+          '(I-1)', () async {
+        final d5 = DateTime.utc(2026, 3, 6, 7);
+        if (!after) {
+          serverNow = DateTime.utc(2026, 3, 5, 4);
+          await generate(b, 'd5', d5);
+        }
+        serverNow = DateTime.utc(2026, 3, 5, 4, 30);
+        await generate(a, 'd5', d5);
+        await a.sync();
+        serverNow = DateTime.utc(2026, 3, 5, 5);
+        await drop(a, 'd5');
+        await a.sync();
+        if (after) {
+          serverNow = DateTime.utc(2026, 3, 5, 5, 30);
+          await generate(b, 'd5', d5);
+        }
+        serverNow = DateTime.utc(2026, 3, 5, 6);
+        await syncAll([b, a]);
+        expect(await live([a, b], 'dose_logs', 'd5'), List.filled(3, after));
+        await expectSettled([a, b]);
+      });
+    }
+
+    test('a dose a person deleted is not brought back by the schedule '
+        '(I-1)', () async {
+      serverNow = DateTime.utc(2026, 3, 5, 5);
+      await delete(a, 'dose_logs', 'd1');
+      await a.sync();
+      await b.sync();
+      serverNow = DateTime.utc(2026, 3, 5, 5, 30);
+      await generate(b, 'd1', slot);
+      await syncAll([b, a]);
+      expect(await live([a, b], 'dose_logs', 'd1'), [false, false, false]);
+      await expectSettled([a, b]);
+    });
+
+    test(
+      'a take of a dropped dose, sent after a person deleted its '
+      'prescription: the delete wins, and every device syncs (C-1, P2)',
+      () async {
+        serverNow = DateTime.utc(2026, 3, 5, 5);
+        await drop(a, 'd1');
+        await a.sync();
+        serverNow = DateTime.utc(2026, 3, 5, 7, 5);
+        await take(b, 'd1');
+        serverNow = DateTime.utc(2026, 3, 5, 8);
+        await delete(a, 'prescriptions', 'p1');
+        await a.sync();
+        serverNow = DateTime.utc(2026, 3, 5, 9);
+        await b.sync();
+        final c = _Device('c', p.join(dir.path, 'c.db'), core);
+        await c.sync();
+        await a.sync();
+        for (final (table, id) in [
+          ('prescriptions', 'p1'),
+          ('dose_logs', 'd0'),
+          ('dose_logs', 'd1'),
+        ]) {
+          expect(await live([a, b, c], table, id), [
+            false,
+            false,
+            false,
+            false,
+          ], reason: '$table/$id');
+        }
+        // B's take reached the server, and was deleted with its prescription.
+        expect(core.rowsOf('dose_logs')['d1']!['status'], 'taken');
+        expect(
+          core
+              .rowsOf('dose_logs')
+              .values
+              .where(
+                (r) => r['prescription_id'] == 'p1' && r['deleted_at'] == null,
+              ),
+          isEmpty,
+        );
+        await expectSettled([a, b, c]);
+      },
+    );
+
+    for (final kind in ['generated', 'taken']) {
+      test('a dose made offline ($kind) under a prescription deleted '
+          'elsewhere is deleted on every device (C-1, P2b)', () async {
+        final d7 = DateTime.utc(2026, 3, 6, 7);
+        serverNow = DateTime.utc(2026, 3, 6, 6);
+        await generate(b, 'd7', d7);
+        if (kind == 'taken') {
+          serverNow = DateTime.utc(2026, 3, 6, 7, 5);
+          await take(b, 'd7');
+        }
+        serverNow = DateTime.utc(2026, 3, 6, 8);
+        await delete(a, 'prescriptions', 'p1');
+        await a.sync();
+        serverNow = DateTime.utc(2026, 3, 6, 9);
+        await b.push();
+        // The server stored it deleted, and B holds no copy of it, even
+        // before its pull brings the prescription's delete.
+        expect(core.rowsOf('dose_logs')['d7']!['deleted_at'], isNotNull);
+        expect(await b.row('dose_logs', 'd7'), isNull);
+        await b.pull();
+        await a.sync();
+        final c = _Device('c', p.join(dir.path, 'c.db'), core);
+        await c.sync();
+        expect(await live([a, b, c], 'dose_logs', 'd7'), [
+          false,
+          false,
+          false,
+          false,
+        ]);
+        expect(await live([a, b, c], 'prescriptions', 'p1'), [
+          false,
+          false,
+          false,
+          false,
+        ]);
+        await expectSettled([a, b, c]);
+      });
+    }
+
+    test('a dose pulled for a prescription deleted here goes with it, and '
+        'the delete reaches every device', () async {
+      serverNow = DateTime.utc(2026, 3, 5, 7, 5);
+      await take(a, 'd1');
+      await a.sync();
+      serverNow = DateTime.utc(2026, 3, 5, 7, 10);
+      await delete(b, 'prescriptions', 'p1');
+      // B pulls before its delete goes out.
+      await b.pull();
+      expect(b.pulled, contains('dose_logs/d1 deleted'));
+      expect(await b.row('dose_logs', 'd1'), isNull);
+      serverNow = DateTime.utc(2026, 3, 5, 8);
+      await syncAll([b, a]);
+      expect(await live([a, b], 'dose_logs', 'd1'), [false, false, false]);
+      expect(await live([a, b], 'prescriptions', 'p1'), [false, false, false]);
+      await expectSettled([a, b]);
+    });
+
+    test('a live dose the server holds under a deleted prescription is '
+        'passed over by a new device, without an error', () async {
+      // As a server from before the repair holds it.
+      core.rowsOf('prescriptions')['p1']!['deleted_at'] =
+          '2026-03-05T08:00:00.000Z';
+      final c = _Device('c', p.join(dir.path, 'c.db'), core);
+      serverNow = DateTime.utc(2026, 3, 5, 9);
+      await c.sync();
+      expect(
+        c.pulled,
+        containsAll(['dose_logs/d0 orphaned', 'dose_logs/d1 orphaned']),
+      );
+      expect(await live([c], 'dose_logs', 'd0'), [false, true]);
+      expect(await c.row('treatments', 't1'), isNotNull);
+    });
+
+    test('a 0.3.0 take of a dose 0.4.0 dropped reaches every device (I-2, '
+        'P4)', () async {
+      serverNow = DateTime.utc(2026, 3, 5, 5);
+      await drop(a, 'd1');
+      await a.sync();
+      await b.sync();
+      serverNow = DateTime.utc(2026, 3, 5, 7, 5);
+      final old = core.rowsOf('dose_logs')['d1']!;
+      core.legacyUpsert('dose_logs', {
+        'id': 'd1',
+        'prescription_id': 'p1',
+        'scheduled_time': old['scheduled_time'],
+        'taken_time': serverNow.toIso8601String(),
+        'status': 'taken',
+        'notes': null,
+        'updated_at': serverNow.toIso8601String(),
+      });
+      serverNow = DateTime.utc(2026, 3, 5, 8);
+      await syncAll([a, b]);
+      expect(await both('dose_logs', 'd1', 'status'), [
+        'taken',
+        'taken',
+        'taken',
+      ]);
+      expect(await live([a, b], 'dose_logs', 'd1'), [true, true, true]);
+      await expectSettled([a, b]);
     });
   });
 }

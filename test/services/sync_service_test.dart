@@ -1408,21 +1408,22 @@ void main() {
           seeded.prescriptionId,
         ))!.toJson(),
       );
-      // A remote prescription whose foreign keys point nowhere: `fromJson`
-      // parses it fine, but the local insert violates
-      // `PRAGMA foreign_keys = ON` and throws inside `upsert`.
-      h.prescriptions.table.seed(
-        PrescriptionModel(
-          id: 'orphan',
-          treatmentId: 'no-such-treatment',
-          medicationId: 'no-such-med',
+      // A remote prescription this device cannot read: its start time does
+      // not parse, so storing it throws. (A row whose parents are missing
+      // is passed over instead; see "rows under a deleted parent".)
+      h.prescriptions.table.seed({
+        ...PrescriptionModel(
+          id: 'unreadable',
+          treatmentId: seeded.treatmentId,
+          medicationId: seeded.medicationId,
           dosage: '1',
           startTime: DateTime(2026, 3, 1, 8),
         ).toJson(),
-      );
+        'start_time': 'not a time',
+      });
       final report = (await h.service.syncAll())!;
       final failure = report.failures.singleWhere(
-        (f) => f.table == 'prescriptions' && f.id == 'orphan',
+        (f) => f.table == 'prescriptions' && f.id == 'unreadable',
       );
       expect(failure.error, startsWith('apply:'));
       expect(report.pulled, 1); // only the valid prescription applied
@@ -3046,9 +3047,8 @@ void main() {
         'later pages are still stored', () async {
       final h = Harness();
       final ids = await seedRemoteDoses(h, 2500, (_) => h.clock.now());
-      // Its prescription is nowhere, so the local insert breaks the foreign
-      // key and throws.
-      h.doses.table.rows[ids[1500]]!['prescription_id'] = 'no-such';
+      // Its time does not parse, so storing it throws.
+      h.doses.table.rows[ids[1500]]!['scheduled_time'] = 'not a time';
 
       final report = (await h.service.syncAll())!;
 
@@ -3528,6 +3528,194 @@ void main() {
       );
       expect((await localRow('medications', 'm-local'))!['name'], 'Only here');
       expect(h.meds.table.get('m-edit')!['name'], 'Server');
+    });
+  });
+
+  group('rows under a deleted parent (review C-1, I-1)', () {
+    /// A treatment, medication, prescription and [doses] doses on the
+    /// server, as another device made them; returns the prescription id
+    /// and the dose ids.
+    (String, List<String>) seedOnServer(
+      Harness h, {
+      String prefix = 's',
+      int doses = 2,
+    }) {
+      final at = h.clock.now().subtract(const Duration(days: 1));
+      h.treatments.table.seed({
+        'id': '$prefix-t',
+        'user_id': 'user-a',
+        'name': 'Flu',
+        'start_date': '2026-03-01',
+      }, updatedAt: at);
+      h.meds.table.seed({
+        'id': '$prefix-m',
+        'user_id': 'user-a',
+        'name': 'Ibu',
+        'quantity': 10,
+      }, updatedAt: at);
+      h.prescriptions.table.seed({
+        'id': '$prefix-p',
+        'treatment_id': '$prefix-t',
+        'medication_id': '$prefix-m',
+        'dosage': '1 tablet',
+        'start_time': '2026-03-01T08:00:00.000Z',
+      }, updatedAt: at);
+      final ids = [for (var i = 0; i < doses; i++) '$prefix-d$i'];
+      for (final (i, id) in ids.indexed) {
+        h.doses.table.seed({
+          'id': id,
+          'prescription_id': '$prefix-p',
+          'scheduled_time': DateTime.utc(2026, 3, 1, 8 + i).toIso8601String(),
+          'status': 'pending',
+        }, updatedAt: at);
+      }
+      return ('$prefix-p', ids);
+    }
+
+    test('the doses of a prescription whose delete could not be sent are '
+        'not sent, and go with it', () async {
+      final h = Harness();
+      final (prescriptionId, ids) = await seedSchedule(durationDays: 1);
+      final db = await AppDatabase.instance.database;
+      // One of them was already on the server, and is taken here since.
+      await db.update(
+        'dose_logs',
+        {'sync_status': SyncStatus.pendingUpdate, 'status': 'taken'},
+        where: 'id = ?',
+        whereArgs: [ids.first],
+      );
+      await PrescriptionLocalDatasource().markDeleted(prescriptionId);
+      h.prescriptions.table.failIds.add(prescriptionId);
+
+      final report = (await h.service.syncAll())!;
+
+      expect(h.doses.table.sent, isEmpty);
+      expect(await syncStatuses(ids), everyElement('gone'));
+      expect(report.failures.map((f) => '${f.table}/${f.id}'), [
+        'prescriptions/$prescriptionId',
+      ]);
+      expect(
+        (await localRow('prescriptions', prescriptionId))!['sync_status'],
+        SyncStatus.pendingDelete,
+      );
+    });
+
+    test('a live dose the server holds under a deleted prescription is '
+        'skipped once, and the pull goes on', () async {
+      final h = Harness();
+      final (prescriptionId, ids) = seedOnServer(h);
+      seedOnServer(h, prefix: 'ok', doses: 1);
+      // As a server from before the repair holds it: the prescription is
+      // deleted, its doses are not.
+      h.prescriptions.table.rows[prescriptionId]!['deleted_at'] = h.clock
+          .now()
+          .toIso8601String();
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(await localRow('prescriptions', prescriptionId), isNull);
+      for (final id in ids) {
+        expect(await localRow('dose_logs', id), isNull, reason: id);
+      }
+      expect(await localRow('dose_logs', 'ok-d0'), isNotNull);
+      expect(
+        await h.cursors.pullKey('dose_logs'),
+        PullKey(h.doses.table.pageCalls.last.horizon),
+      );
+      // The next cycle does not ask for them again.
+      final fetches = h.core.requests.where((r) => r.endsWith(':fetch'));
+      final before = fetches.length;
+      await h.service.syncAll();
+      expect(h.core.requests.where((r) => r.endsWith(':fetch')).length, before);
+    });
+
+    test('a dose whose prescription the pull has not brought yet is stored '
+        'with it', () async {
+      final h = Harness();
+      final (prescriptionId, ids) = seedOnServer(h);
+      // Written again after the horizon this cycle reads to.
+      h.prescriptions.table.rows[prescriptionId]!['sync_xid'] = 1 << 40;
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(await localRow('prescriptions', prescriptionId), isNotNull);
+      for (final id in ids) {
+        expect(
+          (await localRow('dose_logs', id))?['sync_status'],
+          SyncStatus.synced,
+          reason: id,
+        );
+      }
+    });
+
+    test('discarding a failed delete of a prescription brings its doses '
+        'back', () async {
+      final h = Harness();
+      final (prescriptionId, ids) = seedOnServer(h);
+      await h.service.syncAll();
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+      await PrescriptionLocalDatasource().markDeleted(prescriptionId);
+      h.prescriptions.table.failIds.add(prescriptionId);
+      await h.service.syncAll();
+
+      await h.service.discardFailedRow('prescriptions', prescriptionId);
+      h.prescriptions.table.failIds.clear();
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(
+        (await localRow('prescriptions', prescriptionId))!['sync_status'],
+        SyncStatus.synced,
+      );
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+    });
+
+    test('a slot the app dropped elsewhere and generated here again is sent '
+        'back with the batch, once (I-1)', () async {
+      final h = Harness();
+      final (prescriptionId, ids) = await seedSchedule(durationDays: 1);
+      await h.service.syncAll();
+      final dropped = ids.last;
+      // Another device's schedule dropped it.
+      h.core.patch(
+        'dose_logs',
+        dropped,
+        {
+          'deleted_at': h.clock.now().toIso8601String(),
+          'write_id': 'other-drop',
+          'edited_at': '1970-01-01T00:00:00.000Z',
+        },
+        ifStatus: 'pending',
+        ifLive: true,
+      );
+      await h.service.syncAll();
+      expect(await localRow('dose_logs', dropped), isNull);
+      // The schedule here generates it again, later.
+      h.clock.advance(const Duration(minutes: 5));
+      await DoseLogRepositoryImpl(
+        localDatasource: DoseLogLocalDatasource(),
+        prescriptionLocal: PrescriptionLocalDatasource(),
+        now: h.clock.now,
+      ).generateDoseLogsForPrescription(prescriptionId);
+      expect(
+        (await localRow('dose_logs', dropped))!['sync_status'],
+        SyncStatus.pendingCreate,
+      );
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      final server = h.doses.table.rows[dropped]!;
+      expect(
+        [server['deleted_at'], server['edited_at']],
+        [null, '1970-01-01T00:00:00.000Z'],
+      );
+      expect(await syncStatuses(ids), everyElement(SyncStatus.synced));
+      final sent = h.doses.table.sent.length;
+      await h.service.syncAll();
+      expect(h.doses.table.sent.length, sent);
     });
   });
 }

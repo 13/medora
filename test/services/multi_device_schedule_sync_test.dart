@@ -763,6 +763,147 @@ void main() {
       );
     }
 
+    /// A changes [p]'s times of day to [times] and regenerates, as the
+    /// prescription sheet does.
+    Future<void> changeTimesOnA(String prescriptionId, String times) =>
+        h.a.run((db) async {
+          await db.update(
+            'prescriptions',
+            {
+              'schedule_times': times,
+              'sync_status': SyncStatus.pendingUpdate,
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+            where: 'id = ?',
+            whereArgs: [prescriptionId],
+          );
+          await h.a.doses.regenerateDoseLogsForPrescription(prescriptionId);
+          await h.a.service.syncAll();
+        });
+
+    test('a schedule changed and changed back keeps its doses and '
+        'reminders on both devices (I-1)', () async {
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1),
+        durationDays: 2,
+        scheduleType: 'times_per_day',
+        times: '["08:00","20:00"]',
+      );
+      await h.b.appSync();
+      final evening = scheduledDoseId(
+        p.prescriptionId,
+        DateTime(today.year, today.month, today.day + 1, 20),
+      );
+      await changeTimesOnA(p.prescriptionId, '["08:00","21:00"]');
+      await h.b.appSync(ensure: false);
+      expect(h.server.doses.table.rows[evening]!['deleted_at'], isNotNull);
+      expect(await h.b.slots(p.prescriptionId), hasLength(4));
+
+      await changeTimesOnA(p.prescriptionId, '["08:00","20:00"]');
+      await h.b.appSync(ensure: false);
+      await h.a.appSync();
+
+      expect(h.server.doses.table.rows[evening]!['deleted_at'], isNull);
+      await expectBMatchesA(p.prescriptionId);
+      expect(await h.b.slots(p.prescriptionId), contains(startsWith(evening)));
+      expect(await h.b.remindersFor(p.prescriptionId), contains(evening));
+      // Nothing is left to send, and nothing comes back and forth.
+      final versions = {
+        for (final r in h.server.dosesOf(p.prescriptionId))
+          r['id']: r['row_version'],
+      };
+      for (var i = 0; i < 2; i++) {
+        await h.a.resume();
+        await h.b.resume();
+        await h.a.appSync();
+        await h.b.appSync();
+      }
+      expect({
+        for (final r in h.server.dosesOf(p.prescriptionId))
+          r['id']: r['row_version'],
+      }, versions);
+      for (final device in [h.a, h.b]) {
+        expect(await device.slots(p.prescriptionId), hasLength(4));
+        expect(
+          (await device.row('dose_logs', evening))['sync_status'],
+          SyncStatus.synced,
+          reason: device.name,
+        );
+      }
+    });
+
+    for (final bTakes in [false, true]) {
+      test('a prescription deleted on A while B, offline, '
+          '${bTakes ? 'takes a dose' : 'generates the next days'}: the '
+          'delete wins, and both devices keep syncing (C-1)', () async {
+        final p = await h.createOnA(
+          start: DateTime(today.year, today.month, today.day + 1, 8),
+          durationDays: 2,
+        );
+        await h.b.appSync();
+        final first = scheduledDoseId(
+          p.prescriptionId,
+          DateTime(today.year, today.month, today.day + 1, 8),
+        );
+        h.b.online = false;
+        await h.b.run((db) async {
+          if (bTakes) await h.b.doses.markDoseTaken(first);
+          // A longer course, generated before the change is sent.
+          await db.update(
+            'prescriptions',
+            {'duration_days': 4},
+            where: 'id = ?',
+            whereArgs: [p.prescriptionId],
+          );
+          await h.b.doses.generateDoseLogsForPrescription(p.prescriptionId);
+        });
+        await h.a.run((db) async {
+          await PrescriptionRepositoryImpl(
+            localDatasource: h.a.prescriptionLocal,
+          ).deletePrescription(p.prescriptionId);
+          await h.a.service.syncAll();
+        });
+        h.b.online = true;
+        for (var i = 0; i < 2; i++) {
+          final onB = (await h.b.run((_) async => h.b.service.syncAll()))!;
+          final onA = (await h.a.run((_) async => h.a.service.syncAll()))!;
+          expect(onB.failures, isEmpty, reason: 'B, round $i');
+          expect(onA.failures, isEmpty, reason: 'A, round $i');
+        }
+        await h.a.appSync();
+        await h.b.appSync();
+
+        expect(
+          h.server
+              .dosesOf(p.prescriptionId)
+              .where((r) => r['deleted_at'] == null),
+          isEmpty,
+        );
+        if (bTakes) {
+          expect(h.server.doses.table.rows[first]!['status'], 'taken');
+        }
+        for (final device in [h.a, h.b]) {
+          expect(
+            await device.slots(p.prescriptionId),
+            isEmpty,
+            reason: device.name,
+          );
+          expect(await device.remindersFor(p.prescriptionId), isEmpty);
+          await device.run((db) async {
+            expect(
+              await db.query(
+                'prescriptions',
+                where: 'id = ?',
+                whereArgs: [p.prescriptionId],
+              ),
+              isEmpty,
+              reason: device.name,
+            );
+          });
+        }
+      });
+    }
+
     test('a slot the server holds a tombstone for is not generated again '
         'after every sync', () async {
       final p = await h.createOnA(

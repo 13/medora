@@ -20,6 +20,8 @@ import 'package:sqflite/sqflite.dart';
 ///   left as the pull stored it.
 /// - **Deleted meanwhile** (`pending_delete`) or gone: left alone; a pending
 ///   delete returns true.
+/// - **Stored deleted by the server** (a parent is deleted there): the row
+///   goes here too; the delete wins.
 Future<bool> settlePushedRow(
   Database db,
   String table, {
@@ -34,6 +36,10 @@ Future<bool> settlePushedRow(
     final rows = await txn.query(table, where: 'id = ?', whereArgs: [id]);
     if (rows.isEmpty) return false;
     final current = rows.first;
+    if (meta.deletedAt != null) {
+      await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+      return false;
+    }
     final status = current['sync_status'] as String?;
     if (status == SyncStatus.pendingDelete) return true;
     if (current['updated_at'] == pushed['updated_at']) {

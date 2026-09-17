@@ -551,6 +551,304 @@ void main() {
       );
     });
 
+    test('a dropped slot here and a skip pulled from another device: the '
+        'skip is stored', () async {
+      final since = core.horizon;
+      final db = await AppDatabase.instance.database;
+      await db.update('dose_logs', {
+        'sync_status': 'pending_delete',
+        'delete_guard': 'if_pending',
+        'edited_at': automaticEditedAt.toIso8601String(),
+      }, where: "id = 'd1'");
+      doses.editFromOtherDevice('d1', {
+        'status': 'skipped',
+      }, editedAt: DateTime.utc(2026, 3, 1, 7, 5));
+      expect((await pullDoses(since)).single.outcome, PullOutcome.replaced);
+      expect(
+        [(await dose())['status'], (await dose())['sync_status']],
+        ['skipped', 'synced'],
+      );
+    });
+
+    test('a dropped slot whose create never got an answer, and that the '
+        'server lacks: nothing is sent in its place', () async {
+      final db = await AppDatabase.instance.database;
+      core.rowsOf('dose_logs').remove('d1');
+      await db.update('dose_logs', {
+        'sync_status': 'pending_delete',
+        'delete_guard': 'if_pending',
+        'sync_write_id': 'lost',
+      }, where: "id = 'd1'");
+      await doseSync.pushRow(await dose(), userId: 'u');
+      expect(doses.insertBatches, isEmpty);
+      expect(doses.get('d1'), isNull);
+      expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+    });
+
+    test('a dropped slot the server still holds pending, where the guarded '
+        'delete matched nothing, fails and is tried again later', () async {
+      final db = await AppDatabase.instance.database;
+      final racing = _MissingPatchTable(core, 'dose_logs');
+      final raced = TableSync(
+        table: 'dose_logs',
+        remote: racing,
+        newWriteId: () => 'd${ids++}',
+        now: () => now,
+      );
+      await db.update('dose_logs', {
+        'sync_status': 'pending_delete',
+        'delete_guard': 'if_pending',
+      }, where: "id = 'd1'");
+      await expectLater(
+        raced.pushRow(await dose(), userId: 'u'),
+        throwsStateError,
+      );
+      expect(
+        [(await dose())['sync_status'], (await dose())['delete_guard']],
+        ['pending_delete', 'if_pending'],
+      );
+      await doseSync.pushRow(await dose(), userId: 'u');
+      expect(doses.get('d1')!['deleted_at'], isNotNull);
+      expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+    });
+
+    group('deletes and the prescription above (review C-1)', () {
+      Future<void> deletePrescriptionHere() async {
+        final db = await AppDatabase.instance.database;
+        await db.update('prescriptions', {
+          'sync_status': 'pending_delete',
+          'deleted_at': '2026-03-01T06:30:00.000Z',
+        }, where: "id = 'p1'");
+      }
+
+      test('a take here does not bring back a dropped dose whose '
+          'prescription is deleted here', () async {
+        final since = core.horizon;
+        core.patch(
+          'dose_logs',
+          'd1',
+          {
+            'deleted_at': '2026-03-01T06:00:00.000Z',
+            'write_id': 'other-drop',
+            'edited_at': automaticEditedAt.toIso8601String(),
+          },
+          ifStatus: 'pending',
+          ifLive: true,
+        );
+        await takeHere(DateTime.utc(2026, 3, 1, 7, 5));
+        await deletePrescriptionHere();
+        expect((await pullDoses(since)).single.outcome, PullOutcome.deleted);
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+      });
+
+      test('a live dose pulled for a prescription deleted here goes with '
+          'it', () async {
+        final since = core.horizon;
+        doses.editFromOtherDevice('d1', {
+          'status': 'taken',
+          'taken_time': '2026-03-01T07:05:00.000Z',
+        }, editedAt: DateTime.utc(2026, 3, 1, 7, 5));
+        await deletePrescriptionHere();
+        expect((await pullDoses(since)).single.outcome, PullOutcome.deleted);
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+        // A new one is not stored either.
+        core.insertIfAbsent('dose_logs', [
+          {
+            'id': 'd9',
+            'prescription_id': 'p1',
+            'scheduled_time': '2026-03-02T07:00:00.000Z',
+            'status': 'pending',
+            'write_id': 'gen9',
+            'edited_at': automaticEditedAt.toIso8601String(),
+          },
+        ]);
+        expect(
+          (await doseSync.applyPulled(doses.get('d9')!)).outcome,
+          PullOutcome.kept,
+        );
+        expect(await db.query('dose_logs', where: "id = 'd9'"), isEmpty);
+      });
+
+      test('a live dose pulled for a prescription this device does not '
+          'hold is reported, not stored, and nothing throws', () async {
+        core.insertIfAbsent('dose_logs', [
+          {
+            'id': 'd9',
+            'prescription_id': 'p-elsewhere',
+            'scheduled_time': '2026-03-02T07:00:00.000Z',
+            'status': 'pending',
+            'write_id': 'gen9',
+            'edited_at': automaticEditedAt.toIso8601String(),
+          },
+        ]);
+        final applied = await doseSync.applyPulled(doses.get('d9')!);
+        expect(applied.outcome, PullOutcome.orphaned);
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd9'"), isEmpty);
+      });
+
+      test('a dose whose prescription is deleted here is not sent, and '
+          'goes', () async {
+        await takeHere(DateTime.utc(2026, 3, 1, 7, 5));
+        await deletePrescriptionHere();
+        final sentBefore = doses.sent.length;
+        final result = await doseSync.pushRow(await dose(), userId: 'u');
+        expect(result.outcome, PushOutcome.settled);
+        expect(doses.sent.length, sentBefore);
+        expect(doses.get('d1')!['status'], 'pending');
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+      });
+
+      for (final kind in ['a generated dose', 'a take']) {
+        test('$kind the server stores deleted, because the prescription is '
+            'deleted there, is removed here at once', () async {
+          // Another device deleted the prescription; this one has not
+          // pulled it yet.
+          core.legacyUpsert('prescriptions', {
+            'id': 'p1',
+            'deleted_at': '2026-03-01T06:30:00.000Z',
+          });
+          final db = await AppDatabase.instance.database;
+          await db.insert('dose_logs', {
+            'id': 'd8',
+            'prescription_id': 'p1',
+            'scheduled_time': '2026-03-02T07:00:00.000',
+            'status': kind == 'a take' ? 'taken' : 'pending',
+            'updated_at': '1970-01-01T00:00:00.000Z',
+            'edited_at': kind == 'a take'
+                ? '2026-03-01T07:05:00.000Z'
+                : '1970-01-01T00:00:00.000Z',
+            'sync_status': 'pending_create',
+          });
+          final row = (await db.query('dose_logs', where: "id = 'd8'")).single;
+          final result = await doseSync.pushRow(row, userId: 'u');
+          expect(result.outcome, PushOutcome.settled);
+          expect(doses.get('d8')!['deleted_at'], isNotNull);
+          expect(await db.query('dose_logs', where: "id = 'd8'"), isEmpty);
+          // The same answer read later (a lost answer) removes it too.
+          if (kind == 'a take') {
+            await db.insert('dose_logs', {
+              ...row,
+              'sync_status': 'pending_update',
+              'sync_write_id': doses.get('d8')!['write_id'],
+            });
+            final again = (await db.query(
+              'dose_logs',
+              where: "id = 'd8'",
+            )).single;
+            await doseSync.pushRow(again, userId: 'u');
+            expect(await db.query('dose_logs', where: "id = 'd8'"), isEmpty);
+          }
+        });
+      }
+    });
+
+    group('a slot dropped, then generated again (review I-1)', () {
+      /// Another device dropped d1 at 06:00 (or a person deleted it).
+      void dropElsewhere({bool person = false}) {
+        core.patch('dose_logs', 'd1', {
+          'deleted_at': '2026-03-01T06:00:00.000Z',
+          'write_id': 'other-drop',
+          'edited_at': person
+              ? '2026-03-01T06:00:00.000Z'
+              : automaticEditedAt.toIso8601String(),
+        }, ifStatus: person ? null : 'pending');
+      }
+
+      /// The schedule here generates d1 at [at] (no time: an older row).
+      Future<Map<String, Object?>> generateHere(DateTime? at) async {
+        final db = await AppDatabase.instance.database;
+        await db.delete('dose_logs', where: "id = 'd1'");
+        await db.insert('dose_logs', {
+          'id': 'd1',
+          'prescription_id': 'p1',
+          'scheduled_time': DateTime.utc(
+            2026,
+            3,
+            1,
+            7,
+          ).toLocal().toIso8601String(),
+          'status': 'pending',
+          'created_at': at?.toLocal().toIso8601String(),
+          'updated_at': '1970-01-01T00:00:00.000Z',
+          'edited_at': '1970-01-01T00:00:00.000Z',
+          'sync_status': 'pending_create',
+        });
+        return dose();
+      }
+
+      for (final at in [DateTime.utc(2026, 3, 1, 6, 30), null]) {
+        test(
+          'generated ${at == null ? 'at an unknown time' : 'after the '
+                    'drop'}: it comes back, as the app\'s own change',
+          () async {
+            dropElsewhere();
+            final before = doses.get('d1')!['updated_at'];
+            final result = await doseSync.pushRow(
+              await generateHere(at),
+              userId: 'u',
+            );
+            expect(result.outcome, PushOutcome.settled);
+            final server = doses.get('d1')!;
+            expect(
+              [server['deleted_at'], server['edited_at'], server['updated_at']],
+              [null, '1970-01-01T00:00:00.000Z', before],
+            );
+            final row = await dose();
+            expect(
+              [row['sync_status'], row['deleted_at'], row['sync_write_id']],
+              ['synced', null, null],
+            );
+            // Nothing left to send.
+            final version = server['row_version'];
+            await doseSync.pushRow(await dose(), userId: 'u');
+            expect(doses.get('d1')!['row_version'], version);
+          },
+        );
+      }
+
+      test('generated before the drop: it stays dropped', () async {
+        dropElsewhere();
+        await doseSync.pushRow(
+          await generateHere(DateTime.utc(2026, 3, 1, 5, 30)),
+          userId: 'u',
+        );
+        expect(doses.get('d1')!['deleted_at'], isNotNull);
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+      });
+
+      test('a dose a person deleted is not brought back', () async {
+        dropElsewhere(person: true);
+        await doseSync.pushRow(
+          await generateHere(DateTime.utc(2026, 3, 1, 6, 30)),
+          userId: 'u',
+        );
+        expect(doses.get('d1')!['deleted_at'], isNotNull);
+        final db = await AppDatabase.instance.database;
+        expect(await db.query('dose_logs', where: "id = 'd1'"), isEmpty);
+      });
+
+      test('the drop pulled while the generated slot waits here: the slot '
+          'stays and goes out next', () async {
+        final since = core.horizon;
+        dropElsewhere();
+        await generateHere(DateTime.utc(2026, 3, 1, 6, 30));
+        final applied = (await pullDoses(since)).single;
+        expect(applied.outcome, PullOutcome.merged);
+        expect(
+          [(await dose())['deleted_at'], (await dose())['sync_status']],
+          [null, 'pending_update'],
+        );
+        await doseSync.pushRow(await dose(), userId: 'u');
+        expect(doses.get('d1')!['deleted_at'], isNull);
+        expect((await dose())['sync_status'], 'synced');
+      });
+    });
+
     group('a dose generated on both devices', () {
       setUp(() {
         // The other device generated d2 and sent it first.
@@ -945,4 +1243,33 @@ void main() {
     expect(isAutomaticEdit(DateTime.utc(2026)), isFalse);
     expect(syncedTables, hasLength(4));
   });
+}
+
+/// A dose table whose guarded patch matches nothing once, as when the row
+/// changed and changed back between the patch and the fetch.
+class _MissingPatchTable extends FakeSyncTable {
+  _MissingPatchTable(super.core, super.table);
+
+  var _missed = false;
+
+  @override
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    if (ifStatus != null && !_missed) {
+      _missed = true;
+      return null;
+    }
+    return super.patch(
+      id,
+      changes,
+      ifVersion: ifVersion,
+      ifStatus: ifStatus,
+      ifLive: ifLive,
+    );
+  }
 }
