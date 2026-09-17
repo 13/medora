@@ -202,7 +202,7 @@ A sequence would have handed out `fast` and moved past `slow`. `tools/check_supa
 - keeps a sent `edited_at`, capped at `now()`, so a clock set in the future cannot win for ever;
 - turns every value before `1970-01-02` into exactly `1970-01-01`;
 - uses `now()` for a writer that sends no write id, so a 0.3.0 edit counts as made when it arrived;
-- falls back to the old `updated_at` when a 0.4.0 update sends a write id but no `edited_at`.
+- keeps the stored `edited_at` when a 0.4.0 update sends a write id but no `edited_at`, and falls back to the old `updated_at` only when the stored one is empty (a row from before the migration). A 0.4.0 client therefore always sends `edited_at` with a write id.
 
 **`updated_at` stays what 0.3.0 relies on:**
 
@@ -310,9 +310,10 @@ The merge runs on the canonical wire form (`Model.fromJson(row).toJson()`), so a
 - **Draining.** Each cycle drains the outbox after the medication rows are pushed, in `created_at` order, by calling `apply_stock_change(op_id, medication_id, delta, set_to)`. The function:
   - takes a transaction-level advisory lock on the op id;
   - returns `duplicate` if the ledger already has the id;
-  - otherwise applies `quantity = clamp(quantity + delta)` or `clamp(set_to)` (0…999999) to a live medication;
-  - records the id in `stock_changes`;
-  - returns `applied` with the new quantity and version, `gone` (deleted: drop the change) or `missing` (not on the server yet: keep it with backoff).
+  - brings the change into range first (`set_to` to 0…999999, `delta` to −999999…999999; `stockChangeInRange` in `stock_remote.dart`, which the client also applies before sending);
+  - otherwise applies `quantity = clamp(quantity + delta)` or `set_to` (0…999999) to a live medication (`stockAfter`);
+  - records the id and the values in range in `stock_changes`;
+  - returns `applied` with the new quantity and version, or `gone`: no live medication with that id (deleted, removed from the server, never created, or not the caller's). `gone` is final: drop the change.
 - **Reading stock.**
   - `quantity` is server-owned in the merge and never part of a row patch.
   - The local quantity is always `the server's quantity + the pending outbox changes, in order` (`applyStockOps`), applied on every pull and after every drain.
@@ -338,7 +339,8 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 - all assertions pass;
 - the file is re-runnable (applied twice);
 - three deliberate mutations are each caught: an automatic change that stamps `updated_at`, a replayed write id that is not cleared, and a created row that is not stamped on arrival;
-- all five migrations also apply on a local `supabase start` (CLI 2.117.0), where the 0.4.0 integration scenarios pass and the unchanged v0.3.0 integration suite still passes.
+- all five migrations also apply on a local `supabase start` (CLI 2.117.0), where the 0.4.0 integration scenarios pass and the unchanged v0.3.0 integration suite still passes;
+- after the Task 3 review (fix round) the checks also cover: no TRUNCATE, TRIGGER or REFERENCES for clients on any synced or family table, every kind of update moving `sync_xid`, stock values out of range, a medication removed from the server, a retry racing its original, and the app's family and "delete all data" flows. They pass on the real `supabase/postgres:15.8.1.085` image as well.
 
 ```sql
 -- ============================================================
@@ -354,7 +356,22 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 -- No backfill UPDATE: every new column is added with a constant default
 -- (no table rewrite, no trigger fires), so no row changes `updated_at`
 -- and no 0.3.0 device sees its pending edit turn stale.
+--
+-- Run it in one transaction (`supabase db push` and the SQL editor do).
+-- Every statement can be run again, so a failed run can simply be
+-- retried.
+--
+-- After this migration:
+-- - never run 20260901000000_initial_schema.sql again: it would put back
+--   the old update_updated_at() and break the rule in section 4;
+-- - do not enable read replicas for this project: a pull reads its pages
+--   below a horizon taken on the primary, and a lagging replica would
+--   answer without rows that are already below it.
 -- ============================================================
+
+-- The ALTER TABLEs wait for every open transaction on these tables, and
+-- every API request on them would queue behind that wait. Give up instead.
+set local lock_timeout = '5s';
 
 -- 1. Columns ---------------------------------------------------------------
 --
@@ -490,6 +507,23 @@ begin
 end;
 $$;
 
+-- Trigger functions run as triggers only (a trigger does not need EXECUTE).
+revoke all on function public.medora_sync_stamp() from public, anon, authenticated;
+revoke all on function public.update_updated_at() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_treatment() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_medication() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_prescription() from public, anon, authenticated;
+
+-- Clients never truncate, add triggers or add foreign keys. Row-level
+-- security does not cover TRUNCATE, and Supabase grants all three by
+-- default, so one signed-in user could otherwise empty every user's rows
+-- through any SQL surface. Hard DELETE ("delete all data") stays, under the
+-- tables' policies.
+revoke truncate, trigger, references
+  on public.medications, public.treatments, public.prescriptions,
+     public.dose_logs, public.families, public.family_members
+  from anon, authenticated;
+
 -- 5. The pull horizon -------------------------------------------------------
 --
 -- Every transaction with an id below `horizon` has finished, so every row
@@ -530,7 +564,8 @@ create table if not exists public.stock_changes (
   applied_at     timestamptz not null default now(),
   constraint stock_changes_one_kind check ((delta is null) <> (set_to is null)),
   constraint stock_changes_delta_range check (delta is null or delta between -999999 and 999999),
-  constraint stock_changes_set_to_range check (set_to is null or set_to between 0 and 999999)
+  constraint stock_changes_set_to_range check (set_to is null or set_to between 0 and 999999),
+  constraint stock_changes_quantity_range check (quantity_after between 0 and 999999)
 );
 
 create index if not exists idx_stock_changes_med on public.stock_changes (medication_id);
@@ -555,14 +590,33 @@ create policy "stock_changes_insert" on public.stock_changes
     and exists (select 1 from public.medications m where m.id = medication_id)
   );
 
-revoke all on public.stock_changes from anon;
+-- Supabase grants every right on a new table to anon and authenticated.
+-- Row-level security does not cover TRUNCATE, so take the rights away and
+-- give back only reading and appending.
+revoke all on public.stock_changes from anon, authenticated;
 grant select, insert on public.stock_changes to authenticated;
 
 -- Applies one stock change once. Returns
 --   {"status":"applied",   "quantity":q, "row_version":v}
 --   {"status":"duplicate", "quantity":q}   (this op_id was applied before)
---   {"status":"gone"}      (the medication is deleted: drop the change)
---   {"status":"missing"}   (no such medication yet: keep the change)
+--   {"status":"gone"}      (no live medication with this id for the caller:
+--                           deleted, removed from the server, or never
+--                           there. The change can never apply: drop it.)
+-- A client sends a change only for a medication whose create has reached
+-- the server, so "never there" means removed. The ledger rows of a removed
+-- medication go with it, so a retry after the removal is gone as well.
+--
+-- Values out of range are brought into range before anything else, so a
+-- change is never refused for good: set_to to 0..999999, delta to
+-- -999999..999999; the new quantity is set_to, or quantity + delta
+-- (computed without overflow) capped to 0..999999. The ledger records the
+-- values in range. lib/data/datasources/stock_remote.dart (stockAfter) and
+-- test/helpers/fake_server.dart follow the same rule.
+--
+-- The medication keeps its edit time (a stock change is not a field edit
+-- that the merge compares). Medications never carry the 1970 edit time of
+-- an automatic change, so updated_at moves and 0.3.0 pulls the change.
+--
 -- Runs with the caller's rights, so row-level security applies throughout.
 create or replace function public.apply_stock_change(
   p_op_id         uuid,
@@ -576,6 +630,8 @@ security invoker
 set search_path = public, pg_temp
 as $$
 declare
+  v_delta   integer;
+  v_set_to  integer;
   v_after   integer;
   v_qty     integer;
   v_version bigint;
@@ -587,6 +643,9 @@ begin
     raise exception 'pass exactly one of p_delta and p_set_to'
       using errcode = '22023';
   end if;
+  -- (greatest and least skip NULLs, so keep a NULL as it is.)
+  v_delta := case when p_delta is not null then greatest(-999999, least(999999, p_delta)) end;
+  v_set_to := case when p_set_to is not null then greatest(0, least(999999, p_set_to)) end;
 
   -- Two attempts with one op id (a retry racing the original) run one
   -- after the other.
@@ -599,24 +658,21 @@ begin
   end if;
 
   update public.medications m
-     set quantity = case
-           when p_set_to is not null then greatest(0, least(999999, p_set_to))
-           else greatest(0, least(999999, m.quantity + p_delta))
-         end,
+     set quantity = coalesce(
+           v_set_to,
+           greatest(0, least(999999, m.quantity::bigint + v_delta))::integer
+         ),
          write_id = p_op_id
    where m.id = p_medication_id
      and m.deleted_at is null
   returning m.quantity, m.row_version into v_qty, v_version;
 
   if not found then
-    if exists (select 1 from public.medications m where m.id = p_medication_id) then
-      return jsonb_build_object('status', 'gone');
-    end if;
-    return jsonb_build_object('status', 'missing');
+    return jsonb_build_object('status', 'gone');
   end if;
 
   insert into public.stock_changes (op_id, medication_id, delta, set_to, quantity_after)
-    values (p_op_id, p_medication_id, p_delta, p_set_to, v_qty);
+    values (p_op_id, p_medication_id, v_delta, v_set_to, v_qty);
 
   return jsonb_build_object(
     'status', 'applied', 'quantity', v_qty, 'row_version', v_version
@@ -639,6 +695,11 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
   - `stock_changes` follows the medication: the policy subquery runs under the caller's own `medications` policies. Today that means the owner. If family access to medications is ever added, the ledger follows with no change.
   - There is no update or delete policy, so the ledger is append-only for clients.
   - Supabase's default privileges grant `anon` EXECUTE on new functions, so both functions revoke it explicitly. The check script verifies this.
+  - Supabase also grants `anon` and `authenticated` TRUNCATE, TRIGGER and REFERENCES on every table, and RLS does not cover TRUNCATE. The migration takes these away on the four data tables, the two family tables and the ledger. SELECT, INSERT, UPDATE and DELETE stay under the policies, so 0.3.0 and "delete all data" keep working. The trigger functions are not executable by clients (a trigger does not need EXECUTE).
+- **Stock values out of range** are brought into range before anything else (`set_to` to 0…999999, `delta` to −999999…999999, the sum computed as `bigint`), and the ledger records those values. A change is never refused for good.
+- **A medication that is gone.** `apply_stock_change` answers `gone` whenever the caller has no live medication with that id: deleted, removed from the server (its ledger rows cascade with it), never created, or another user's. There is no `missing`: a client sends a change only after the medication's create reached the server (§7.5), so "not there" always means "removed".
+- **Locks.** `set local lock_timeout = '5s'` makes the migration give up instead of queueing every API request behind an `ALTER TABLE` that waits for a long transaction. Retry it.
+- **After this migration** never run `20260901000000_initial_schema.sql` again (it would restore the old `update_updated_at()`), and do not enable read replicas (a page could come from a replica that has not yet replayed rows below the primary's horizon).
 - **Locks.** `CREATE INDEX` without `CONCURRENTLY` blocks writes to that table while it builds. That takes milliseconds at household sizes, and `CONCURRENTLY` cannot run inside the CLI's migration transaction.
 - **Trigger order.** Postgres runs `BEFORE` triggers of one event in name order. `<table>_sync_stamp` sorts before `<table>_updated_at`, and `update_updated_at()` reads the `write_id` and `edited_at` the stamp trigger has just settled.
 - **No down migration.** Every change is additive, and 0.3.0 runs against it (§9.2). Rolling the app back does not need the schema rolled back.
@@ -723,7 +784,7 @@ It also gains `newWriteId`, which defaults to `const Uuid().v4()`; tests inject 
 **Paging.** For each table, pages come from `after = cursors.pullKey(table)` up to `horizon`.
 
 - The key is stored after every fully applied page, as the last row's `(sync_xid, id)`.
-- A page shorter than 1000 rows ends the table, and the key `(horizon, null)` is stored.
+- Only an **empty** page ends the table, and the key `(horizon, null)` is stored (`afterPullPage` in `sync_page.dart`). A short page is not the end: the project's "Max rows" setting may be below 1000, and PostgREST does not say it cut an answer short. This costs one request per table per cycle.
 - A row that fails to apply holds the key where it was for the rest of the cycle, as today.
 - A stored key above the horizon resets that table to a full pull.
 
@@ -791,8 +852,9 @@ For each op, oldest first:
 - **Skip** (counted as waiting) when the medication has no known server version yet (its create has not settled), when the op is in its backoff window, or when an earlier op of the same medication failed this cycle.
 - Otherwise call `apply_stock_change`.
 - **`applied` or `duplicate`:** delete the op. For `applied`, set the local quantity to `applyStockOps(result.quantity, remaining ops)`, and move the base forward when `result.rowVersion == version + 1`.
-- **`gone`:** delete the op.
-- **`missing`, or an error:** keep the op, record a failure with backoff (table `stock_outbox`, id = op id), and stop draining that medication for this cycle, so the order is kept.
+- **`gone`:** delete the op. It is final: the medication is deleted or was removed from the server, and its ledger went with it, so a retry would never apply either.
+- **An error:** keep the op, record a failure with backoff (table `stock_outbox`, id = op id), and stop draining that medication for this cycle, so the order is kept.
+- **A medication re-created by the create path** (§7.3, "No row: create path"): its insert carries the local quantity, which already includes the waiting ops, so drop that medication's ops when the insert settles.
 - **`discardFailedRow('stock_outbox', opId)`** drops the op.
 
 ### 7.6 Force pull and discard
@@ -920,8 +982,8 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - open transactions that hold the horizon back;
   - `row_version`, the write-id rule, `edited_at` normalisation and capping;
   - the `updated_at` rules (automatic updates keep it, real inserts get `now()`);
-  - guarded filters, and the ledger with duplicate, gone and missing;
-  - `max_rows` = 1000.
+  - guarded filters, hard deletes with their cascade, and the ledger with duplicate and gone;
+  - `max_rows` = 1000 by default (`rowCap`); a test sets it to 250 to prove a pull ends only on an empty page.
 
   The Dart-level fakes (`FakeRemoteTable`, `Fake*Remote`, `FakeSyncState`) are thin views of it. They keep today's knobs (`failIds`, `throwOnFetch`, `beforeCall`, `rowCap`, `pageCalls`, `seed`, `upsert` as a 0.3.0 write).
 - **Fake PostgREST.** `test/helpers/fake_postgrest.dart` serves the same core over HTTP (`MockClient`). It parses the requests the real datasources send:
