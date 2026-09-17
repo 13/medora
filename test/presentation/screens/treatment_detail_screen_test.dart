@@ -374,6 +374,8 @@ void main() {
           ),
           findsOneWidget,
         );
+        // Only the fixed message: never the repository's technical text.
+        expect(find.textContaining('disk full'), findsNothing);
         expect((await stored()).isActive, isTrue);
       });
     }

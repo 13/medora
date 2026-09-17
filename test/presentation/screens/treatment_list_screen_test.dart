@@ -6,8 +6,11 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/result.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/models/treatment_model.dart';
+import 'package:medora/data/repositories/treatment_repository_impl.dart';
+import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -29,7 +32,8 @@ void main() {
   });
   tearDown(tearDownTestDatabase);
 
-  Future<List<Override>> overrides() async => [
+  Future<List<Override>> overrides([List<Override> extra = const []]) async => [
+    ...extra,
     sharedPreferencesProvider.overrideWithValue(
       await SharedPreferences.getInstance(),
     ),
@@ -67,12 +71,13 @@ void main() {
     WidgetTester tester, {
     Locale locale = const Locale('en'),
     Widget Function(Widget child)? wrap,
+    List<Override> extraOverrides = const [],
   }) async {
     const screen = TreatmentListScreen();
     await pumpMedoraApp(
       tester,
       wrap == null ? screen : wrap(screen),
-      overrides: await overrides(),
+      overrides: await overrides(extraOverrides),
       locale: locale,
     );
     await tester.pumpAndSettle();
@@ -314,4 +319,58 @@ void main() {
       });
     }
   });
+
+  // The slide action takes the same path as the detail screen's End.
+  testWidgets('a failed End from the list says so and leaves the treatment '
+      'running', (tester) async {
+    await seed('t1', 'Sinusitis');
+    await pump(
+      tester,
+      extraOverrides: [
+        treatmentRepositoryProvider.overrideWithValue(
+          _EndFails(localDatasource: TreatmentLocalDatasource()),
+        ),
+      ],
+    );
+    await tester.drag(find.text('Sinusitis'), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SlidableAction),
+        matching: find.text('End'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(TextButton, 'End Treatment'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Could not end the treatment'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('disk full'), findsNothing);
+    final stored = await TreatmentLocalDatasource().getTreatmentById('t1');
+    expect(stored!.isActive, isTrue);
+    // Still listed under Active.
+    expect(find.text('Sinusitis'), findsOneWidget);
+  });
+}
+
+/// A treatment repository whose End always fails, as a full disk would.
+class _EndFails extends TreatmentRepositoryImpl {
+  _EndFails({required super.localDatasource});
+
+  @override
+  Future<Result<Treatment>> endTreatment(
+    String id, {
+    bool endSickLeave = false,
+  }) async => const Result.failure('disk full');
 }

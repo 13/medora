@@ -77,7 +77,9 @@ Future<bool> confirmAndEndTreatment(
         .read(treatmentListProvider.notifier)
         .endTreatment(treatment.id, endSickLeave: endSickLeave);
   } catch (e) {
-    debugPrint('⚠ Ending treatment ${treatment.id} failed: $e');
+    // The type only: debugPrint reaches logcat in release builds too, and a
+    // database error's text carries the row's values (name, notes, doctor).
+    debugPrint('⚠ Ending treatment ${treatment.id} failed: ${e.runtimeType}');
     messenger.showSnackBar(SnackBar(content: Text(l10n.endTreatmentFailed)));
     return false;
   }
