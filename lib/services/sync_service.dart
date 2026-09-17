@@ -787,6 +787,7 @@ class SyncService {
           (start + doseLogInsertBatchSize).clamp(0, ready.length),
         ),
       );
+      if (batch.isEmpty) continue;
       final landed = await _insertNewDoseLogs(batch, report);
       if (landed.isEmpty) continue;
       final List<Map<String, dynamic>> server;
@@ -836,7 +837,15 @@ class SyncService {
     }
   }
 
-  /// [rows] with a fresh write id each, stored on the local rows first.
+  /// The rows of [rows] that are still new doses here, as stored now, each
+  /// with a fresh write id stored first.
+  ///
+  /// The rows were read before the batches ahead of them went out, and a
+  /// person may have changed the schedule meanwhile: a dropped dose that no
+  /// server has seen is deleted here at once, and must not be sent after
+  /// all (cycle review I-1). A row that is no longer `pending_create` (gone,
+  /// or deleted since) is left out, and every other row is sent as it is
+  /// now, not as it was read.
   Future<List<Map<String, dynamic>>> _withWriteIds(
     List<Map<String, dynamic>> rows,
   ) async {
@@ -845,13 +854,19 @@ class SyncService {
     await db.transaction((txn) async {
       for (final row in rows) {
         final writeId = _newWriteId();
-        await txn.update(
+        final updated = await txn.update(
           'dose_logs',
           {'sync_write_id': writeId},
+          where: 'id = ? AND sync_status = ?',
+          whereArgs: [row['id'], SyncStatus.pendingCreate],
+        );
+        if (updated == 0) continue;
+        final current = await txn.query(
+          'dose_logs',
           where: 'id = ?',
           whereArgs: [row['id']],
         );
-        stamped.add({...row, 'sync_write_id': writeId});
+        stamped.add(current.single);
       }
     });
     return stamped;

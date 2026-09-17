@@ -832,6 +832,123 @@ void main() {
       }
     });
 
+    test('times changed while the first batch of new doses is on its way: '
+        'the dropped doses end deleted, as the app\'s own, everywhere, with '
+        'no reminders (cycle review I-1)', () async {
+      const newTimes = '["09:00","15:00","21:00"]';
+      late String pid;
+      var armed = false;
+      var fired = false;
+      h.server.doses.rows.beforeCall = () async {
+        if (!armed || fired) return;
+        fired = true;
+        // The person changes the times on A while A's first batch of 100
+        // is being sent (the database is A's: the cycle runs on it).
+        final db = await AppDatabase.instance.database;
+        await db.update(
+          'prescriptions',
+          {
+            'schedule_times': newTimes,
+            'sync_status': SyncStatus.pendingUpdate,
+            'updated_at': DateTime.now().toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [pid],
+        );
+        await h.a.doses.regenerateDoseLogsForPrescription(pid);
+      };
+      // 60 days, three a day: two batches.
+      h.a.online = false;
+      final p = await h.createOnA(
+        start: DateTime(today.year, today.month, today.day + 1),
+        durationDays: 60,
+        scheduleType: 'times_per_day',
+        times: '["08:00","14:00","20:00"]',
+        beforePush: (db, s) async => pid = s.prescriptionId,
+      );
+      h.a.online = true;
+      armed = true;
+      await h.a.sync();
+      expect(fired, isTrue);
+
+      bool onSchedule(DateTime local) => {9, 15, 21}.contains(local.hour);
+      DateTime localTime(Map<String, dynamic> r) =>
+          DateTime.parse(r['scheduled_time'] as String).toLocal();
+      Future<void> expectClean(String when) async {
+        final rows = h.server.dosesOf(p.prescriptionId).toList();
+        final stray = [
+          for (final r in rows)
+            if (r['deleted_at'] == null && !onSchedule(localTime(r))) r['id'],
+        ];
+        expect(stray, isEmpty, reason: 'live doses at the old times, $when');
+        for (final r in rows.where((r) => !onSchedule(localTime(r)))) {
+          expect(
+            r['edited_at'],
+            startsWith('1970-01-01'),
+            reason: 'a dropped dose is the app\'s own delete, $when',
+          );
+        }
+      }
+
+      await expectClean('after A\'s cycle');
+      await h.a.appSync();
+      await expectClean('after A\'s app sync');
+      await h.b.appSync(ensure: false);
+      final onA = await h.a.slots(p.prescriptionId);
+      expect(onA, isNotEmpty);
+      expect(
+        {
+          for (final r in h.server.dosesOf(p.prescriptionId))
+            if (r['deleted_at'] == null) r['id'],
+        },
+        {for (final s in onA) s.split('@').first},
+        reason: 'the server holds exactly A\'s doses',
+      );
+      for (final device in [h.a, h.b]) {
+        final slots = await device.slots(p.prescriptionId);
+        expect(slots, onA, reason: device.name);
+        expect(
+          slots.where((s) => !onSchedule(DateTime.parse(s.split('@').last))),
+          isEmpty,
+          reason: device.name,
+        );
+        final reminders = await device.remindersFor(p.prescriptionId);
+        expect(reminders, isNotEmpty, reason: device.name);
+        expect(
+          reminders.values.where((t) => !onSchedule(t)),
+          isEmpty,
+          reason: '${device.name}: no reminder at an old time',
+        );
+      }
+      // Nothing left to send, and nothing moves on later rounds.
+      final versions = {
+        for (final r in h.server.dosesOf(p.prescriptionId))
+          r['id']: r['row_version'],
+      };
+      for (var i = 0; i < 2; i++) {
+        await h.a.appSync();
+        await h.b.appSync();
+      }
+      await expectClean('after two more rounds');
+      expect({
+        for (final r in h.server.dosesOf(p.prescriptionId))
+          r['id']: r['row_version'],
+      }, versions);
+      for (final device in [h.a, h.b]) {
+        await device.run((db) async {
+          expect(
+            await db.query(
+              'dose_logs',
+              where: 'sync_status != ?',
+              whereArgs: [SyncStatus.synced],
+            ),
+            isEmpty,
+            reason: device.name,
+          );
+        });
+      }
+    });
+
     for (final bTakes in [false, true]) {
       test('a prescription deleted on A while B, offline, '
           '${bTakes ? 'takes a dose' : 'generates the next days'}: the '

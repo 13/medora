@@ -1126,7 +1126,7 @@ Dropped: a prescription or dose whose parent is `pending_delete` here (its delet
   - Our write id: settle (§7.4). A copy the server stored deleted (its parent is deleted there) is deleted here.
   - Another copy: merge with no base, store it as `pending_update` with base = R, and retry once. When that copy is the app's own tombstone of a dose and the local row is a slot generated after it, the merge brings it back and the retry sends `deleted_at: null` with the automatic edit time (§4.6).
   - No row: failure with backoff.
-- **`pending_create` doses:** the existing batch path (100 per request, row-by-row fallback, read-back), now with a write id and `edited_at` per row, adopted through §7.4.
+- **`pending_create` doses:** the existing batch path (100 per request, row-by-row fallback, read-back), now with a write id and `edited_at` per row, adopted through §7.4. The rows are read once, before the first batch goes out, so each batch is stamped in one transaction that stores the write id only where the row is still `pending_create` and reads the row again: a row deleted since (a schedule changed while an earlier batch was on its way drops the doses no server has seen at once) is left out, and every other row is sent as it is now (cycle review I-1).
 - **`pending_update`:**
   1. If base is null: fetch R. If there is no row, go through the create path. Otherwise merge with no base and take R as the base.
   2. `changes = changedColumns(base, L)`, with the local and the base's column times (a change back to the base's value is sent). If empty, settle as `synced`.
