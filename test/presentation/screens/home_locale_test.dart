@@ -20,6 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
@@ -32,6 +33,7 @@ import '../../helpers/fonts.dart';
 import '../../helpers/pump_app.dart';
 import '../../helpers/seed.dart';
 import '../../helpers/test_database.dart';
+import '../../helpers/text_fit.dart';
 
 void main() {
   final now = DateTime(2026, 3, 4, 15);
@@ -203,7 +205,18 @@ void main() {
       )..layout();
       final widestWord = painter.minIntrinsicWidth;
       painter.dispose();
-      if (widestWord > box + 0.5) {
+      // An ellipsized or line-capped label hits its maxLines without any
+      // single word being too wide, so the longest-word check alone let
+      // three of the four cut section headings pass in silence.
+      if (paragraph.didExceedMaxLines) {
+        final label = paragraph.text.toPlainText();
+        clipped.add(label);
+        if (knownTruncations.containsKey(label)) continue;
+        offenders.add(
+          '"$label" hit its line limit in ${box.toStringAsFixed(1)} dp and '
+          'was cut',
+        );
+      } else if (widestWord > box + 0.5) {
         final label = paragraph.text.toPlainText();
         clipped.add(label);
         if (knownTruncations.containsKey(label)) continue;
@@ -364,25 +377,10 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expectNothingPaintsOutsideViewport(tester);
-    // One label is truncated at this scale, and on purpose. The three that
-    // were pinned here beside it were a real defect in MedicationExpiryTile
-    // - a badge taking the row and starving the medication name to 0 dp -
-    // and they are gone because that tile now caps its badge, not because
-    // the sweep stopped looking. The entry below is pinned with its reason
-    // so the sweep keeps guarding every other label on the page, and so
-    // that repairing it - or deciding it should ellipsize on purpose -
-    // turns this test red. It fits at 1.0x; the numbers are German at
-    // 360 dp, 1.6x.
-    expectNoTextIsClipped(
-      tester,
-      knownTruncations: const {
-        'Aktive Behandlungen':
-            'by design: _SectionHeader wraps its title in an Expanded with '
-            'TextOverflow.ellipsis so the See all button keeps its place. '
-            '163.6 dp for a word that needs 180.6 cuts inside '
-            '"Behandlungen", which is the intended degradation, not a bug.',
-      },
-    );
+    // Nothing is truncated at this scale. "Aktive Behandlungen" used to be
+    // cut inside "Behandlungen" (163.6 dp for 180.6) by a section header
+    // that ellipsized its title; the header now wraps instead.
+    expectNoTextIsClipped(tester);
   });
 
   for (final (lang, twoMore, oneMore) in const [
@@ -444,14 +442,117 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expectNothingPaintsOutsideViewport(tester);
-      expectNoTextIsClipped(
-        tester,
-        knownTruncations: {
-          // See 'the dashboard survives a 1.6x text scale at 360 dp'.
-          if (lang == 'de') 'Aktive Behandlungen': 'by design',
-        },
-      );
+      expectNoTextIsClipped(tester);
     });
+  }
+
+  // The four section headings at large text: whole, on at most two lines,
+  // and each with its "See all" on screen and tappable.
+  for (final lang in const ['de', 'it', 'en']) {
+    for (final scale in const [1.0, 1.3, 1.6, 2.0]) {
+      testWidgets('section headings wrap instead of being cut at 360 dp, '
+          '$lang, ${scale}x', (tester) async {
+        useNarrowPhone(tester);
+        await seedFullDashboard();
+        final errors = <String>[];
+        await pumpMedoraApp(
+          tester,
+          Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(scale)),
+              child: const HomeScreen(),
+            ),
+          ),
+          overrides: await overrides(),
+          locale: Locale(lang),
+        );
+        await tester.pumpAndSettle();
+        // Some card rows overflow at 2.0x (outside the headings, see the
+        // design's deferred list); only the headings are this test's subject.
+        while (true) {
+          final e = tester.takeException();
+          if (e == null) break;
+          errors.add('$e');
+        }
+        if (scale < 2) expect(errors, isEmpty);
+
+        final l10n = lookupAppLocalizations(Locale(lang));
+        final seeAll = find.widgetWithText(TextButton, l10n.seeAll);
+        expect(seeAll, findsNWidgets(3));
+        for (final heading in [
+          l10n.activeTreatments,
+          l10n.expiringOrExpired,
+          l10n.lowStock,
+        ]) {
+          final where = '"$heading" ($lang, ${scale}x)';
+          // Scoped to the header: Italian's stat tile says "Scorte basse" too.
+          final text = find.descendant(
+            of: find.ancestor(
+              of: seeAll.first,
+              matching: find.byType(ListView),
+            ),
+            matching: find.byWidgetPredicate(
+              (w) =>
+                  w is Text &&
+                  w.data == heading &&
+                  w.style?.fontWeight == FontWeight.w600,
+            ),
+          );
+          expect(text, findsOneWidget, reason: where);
+          final paragraph = tester.renderObject<RenderParagraph>(
+            find.descendant(
+              of: text,
+              matching: find.byType(RichText),
+              matchRoot: true,
+            ),
+          );
+          final painter = TextPainter(
+            text: paragraph.text,
+            textDirection: paragraph.textDirection,
+            textScaler: paragraph.textScaler,
+            locale: paragraph.locale,
+          )..layout(maxWidth: paragraph.constraints.maxWidth);
+          addTearDown(painter.dispose);
+          printOnFailure(
+            '$where: box ${paragraph.constraints.maxWidth}, '
+            'lines ${painter.computeLineMetrics().length}, '
+            'longest word ${painter.minIntrinsicWidth}',
+          );
+          expect(paragraph.didExceedMaxLines, isFalse, reason: where);
+          expect(
+            painter.minIntrinsicWidth,
+            lessThanOrEqualTo(paragraph.constraints.maxWidth + 0.5),
+            reason: '$where is broken inside a word',
+          );
+          expect(
+            painter.computeLineMetrics().length,
+            lessThanOrEqualTo(2),
+            reason: '$where takes more than two lines',
+          );
+          final box = tester.getRect(text);
+          expect(box.left, greaterThanOrEqualTo(0), reason: where);
+          expect(box.right, lessThanOrEqualTo(width), reason: where);
+        }
+        for (final e in seeAll.evaluate()) {
+          final button = find.byElementPredicate((x) => x == e);
+          final r = tester.getRect(button);
+          expect(r.left, greaterThanOrEqualTo(0));
+          expect(r.right, lessThanOrEqualTo(width));
+          expect(r.height, greaterThanOrEqualTo(40));
+          final label = measureText(
+            tester,
+            find.descendant(of: button, matching: find.text(l10n.seeAll)),
+          );
+          expect(
+            label.maxIntrinsic,
+            lessThanOrEqualTo(label.maxWidth + 0.5),
+            reason: '"${l10n.seeAll}" is cut ($lang, ${scale}x)',
+          );
+        }
+      });
+    }
   }
 
   testWidgets('dark mode renders the same dashboard, legibly', (tester) async {

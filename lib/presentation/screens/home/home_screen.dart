@@ -558,19 +558,23 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    // Side by side while both fit; otherwise the title takes the full width,
+    // wrapping to a second line, with "See all" below it at the end. A Row
+    // with an ellipsized title cut "Abgelaufen & bald ablaufend" at 1.0x on
+    // a 360 dp phone, and three of the four German and Italian headings at
+    // 1.6x.
+    return OverflowBar(
+      alignment: MainAxisAlignment.spaceBetween,
+      overflowAlignment: OverflowBarAlignment.end,
       children: [
-        // Expanded + ellipsis: at a 2.0x text scale a long section title
-        // and the "See all" button no longer fit side by side.
-        Expanded(
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
+        Text(
+          title,
+          // A backstop only: at 2.0x the longest heading takes two lines.
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         TextButton(onPressed: onSeeAll, child: Text(l10n.seeAll)),
       ],

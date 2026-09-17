@@ -183,7 +183,7 @@ void main() {
     final header = find
         .ancestor(
           of: find.text('Expired & Expiring'),
-          matching: find.byType(Row),
+          matching: find.byType(OverflowBar),
         )
         .first;
     await tester.tap(
