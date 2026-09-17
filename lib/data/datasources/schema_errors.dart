@@ -82,3 +82,22 @@ Future<T> mapMissingColumn<T>(
     rethrow;
   }
 }
+
+/// A Supabase project without the sync v2 migration ([migration]): it has
+/// no `medora_sync_state` function, or one that reports an older schema.
+/// The sync cycle stops before it writes anything.
+class MissingMigrationException implements Exception {
+  const MissingMigrationException({required this.migration, this.cause});
+
+  /// The migration file to apply, relative to the repository root.
+  final String migration;
+
+  /// The server's answer, when there was one.
+  final Object? cause;
+
+  @override
+  String toString() =>
+      'The Supabase project is missing the sync v2 migration. '
+      'Apply $migration to the project, then sync again'
+      '${cause is PostgrestException ? ' (server: ${(cause! as PostgrestException).message})' : ''}.';
+}

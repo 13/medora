@@ -3,12 +3,22 @@ library;
 
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/datasources/pull_page.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/models/prescription_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PrescriptionRemoteDatasource {
-  PrescriptionRemoteDatasource(this._client);
+  PrescriptionRemoteDatasource(SupabaseClient client)
+    : _client = client,
+      rows = PostgrestSyncTable(
+        client,
+        AppConstants.prescriptionsTable,
+        select: '*, medications(name), treatments(name)',
+      );
+
+  /// The `prescriptions` rows (sync v2).
+  final SyncTable rows;
 
   final SupabaseClient _client;
 

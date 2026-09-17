@@ -6,6 +6,8 @@ library;
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/datasources/schema_errors.dart';
+import 'package:medora/data/datasources/stock_remote.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -35,7 +37,21 @@ Future<T> mapMedicationSchemaErrors<T>(Future<T> Function() send) =>
     );
 
 class MedicationRemoteDatasource {
-  MedicationRemoteDatasource(this._client);
+  MedicationRemoteDatasource(SupabaseClient client)
+    : _client = client,
+      rows = PostgrestSyncTable(
+        client,
+        AppConstants.medicationsTable,
+        migration: medicationEanMigration,
+        fallbackColumn: 'ean',
+      ),
+      stock = PostgrestStockRemote(client);
+
+  /// The `medications` rows (sync v2).
+  final SyncTable rows;
+
+  /// `apply_stock_change` (sync v2).
+  final StockRemote stock;
 
   final SupabaseClient _client;
 

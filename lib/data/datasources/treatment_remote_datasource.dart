@@ -4,6 +4,7 @@ library;
 import 'package:medora/core/constants.dart';
 import 'package:medora/data/datasources/pull_page.dart';
 import 'package:medora/data/datasources/schema_errors.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/sync/push_settle.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,7 +14,17 @@ const treatmentSickLeaveMigration =
     'supabase/migrations/20260917000000_treatment_sick_leave.sql';
 
 class TreatmentRemoteDatasource {
-  TreatmentRemoteDatasource(this._client);
+  TreatmentRemoteDatasource(SupabaseClient client)
+    : _client = client,
+      rows = PostgrestSyncTable(
+        client,
+        AppConstants.treatmentsTable,
+        migration: treatmentSickLeaveMigration,
+        fallbackColumn: 'sick_leave_from',
+      );
+
+  /// The `treatments` rows (sync v2).
+  final SyncTable rows;
 
   final SupabaseClient _client;
 

@@ -3,6 +3,8 @@ import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
 import 'package:medora/data/datasources/pull_page.dart';
+import 'package:medora/data/datasources/stock_remote.dart';
+import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/family_member_model.dart';
@@ -191,6 +193,12 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  SyncTable get rows => throw UnimplementedError('sync v2: Task 6');
+
+  @override
+  StockRemote get stock => throw UnimplementedError('sync v2: Task 6');
+
+  @override
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
@@ -218,6 +226,9 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
   final FakeRemoteTable table;
 
   @override
+  SyncTable get rows => throw UnimplementedError('sync v2: Task 6');
+
+  @override
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
 
   @override
@@ -243,6 +254,9 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
   FakePrescriptionRemote(DateTime Function() clock)
     : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
+
+  @override
+  SyncTable get rows => throw UnimplementedError('sync v2: Task 6');
 
   @override
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
@@ -300,6 +314,9 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
 class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   FakeDoseLogRemote(DateTime Function() clock) : table = FakeRemoteTable(clock);
   final FakeRemoteTable table;
+
+  @override
+  SyncTable get rows => throw UnimplementedError('sync v2: Task 6');
 
   @override
   Future<DateTime?> getUpdatedAt(String id) async => table.updatedAt(id);
