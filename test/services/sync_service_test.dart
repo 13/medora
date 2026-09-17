@@ -1328,6 +1328,22 @@ void main() {
       expect((await localRow('medications', 'a'))?['name'], 'A');
     });
 
+    test('force pull counts as the pull repair', () async {
+      SharedPreferences.setMockInitialValues({
+        'sync.last_pull_at.medications': '2026-01-01T00:00:00.000Z',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final h = Harness(cursors: SyncCursorStore(prefs));
+
+      await h.service.forcePull();
+
+      expect(
+        prefs.getInt(SyncCursorStore.pullRepairDoneKey),
+        SyncCursorStore.pullRepairVersion,
+      );
+      expect(prefs.getString('sync.last_pull_at.medications'), isNull);
+    });
+
     test(
       'force pull is fatal, not partial, when a whole table cannot be fetched',
       () async {
@@ -2026,6 +2042,40 @@ void main() {
       final second = (await localRow('medications', 'm-second'))!;
       expect(second['name'], 'second edited');
       expect(second['sync_status'], SyncStatus.synced);
+    });
+
+    test('a row deleted here while its push finds it gone from the server is '
+        'not sent again as new', () async {
+      final h = Harness();
+      h.meds.table.seed(
+        const MedicationModel(id: 'm-lost', name: 'A', quantity: 1).toJson(),
+        updatedAt: h.clock.now().subtract(const Duration(hours: 1)),
+      );
+      await h.service.syncAll();
+      h.service.debugSetStateForTest(SyncState.idle);
+      await MedicationLocalDatasource().upsert(
+        MedicationModel(
+          id: 'm-lost',
+          name: 'B',
+          quantity: 1,
+          updatedAt: h.clock.now(),
+        ),
+        syncStatus: SyncStatus.pendingUpdate,
+      );
+      var held = false;
+      h.meds.table.beforeCall = () async {
+        if (held) return;
+        held = true;
+        // The server lost the row ("delete all data" elsewhere), and the
+        // person deletes it here while the push is on its way.
+        h.meds.table.hardDelete('m-lost');
+        await MedicationLocalDatasource().markDeleted('m-lost');
+      };
+
+      await h.service.syncAll();
+
+      expect(h.meds.table.rows['m-lost']?['deleted_at'], isNotNull);
+      expect(await localRow('medications', 'm-lost'), isNull);
     });
 
     test('an unchanged pushed row takes the server stamp', () async {
@@ -3012,6 +3062,25 @@ void main() {
         await h.cursors.pullKey('dose_logs'),
         PullKey(h.doses.table.rows[ids[999]]!['sync_xid'] as int, ids[999]),
       );
+    });
+
+    test('a project that answers fewer rows than asked is read to the end: '
+        'only an empty page ends a table', () async {
+      final h = Harness();
+      h.core.rowCap = 250;
+      final ids = await seedRemoteDoses(h, 600, (_) => h.clock.now());
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures, isEmpty);
+      expect(report.pulled, 600);
+      expect(await localDoseCount(), 600);
+      for (final id in [ids.first, ids.last]) {
+        expect(await localRow('dose_logs', id), isNotNull);
+      }
+      // 250, 250, 100, and the empty page.
+      expect(h.doses.table.pageCalls, hasLength(4));
+      expect(await h.cursors.pullKey('dose_logs'), PullKey(h.core.horizon));
     });
 
     test('a key above the server horizon (a restored server) starts the '

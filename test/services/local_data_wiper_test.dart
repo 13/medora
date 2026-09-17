@@ -142,6 +142,7 @@ void main() {
       'prefs', () async {
     SharedPreferences.setMockInitialValues({
       'sync.last_pull_at.medications': '2026-01-01T00:00:00.000Z',
+      'sync.pull_key.dose_logs': '1234|d1',
       'theme_mode': 'dark',
     });
     final prefs = await SharedPreferences.getInstance();
@@ -160,6 +161,10 @@ void main() {
     ).wipe();
 
     expect(prefs.getString('${SyncCursorStore.keyPrefix}medications'), isNull);
+    expect(
+      prefs.getString('${SyncCursorStore.pullKeyPrefix}dose_logs'),
+      isNull,
+    );
     expect(await failures.listAll(), isEmpty);
     expect(
       prefs.getKeys().where((k) => k.startsWith(SyncFailureStore.keyPrefix)),
