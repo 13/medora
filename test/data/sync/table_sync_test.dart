@@ -507,11 +507,23 @@ void main() {
       await createdAndRestocked();
       await change('taken', -1);
       // The same id reached the server from elsewhere between the read and
-      // the insert (a restore on two devices).
+      // the insert (a restore on two devices), and a count is typed here
+      // meanwhile.
       var held = false;
       meds.beforeCall = () async {
         if (held) return;
         held = true;
+        final db = await AppDatabase.instance.database;
+        await StockOutboxLocalDatasource.enqueue(
+          db,
+          StockOp(
+            opId: 'count',
+            medicationId: 'm1',
+            setTo: 12,
+            createdAt: DateTime.utc(2026, 3, 5, 11, 30),
+          ),
+        );
+        await db.update('medications', {'quantity': 12});
         core.insertIfAbsent('medications', [
           {
             'id': 'm1',
@@ -527,9 +539,10 @@ void main() {
       await medSync.pushRow(await med(), userId: 'u');
 
       expect(meds.get('m1')!['quantity'], 20);
-      expect(await waiting(), ['restock', 'taken']);
-      // The server's 20 with the two changes on top.
-      expect((await med())['quantity'], 29);
+      // Back in the order they were made: the count still comes last.
+      expect(await waiting(), ['restock', 'taken', 'count']);
+      // The server's 20 with the three changes on top.
+      expect((await med())['quantity'], 12);
     });
 
     test('a medication removed from the server is created again with its '

@@ -3880,6 +3880,27 @@ void main() {
       expect(await localQuantity('m1'), 8);
     });
 
+    test('a stock request that never answers fails like a network error, '
+        'and the change waits', () async {
+      final h = Harness(requestTimeout: const Duration(milliseconds: 50));
+      h.meds.table.seed(
+        const MedicationModel(id: 'm1', name: 'Ibu', quantity: 10).toJson(),
+      );
+      await h.service.syncAll();
+      await repo(h).updateQuantity('m1', -1);
+      final never = Completer<void>();
+      h.meds.stock.beforeCall = (_) => never.future;
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.failures.map((f) => (f.table, f.id)), [
+        ('stock_outbox', 'op0'),
+      ]);
+      expect(report.failures.single.error, contains('TimeoutException'));
+      expect(await waiting(), ['op0']);
+      expect(h.core.ledger, isEmpty);
+    });
+
     test('a change for a medication gone from the server is dropped, with no '
         'failure', () async {
       final h = await inSync();

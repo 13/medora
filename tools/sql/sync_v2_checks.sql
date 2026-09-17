@@ -534,6 +534,10 @@ select apply_stock_change('acacacac-0000-0000-0000-000000000001', 'm1', -1, null
 do $$ begin
   assert pg_temp.moved('m1'), 'stock: a change moves sync_xid';
   assert (select quantity from medications where id = 'm1') = 19, 'stock: 20 minus 1';
+  -- A device that lost the answer finds its change by this write id.
+  assert (select write_id = 'acacacac-0000-0000-0000-000000000001'
+            from medications where id = 'm1'),
+    'stock: the row carries the op id as its write id';
   assert (select field_edited_at from medications where id = 'm1') = (select m from m1_before)
      and (select m from m1_before) <> '{}',
     'stock: the edit-time map is unchanged';

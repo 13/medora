@@ -157,10 +157,14 @@ void main() {
       'quantity': 7,
       'row_version': 2,
     });
+    // The row carries the op id as its write id (a device reads a lost
+    // answer's change from it); a duplicate writes nothing.
+    expect(core.rowsOf('medications')['m1']!['write_id'], 'a');
     expect(core.applyStockChange(opId: 'a', medicationId: 'm1', delta: -3), {
       'status': 'duplicate',
       'quantity': 7,
     });
+    expect(core.rowsOf('medications')['m1']!['row_version'], 2);
     expect(
       core.applyStockChange(
         opId: 'b',
