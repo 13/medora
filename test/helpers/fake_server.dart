@@ -17,6 +17,12 @@
 /// [FakeServerCore], so the server rules live in one place. Keep it in step
 /// with `tools/sql/sync_v2_checks.sql`; `fake_server_parity_test.dart`
 /// checks the same writes against the migration itself.
+///
+/// Every fake table and stock remote reaches the core one of two ways
+/// ([FakeTransport]): straight, or through the app's real PostgREST
+/// datasources and [FakePostgrest]. The failure knobs work the same either
+/// way. `--dart-define=MEDORA_FAKE_TRANSPORT=http` switches the default, so
+/// the whole suite can run over HTTP.
 library;
 
 import 'dart:async';
@@ -27,6 +33,23 @@ import 'package:medora/data/datasources/stock_remote.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/sync_table.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'fake_postgrest.dart';
+
+/// How a fake table reaches [FakeServerCore].
+enum FakeTransport {
+  /// Method calls on the core.
+  dart,
+
+  /// The app's PostgREST datasources, answered by [FakePostgrest].
+  http,
+}
+
+/// The transport a fake uses unless a test names one.
+const FakeTransport defaultFakeTransport =
+    String.fromEnvironment('MEDORA_FAKE_TRANSPORT') == 'http'
+    ? FakeTransport.http
+    : FakeTransport.dart;
 
 final _weakCeiling = DateTime.utc(1970, 1, 2);
 final _epoch = DateTime.utc(1970);
@@ -432,7 +455,9 @@ class FakeServerCore {
     for (final key in keys) {
       if (!columns.containsKey(key)) {
         throw PostgrestException(
-          message: "Could not find the '$key' column of '$table'",
+          message:
+              "Could not find the '$key' column of '$table' in the schema "
+              'cache',
           code: 'PGRST204',
         );
       }
@@ -726,10 +751,17 @@ class FakeTransaction {
 /// [SyncTable] over [FakeServerCore], with the failure knobs the sync tests
 /// use.
 class FakeSyncTable implements SyncTable {
-  FakeSyncTable(this.core, this.table);
+  FakeSyncTable(this.core, this.table, {FakeTransport? transport})
+    : wire = (transport ?? defaultFakeTransport) == FakeTransport.http
+          ? FakePostgrest.of(core).table(table)
+          : null;
 
   final FakeServerCore core;
   final String table;
+
+  /// The real PostgREST table the requests go through, in
+  /// [FakeTransport.http]; null when they go straight to [core].
+  final SyncTable? wire;
 
   /// Ids whose writes throw, as a server that refuses them.
   final Set<String> failIds = {};
@@ -787,6 +819,8 @@ class FakeSyncTable implements SyncTable {
     onPage?.call(pageCalls.length, after);
     final failure = throwOnFetch;
     if (failure != null) throw failure;
+    final http = wire;
+    if (http != null) return http.page(after: after, horizon: horizon);
     return core.page(
       table,
       horizon: horizon,
@@ -801,7 +835,8 @@ class FakeSyncTable implements SyncTable {
     if (failGetIds.contains(id)) {
       throw StateError('remote get failure for $id');
     }
-    return core.fetch(table, id);
+    final http = wire;
+    return http != null ? http.fetch(id) : core.fetch(table, id);
   }
 
   @override
@@ -812,7 +847,8 @@ class FakeSyncTable implements SyncTable {
         throw StateError('remote get failure for $id');
       }
     }
-    return core.fetchMany(table, ids);
+    final http = wire;
+    return http != null ? http.fetchMany(ids) : core.fetchMany(table, ids);
   }
 
   /// Every bulk write: its ids and the conditions it carried.
@@ -833,14 +869,23 @@ class FakeSyncTable implements SyncTable {
     for (final _ in ids) {
       sent.add(Map.of(changes));
     }
-    final written = core.patchMany(
-      table,
-      ids,
-      Map<String, dynamic>.of(changes),
-      ifVersion: ifVersion,
-      ifStatus: ifStatus,
-      ifLive: ifLive,
-    );
+    final http = wire;
+    final written = http != null
+        ? await http.patchMany(
+            ids,
+            changes,
+            ifVersion: ifVersion,
+            ifStatus: ifStatus,
+            ifLive: ifLive,
+          )
+        : core.patchMany(
+            table,
+            ids,
+            Map<String, dynamic>.of(changes),
+            ifVersion: ifVersion,
+            ifStatus: ifStatus,
+            ifLive: ifLive,
+          );
     ids.forEach(_maybeLose);
     return written;
   }
@@ -856,14 +901,23 @@ class FakeSyncTable implements SyncTable {
     await beforeCall?.call();
     _guard(id);
     sent.add(Map.of(changes));
-    final written = core.patch(
-      table,
-      id,
-      Map<String, dynamic>.of(changes),
-      ifVersion: ifVersion,
-      ifStatus: ifStatus,
-      ifLive: ifLive,
-    );
+    final http = wire;
+    final written = http != null
+        ? await http.patch(
+            id,
+            changes,
+            ifVersion: ifVersion,
+            ifStatus: ifStatus,
+            ifLive: ifLive,
+          )
+        : core.patch(
+            table,
+            id,
+            Map<String, dynamic>.of(changes),
+            ifVersion: ifVersion,
+            ifStatus: ifStatus,
+            ifLive: ifLive,
+          );
     _maybeLose(id);
     return written;
   }
@@ -883,7 +937,12 @@ class FakeSyncTable implements SyncTable {
     }
     insertBatches.add(rows.length);
     sent.addAll(rows.map(Map.of));
-    core.insertIfAbsent(table, [for (final r in rows) Map.of(r)]);
+    final http = wire;
+    if (http != null) {
+      await http.insertIfAbsent(rows);
+    } else {
+      core.insertIfAbsent(table, [for (final r in rows) Map.of(r)]);
+    }
     for (final r in rows) {
       _maybeLose(r['id']! as String);
     }
@@ -921,9 +980,15 @@ class FakeSyncTable implements SyncTable {
 
 /// [StockRemote] over [FakeServerCore].
 class FakeStockRemote implements StockRemote {
-  FakeStockRemote(this.core);
+  FakeStockRemote(this.core, {FakeTransport? transport})
+    : wire = (transport ?? defaultFakeTransport) == FakeTransport.http
+          ? FakePostgrest.of(core).stock()
+          : null;
 
   final FakeServerCore core;
+
+  /// `PostgrestStockRemote` over [FakePostgrest], in [FakeTransport.http].
+  final StockRemote? wire;
 
   /// How many of the next changes land with their answer lost.
   int loseNextAnswers = 0;
@@ -946,17 +1011,22 @@ class FakeStockRemote implements StockRemote {
       failNextRequests--;
       throw StateError('stock change ${op.opId} did not reach the server');
     }
-    final json = core.applyStockChange(
-      opId: op.opId,
-      medicationId: op.medicationId,
-      delta: op.delta,
-      setTo: op.setTo,
-    );
+    final http = wire;
+    final result = http != null
+        ? await http.apply(op)
+        : StockChangeResult.fromJson(
+            core.applyStockChange(
+              opId: op.opId,
+              medicationId: op.medicationId,
+              delta: op.delta,
+              setTo: op.setTo,
+            ),
+          );
     if (loseNextAnswers > 0) {
       loseNextAnswers--;
       throw TimeoutException('answer lost for stock change ${op.opId}');
     }
-    return StockChangeResult.fromJson(json);
+    return result;
   }
 }
 

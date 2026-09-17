@@ -1,5 +1,7 @@
 /// The fake remote datasources: thin views of one [FakeServerCore]
-/// (`fake_server.dart`), which models the server rules.
+/// (`fake_server.dart`), which models the server rules. With
+/// [FakeTransport.http] their requests go through the app's PostgREST
+/// datasources and [FakePostgrest].
 library;
 
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -13,6 +15,7 @@ import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
+import 'fake_postgrest.dart';
 import 'fake_server.dart';
 
 export 'fake_server.dart';
@@ -20,23 +23,37 @@ export 'fake_server.dart';
 /// One fake Supabase project: the shared core and a datasource per table.
 class FakeServer {
   /// [medicationRows], [treatmentRows] and [doseRows] build a misbehaving
-  /// table in place of the plain one.
+  /// table in place of the plain one; such a table picks its own transport.
   FakeServer(
     DateTime Function() clock, {
     String currentUserId = 'user-a',
     FakeSyncTable Function(FakeServerCore core)? medicationRows,
     FakeSyncTable Function(FakeServerCore core)? treatmentRows,
     FakeSyncTable Function(FakeServerCore core)? doseRows,
+    this.transport = defaultFakeTransport,
   }) : core = FakeServerCore(clock) {
-    meds = FakeMedicationRemote(core, rows: medicationRows?.call(core));
-    treatments = FakeTreatmentRemote(core, rows: treatmentRows?.call(core));
-    prescriptions = FakePrescriptionRemote(core);
-    doses = FakeDoseLogRemote(core, rows: doseRows?.call(core));
+    meds = FakeMedicationRemote(
+      core,
+      rows: medicationRows?.call(core),
+      transport: transport,
+    );
+    treatments = FakeTreatmentRemote(
+      core,
+      rows: treatmentRows?.call(core),
+      transport: transport,
+    );
+    prescriptions = FakePrescriptionRemote(core, transport: transport);
+    doses = FakeDoseLogRemote(
+      core,
+      rows: doseRows?.call(core),
+      transport: transport,
+    );
     families = FakeFamilyRemote(clock, currentUserId: currentUserId);
-    state = FakeSyncState(core);
+    state = FakeSyncState(core, transport: transport);
   }
 
   final FakeServerCore core;
+  final FakeTransport transport;
   late final FakeMedicationRemote meds;
   late final FakeTreatmentRemote treatments;
   late final FakePrescriptionRemote prescriptions;
@@ -48,9 +65,12 @@ class FakeServer {
 class FakeMedicationRemote implements MedicationRemoteDatasource {
   /// [rows] replaces the plain table, for a test that needs a server that
   /// misbehaves.
-  FakeMedicationRemote(FakeServerCore core, {FakeSyncTable? rows})
-    : rows = rows ?? FakeSyncTable(core, 'medications'),
-      stock = FakeStockRemote(core);
+  FakeMedicationRemote(
+    FakeServerCore core, {
+    FakeSyncTable? rows,
+    FakeTransport? transport,
+  }) : rows = rows ?? FakeSyncTable(core, 'medications', transport: transport),
+       stock = FakeStockRemote(core, transport: transport);
 
   @override
   final FakeSyncTable rows;
@@ -62,8 +82,11 @@ class FakeMedicationRemote implements MedicationRemoteDatasource {
 }
 
 class FakeTreatmentRemote implements TreatmentRemoteDatasource {
-  FakeTreatmentRemote(FakeServerCore core, {FakeSyncTable? rows})
-    : rows = rows ?? FakeSyncTable(core, 'treatments');
+  FakeTreatmentRemote(
+    FakeServerCore core, {
+    FakeSyncTable? rows,
+    FakeTransport? transport,
+  }) : rows = rows ?? FakeSyncTable(core, 'treatments', transport: transport);
 
   @override
   final FakeSyncTable rows;
@@ -71,8 +94,8 @@ class FakeTreatmentRemote implements TreatmentRemoteDatasource {
 }
 
 class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
-  FakePrescriptionRemote(FakeServerCore core)
-    : rows = FakePrescriptionTable(core);
+  FakePrescriptionRemote(FakeServerCore core, {FakeTransport? transport})
+    : rows = FakePrescriptionTable(core, transport: transport);
 
   @override
   final FakePrescriptionTable rows;
@@ -95,7 +118,8 @@ class FakePrescriptionRemote implements PrescriptionRemoteDatasource {
 
 /// Stores `start_time` the way a `timestamptz` column does.
 class FakePrescriptionTable extends FakeSyncTable {
-  FakePrescriptionTable(FakeServerCore core) : super(core, 'prescriptions');
+  FakePrescriptionTable(FakeServerCore core, {super.transport})
+    : super(core, 'prescriptions');
 
   static Map<String, Object?> _asStored(Map<String, Object?> json) => {
     ...json,
@@ -139,8 +163,11 @@ class FakePrescriptionTable extends FakeSyncTable {
 }
 
 class FakeDoseLogRemote implements DoseLogRemoteDatasource {
-  FakeDoseLogRemote(FakeServerCore core, {FakeSyncTable? rows})
-    : rows = rows ?? FakeSyncTable(core, 'dose_logs');
+  FakeDoseLogRemote(
+    FakeServerCore core, {
+    FakeSyncTable? rows,
+    FakeTransport? transport,
+  }) : rows = rows ?? FakeSyncTable(core, 'dose_logs', transport: transport);
 
   @override
   final FakeSyncTable rows;
@@ -148,15 +175,24 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
 }
 
 class FakeSyncState implements SyncStateRemoteDatasource {
-  FakeSyncState(this.core);
+  FakeSyncState(this.core, {FakeTransport? transport})
+    : _http = (transport ?? defaultFakeTransport) == FakeTransport.http
+          ? FakePostgrest.of(core)
+          : null;
 
   final FakeServerCore core;
+  final FakePostgrest? _http;
 
   /// False: the project lacks the sync v2 migration.
   bool migrated = true;
 
   @override
   Future<SyncServerState> read() async {
+    final http = _http;
+    if (http != null) {
+      http.migrated = migrated;
+      return http.state.read();
+    }
     if (!migrated) {
       throw const MissingMigrationException(
         migration: syncV2Migration,

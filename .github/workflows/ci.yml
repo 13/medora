@@ -35,6 +35,11 @@ jobs:
         run: flutter test
         env:
           TZ: Europe/Rome
+      # The same suite once more, with every fake table reached through the
+      # app's real PostgREST datasources and a fake PostgREST that keeps the
+      # server rules (test/helpers/fake_postgrest.dart).
+      - name: flutter test (through the real request code)
+        run: flutter test --dart-define=MEDORA_FAKE_TRANSPORT=http
 
   supabase-sql:
     runs-on: ubuntu-latest
