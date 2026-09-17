@@ -98,6 +98,18 @@ abstract interface class SyncTable {
     bool ifLive = false,
   });
 
+  /// Updates every row of [ids] with the same [changes], in one statement,
+  /// where the row is still at [ifVersion] (when set), `status` equals
+  /// [ifStatus] (when set) and, with [ifLive], it is not deleted. Returns
+  /// the rows as written; an id that matched nothing is absent.
+  Future<List<Map<String, dynamic>>> patchMany(
+    List<String> ids,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  });
+
   /// Inserts [rows], leaving every id the server already has untouched
   /// (`ON CONFLICT (id) DO NOTHING`). Every row must have the same keys.
   Future<void> insertIfAbsent(List<Map<String, Object?>> rows);
@@ -184,6 +196,24 @@ class PostgrestSyncTable implements SyncTable {
       if (ifLive) query = query.isFilter('deleted_at', null);
       final rows = await query.select(_select);
       return rows.isEmpty ? null : rows.first;
+    });
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> patchMany(
+    List<String> ids,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    if (ids.isEmpty) return const [];
+    return _write(() async {
+      var query = _client.from(table).update(changes).inFilter('id', ids);
+      if (ifVersion != null) query = query.eq('row_version', ifVersion);
+      if (ifStatus != null) query = query.eq('status', ifStatus);
+      if (ifLive) query = query.isFilter('deleted_at', null);
+      return query.select(_select);
     });
   }
 

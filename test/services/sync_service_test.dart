@@ -2449,11 +2449,10 @@ void main() {
       expect(await syncStatuses(ids), everyElement(SyncStatus.pendingCreate));
       // The insert did land; another device then took the first dose.
       expect(remote.rows, hasLength(ids.length));
-      remote.rows[ids.first] = {
-        ...remote.rows[ids.first]!,
+      remote.editFromOtherDevice(ids.first, {
         'status': 'taken',
-        'updated_at': h.clock.now().toIso8601String(),
-      };
+        'taken_time': h.clock.now().toIso8601String(),
+      }, editedAt: h.clock.now());
 
       remote.hang!.complete();
       remote.hang = null;

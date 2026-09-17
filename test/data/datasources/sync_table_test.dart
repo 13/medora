@@ -102,6 +102,39 @@ void main() {
       },
     );
 
+    test('a bulk update names every id and each condition in one request, '
+        'and answers the rows it wrote', () async {
+      final rows =
+          await doses(
+            answering([
+              {'id': 'd2', 'row_version': 2},
+            ]),
+          ).patchMany(
+            ['d1', 'd2'],
+            {'status': 'missed'},
+            ifVersion: 1,
+            ifStatus: 'pending',
+            ifLive: true,
+          );
+      expect(seen.single.method, 'PATCH');
+      expect(
+        sent(0),
+        'http://supabase.test/rest/v1/dose_logs?id=in.("d1","d2")'
+        '&row_version=eq.1&status=eq.pending&deleted_at=is.null&$doseSelect',
+      );
+      expect(seen.single.headers['Prefer'], 'return=representation');
+      expect(jsonDecode(seen.single.body), {'status': 'missed'});
+      expect(rows, [
+        {'id': 'd2', 'row_version': 2},
+      ]);
+      // Nothing to write: no request.
+      expect(
+        await doses(answering([])).patchMany([], {'status': 'x'}),
+        isEmpty,
+      );
+      expect(seen, isEmpty);
+    });
+
     test('a conditional update that matched nothing answers null', () async {
       expect(
         await doses(

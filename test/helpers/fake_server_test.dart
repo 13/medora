@@ -134,6 +134,104 @@ void main() {
     );
   });
 
+  group('bulk writes (cycle review I-5), as tools/sql/sync_v2_checks.sql '
+      'checks them', () {
+    const auto = {'at': '1970-01-01T00:00:00.000Z', 'auto': true};
+    setUp(() {
+      core.insertIfAbsent('dose_logs', [
+        for (var n = 1; n <= 5; n++)
+          {
+            'id': 'bk-d$n',
+            'prescription_id': 'bk-p',
+            'scheduled_time': '2026-09-1${n}T08:00:00.000Z',
+            'updated_at': '1970-01-01T00:00:00.000Z',
+            'write_id': 'gen',
+            'edited_at': '1970-01-01T00:00:00.000Z',
+          },
+      ]);
+      core.patch('dose_logs', 'bk-d2', {
+        'status': 'taken',
+        'write_id': 'take',
+        'edited_at': _iso(now),
+      });
+      core.patch('dose_logs', 'bk-d3', {
+        'status': 'missed',
+        'write_id': 'other-sweep',
+        'edited_at': '1970-01-01T00:00:00.000Z',
+        'field_edited_at': {'status': auto},
+      });
+      core.patch(
+        'dose_logs',
+        'bk-d4',
+        {
+          'deleted_at': _iso(now),
+          'write_id': 'drop',
+          'edited_at': '1970-01-01T00:00:00.000Z',
+        },
+        ifStatus: 'pending',
+        ifLive: true,
+      );
+    });
+
+    Map<String, dynamic> dose(String id) => core.rowsOf('dose_logs')[id]!;
+
+    test('a sweep writes only live pending doses at the version, in one '
+        'transaction, as the app\'s own', () {
+      final before = {
+        for (final id in ['bk-d2', 'bk-d3', 'bk-d4']) id: Map.of(dose(id)),
+      };
+      final requests = core.requests.length;
+      final written = core.patchMany(
+        'dose_logs',
+        ['bk-d1', 'bk-d2', 'bk-d3', 'bk-d4', 'bk-d9'],
+        {
+          'status': 'missed',
+          'write_id': 'bulk',
+          'edited_at': '1970-01-01T00:00:00.000Z',
+          'field_edited_at': {'status': auto},
+        },
+        ifVersion: 1,
+        ifStatus: 'pending',
+        ifLive: true,
+      );
+      expect(core.requests.sublist(requests), ['dose_logs:patchMany']);
+      expect(written.map((r) => r['id']), ['bk-d1']);
+      expect(dose('bk-d1')['status'], 'missed');
+      expect(dose('bk-d1')['row_version'], 2);
+      expect(dose('bk-d1')['updated_at'], '1970-01-01T00:00:00.000Z');
+      expect(dose('bk-d1')['edited_at'], '1970-01-01T00:00:00.000Z');
+      expect((dose('bk-d1')['field_edited_at'] as Map)['status'], auto);
+      for (final MapEntry(key: id, value: row) in before.entries) {
+        expect(dose(id), row, reason: id);
+      }
+    });
+
+    test('rows written together share one transaction id', () {
+      final written = core.patchMany(
+        'dose_logs',
+        ['bk-d1', 'bk-d5'],
+        {
+          'deleted_at': _iso(now),
+          'write_id': 'bulk-drop',
+          'edited_at': '1970-01-01T00:00:00.000Z',
+        },
+        ifStatus: 'pending',
+        ifLive: true,
+      );
+      expect(written, hasLength(2));
+      expect(dose('bk-d1')['sync_xid'], dose('bk-d5')['sync_xid']);
+      expect(dose('bk-d5')['updated_at'], '1970-01-01T00:00:00.000Z');
+    });
+
+    test('a read of many rows is one request, and leaves out the ids the '
+        'server lacks', () {
+      final requests = core.requests.length;
+      final rows = core.fetchMany('dose_logs', ['bk-d1', 'nope', 'bk-d4']);
+      expect(rows.map((r) => r['id']), ['bk-d1', 'bk-d4']);
+      expect(core.requests.sublist(requests), ['dose_logs:fetchMany']);
+    });
+  });
+
   test('the horizon holds back a transaction still open', () {
     final slow = core.begin();
     slow.insert('medications', {'id': 'slow', 'name': 'Slow'});

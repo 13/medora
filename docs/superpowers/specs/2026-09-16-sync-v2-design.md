@@ -337,7 +337,7 @@ The app's own deletes are:
 - **A person's delete.** An unconditional `PATCH {deleted_at, write_id, edited_at}`; the local row is then hard-deleted.
   - If the server has no such row and the row still carries an unresolved `sync_write_id` (its create may land late), the client inserts a **tombstone row** (the full row with `deleted_at`, insert-if-absent). A late insert then does nothing, which fixes hardening m-3.
 - **An automatic dose delete** (a dose dropped by a schedule change, S-6):
-  - It sends `PATCH …?id=eq.X&status=eq.pending&deleted_at=is.null` with `deleted_at`, `edited_at = 1970`, and a write id.
+  - It sends `PATCH …?id=eq.X&status=eq.pending&deleted_at=is.null` with `deleted_at`, `edited_at = 1970`, and a write id. The cycle sends these in bulk, 100 ids per request (`id=in.(…)`) with one write id; the doses a request did not delete are read in one request and handled as below, or left to the one-by-one push (still live and pending, or carrying an undo).
   - If a row matched, the local row is hard-deleted.
   - If none matched, the client fetches the row:
     - gone or already deleted: the local row is hard-deleted;
@@ -372,7 +372,8 @@ The app's own deletes are:
   - `markOverduePendingAsMissed` sets `status = missed` and `edited_at = 1970` on `synced` rows and makes them `pending_update`.
     - Rows already `pending_update` are still skipped (I-B).
     - `pending_create` rows keep their status.
-  - The push is conditional on `sync_version`.
+  - The push is conditional on `sync_version`. It goes out in bulk (cycle review I-5): one `PATCH …?id=in.(…)&row_version=eq.V&status=eq.pending&deleted_at=is.null` per version and 100 doses, with `status = missed`, one write id for the request, `edited_at = 1970` and `status` marked automatic. A dose is sent this way only when its sole change since its base is that automatic status, from pending, at a known version, with no unanswered write. The doses the request did not write are read in one request and merged (below); what is still pending then goes out one by one. The request is conditional per dose exactly as the one-by-one push is, so a change made elsewhere is never overwritten.
+  - **A "missed" the server already has is not written again:** the status filter leaves it out, its version stays, and the read-back settles the local copy as the same value. A second device that swept the same doses offline costs two requests per 100 doses, not two per dose.
   - **If the server row moved** (someone took the dose), the merge keeps the take (real beats automatic) and the local row settles as `taken`.
   - **If it did not**, the server stores "missed" and keeps `updated_at`, so 0.3.0 devices do not see it and compute the same result themselves.
   - `isAutomaticallyMissedCopyOf` and its pull guard are removed, because the merge covers them.
@@ -1048,7 +1049,7 @@ CREATE INDEX idx_local_stock_outbox_med ON stock_outbox(medication_id, seq);
 
 **Other touch points:**
 
-- `LocalUploadMarker.markAllForUpload` also clears `sync_version`, `sync_base` and `sync_write_id`, because the rows belong to a new account.
+- `LocalUploadMarker.markAllForUpload` also clears `sync_version`, `sync_base` and `sync_write_id`, because the rows belong to a new account. The next cycle reads their server copies in bulk (§7.3).
 - `AppDatabase.clearAllData` and `LocalDataWiper` also clear `stock_outbox`.
 - `TreatmentRepositoryImpl.updateTreatment` refuses a row that is `pending_delete`, as the medication repository already does.
 
@@ -1067,7 +1068,10 @@ CREATE INDEX idx_local_stock_outbox_med ON stock_outbox(medication_id, seq);
    - treatments;
    - prescriptions;
    - new dose logs (batched);
+   - the app's own dose changes (in bulk: dropped doses, then overdue doses marked missed);
    - the other dose logs.
+
+   Before a table's rows go out, the rows that need a server copy first are read in bulk (§7.3).
 4. **Pull** every table with `horizon` (§7.2).
 5. If `repairing` and every table was fetched, `finishPullRepair()`.
 
@@ -1120,6 +1124,8 @@ Dropped: a prescription or dose whose parent is `pending_delete` here (its delet
 
 - If R's write id equals it: adopt R as the base, then continue with whatever still differs, or settle as `synced`.
 - Otherwise: clear the id and continue.
+
+**Read in bulk first (cycle review I-4).** Before a table's pending rows go out, the cycle reads, 100 ids per request (`fetchMany`), every `pending_create` or `pending_update` row that has a `sync_write_id`, and every `pending_update` row with no known version (a sign-in marks every row so, and an upgrade leaves 0.3.0's pending rows so). Each copy is applied as the steps below would one by one: its own write is adopted, a write id the copy does not carry is cleared, a copy is merged into a row with no base. An update the server lacks becomes `pending_create` (meta cleared), so a dose joins the batch of new doses and any other row is inserted without a second read. Doses are read before the batch of new doses. A row whose read failed is backed off for this cycle. Signing in again with a year of doses (730 per prescription) costs one read per 100 rows and one pull, not one read per row.
 
 **Then, by status:**
 
@@ -1301,7 +1307,7 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - `row_version`, the write-id rule, `edited_at` normalisation and capping;
   - the per-column map: sent entries for the changed columns only, the cap, the automatic flag, never going back, the fill, and legacy writes stamped on arrival;
   - the `updated_at` rules (automatic updates keep it, real inserts get `now()`);
-  - guarded filters, hard deletes with their cascade, and the ledger with duplicate and gone;
+  - guarded filters, bulk updates (`patchMany`, one transaction) and bulk reads (`fetchMany`, one request), hard deletes with their cascade, and the ledger with duplicate and gone;
   - `max_rows` = 1000 by default (`rowCap`); a test sets it to 250 to prove a pull ends only on an empty page.
 
   The Dart-level fakes (`FakeRemoteTable`, `Fake*Remote`, `FakeSyncState`) are thin views of it. They keep today's knobs (`failIds`, `throwOnFetch`, `beforeCall`, `rowCap`, `pageCalls`, `seed`, `upsert` as a 0.3.0 write).
@@ -1330,6 +1336,8 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - deletes and the rows under them: a slot dropped and generated again (on either device, before or after the drop, and after a person's delete), a take and a generated dose under a prescription deleted elsewhere, a dose pulled under a prescription deleted here, a live orphan on the server, and a 0.3.0 take of a dropped dose. Each ends with a round that changes nothing on the server.
 
   `test/services/multi_device_stock_sync_test.dart` runs the stock through two phones with real repositories and cycles, each case ending with rounds that change nothing: a dose on each phone (both orders), a restock against a dose, a count against a dose (both arrival orders), a lost answer, a medication deleted or removed from the server ("delete all data") while a dose waits, a medication added and restocked offline (also with its insert answer lost), an undone dose, a phone that left cloud mode, a cloud restore, and a 0.3.0 phone's absolute quantity.
+
+  `test/services/sync_request_count_test.dart` counts the requests of a year of doses on two phones: signing in again (with a change made while signed out and a newer one from the other phone), a first sign-in with a year of local doses, the overdue sweep on both phones (a take made first on the other phone wins; the second phone writes nothing), an undo on the other phone against a sweep from an older copy, a schedule change that drops half a year, and upgrade day on two phones. Each ends with a quiet round that writes nothing.
 
   `test/services/multi_device_schedule_sync_test.dart` runs the same through the whole cycle: a schedule changed and changed back (doses and reminders on both devices), and a prescription deleted while the other device, offline, takes a dose or generates more.
 - **Existing suites.** `multi_device_*`, `treatment_sync_test` and `sync_service_test` keep their behavioural expectations. Tests that pin removed v1 mechanics (the stale skip, the create re-send, the 1970 floor, the `updated_at` cursor) are replaced by their v2 equivalents, listed per task.

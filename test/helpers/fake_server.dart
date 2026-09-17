@@ -451,6 +451,30 @@ class FakeServerCore {
     return _update(table, old, changes, xid);
   });
 
+  /// `update … where id in ([ids]) [and row_version = ifVersion] [and
+  /// status = ifStatus] [and deleted_at is null] returning *`: one
+  /// statement, one transaction.
+  List<Map<String, dynamic>> patchMany(
+    String table,
+    List<String> ids,
+    Map<String, dynamic> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) => _request('$table:patchMany', (xid) {
+    _knownColumns(table, changes.keys);
+    final written = <Map<String, dynamic>>[];
+    for (final id in ids) {
+      final old = rowsOf(table)[id];
+      if (old == null) continue;
+      if (ifVersion != null && old['row_version'] != ifVersion) continue;
+      if (ifStatus != null && old['status'] != ifStatus) continue;
+      if (ifLive && old['deleted_at'] != null) continue;
+      written.add(_update(table, old, Map.of(changes), xid));
+    }
+    return written;
+  });
+
   Map<String, dynamic> _update(
     String table,
     Map<String, dynamic> old,
@@ -542,6 +566,15 @@ class FakeServerCore {
     requests.add('$table:fetch');
     final row = rowsOf(table)[id];
     return row == null ? null : Map.of(row);
+  }
+
+  /// `select … where id in ([ids])`: one request.
+  List<Map<String, dynamic>> fetchMany(String table, List<String> ids) {
+    requests.add('$table:fetchMany');
+    return [
+      for (final id in ids)
+        if (rowsOf(table)[id] case final row?) Map.of(row),
+    ];
   }
 
   /// `apply_stock_change(...)`. Like the server, an answer that writes
@@ -714,7 +747,42 @@ class FakeSyncTable implements SyncTable {
   @override
   Future<List<Map<String, dynamic>>> fetchMany(List<String> ids) async {
     await beforeCall?.call();
-    return [for (final id in ids) ?core.fetch(table, id)];
+    for (final id in ids) {
+      if (failGetIds.contains(id)) {
+        throw StateError('remote get failure for $id');
+      }
+    }
+    return core.fetchMany(table, ids);
+  }
+
+  /// Every bulk write: its ids and the conditions it carried.
+  final List<({List<String> ids, int? ifVersion, String? ifStatus})>
+  patchManyCalls = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> patchMany(
+    List<String> ids,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    await beforeCall?.call();
+    ids.forEach(_guard);
+    patchManyCalls.add((ids: ids, ifVersion: ifVersion, ifStatus: ifStatus));
+    for (final _ in ids) {
+      sent.add(Map.of(changes));
+    }
+    final written = core.patchMany(
+      table,
+      ids,
+      Map<String, dynamic>.of(changes),
+      ifVersion: ifVersion,
+      ifStatus: ifStatus,
+      ifLive: ifLive,
+    );
+    ids.forEach(_maybeLose);
+    return written;
   }
 
   @override

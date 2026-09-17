@@ -741,6 +741,302 @@ class TableSync {
     );
   }
 
+  // ── Many rows at once ──────────────────────────────────────
+
+  /// How many rows one bulk request names. Their ids travel in the URL,
+  /// which keeps it well under common URL limits.
+  static const bulkSize = 100;
+
+  /// True when the pending row [row] has to be read from the server before
+  /// it can be pushed: its last write's answer never came
+  /// (`sync_write_id`), or it is an update with no known server copy (a
+  /// sign-in marks every row so, and so does an upgrade).
+  static bool needsServerCopy(Map<String, Object?> row) {
+    final status = row['sync_status'];
+    if (status != SyncStatus.pendingCreate &&
+        status != SyncStatus.pendingUpdate) {
+      return false;
+    }
+    return row['sync_write_id'] != null ||
+        (status == SyncStatus.pendingUpdate && row['sync_version'] == null);
+  }
+
+  /// Reads the server copies of [rows] ([needsServerCopy]) in requests of
+  /// [bulkSize] and applies each, as the per-row push would one by one
+  /// (cycle review I-4): this device's own write is adopted; a write id the
+  /// server copy does not carry is cleared; a copy is merged into a row
+  /// with no base; an update the server lacks becomes a create, so a dose
+  /// joins the batch of new doses. Returns the rows it could not read (the
+  /// request failed), with the error, and the groups the merges decided.
+  Future<BulkPushResult> prefetch(List<Map<String, Object?>> rows) async {
+    final result = BulkPushResult();
+    final failed = result.failed;
+    final ids = [for (final r in rows) r['id']! as String];
+    for (var start = 0; start < ids.length; start += bulkSize) {
+      final chunk = ids.sublist(start, (start + bulkSize).clamp(0, ids.length));
+      final List<Map<String, dynamic>> server;
+      try {
+        server = await remote.fetchMany(chunk);
+      } catch (e) {
+        failed.add((chunk, e));
+        continue;
+      }
+      final byId = {for (final r in server) r['id']! as String: r};
+      final db = await _db;
+      await db.transaction((txn) async {
+        for (final id in chunk) {
+          final rows = await txn.query(table, where: 'id = ?', whereArgs: [id]);
+          if (rows.isEmpty || !needsServerCopy(rows.first)) continue;
+          final local = rows.first;
+          final copy = byId[id];
+          final writeId = local['sync_write_id'];
+          if (writeId != null && copy?['write_id'] != writeId) {
+            await txn.update(
+              table,
+              {'sync_write_id': null},
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+          }
+          if (copy != null) {
+            final applied = await _applyPulled(txn, copy);
+            if (applied.conflicts.isNotEmpty) {
+              result.conflicts[id] = applied.conflicts;
+            }
+          } else if (local['sync_status'] == SyncStatus.pendingUpdate &&
+              local['sync_version'] == null) {
+            await txn.update(
+              table,
+              {...clearedSyncMeta, 'sync_status': SyncStatus.pendingCreate},
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+          }
+        }
+      });
+    }
+    return result;
+  }
+
+  /// True when the dose [row] can go out in a bulk write of the app's own
+  /// "missed" ([pushAutomaticMissed]): a `pending_update` at a known
+  /// version, with no unanswered write, whose only change since its base
+  /// is its status, from pending to missed, made by the app.
+  bool isAutomaticMissed(Map<String, Object?> row) {
+    if (table != 'dose_logs' ||
+        row['sync_status'] != SyncStatus.pendingUpdate ||
+        row['sync_version'] == null ||
+        row['sync_write_id'] != null ||
+        row['status'] != 'missed') {
+      return false;
+    }
+    final meta = LocalSyncMeta.fromRow(row);
+    final base = meta.base;
+    if (base == null || base['status'] != 'pending') return false;
+    final times = localFieldTimes(row);
+    final changes = patchColumns(
+      policy,
+      base,
+      localWire(table, row),
+      times: times,
+      baseTimes: meta.baseTimes,
+    );
+    return changes.length == 1 &&
+        changes.containsKey('status') &&
+        (times.of('status')?.automatic ?? false);
+  }
+
+  /// Sends the app's own "missed" of the doses [rows] ([isAutomaticMissed])
+  /// in bulk (cycle review I-5): one conditional update per version and
+  /// [bulkSize] rows, which writes only rows still at that version and
+  /// still pending there, so a change made elsewhere is never overwritten
+  /// and a dose the server already holds as missed is not written again.
+  /// The rows it wrote settle; the others are read in one request each and
+  /// merged (a take elsewhere wins). A row that stays pending goes out one
+  /// by one afterwards. Returns what happened to each row.
+  Future<BulkPushResult> pushAutomaticMissed(List<Map<String, Object?>> rows) {
+    final byVersion = <int, List<Map<String, Object?>>>{};
+    for (final row in rows) {
+      byVersion.putIfAbsent(row['sync_version']! as int, () => []).add(row);
+    }
+    final missed = FieldTime.automaticChange;
+    return _bulk(
+      [
+        for (final MapEntry(key: version, value: group) in byVersion.entries)
+          (group, version),
+      ],
+      changes: (writeId) => {
+        'status': 'missed',
+        'write_id': writeId,
+        'edited_at': _wireTime(automaticEditedAt),
+        'field_edited_at': {'status': missed.toJson()},
+      },
+      ifStatus: 'pending',
+      onWritten: (row, server) async =>
+          settlePushedRow(await _db, table, pushed: row, server: server),
+      onUnwritten: (txn, row, server) async => server == null
+          ? const <MergeConflict>[]
+          : (await _applyPulled(txn, server)).conflicts,
+    );
+  }
+
+  /// Sends the guarded deletes of the doses [rows] (dropped from their
+  /// schedule, `pending_delete` with `delete_guard = if_pending`) in bulk:
+  /// one update per [bulkSize] rows, applied only where the dose is still
+  /// live and pending. A dose the server no longer has, or holds deleted,
+  /// goes here too; one taken or skipped there is stored as that copy. A
+  /// dose that is still live and pending there, or that carries an undo
+  /// made here ([_droppedUndoWins]), is left for the one-by-one push.
+  Future<BulkPushResult> pushGuardedDeletes(List<Map<String, Object?>> rows) {
+    final deletedAt = _wireTime(now());
+    return _bulk(
+      [(rows, null)],
+      changes: (writeId) => {
+        'deleted_at': deletedAt,
+        'write_id': writeId,
+        'edited_at': _wireTime(automaticEditedAt),
+        'field_edited_at': const <String, Object?>{},
+      },
+      ifStatus: 'pending',
+      ifLive: true,
+      onWritten: (row, server) async {
+        final db = await _db;
+        await db.delete(table, where: 'id = ?', whereArgs: [row['id']]);
+        return false;
+      },
+      onUnwritten: (txn, row, server) async {
+        final id = row['id']! as String;
+        if (server == null || server['deleted_at'] != null) {
+          await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+        } else if (server['status'] != 'pending' &&
+            !_droppedUndoWins(row, server)) {
+          await txn.update(
+            table,
+            {'sync_status': SyncStatus.synced, 'delete_guard': null},
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+          return (await _applyPulled(txn, server)).conflicts;
+        }
+        return const <MergeConflict>[];
+      },
+    );
+  }
+
+  /// One bulk write per `(rows, version)` group, [bulkSize] rows at a
+  /// time: a write id stored on every row first, then [changes] sent with
+  /// the conditions. [onWritten] settles a row the server wrote (true: it
+  /// still has changes to push). A row it did not write gets its write id
+  /// cleared and, unless it changed here since it was read (then the
+  /// one-by-one push takes it), [onUnwritten] applies the server copy
+  /// (null: none) in the same transaction.
+  Future<BulkPushResult> _bulk(
+    List<(List<Map<String, Object?>>, int?)> groups, {
+    required Map<String, Object?> Function(String writeId) changes,
+    required Future<bool> Function(
+      Map<String, Object?> row,
+      Map<String, dynamic> server,
+    )
+    onWritten,
+    required Future<List<MergeConflict>> Function(
+      Transaction txn,
+      Map<String, Object?> row,
+      Map<String, dynamic>? server,
+    )
+    onUnwritten,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    final result = BulkPushResult();
+    final db = await _db;
+    for (final (rows, version) in groups) {
+      for (var start = 0; start < rows.length; start += bulkSize) {
+        final chunk = rows.sublist(
+          start,
+          (start + bulkSize).clamp(0, rows.length),
+        );
+        final ids = [for (final r in chunk) r['id']! as String];
+        final writeId = newWriteId();
+        final List<Map<String, dynamic>> written;
+        try {
+          await db.transaction((txn) async {
+            for (final id in ids) {
+              await txn.update(
+                table,
+                {'sync_write_id': writeId},
+                where: 'id = ?',
+                whereArgs: [id],
+              );
+            }
+          });
+          written = await remote.patchMany(
+            ids,
+            changes(writeId),
+            ifVersion: version,
+            ifStatus: ifStatus,
+            ifLive: ifLive,
+          );
+        } catch (e) {
+          // The write may have landed: the write ids stay, and the next
+          // cycle reads these rows first.
+          result.failed.add((ids, e));
+          continue;
+        }
+        final byId = {for (final r in written) r['id']! as String: r};
+        final rest = <Map<String, Object?>>[];
+        for (final row in chunk) {
+          final id = row['id']! as String;
+          final server = byId[id];
+          if (server == null) {
+            rest.add(row);
+            continue;
+          }
+          (await onWritten(row, server) ? result.pending : result.settled).add(
+            id,
+          );
+        }
+        if (rest.isEmpty) continue;
+        final restIds = [for (final r in rest) r['id']! as String];
+        final Map<String, Map<String, dynamic>> copies;
+        try {
+          copies = {
+            for (final r in await remote.fetchMany(restIds))
+              r['id']! as String: r,
+          };
+        } catch (e) {
+          result.failed.add((restIds, e));
+          continue;
+        }
+        for (final row in rest) {
+          final id = row['id']! as String;
+          await db.transaction((txn) async {
+            // Nothing was written with it.
+            await txn.update(
+              table,
+              {'sync_write_id': null},
+              where: 'id = ? AND sync_write_id = ?',
+              whereArgs: [id, writeId],
+            );
+            final current = await txn.query(
+              table,
+              where: 'id = ? AND sync_status = ? AND updated_at IS ?',
+              whereArgs: [id, row['sync_status'], row['updated_at']],
+            );
+            if (current.isEmpty) return;
+            final conflicts = await onUnwritten(txn, current.first, copies[id]);
+            if (conflicts.isNotEmpty) result.conflicts[id] = conflicts;
+          });
+          final after = await _read(id);
+          (after == null || after['sync_status'] == SyncStatus.synced
+                  ? result.settled
+                  : result.pending)
+              .add(id);
+        }
+      }
+    }
+    return result;
+  }
+
   // ── Helpers ────────────────────────────────────────────────
 
   /// Deletes the pending row [row] here, unsent, when a parent it names is
@@ -887,6 +1183,21 @@ class TableSync {
           : null);
 
   static String _wireTime(DateTime time) => time.toUtc().toIso8601String();
+}
+
+/// What a bulk push did, by row id.
+class BulkPushResult {
+  /// In step with the server now, or gone.
+  final List<String> settled = [];
+
+  /// Still to be pushed one by one.
+  final List<String> pending = [];
+
+  /// The requests that failed: the rows they named, and the error.
+  final List<(List<String>, Object)> failed = [];
+
+  /// The groups a merge with the server copy decided, by row id.
+  final Map<String, List<MergeConflict>> conflicts = {};
 }
 
 /// The edit time a write that carries the column times [times] sends as

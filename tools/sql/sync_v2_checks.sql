@@ -804,6 +804,69 @@ do $$ begin
     'legacy take: a dose a person deleted stays deleted';
 end $$;
 
+-- The app's own changes, sent in bulk (cycle review I-5): one statement
+-- names the ids and the conditions. `bk` doses: generated (d1..d5), then
+-- d2 taken by a person, d3 already missed by another device, d4 dropped.
+insert into treatments (id, user_id, name, start_date) values ('bk-t', auth.uid(), 'Bulk', '2026-09-10');
+insert into medications (id, user_id, name) values ('bk-m', auth.uid(), 'Bulk');
+insert into prescriptions (id, treatment_id, medication_id, dosage, start_time)
+  values ('bk-p', 'bk-t', 'bk-m', '1', '2026-09-10T08:00:00Z');
+insert into dose_logs (id, prescription_id, scheduled_time, updated_at, write_id, edited_at)
+  select 'bk-d' || n, 'bk-p', timestamptz '2026-09-10T08:00:00Z' + n * interval '1 day',
+         '1970-01-01T00:00:00Z', gen_random_uuid(), '1970-01-01T00:00:00Z'
+    from generate_series(1, 5) n;
+update dose_logs set status = 'taken', taken_time = now(), write_id = gen_random_uuid(),
+       edited_at = now(), field_edited_at = jsonb_build_object('status', pg_temp.entry(now()))
+ where id = 'bk-d2';
+update dose_logs set status = 'missed', write_id = gen_random_uuid(),
+       edited_at = '1970-01-01T00:00:00Z',
+       field_edited_at = '{"status": {"at": "1970-01-01T00:00:00Z", "auto": true}}'
+ where id = 'bk-d3';
+update dose_logs set deleted_at = now(), write_id = gen_random_uuid(),
+       edited_at = '1970-01-01T00:00:00Z'
+ where id = 'bk-d4' and status = 'pending' and deleted_at is null;
+create temp table bk_before as select id, row_version, updated_at from dose_logs where id like 'bk-d%';
+-- A device that last saw every dose at version 1 sweeps them all.
+update dose_logs set status = 'missed', write_id = 'b0000000-0000-0000-0000-00000000000b',
+       edited_at = '1970-01-01T00:00:00Z',
+       field_edited_at = '{"status": {"at": "1970-01-01T00:00:00Z", "auto": true}}'
+ where id in ('bk-d1', 'bk-d2', 'bk-d3', 'bk-d4')
+   and row_version = 1 and status = 'pending' and deleted_at is null;
+do $$ begin
+  assert (select status = 'missed' and row_version = 2
+              and write_id = 'b0000000-0000-0000-0000-00000000000b'
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and field_edited_at->'status'->>'auto' = 'true'
+              and updated_at = (select updated_at from bk_before where id = 'bk-d1')
+            from dose_logs where id = 'bk-d1'),
+    'bulk missed: a pending dose at the version is written, as the app''s own, and keeps updated_at';
+  assert (select count(*) from dose_logs d join bk_before b using (id)
+           where d.id in ('bk-d2', 'bk-d3', 'bk-d4')
+             and d.row_version = b.row_version and d.updated_at = b.updated_at) = 3,
+    'bulk missed: a taken, an already missed and a dropped dose are not written';
+  assert (select status = 'taken' and field_edited_at->'status'->>'auto' = 'false'
+            from dose_logs where id = 'bk-d2'),
+    'bulk missed: the take stays';
+end $$;
+-- Dropped from the schedule, in bulk: only the live pending ones go, as
+-- the app's own delete.
+update dose_logs set deleted_at = now(), write_id = 'b0000000-0000-0000-0000-00000000000c',
+       edited_at = '1970-01-01T00:00:00Z', field_edited_at = '{}'
+ where id in ('bk-d1', 'bk-d2', 'bk-d4', 'bk-d5')
+   and status = 'pending' and deleted_at is null;
+do $$ begin
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and updated_at = (select updated_at from bk_before where id = 'bk-d5')
+              and field_edited_at ? 'status'
+            from dose_logs where id = 'bk-d5'),
+    'bulk drop: a live pending dose is deleted as the app''s own, updated_at kept, the map filled';
+  assert (select count(*) from dose_logs where id in ('bk-d1', 'bk-d2') and deleted_at is null) = 2,
+    'bulk drop: a missed and a taken dose stay';
+  assert (select row_version from dose_logs where id = 'bk-d4')
+       = (select row_version from bk_before where id = 'bk-d4'),
+    'bulk drop: a dose already deleted is not written again';
+end $$;
+
 -- Families, as the app uses them (family_remote_datasource.dart).
 insert into families (id, name, invite_code, owner_id)
   values ('f1', 'Home', 'INVITE1', auth.uid())

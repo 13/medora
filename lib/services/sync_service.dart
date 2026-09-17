@@ -550,8 +550,13 @@ class SyncService {
     await _pushTable('prescriptions', report, userId, forceAll: forceAll);
     // A dose this device created is only ever inserted where the server does
     // not have it yet, in batches (see [_pushNewDoseLogs]); a forced push is
-    // the exception, since it means "my copy is the truth".
-    if (!forceAll) await _pushNewDoseLogs(report);
+    // the exception, since it means "my copy is the truth". The app's own
+    // changes go out in bulk too (see [_pushDoseBulk]).
+    if (!forceAll) {
+      await _prefetch('dose_logs', report);
+      await _pushNewDoseLogs(report);
+      await _pushDoseBulk(report);
+    }
     await _pushTable(
       'dose_logs',
       report,
@@ -559,6 +564,114 @@ class SyncService {
       forceAll: forceAll,
       skipCreates: !forceAll,
     );
+  }
+
+  /// Reads, in bulk, the server copies of the pending rows of [table] that
+  /// need one before they can be pushed ([TableSync.needsServerCopy]): a
+  /// sign-in or an upgrade leaves every row so, and one request per row
+  /// took minutes (cycle review I-4). A row whose read failed is backed
+  /// off, so the one-by-one push does not try it again this cycle.
+  Future<void> _prefetch(String table, SyncReport report) async {
+    final db = await AppDatabase.instance.database;
+    final ready = <Map<String, Object?>>[];
+    for (final row in await db.query(
+      table,
+      where:
+          'sync_write_id IS NOT NULL OR (sync_status = ? AND sync_version IS NULL)',
+      whereArgs: [SyncStatus.pendingUpdate],
+    )) {
+      if (!TableSync.needsServerCopy(row)) continue;
+      final failure = await _failures.get(table, row['id']! as String);
+      if (failure != null && failure.isBackingOffAt(_now())) continue;
+      ready.add(row);
+    }
+    if (ready.isEmpty) return;
+    final result = await _tables[table]!.prefetch(ready);
+    for (final MapEntry(key: id, value: conflicts)
+        in result.conflicts.entries) {
+      _recordConflicts(report, table, id, conflicts);
+    }
+    for (final (ids, error) in result.failed) {
+      await _failRows(table, ids, report, error);
+    }
+  }
+
+  /// Sends the dose changes the app made on its own in bulk (cycle review
+  /// I-5): the guarded deletes of dropped doses, then the overdue doses
+  /// marked missed ([TableSync.pushAutomaticMissed]). What these leave
+  /// pending, the one-by-one push that follows sends. Rows under a
+  /// prescription deleted here, or in backoff, are left to that push.
+  Future<void> _pushDoseBulk(SyncReport report) async {
+    final db = await AppDatabase.instance.database;
+    final sync = _tables['dose_logs']!;
+    Future<List<Map<String, Object?>>> ready(
+      String where,
+      List<Object?> args,
+      bool Function(Map<String, Object?> row) wanted,
+    ) async {
+      final rows = <Map<String, Object?>>[];
+      for (final row in await db.query(
+        'dose_logs',
+        where: where,
+        whereArgs: args,
+      )) {
+        if (!wanted(row)) continue;
+        final failure = await _failures.get('dose_logs', row['id']! as String);
+        if (failure != null && failure.isBackingOffAt(_now())) continue;
+        if (await sync.dropUnderDeletedParent(row)) continue;
+        rows.add(row);
+      }
+      return rows;
+    }
+
+    final drops = await ready('sync_status = ? AND delete_guard = ?', [
+      SyncStatus.pendingDelete,
+      'if_pending',
+    ], (_) => true);
+    if (drops.isNotEmpty) {
+      await _applyBulk(report, await sync.pushGuardedDeletes(drops));
+    }
+    final missed = await ready(
+      "sync_status = ? AND status = 'missed' AND sync_version IS NOT NULL "
+      'AND sync_write_id IS NULL',
+      [SyncStatus.pendingUpdate],
+      sync.isAutomaticMissed,
+    );
+    if (missed.isNotEmpty) {
+      await _applyBulk(report, await sync.pushAutomaticMissed(missed));
+    }
+  }
+
+  /// Counts what a bulk push settled, forgets their backoff, and backs off
+  /// the rows whose request failed. Rows still pending are the one-by-one
+  /// push's, which counts them.
+  Future<void> _applyBulk(SyncReport report, BulkPushResult result) async {
+    for (final id in result.settled) {
+      report.pushed++;
+      if (await _failures.get('dose_logs', id) != null) {
+        await _failures.clear('dose_logs', id);
+      }
+    }
+    for (final MapEntry(key: id, value: conflicts)
+        in result.conflicts.entries) {
+      _recordConflicts(report, 'dose_logs', id, conflicts);
+    }
+    for (final (ids, error) in result.failed) {
+      await _failRows('dose_logs', ids, report, error);
+    }
+  }
+
+  /// Records a push failure, with backoff, for each of [ids].
+  Future<void> _failRows(
+    String table,
+    List<String> ids,
+    SyncReport report,
+    Object error,
+  ) async {
+    for (final id in ids) {
+      await _failures.recordFailure(table, id, _now());
+      report.failures.add(SyncFailure(table, id, 'push: $error'));
+    }
   }
 
   /// Pushes the pending rows of one merged [table] through its [TableSync].
@@ -572,6 +685,7 @@ class SyncService {
     bool skipCreates = false,
   }) async {
     final sync = _tables[table]!;
+    if (!forceAll && table != 'dose_logs') await _prefetch(table, report);
     final refused = table == 'dose_logs'
         ? await _refusedPrescriptions()
         : const <String>{};
@@ -1458,6 +1572,23 @@ class _TimedSyncTable implements SyncTable {
   }) => _inner
       .patch(
         id,
+        changes,
+        ifVersion: ifVersion,
+        ifStatus: ifStatus,
+        ifLive: ifLive,
+      )
+      .timeout(_timeout);
+
+  @override
+  Future<List<Map<String, dynamic>>> patchMany(
+    List<String> ids,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) => _inner
+      .patchMany(
+        ids,
         changes,
         ifVersion: ifVersion,
         ifStatus: ifStatus,

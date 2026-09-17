@@ -119,6 +119,21 @@ class FakePrescriptionTable extends FakeSyncTable {
   );
 
   @override
+  Future<List<Map<String, dynamic>>> patchMany(
+    List<String> ids,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) => super.patchMany(
+    ids,
+    _asStored(changes),
+    ifVersion: ifVersion,
+    ifStatus: ifStatus,
+    ifLive: ifLive,
+  );
+
+  @override
   Future<void> insertIfAbsent(List<Map<String, Object?>> rows) =>
       super.insertIfAbsent([for (final r in rows) _asStored(r)]);
 }
