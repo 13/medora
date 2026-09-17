@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-16. **Status:** proposed. **Branch:** `sync-v2-settings`, based on release v0.3.0+18 (`35bb1f5`).
 Open questions for the user are in §14; everything else is decided.
+**Revised 2026-09-17:** edit times are kept per column (`field_edited_at`, §4.4), not only per row; §4.1, §4.4, §4.5, §5, §6, §7, §9.2 and §12 follow.
 
 ## 1. What the user asked for
 
@@ -125,8 +126,8 @@ These are the facts the design builds on, checked in the code at `35bb1f5`.
 | Transaction-horizon cursor | `sync_xid` set by trigger; `medora_sync_state()` returns the horizon | Pull `[key, horizon)` ordered by `sync_xid, id` | S-5, I-C, the 1970 floor, microsecond keys |
 | Row versions | `row_version` +1 per update, set by trigger | Update only `row_version = base` | Blind overwrites; base for S-4 |
 | Write ids | `write_id` kept as sent, cleared for a writer that does not send one | New id per attempt, stored before sending, compared on answer, fetch and pull | S-3 |
-| Edit times | `edited_at` kept as sent, capped at `now()`; 1970 marks automatic; `updated_at` untouched for automatic changes | `edited_at` column; automatic changes use 1970 | PR5, S-1, S-7, compatibility with 0.3.0 |
-| Field-level merge | — | Base snapshot per row; a patch sends only the changed columns; a three-way merge per column group | S-4, follow-up m-2 |
+| Edit times | Per column: `field_edited_at`, merged key by key (capped at arrival, never going back, with an automatic flag). Per row: `edited_at`, the time the last write carried (1970 marks an automatic write, which leaves `updated_at` alone) | The same map, written by every local write for exactly the columns it changes; `edited_at` per row | PR5, S-1, S-7, the A/B/C case, compatibility with 0.3.0 |
+| Field-level merge | — | Base snapshot per row; a patch sends only the changed columns and their times; a three-way merge per column group, each group judged by its own columns' times | S-4, follow-up m-2 |
 | Guarded dose writes | Filters in the same statement | Time correction and delete only while pending and untouched | S-1, S-6, S-7 |
 | Stock ledger | `stock_changes` table + `apply_stock_change()` | Local outbox of changes with ids | S-2 |
 
@@ -190,34 +191,89 @@ A sequence would have handed out `fast` and moved past `slow`. `tools/check_supa
 
 ### 4.4 Edit times and automatic changes
 
-**Client side.** `edited_at` is when the change was made on the device. For a change the app made on its own, it is `1970-01-01T00:00:00Z` (`automaticEditedAt`). The automatic changes are:
+**Why per column.** One edit time per row is applied against the wrong time:
+
+1. Device A changes the notes at 10:00 and syncs.
+2. Device B, offline, changed the sick leave at 09:00. It syncs next, and the row's edit time becomes 09:00.
+3. Device C, offline, changed the notes at 09:30. It syncs last, compares 09:30 with the row's 09:00, and overwrites A's later notes.
+
+So every synced row keeps an edit time per column, and the merge compares the times of the columns it decides on.
+
+**The map.** `field_edited_at` maps a column name to that column's last applied change:
+
+```json
+{"notes":  {"at": "2026-03-05T10:00:00+00:00", "auto": false},
+ "status": {"at": "1970-01-01T00:00:00+00:00", "auto": true}}
+```
+
+- `at` is when the change was made (UTC); `auto` says the app made it on its own.
+- The server keeps it as `jsonb`, the device as JSON text. Both mean the same.
+- **Columns that never get an entry:** the bookkeeping (`id`, `user_id`, `created_at`, `updated_at`, `deleted_at` and the sync columns), and `quantity`, which only `apply_stock_change` writes (§4.8).
+- **An empty map** means no column changed since the row was written: every column was last changed at the row's own time, `edited_at` (or `updated_at` when that is empty). This covers rows from before the migration, rows not updated since their insert, and local rows not changed since they were made or restored.
+- **A column missing from a filled map** (for example one a later migration adds) has an unknown time.
+
+**Client side.** Every local write stamps exactly the columns it changes (`fieldTimesAfterWrite` in `lib/data/local/field_times.dart`):
+
+- it compares the wire copies of the row before and after the write, so a value written in another format is no change;
+- a person's change gets the device time of the change, never later than the device clock;
+- a change the app made on its own gets `1970-01-01` and `auto`;
+- a write to a row whose map is empty first fills the map from the row's old time, because the write moves the row's own `edited_at`;
+- a new row stores no map.
+
+The automatic changes are:
 
 - an overdue dose marked missed;
 - a dose time corrected;
 - a dose dropped from a changed schedule;
 - a generated dose.
 
-**The trigger:**
+`edited_at` is still written per row: the time of the row's last local change (1970 for a generated row). It stands for every column while the map is empty.
 
-- keeps a sent `edited_at`, capped at `now()`, so a clock set in the future cannot win for ever;
+**The trigger, per row (unchanged):**
+
+- keeps a sent `edited_at`, capped at `now()`;
 - turns every value before `1970-01-02` into exactly `1970-01-01`;
-- uses `now()` for a writer that sends no write id, so a 0.3.0 edit counts as made when it arrived;
-- keeps the stored `edited_at` when a 0.4.0 update sends a write id but no `edited_at`, and falls back to the old `updated_at` only when the stored one is empty (a row from before the migration). A 0.4.0 client therefore always sends `edited_at` with a write id.
+- uses `now()` for a writer that sends no write id (0.3.0, the tombstone cascade);
+- keeps the stored `edited_at` when a 0.4.0 update sends a write id but no `edited_at`, and falls back to the old `updated_at` only when the stored one is empty. A 0.4.0 client therefore always sends `edited_at` with a write id.
+
+**The trigger, per column:**
+
+- **An update** reads the entries a 0.4.0 client sent, and only for the columns whose value it really changes. A changed column without an entry takes the row's normalised `edited_at`.
+- **Normalising:** an entry before `1970-01-02`, or one sent with `auto`, is automatic and counts as `1970-01-01`. Any other time is capped at `now()`.
+- **Never back:** the stored time is the later of the time already held and the new one. The flag is the new change's.
+- **A writer without a new write id** (0.3.0, the cascade) is never read: its changed columns are stamped on arrival, as a person's change.
+- **The fill:** the first update of a row with an empty map gives every column the write does not change the row's old time (`edited_at`, else `updated_at`, capped at `now()`).
+- **An insert** keeps the entries it sent, normalised the same way, for the columns it names. A 0.3.0 insert has an empty map.
+
+**The row's `edited_at` is the last write's time, not the latest entry.** The controller allowed keeping it as the maximum of the map "if the design needs it". The design needs something else from it:
+
+- `update_updated_at()` recognises an automatic write by `edited_at = 1970`, so that 0.3.0 does not see it;
+- a pulled tombstone is automatic by the same mark (§4.6).
+
+The maximum of the map would turn an automatic write on a row a person once changed into a real one. Nothing shows the row's edit time, and the pull cursor is `sync_xid` (§4.2).
 
 **`updated_at` stays what 0.3.0 relies on:**
 
 - **Real updates** keep getting `now()`.
 - **Automatic updates** (a write id plus the 1970 edit time) keep the old `updated_at`. A 0.3.0 device then neither pulls them nor counts them as newer than its own pending edit, and its edit wins, as it should.
+  - A 0.4.0 client sends the 1970 row time only when every column it writes is automatic. A write that also carries a person's change moves `updated_at`.
 - **Real inserts** are stamped `now()` on arrival. A 0.3.0 device whose cursor passed the creation time while the creator was offline still pulls the row (I-C, server-side).
 - **Generated inserts** keep 1970.
 
-**Merging with edit times:**
+**Merging with edit times** (`mergeRows`, §4.5), for a column group both sides changed to different values:
 
-- A group both sides changed goes to the later edit time.
-- An automatic change never beats a real one, even one with an unknown time.
-- A tie keeps the server's value.
+- each side's change is the **strongest** time among the group's columns *that side changed*; an older person's time on a column that side left alone does not count;
+- a person's change beats an unknown time, which beats an automatic change;
+- two people's changes go by time, compared as instants, and the later wins;
+- a tie, and two automatic changes, keep the server's value.
 
-This settles PR5: A marks a dose missed at 10:00 while offline, B takes it at 11:00, and A syncs first. B's take wins on every device. It also makes it safe to push automatic changes (S-7, §4.7).
+The server's times are already capped at arrival. A local change has not arrived yet, so its cap would be a later moment than any server copy's; comparing it uncapped gives the same answer.
+
+**What this settles:**
+
+- **PR5:** A marks a dose missed at 10:00 while offline, B takes it at 11:00, and A syncs first. B's take wins on every device.
+- **The A/B/C case above:** C's 09:30 notes meet the notes' own 10:00, and lose, in either sync order.
+- **Automatic changes can be pushed** (S-7, §4.7), even together with a person's change to another column of the same row: each column keeps its own kind.
 
 ### 4.5 Field-level merge (I-1)
 
@@ -235,8 +291,11 @@ This settles PR5: A marks a dose missed at 10:00 while offline, B takes it at 11
 - **Per group, by what changed since the base:**
   - a group only the local side changed takes the local values;
   - a group only the server changed, or neither, takes the server values;
-  - a group both sides changed to different values takes the side with the later edit time (§4.4).
-- **With no base** (rows from before v16, or a restore), every group counts as changed on both sides, so each group goes to the later edit time.
+  - a group both sides changed to different values takes the side whose change to that group wins, by that group's own column times (§4.4).
+- **With no base** (rows from before v16, or a restore), every group counts as changed on both sides, so each group goes to the side whose column times win.
+  - A restored row without a map meets the server's times column by column, with its one row time.
+  - A row from before the migration has an empty map, so its `updated_at` stands for every column. A device's 0.3.0 change still waiting then loses to a newer server row, as it did under 0.3.0.
+- **The stored times:** a merged row keeps the server's times, with this device's for the columns taken from here (and none for a column whose time here is unknown).
 - **Always the server's:** bookkeeping keys (`id`, `user_id`, `updated_at`, `deleted_at`) and server-owned columns.
 
 **Column groups** are columns that only make sense together:
@@ -307,7 +366,7 @@ The merge runs on the canonical wire form (`Model.fromJson(row).toJson()`), so a
   - A quantity typed in the medication form writes `set_to`.
   - Local-only mode writes no outbox row.
   - A medication that is still `pending_create` writes none either: its quantity goes with the insert. If the quantity changes while that insert is in flight, settling the create turns the difference into one `delta` (§7.4).
-- **Draining.** Each cycle drains the outbox after the medication rows are pushed, in `created_at` order, by calling `apply_stock_change(op_id, medication_id, delta, set_to)`. The function:
+- **Draining.** Each cycle drains the outbox after the medication rows are pushed, in the order the changes were made (`seq`), by calling `apply_stock_change(op_id, medication_id, delta, set_to)`. The function:
   - takes a transaction-level advisory lock on the op id;
   - returns `duplicate` if the ledger already has the id;
   - brings the change into range first (`set_to` to 0…999999, `delta` to −999999…999999; `stockChangeInRange` in `stock_remote.dart`, which the client also applies before sending);
@@ -341,11 +400,12 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 - three deliberate mutations are each caught: an automatic change that stamps `updated_at`, a replayed write id that is not cleared, and a created row that is not stamped on arrival;
 - all five migrations also apply on a local `supabase start` (CLI 2.117.0), where the 0.4.0 integration scenarios pass and the unchanged v0.3.0 integration suite still passes;
 - after the Task 3 review (fix round) the checks also cover: no TRUNCATE, TRIGGER or REFERENCES for clients on any synced or family table, every kind of update moving `sync_xid`, stock values out of range, a medication removed from the server, a retry racing its original, and the app's family and "delete all data" flows. They pass on the real `supabase/postgres:15.8.1.085` image as well.
+- after the per-column revision (2026-09-17), the checks also fail when a column time goes back, when the cap at arrival is missing, when an older time overwrites an entry, when an unchanged column is stamped, when a legacy write's map is read, when a sent map is ignored or replaces the stored one, when the fill is missing or uses the arrival time, and when the stock or `deleted_at` gets an entry (14 mutants, all caught). The revision was checked on `postgres:15-alpine` only.
 
 ```sql
 -- ============================================================
 -- Medora - Sync v2: a change cursor the server assigns, row versions,
--- write ids, edit times and idempotent stock changes.
+-- write ids, edit times per column and idempotent stock changes.
 --
 -- Apply after 20260917000000_treatment_sick_leave.sql and BEFORE any
 -- device runs Medora 0.4.0. Medora 0.3.0 keeps working against it:
@@ -388,31 +448,48 @@ set local lock_timeout = '5s';
 -- edited_at    when the change was made on the device, never later than
 --              the server received it. 1970-01-01 marks a change the app
 --              made on its own (an overdue dose marked missed, a dose time
---              corrected, a dose dropped from a changed schedule).
+--              corrected, a dose dropped from a changed schedule). It is the
+--              time the last write carried; the merge reads the times per
+--              column below.
+-- field_edited_at
+--              per column, when that column's last applied change was made:
+--              {"<column>": {"at": <timestamptz>, "auto": <bool>}}. "auto"
+--              marks a change the app made on its own. A time is never
+--              later than the server received the change, and never earlier
+--              than the time the map already held for that column. The
+--              stock (quantity) and the bookkeeping columns have no entry.
+--              An empty map (every row from before this migration, every
+--              row not updated since it was inserted): each column was last
+--              changed at the row's edited_at, or its updated_at when that
+--              is empty. The first update of such a row fills the map.
 
 alter table public.medications
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 alter table public.treatments
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 alter table public.prescriptions
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 alter table public.dose_logs
-  add column if not exists sync_xid    bigint not null default 0,
-  add column if not exists row_version bigint not null default 1,
-  add column if not exists write_id    uuid,
-  add column if not exists edited_at   timestamptz;
+  add column if not exists sync_xid        bigint not null default 0,
+  add column if not exists row_version     bigint not null default 1,
+  add column if not exists write_id        uuid,
+  add column if not exists edited_at       timestamptz,
+  add column if not exists field_edited_at jsonb not null default '{}'::jsonb;
 
 -- 2. Pull indexes (keyset: sync_xid, then id) -----------------------------
 
@@ -432,34 +509,98 @@ returns trigger
 language plpgsql
 set search_path = public, pg_temp
 as $$
+declare
+  c_ceiling constant timestamptz := timestamptz '1970-01-02 00:00:00+00';
+  c_epoch   constant timestamptz := timestamptz '1970-01-01 00:00:00+00';
+  -- Columns with no edit time of their own: the bookkeeping, and the stock,
+  -- which only apply_stock_change writes.
+  c_untimed constant text[] := array['id', 'user_id', 'created_at', 'updated_at',
+    'deleted_at', 'sync_xid', 'row_version', 'write_id', 'edited_at',
+    'field_edited_at', 'quantity'];
+  v_now    timestamptz := now();
+  v_legacy boolean := false;
+  v_new    jsonb;
+  v_old    jsonb;
+  v_sent   jsonb;
+  v_map    jsonb := '{}';
+  v_key    text;
+  v_entry  jsonb;
+  v_at     timestamptz;
+  v_auto   boolean;
 begin
   new.sync_xid := pg_current_xact_id()::text::bigint;
   if tg_op = 'INSERT' then
     new.row_version := 1;
-    new.edited_at := coalesce(new.edited_at, new.updated_at, now());
+    new.edited_at := coalesce(new.edited_at, new.updated_at, v_now);
   else
     new.row_version := old.row_version + 1;
     if new.write_id is null or new.write_id is not distinct from old.write_id then
       -- A writer that sends no write id: Medora 0.3.0 and older, the
       -- tombstone cascade. Its change counts as made when it arrived.
+      v_legacy := true;
       new.write_id := null;
-      new.edited_at := now();
+      new.edited_at := v_now;
     elsif new.edited_at is null then
-      new.edited_at := coalesce(old.updated_at, now());
+      new.edited_at := coalesce(old.updated_at, v_now);
     end if;
   end if;
-  if new.edited_at < timestamptz '1970-01-02 00:00:00+00' then
-    new.edited_at := timestamptz '1970-01-01 00:00:00+00';
+  if new.edited_at < c_ceiling then
+    new.edited_at := c_epoch;
   else
-    new.edited_at := least(new.edited_at, now());
+    new.edited_at := least(new.edited_at, v_now);
     if tg_op = 'INSERT' then
       -- A row a person created is stamped on arrival, so a device whose
       -- updated_at cursor passed its creation time while it was offline
       -- still pulls it (Medora 0.3.0 pulls by updated_at). A generated
       -- row keeps its 1970 stamp and stays invisible to those cursors.
-      new.updated_at := now();
+      new.updated_at := v_now;
     end if;
   end if;
+
+  -- Edit times per column. A 0.4.0 client sends an entry for each column
+  -- it writes; the entries are read only for the columns the write really
+  -- changes (an insert: the columns it names), and never for a legacy
+  -- write.
+  v_new := to_jsonb(new);
+  if tg_op = 'INSERT' then
+    v_sent := new.field_edited_at;
+  else
+    v_old := to_jsonb(old);
+    v_map := old.field_edited_at;
+    if not v_legacy and new.field_edited_at is distinct from old.field_edited_at then
+      v_sent := new.field_edited_at;
+    end if;
+    if v_map = '{}' then
+      -- The first update since the row was written: every column was last
+      -- changed at the row's own time.
+      v_map := '{}';
+      v_at := least(coalesce(old.edited_at, old.updated_at, v_now), v_now);
+      v_auto := v_at < c_ceiling;
+      for v_key in select jsonb_object_keys(v_old) loop
+        continue when v_key = any(c_untimed);
+        v_map := v_map || jsonb_build_object(v_key, jsonb_build_object(
+          'at', case when v_auto then c_epoch else v_at end, 'auto', v_auto));
+      end loop;
+    end if;
+  end if;
+  for v_key in select jsonb_object_keys(v_new) loop
+    continue when v_key = any(c_untimed);
+    v_entry := v_sent -> v_key;
+    if tg_op = 'INSERT' then
+      continue when v_entry is null;
+    else
+      continue when (v_new -> v_key) is not distinct from (v_old -> v_key);
+    end if;
+    -- A changed column with no entry takes the time the write carried
+    -- (a legacy write: its arrival).
+    v_at := coalesce((v_entry ->> 'at')::timestamptz, new.edited_at);
+    v_auto := coalesce((v_entry ->> 'auto')::boolean, false) or v_at < c_ceiling;
+    v_at := case when v_auto then c_epoch else least(v_at, v_now) end;
+    -- Never earlier than the time already held (greatest skips a NULL).
+    v_at := greatest((v_map -> v_key ->> 'at')::timestamptz, v_at);
+    v_map := v_map || jsonb_build_object(v_key, jsonb_build_object('at', v_at, 'auto', v_auto));
+  end loop;
+  new.field_edited_at := v_map;
   return new;
 end;
 $$;
@@ -688,7 +829,8 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 
 - **Backfill: none, deliberately.**
   - Constant defaults make each `ADD COLUMN` metadata-only in Postgres 11+. No row is rewritten and no trigger fires, so no `updated_at` moves and no 0.3.0 device finds its pending edit stale.
-  - Rows from before the migration carry `sync_xid = 0`, `row_version = 1` and `edited_at = NULL`. The client reads a missing `edited_at` as `updated_at`.
+  - Rows from before the migration carry `sync_xid = 0`, `row_version = 1`, `edited_at = NULL` and `field_edited_at = '{}'`. The client reads a missing `edited_at` as `updated_at`, and an empty map as that time for every column.
+  - The map is filled lazily: the first update of such a row writes an entry for every column (the old time for the columns it does not change). That costs one small `jsonb` per row touched, and nothing for rows never touched again.
   - The first 0.4.0 pull of each table starts from the beginning (§7.7), so `sync_xid = 0` rows arrive.
 - **Row-level security.**
   - The four data tables keep their policies; a column is not a row.
@@ -701,6 +843,7 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 - **Locks.** `set local lock_timeout = '5s'` makes the migration give up instead of queueing every API request behind an `ALTER TABLE` that waits for a long transaction. Retry it.
 - **After this migration** never run `20260901000000_initial_schema.sql` again (it would restore the old `update_updated_at()`), and do not enable read replicas (a page could come from a replica that has not yet replayed rows below the primary's horizon).
 - **Locks.** `CREATE INDEX` without `CONCURRENTLY` blocks writes to that table while it builds. That takes milliseconds at household sizes, and `CONCURRENTLY` cannot run inside the CLI's migration transaction.
+- **Edit times per column.** The trigger compares `to_jsonb(new)` with `to_jsonb(old)`, so it needs no list of each table's columns; a column a later migration adds gets entries from its first change on. A malformed `at` in a sent map fails the write (SQLSTATE 22007); only the app writes the map.
 - **Trigger order.** Postgres runs `BEFORE` triggers of one event in name order. `<table>_sync_stamp` sorts before `<table>_updated_at`, and `update_updated_at()` reads the `write_id` and `edited_at` the stamp trigger has just settled.
 - **No down migration.** Every change is additive, and 0.3.0 runs against it (§9.2). Rolling the app back does not need the schema rolled back.
 
@@ -710,38 +853,50 @@ grant execute on function public.apply_stock_change(uuid, text, integer, integer
 
 ```sql
 -- for each of medications, treatments, prescriptions, dose_logs:
-ALTER TABLE <t> ADD COLUMN edited_at TEXT;      -- when the change was made here (UTC ISO); 1970 = automatic
+ALTER TABLE <t> ADD COLUMN edited_at TEXT;       -- when the row's last change was made here (UTC ISO); 1970 = automatic
+ALTER TABLE <t> ADD COLUMN field_edited_at TEXT; -- JSON: column -> {at, auto} (§4.4); NULL = edited_at for every column
 ALTER TABLE <t> ADD COLUMN sync_version INTEGER; -- server row_version the base belongs to; NULL = unknown
-ALTER TABLE <t> ADD COLUMN sync_base TEXT;      -- JSON: canonical wire copy of that server row
-ALTER TABLE <t> ADD COLUMN sync_write_id TEXT;  -- write attempt whose outcome is unknown
-UPDATE <t> SET edited_at = updated_at WHERE sync_status != 'synced';
+ALTER TABLE <t> ADD COLUMN sync_base TEXT;       -- JSON: canonical wire copy of that server row
+ALTER TABLE <t> ADD COLUMN sync_write_id TEXT;   -- write attempt whose outcome is unknown
+-- then, in Dart, for rows that are not synced: edited_at = updated_at read
+-- as an instant in this zone, capped at now (lib/data/local/migrations.dart)
 
 ALTER TABLE dose_logs ADD COLUMN delete_guard TEXT;  -- 'if_pending' for an automatic delete
 
 CREATE TABLE stock_outbox (
-  op_id TEXT PRIMARY KEY,
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,  -- the order the changes were made in
+  op_id TEXT NOT NULL UNIQUE,
   medication_id TEXT NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
   delta INTEGER,
   set_to INTEGER,
   created_at TEXT NOT NULL,
   CHECK ((delta IS NULL) <> (set_to IS NULL))
 );
-CREATE INDEX idx_local_stock_outbox_med ON stock_outbox(medication_id, created_at);
+CREATE INDEX idx_local_stock_outbox_med ON stock_outbox(medication_id, seq);
 ```
 
 **Every local write path stamps `edited_at`:**
 
-- a pending upsert writes `edited_at = updated_at` of the model it stores;
-- `_editRow`, `updateStatus` and `markDeleted` stamp the same instant they write to `updated_at` (`markDeleted` uses now);
+- a pending upsert writes `edited_at = updated_at` of the model it stores, never later than the clock;
+- `_editRow`, `_setActive`, `updateStatus` and `markDeleted` stamp the same instant they write to `updated_at` (`markDeleted` uses now);
 - generated inserts use 1970;
-- the automatic changes of §4.7 use 1970.
+- the automatic changes of §4.7 use 1970;
+- every time is UTC text.
 
-**Pull writes.** A pull stores the server's `edited_at`, `row_version` and canonical wire copy.
+**Every local write path stamps `field_edited_at`** for exactly the columns it changes (§4.4):
+
+- a pending upsert compares the stored row with the new one; a new row stores none;
+- `_editRow` (archive, stock), `_setActive` and `updateStatus` stamp their own columns; the stock never gets an entry;
+- the overdue sweep stamps `status` as automatic, and leaves `edited_at` alone;
+- a synced write (a pull) stores the server's map;
+- `markDeleted` changes no column that has a time, so it leaves the map alone. A row waiting for its delete never merges (§7.2).
+
+**Pull writes.** A pull stores the server's `edited_at`, `field_edited_at`, `row_version` and canonical wire copy.
 
 **Backups.**
 
-- **Export** leaves out `sync_status`, `sync_version`, `sync_base`, `sync_write_id` and `delete_guard`, and keeps `edited_at`.
-- **Restore** writes the meta columns as NULL. In cloud mode it marks rows `pending_update` as before; with no base, the merge goes by edit time. A restored generated or auto-missed row therefore keeps its 1970 edit time and loses to real changes elsewhere (sick-branch m-2).
+- **Export** leaves out `sync_status`, `sync_version`, `sync_base`, `sync_write_id` and `delete_guard`, and keeps `edited_at` and `field_edited_at`.
+- **Restore** writes the meta columns as NULL, and the backup's `edited_at` and `field_edited_at` (NULL for a 0.3.0 backup, whose `updated_at` then stands for every column). In cloud mode it marks rows `pending_update` as before; with no base, the merge goes by edit time. A restored generated or auto-missed row therefore keeps its 1970 edit time and loses to real changes elsewhere (sick-branch m-2).
 - **Merge restore** compares parsed instants, not strings (m-13).
 - **Cloud restore** also queues a `set_to` for each restored medication.
 - **A v15 backup** restores into v16 (the missing columns are NULL).
@@ -793,15 +948,16 @@ It also gains `newWriteId`, which defaults to `const Uuid().v4()`; tests inject 
 | Local row L | Action |
 |---|---|
 | none, and R is a tombstone | nothing |
-| none | insert R as `synced`, base = W, version = M.rowVersion, `edited_at` = M.editedAt |
+| none | insert R as `synced`, base = W, version = M.rowVersion, `edited_at` = M.editedAt, `field_edited_at` = R's map |
 | any, and R is a person's tombstone | hard-delete L (its outbox rows cascade) |
 | `pending_delete` with `delete_guard = if_pending`, and R is not pending | replace with R as `synced` |
 | `pending_delete` otherwise | keep L (a delete wins) |
 | `synced` | if M.rowVersion > L.version (or L.version is null): replace with R as `synced`, base = W; otherwise keep L |
 | pending, and M.writeId = L.sync_write_id | own write: base = W, version = M.rowVersion, write id cleared; `synced` if L equals W in content, else stays `pending_update` |
 | pending, and M.rowVersion ≤ L.version | ignore (already merged) |
-| pending, otherwise (including an automatic tombstone against a real local change) | `mergeRows(base, L, W)` → store as `pending_update` with base = W and version = M.rowVersion, or as `synced` if the result equals W; count conflicts in `report.overwritten` |
+| pending, otherwise (including an automatic tombstone against a local person's change to a column) | `mergeRows(base, L, W)` with both sides' column times → store as `pending_update` with base = W, version = M.rowVersion and the merged times, or as `synced` (with R's map) if the result equals W; count conflicts in `report.overwritten` |
 
+- **Synced rows** (replaced) store R's map, as they store R's `edited_at`.
 - **Medications:** the stored quantity is `applyStockOps(W.quantity, outbox ops)`.
 - **Prescriptions:** the new/changed tracking for `onPrescriptionsPulled` is unchanged.
 
@@ -816,7 +972,7 @@ Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or
 
 **Then, by status:**
 
-- **`pending_create`** (non-dose tables): insert-if-absent the full wire row plus `user_id`, `write_id` and `edited_at`, then fetch it.
+- **`pending_create`** (non-dose tables): insert-if-absent the full wire row plus `user_id`, `write_id`, `edited_at` and the local `field_edited_at` (empty when no column changed since the row was made), then fetch it.
   - Our write id: settle (§7.4).
   - Another copy: merge with no base, store it as `pending_update` with base = R, and retry once.
   - No row: failure with backoff.
@@ -824,7 +980,9 @@ Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or
 - **`pending_update`:**
   1. If base is null: fetch R. If there is no row, go through the create path. Otherwise merge with no base and take R as the base.
   2. `changes = changedColumns(base, L)`. If empty, settle as `synced`.
-  3. `PATCH changes + {write_id, edited_at: L.edited_at ?? L.updated_at}` if `row_version = version`.
+  3. `PATCH changes + {write_id, edited_at, field_edited_at}` if `row_version = version`.
+     - `field_edited_at` holds the local time of each sent column that has one.
+     - `edited_at` is the latest person's time among them; `1970` when all of them are automatic; otherwise `L.edited_at ?? L.updated_at`.
   4. If a row came back, settle.
   5. If none came back: fetch R. Our write id: settle with R. No row: create path. Otherwise merge, store, and repeat from step 2 once. After the second failure, leave the row pending and request a re-run.
 - **`pending_delete`:** §4.6.
@@ -838,7 +996,7 @@ Skipped: rows in backoff, doses of a refused prescription (`pending_create` **or
 - **Local `updated_at` still equals the value the push read:**
   - `sync_status = synced`;
   - base = canonical(server), version = server.rowVersion, `sync_write_id = NULL`;
-  - `updated_at` = the server's.
+  - `updated_at`, `edited_at` and `field_edited_at` = the server's (its times are the capped ones, and a backup carries them into a later restore).
 - **It changed** (an edit landed in flight):
   - base, version and write id as above;
   - status stays `pending_update`, and the next push sends only the newer difference.
@@ -903,14 +1061,14 @@ For each op, oldest first:
 
 | 0.3.0 does | Against the migrated server |
 |---|---|
-| Upserts whole rows (`toJson` keys only) | Accepted; there are no new required keys. The row gets `row_version + 1`, `write_id = NULL` and `edited_at = now()`. A 0.4.0 device merges it as an edit made on arrival. |
+| Upserts whole rows (`toJson` keys only) | Accepted; there are no new required keys. The row gets `row_version + 1` (so `sync_xid` moves and 0.4.0 pulls it), `write_id = NULL` and `edited_at = now()`. **In `field_edited_at`, only the columns whose value it really changes are stamped**, with its arrival time, as a person's change. The columns it sends unchanged keep their entries; on its first update of a row with an empty map they get the row's old time. A 0.4.0 device merges it column by column, as edits made on arrival. |
 | `select('updated_at')` after the upsert | Unchanged. A real update gets `now()`. An insert now also gets `now()`, so its create re-send simply does not fire. |
 | Pulls by `updated_at` | Sees every real change a 0.4.0 device makes. Does **not** see automatic changes (missed, time corrections, dropped slots): it computes "missed" itself and drops off-schedule pending doses locally, so its view matches. |
 | Skips an edit when the server `updated_at` is newer | Unchanged for real edits. Automatic changes keep `updated_at`, so they never make a 0.3.0 edit look stale. |
 | Pushes stock as an absolute `quantity` | Still overwrites whatever the ledger applied in between (arrival order, as today). **Known limitation until every device is updated.** |
 | Inserts new doses if absent, then reads them back | Unchanged. Generated rows keep 1970 and get `edited_at = 1970`. |
 | Takes a dose whose time a 0.4.0 device corrected | Its whole-row upsert sends the shifted time back. The take wins as a real edit. The correction is not retried, because the row is no longer pending. |
-| Tombstone cascade | Unchanged; children become legacy writes. |
+| Tombstone cascade | Unchanged; children become legacy writes. `deleted_at` has no edit time, so the cascade adds no entry (it only fills an empty map). |
 
 **Medora 0.2.5 and older** are outside this table. The v0.3.0 notes already said to update every device.
 
@@ -981,6 +1139,7 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - a global xid counter;
   - open transactions that hold the horizon back;
   - `row_version`, the write-id rule, `edited_at` normalisation and capping;
+  - the per-column map: sent entries for the changed columns only, the cap, the automatic flag, never going back, the fill, and legacy writes stamped on arrival;
   - the `updated_at` rules (automatic updates keep it, real inserts get `now()`);
   - guarded filters, hard deletes with their cascade, and the ledger with duplicate and gone;
   - `max_rows` = 1000 by default (`rowCap`); a test sets it to 250 to prove a pull ends only on an empty page.
@@ -999,6 +1158,14 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - stock already changed once.
 
   The plan lists them with exact expected values: S1a, S1b, PR5, stock from two devices, lost answers, time correction against a take, a dropped slot against a take, automatic missed against a take, and a 0.3.0 device in the fleet.
+
+  `test/data/sync/edit_time_merge_test.dart` adds a third device for the per-column cases:
+  - A/B/C in both sync orders, and a later note from C that still wins;
+  - A/B/C across both daylight-saving changes;
+  - a clock a day ahead and a clock two hours behind;
+  - the app's missed against a person's take, and against a person's note;
+  - a 0.3.0 write in between;
+  - a row restored without a map.
 - **Existing suites.** `multi_device_*`, `treatment_sync_test` and `sync_service_test` keep their behavioural expectations. Tests that pin removed v1 mechanics (the stale skip, the create re-send, the 1970 floor, the `updated_at` cursor) are replaced by their v2 equivalents, listed per task.
 - **Whole suite.** It runs under `TZ=UTC` and `TZ=Europe/Rome`.
 - **Integration.** `test/integration/sync_convergence_test.dart` gains the S1 and stock scenarios against a local `supabase start`. It runs in the manual `integration` CI job and is never pointed at a real project.
