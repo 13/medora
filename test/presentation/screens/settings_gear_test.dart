@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -146,37 +147,44 @@ void main() {
     });
   }
 
-  testWidgets('no gear on forms, detail screens and the scanner', (
-    tester,
-  ) async {
-    final container = await pumpShell(tester);
-    final db = await AppDatabase.instance.database;
-    final seeded = await seedPrescription(db);
-    final router = container.read(appRouterProvider);
-    for (final route in [
-      AppRoutes.addMedication,
-      '/medications/${seeded.medicationId}',
-      '/medications/${seeded.medicationId}/edit',
-      AppRoutes.expiringMedications,
-      AppRoutes.addTreatment,
-      '/treatments/${seeded.treatmentId}',
-      '/treatments/${seeded.treatmentId}/edit',
-      AppRoutes.doseHistory,
-      AppRoutes.scanner,
-      AppRoutes.settings,
-      AppRoutes.family,
-    ]) {
-      unawaited(router.push(route));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(SettingsAction.buttonKey),
-        findsNothing,
-        reason: 'a gear on $route',
-      );
-      router.pop();
-      await tester.pumpAndSettle();
-    }
-  });
+  // Desktop covers the scanner's "unavailable" screen as well.
+  for (final (name, caps) in const [
+    ('mobile', PlatformCapabilities.mobile),
+    ('desktop', PlatformCapabilities.desktop),
+  ]) {
+    testWidgets('no gear on forms, detail screens and the scanner ($name)', (
+      tester,
+    ) async {
+      final container = await pumpShell(tester, caps: caps);
+      final db = await AppDatabase.instance.database;
+      final seeded = await seedPrescription(db);
+      final router = container.read(appRouterProvider);
+      for (final route in [
+        AppRoutes.addMedication,
+        '/medications/${seeded.medicationId}',
+        '/medications/${seeded.medicationId}/edit',
+        AppRoutes.expiringMedications,
+        AppRoutes.addTreatment,
+        '/treatments/${seeded.treatmentId}',
+        '/treatments/${seeded.treatmentId}/edit',
+        AppRoutes.doseHistory,
+        AppRoutes.scanner,
+        AppRoutes.settings,
+        AppRoutes.family,
+        AppRoutes.export,
+      ]) {
+        unawaited(router.push(route));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(SettingsAction.buttonKey),
+          findsNothing,
+          reason: 'a gear on $route ($name)',
+        );
+        router.pop();
+        await tester.pumpAndSettle();
+      }
+    });
+  }
 
   for (final locale in const ['de', 'it', 'en']) {
     for (final (index, tab) in mainTabs.indexed) {

@@ -108,8 +108,9 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
       ),
       body: Column(
         children: [
-          // Filter chips. Scrollable, as on the medications tab: at a 1.6x
-          // text scale the three chips are wider than a 360 dp screen.
+          // Filter chips. Scrollable, as on the medications tab: at large
+          // text scales on narrow screens the three chips are wider than the
+          // screen.
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
