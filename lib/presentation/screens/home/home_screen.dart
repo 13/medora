@@ -24,7 +24,7 @@ import 'package:medora/presentation/widgets/medication_expiry_tile.dart';
 import 'package:medora/presentation/widgets/settings_action.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 import 'package:medora/presentation/widgets/sick_leave_badge.dart';
-import 'package:medora/presentation/widgets/sync_status_chip.dart';
+import 'package:medora/presentation/widgets/sync_status_action.dart';
 import 'package:medora/presentation/widgets/update_banner.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -49,7 +49,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               tooltip: l10n.scanBarcodeTooltip,
               onPressed: () => context.push(AppRoutes.scanner),
             ),
-          const SyncStatusChip(),
+          const SyncStatusAction(),
           const SettingsAction(),
         ],
       ),
