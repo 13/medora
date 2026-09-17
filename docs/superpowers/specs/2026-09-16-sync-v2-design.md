@@ -4,6 +4,7 @@
 Open questions for the user are in §14; everything else is decided.
 **Revised 2026-09-17:** edit times are kept per column (`field_edited_at`, §4.4), not only per row; §4.1, §4.4, §4.5, §5, §6, §7, §9.2 and §12 follow.
 **Revised 2026-09-17 (engine review):** the server never holds a live row under a deleted parent, and the app's own tombstones are told apart from a person's everywhere (§4.6); a column changed back to its old value counts as changed (§4.5); §5, §6, §7.2–§7.6, §9.2 and §12 follow.
+**Revised 2026-09-17 (cycle review):** a child written while its parent is deleted ends deleted (§5 notes); a person's undo survives a later drop of the same dose (§4.6); rows that change by the hundred are read and written by the hundred (§4.6, §4.7, §7.3); the same value set again later is the latest edit (§4.4, §4.5); "delete all data" reaches every device (§7.9, a wipe marker in §5).
 
 ## 1. What the user asked for
 
@@ -131,6 +132,7 @@ These are the facts the design builds on, checked in the code at `35bb1f5`.
 | Field-level merge | — | Base snapshot per row; a patch sends only the changed columns and their times; a three-way merge per column group, each group judged by its own columns' times | S-4, follow-up m-2 |
 | Guarded dose writes | Filters in the same statement | Time correction and delete only while pending and untouched | S-1, S-6, S-7 |
 | Stock ledger | `stock_changes` table + `apply_stock_change()` | Local outbox of changes with ids | S-2 |
+| Wipe marker | `sync_wipes` (generation, time) written by `medora_delete_all_data()`, read with the sync state | Removes what it holds from before a newer wipe, then pulls | "delete all data" left other devices' copies (§7.9) |
 
 ### 4.2 The pull cursor: a transaction horizon, not a sequence
 
@@ -453,7 +455,8 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 -- (no table rewrite, no trigger fires), so no row changes `updated_at`
 -- and no 0.3.0 device sees its pending edit turn stale. The one UPDATE
 -- (section 7) deletes the live rows it finds under a deleted parent, as
--- the app's own change.
+-- the app's own change. Section 8 adds "delete all data", which records a
+-- wipe marker (section 2b) every device follows.
 --
 -- Run it in one transaction (`supabase db push` and the SQL editor do).
 -- Every statement can be run again, so a failed run can simply be
@@ -536,6 +539,29 @@ create index if not exists idx_treat_sync on public.treatments    (user_id, sync
 create index if not exists idx_presc_sync on public.prescriptions (sync_xid, id);
 create index if not exists idx_dose_sync  on public.dose_logs     (sync_xid, id);
 
+-- 2b. The wipe marker ------------------------------------------------------
+--
+-- One row per user who used "delete all data" (medora_delete_all_data,
+-- section 8): how many times, and when the last one ran. Every device reads
+-- it with the sync state; one that sees a newer generation than it last
+-- saw removes what it holds from before `wiped_at` and pulls again. Only
+-- that function writes it; a user reads only their own row.
+
+create table if not exists public.sync_wipes (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  generation bigint not null,
+  wiped_at   timestamptz not null
+);
+
+alter table public.sync_wipes enable row level security;
+
+drop policy if exists "sync_wipes_select" on public.sync_wipes;
+create policy "sync_wipes_select" on public.sync_wipes
+  for select using (user_id = auth.uid());
+
+revoke all on public.sync_wipes from anon, authenticated;
+grant select on public.sync_wipes to authenticated;
+
 -- 3. The stamp trigger ------------------------------------------------------
 --
 -- Runs BEFORE the `<table>_updated_at` trigger: Postgres fires BEFORE
@@ -581,6 +607,11 @@ declare
   v_app_delete boolean := false;
   v_parent_deleted timestamptz;
   v_other_deleted  timestamptz;
+  -- "Delete all data" (section 8): the caller's last wipe, and the wipe
+  -- generation a 0.4.0 insert says its device has seen.
+  v_wiped_at   timestamptz;
+  v_generation bigint;
+  v_wipe_delete boolean := false;
   v_new    jsonb;
   v_old    jsonb;
   v_sent   jsonb;
@@ -616,6 +647,32 @@ begin
       -- still pulls it (Medora 0.3.0 pulls by updated_at). A generated
       -- row keeps its 1970 stamp and stays invisible to those cursors.
       new.updated_at := v_now;
+    end if;
+  end if;
+
+  -- A 0.4.0 insert from a device that has not seen the caller's last
+  -- "delete all data" (the wipe generation it sends under "@wipe" is
+  -- older), of a row a person last changed before that wipe, is stored
+  -- deleted, as that person's delete: the device read the sync state just
+  -- before the wipe, and its next cycle removes the row there too. A row
+  -- changed after the wipe is new data, and so is every insert from a
+  -- writer that sends no "@wipe" (Medora 0.3.0). The shared lock makes
+  -- inserts and the wipe (which takes it exclusively) run one after the
+  -- other, so this reads the wipe that is committed when the row lands.
+  if tg_op = 'INSERT' and auth.uid() is not null then
+    perform pg_advisory_xact_lock_shared(
+      hashtextextended('medora-wipe:' || auth.uid()::text, 0));
+    if new.deleted_at is null and new.write_id is not null
+       and jsonb_typeof(new.field_edited_at) = 'object'
+       and new.field_edited_at ? '@wipe'
+       and new.edited_at >= c_ceiling then
+      select w.wiped_at, w.generation into v_wiped_at, v_generation
+        from public.sync_wipes w where w.user_id = auth.uid();
+      if v_generation > (new.field_edited_at ->> '@wipe')::bigint
+         and new.edited_at <= v_wiped_at then
+        new.deleted_at := v_wiped_at;
+        v_wipe_delete := true;
+      end if;
     end if;
   end if;
 
@@ -719,6 +776,8 @@ begin
   if v_cascade or v_app_delete then
     -- After the column times: the columns a write changes keep its time.
     new.edited_at := c_epoch;
+  elsif v_wipe_delete then
+    new.edited_at := v_wiped_at;
   end if;
   return new;
 end;
@@ -779,8 +838,9 @@ revoke all on function public.cascade_tombstone_prescription() from public, anon
 -- Clients never truncate, add triggers or add foreign keys. Row-level
 -- security does not cover TRUNCATE, and Supabase grants all three by
 -- default, so one signed-in user could otherwise empty every user's rows
--- through any SQL surface. Hard DELETE ("delete all data") stays, under the
--- tables' policies.
+-- through any SQL surface. Hard DELETE stays, under the tables' policies
+-- ("delete all data" uses medora_delete_all_data, section 8, which also
+-- tells the user's other devices).
 revoke truncate, trigger, references
   on public.medications, public.treatments, public.prescriptions,
      public.dose_logs, public.families, public.family_members
@@ -802,7 +862,9 @@ set search_path = public, pg_temp
 as $$
   select jsonb_build_object(
     'schema', 2,
-    'horizon', pg_snapshot_xmin(pg_current_snapshot())::text::bigint
+    'horizon', pg_snapshot_xmin(pg_current_snapshot())::text::bigint,
+    'wipe', (select jsonb_build_object('generation', w.generation, 'wiped_at', w.wiped_at)
+               from public.sync_wipes w where w.user_id = auth.uid())
   )
 $$;
 
@@ -977,6 +1039,56 @@ update public.dose_logs c
  where p.id = c.prescription_id
    and c.deleted_at is null
    and p.deleted_at is not null;
+
+-- 8. "Delete all data" -----------------------------------------------------
+--
+-- Removes every medication, treatment, prescription and dose of the caller,
+-- and records the wipe (section 2b) in the same transaction, so every other
+-- device of the account removes its copies on its next sync instead of
+-- keeping them (and writing them back with a later edit). Returns
+-- {"generation": g, "wiped_at": t}.
+--
+-- Runs with the owner's rights, so it can write the marker, which clients
+-- cannot; every delete names the caller's rows exactly as the tables'
+-- delete policies do (prescriptions and doses through the caller's
+-- treatments). The stock ledger goes with the medications (foreign key).
+-- The exclusive lock makes the caller's inserts wait for the wipe, or the
+-- wipe for them (medora_sync_stamp takes the shared side), so a row
+-- inserted meanwhile is either deleted here or sees this wipe.
+create or replace function public.medora_delete_all_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid        uuid := auth.uid();
+  v_at         timestamptz := now();
+  v_generation bigint;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '28000';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('medora-wipe:' || v_uid::text, 0));
+  insert into public.sync_wipes as w (user_id, generation, wiped_at)
+    values (v_uid, 1, v_at)
+    on conflict (user_id) do update
+      set generation = w.generation + 1, wiped_at = excluded.wiped_at
+    returning w.generation into v_generation;
+  delete from public.dose_logs d
+   using public.prescriptions p, public.treatments t
+   where d.prescription_id = p.id and p.treatment_id = t.id and t.user_id = v_uid;
+  delete from public.prescriptions p
+   using public.treatments t
+   where p.treatment_id = t.id and t.user_id = v_uid;
+  delete from public.treatments where user_id = v_uid;
+  delete from public.medications where user_id = v_uid;
+  return jsonb_build_object('generation', v_generation, 'wiped_at', v_at);
+end;
+$$;
+
+revoke all on function public.medora_delete_all_data() from public, anon;
+grant execute on function public.medora_delete_all_data() to authenticated;
 ```
 
 **Notes on the SQL:**
@@ -1001,6 +1113,7 @@ update public.dose_logs c
 - **Rows under a deleted parent** (§4.6). The trigger looks the parents up with the caller's rights: the insert and update policies already require the caller to see them. It reads them `FOR SHARE`, held until the write commits (review I-3): a parent's delete takes `FOR NO KEY UPDATE`, so it waits for a child being written and its cascade then sees that child, and a child written while the delete is open waits and then sees the parent deleted. The foreign key's own `FOR KEY SHARE` does not conflict with a delete, so without this the two passed each other and left a live child. `FOR SHARE` needs the UPDATE right and policy on the parent, which its owner has. A batch that writes children of two parents while another request deletes both can deadlock; Postgres aborts one of them (40P01) and the device retries it after its backoff. It tells the tombstone cascade from every other writer by `pg_trigger_depth() > 1` (the cascade's update runs inside another trigger; `apply_stock_change` is a function, not a trigger). The app's own delete is marked by setting `edited_at` to 1970 after the column times are stamped, so the columns a write changes keep that write's time. The one-time repair (section 7) is the only UPDATE in the migration: it touches only live rows under deleted parents, which no device can store anyway, and keeps their `updated_at` (0.3.0 dropped them with their parent). The doses its cascade reaches from a repaired prescription are a cascade write and get a new `updated_at`; 0.3.0 then pulls a tombstone for a row it no longer holds, which does nothing (review Minor 2).
 - **A 0.3.0 take of a dropped dose** (§4.6). Only a legacy write (no new write id) that does not set `deleted_at` itself, on a row whose tombstone is the app's own, and that changes `status` to `taken` or `skipped`, clears `deleted_at`. The trigger reads `status` through `to_jsonb`, so the one function serves every table.
 - **Trigger order.** Postgres runs `BEFORE` triggers of one event in name order. `<table>_sync_stamp` sorts before `<table>_updated_at`, and `update_updated_at()` reads the `write_id` and `edited_at` the stamp trigger has just settled.
+- **The wipe marker** (sections 2b and 8, §7.9). `sync_wipes` is readable by its owner only and written only by `medora_delete_all_data()`, which runs with the owner's rights and names the caller's rows exactly as the delete policies do. The stamp trigger reads the marker with the caller's rights, for inserts only, under the shared side of the caller's wipe lock (`hashtextextended('medora-wipe:' || uid)`, an advisory lock, which needs no table rights). A trigger function is volatile, so its read after the lock wait sees a wipe that committed meanwhile.
 - **No down migration.** Every change is additive, and 0.3.0 runs against it (§9.2). Rolling the app back does not need the schema rolled back.
 
 ## 6. Local schema v16
@@ -1061,16 +1174,17 @@ CREATE INDEX idx_local_stock_outbox_med ON stock_outbox(medication_id, seq);
 **Other touch points:**
 
 - `LocalUploadMarker.markAllForUpload` also clears `sync_version`, `sync_base` and `sync_write_id`, because the rows belong to a new account. The next cycle reads their server copies in bulk (§7.3).
-- `AppDatabase.clearAllData` and `LocalDataWiper` also clear `stock_outbox`.
+- `AppDatabase.clearAllData` and `LocalDataWiper` also clear `stock_outbox`. `LocalDataWiper` also removes the recorded wipe generation (§7.9).
 - `TreatmentRepositoryImpl.updateTreatment` refuses a row that is `pending_delete`, as the medication repository already does.
 
 ## 7. The client algorithm
 
 ### 7.1 One cycle (`SyncService._syncAll`)
 
-1. `state = await syncStateRemote.read()` → `(schema, horizon)`.
+1. `state = await syncStateRemote.read()` → `(schema, horizon, wipe)`.
    - A missing function or `schema < 2` throws `MissingMigrationException` (§8).
    - The cycle ends before any write.
+   - A newer "delete all data" than this device applied removes what it holds from before it (§7.9), before anything is sent.
 2. `repairing = await cursors.startPullRepair()` (version 2, §7.7).
 3. **Push**, in foreign-key order:
    - families (unchanged);
@@ -1201,9 +1315,34 @@ For each op, oldest first:
 
 `SyncReport` changes:
 
-- **Added:** `int merged` (rows merged on pull or push), `List<SyncOverwrite> overwritten` (`table`, `id`, `columns`, `keptLocal`), and `String? missingMigration`.
+- **Added:** `int merged` (rows merged on pull or push), `List<SyncOverwrite> overwritten` (`table`, `id`, `columns`, `keptLocal`), `String? missingMigration`, and `int wiped` (rows removed because of a "delete all data" made elsewhere, §7.9).
 - **Removed:** `skippedStale`.
 - **Log line:** `merged` and `overwritten` are added to the debug line.
+
+### 7.9 "Delete all data" reaches every device
+
+**Before:** the settings dialog hard-deleted the server rows. Another phone kept its synced copies (a removed row leaves nothing to pull), and a later edit there sent them back as new rows (controller decision: the data must be gone everywhere).
+
+**Server** (§5, sections 2b and 8):
+- `sync_wipes(user_id, generation, wiped_at)`: one row per user who used "delete all data". Row-level security lets a user read their own row; no client may write it.
+- `medora_delete_all_data()` (security definer, callable by `authenticated`): in one transaction, takes the user's wipe lock, moves the marker (`generation + 1`, `wiped_at = now()`), and deletes the user's doses, prescriptions (through the user's treatments, as the delete policies name them), treatments and medications; the ledger goes with the medications. It answers `{generation, wiped_at}`.
+- `medora_sync_state()` also answers `wipe: {generation, wiped_at}` (or `null`), so reading it costs no extra request.
+- **The moment around the wipe.** A device may read the sync state just before the wipe and push just after it. So every 0.4.0 insert carries, under the key `@wipe` in its `field_edited_at` (a key no column has; the trigger keeps no entry for it), the wipe generation its device has applied. An insert whose `@wipe` is older than the user's generation, of a row a person last changed at or before `wiped_at` (`edited_at`; the app's own 1970 rows are left to their parents), is stored deleted, as that person's delete (`deleted_at = edited_at = wiped_at`). The device settles it as deleted, and its next cycle removes the rest. Every insert takes the shared side of the user's wipe lock (`pg_advisory_xact_lock_shared`), and the wipe the exclusive side, so an insert either lands before the wipe (and is deleted by it) or sees it. `tools/check_supabase_sql.sh` runs both orders in two sessions.
+
+**Device** (`SyncService._followRemoteWipe`, `lib/data/sync/remote_wipe.dart`), at the start of every cycle, before anything is sent:
+- `SyncCursorStore.wipeSeen(userId)` holds the generation this device applied for the signed-in account (`sync.wipe_seen` = `<user id>|<generation>`; `clear()` keeps it, `LocalDataWiper` removes it).
+- **A newer generation:** `removeDataFromBefore(wiped_at)` deletes every medication, treatment, prescription and dose whose `created_at` is not after `wiped_at`, in any sync state: synced copies, and changes still waiting, which belong to rows the person deleted everywhere ("nothing pending from before the wipe"). Children go with their parents and stock changes with their medication (local foreign keys). A row created after the wipe stays with its sync state: it is new data (a medication added offline after the wipe is uploaded). Families stay: "delete all data" never touched them. Then every pull key and backoff record is dropped, the generation is recorded, and the cycle goes on (a full pull brings whatever the server holds). `onRemoteWipe` gets the photo names no remaining medication uses; the app deletes those files. The lists and reminders refresh when the cycle ends, as after every sync (`_afterSync` reconciles the reminders, so a removed dose's reminder is cancelled).
+- **No generation recorded for this account** (a fresh install, a sign-in, a device wiped itself, another account): the generation is recorded and nothing is removed: the data here is the person's to upload, and its inserts then carry the current generation, so an old wipe never deletes it. **Exception:** a device that still holds a Medora 0.3.0 pull cursor (`sync.last_pull_at.*`) synced before this build and may hold rows from before the wipe; it follows the wipe like any other.
+- **A lower generation than recorded** (a restored project): recorded, nothing removed.
+- **Force pull** records the generation after it cleared the device. **Force push** records it without removing anything and sends its rows as data written now: "my copy is the truth" holds against a wipe too, and restores the device's rows everywhere (a way back from a wipe made by mistake).
+- "After the wipe" is judged by the device's `created_at` against the server's `wiped_at`, so a row made within the device clock's error of the wipe can land on the wrong side.
+- The wiping device calls the function, then wipes itself (`LocalDataWiper`), which removes its recorded generation; its next cycle records the new one. A project without sync v2 has no function: the dialog then deletes the tables as before (`AccountDataRemoteDatasource`).
+
+**Medora 0.3.0 against a wipe.** A 0.3.0 device cannot read the marker:
+- it keeps its local copies; its pulls by `updated_at` see nothing of the purge;
+- an edit it makes to one of those rows is a whole-row upsert, which inserts the row again (with the columns 0.3.0 sends, `created_at` set on arrival); a dose it takes or generates under a purged prescription fails the foreign key and stays pending there;
+- **decision: the server treats a 0.3.0 write after a wipe as new data** and stores it live. 0.4.0 devices pull it like any other new row, and never remove it again: they remove rows only when the generation moves, before they pull. Refusing such writes (or storing them deleted) was rejected: the server cannot tell a stale re-upload from a deliberate edit, or from old local data a person merges when signing in on 0.3.0 (0.3.0 sends no write id and no creation time, and its `updated_at` is the local edit time, which can be months old for legitimate data), so a refusal would block or delete data the person wants. It is the same limit 0.3.0 has with every change it has not seen (§9.2); pinned in `multi_device_wipe_sync_test`;
+- when that device updates to 0.4.0, its first cycle finds the 0.3.0 cursor and the newer generation, removes its rows from before the wipe, and pulls what the server holds (including anything a 0.3.0 device wrote back).
 
 ## 8. A project without the migration
 
@@ -1243,6 +1382,7 @@ For each op, oldest first:
 | Sends a whole row it last pulled before a 0.4.0 device changed a column | Its stale value for that column is a real change on the server: it overwrites the newer 0.4.0 edit and is stamped with its arrival time, as the newest person's change. v1 behaved the same; the server cannot tell a stale value from a new one. |
 | Restores a backup whose `updated_at` falls in the repeated autumn hour | The wall-clock stamp is read as the first of the two instants. The row can lose or win against a change made in that hour by up to one hour of difference. |
 | Tombstone cascade | Children are deleted as the app's own change (`edited_at` 1970, no write id), and `updated_at` still moves, so 0.3.0 pulls them as before. `deleted_at` has no edit time, so the cascade adds no entry (it only fills an empty map). |
+| Holds data another device deleted with "delete all data" | It cannot see the wipe marker and keeps its copies. An edit of such a row inserts it again, and the server keeps it as new data; 0.4.0 devices show it (§7.9). Its takes under a removed prescription fail the foreign key. On update to 0.4.0 it removes its rows from before the wipe. |
 
 **Medora 0.2.5 and older** are outside this table. The v0.3.0 notes already said to update every device.
 
@@ -1266,6 +1406,10 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
 > **Update every device you sync.** Until the last one is on 0.4.0, stock changed on an older device can still replace a change from a newer one.
 >
 > **The first sync after this update downloads all your data once more.** Your unsynced changes are kept.
+>
+> **"Delete all data" now deletes on every device** that syncs with 0.4.0: each removes its copies on its next sync. A device still on 0.3.0 keeps them, and an edit there brings that entry back.
+>
+> **Deleting a prescription removes its dose history on every device**, including doses taken on another phone that had not synced yet.
 
 ## 10. Settings gear
 
@@ -1347,6 +1491,8 @@ It stops syncing with the message in §8. It loses nothing and writes nothing.
   - deletes and the rows under them: a slot dropped and generated again (on either device, before or after the drop, and after a person's delete), a take and a generated dose under a prescription deleted elsewhere, a dose pulled under a prescription deleted here, a live orphan on the server, and a 0.3.0 take of a dropped dose. Each ends with a round that changes nothing on the server.
 
   `test/services/multi_device_stock_sync_test.dart` runs the stock through two phones with real repositories and cycles, each case ending with rounds that change nothing: a dose on each phone (both orders), a restock against a dose, a count against a dose (both arrival orders), a lost answer, a medication deleted or removed from the server ("delete all data") while a dose waits, a medication added and restocked offline (also with its insert answer lost), an undone dose, a phone that left cloud mode, a cloud restore, and a 0.3.0 phone's absolute quantity.
+
+  `test/services/multi_device_wipe_sync_test.dart` runs "delete all data" on one phone against another with changes waiting (and one made after the wipe), a push in the moment after the wipe, a 0.3.0 phone writing an old row back, a phone upgraded from 0.3.0, a phone signing in after an old wipe, a force push after a wipe, a restored project, and the wiping phone itself; each ends with a quiet round.
 
   `test/services/sync_request_count_test.dart` counts the requests of a year of doses on two phones: signing in again (with a change made while signed out and a newer one from the other phone), a first sign-in with a year of local doses, the overdue sweep on both phones (a take made first on the other phone wins; the second phone writes nothing), an undo on the other phone against a sweep from an older copy, a schedule change that drops half a year, and upgrade day on two phones. Each ends with a quiet round that writes nothing.
 

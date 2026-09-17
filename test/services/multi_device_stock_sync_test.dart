@@ -335,8 +335,9 @@ void main() {
     b.online = false;
     await b.take(_med);
     b.online = true;
-    // What the settings dialog does: the server rows go, then this phone's.
-    server.meds.table.hardDelete(_med);
+    // What the settings dialog does: the server call (which records the
+    // wipe), then this phone's own wipe.
+    server.core.deleteAllData();
     await a.run((_) => AppDatabase.instance.clearAllData());
 
     final report = (await b.sync())!;
@@ -346,9 +347,10 @@ void main() {
     expect(server.core.ledger, isEmpty);
     expect(server.meds.table.rows[_med], isNull);
     expect(await a.waiting(), isEmpty);
-    // Known limit (before this task too): B keeps its synced copy, since a
-    // row removed from the server leaves no tombstone to pull.
-    expect(await b.quantity(_med), 28);
+    // B removes its copy too, with the dose it had not sent
+    // (multi_device_wipe_sync_test covers the rest).
+    expect(await b.row(_med), isNull);
+    expect(report.wiped, 1);
   });
 
   test('a medication added offline and restocked before its first sync goes '

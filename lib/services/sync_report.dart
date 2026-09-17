@@ -48,6 +48,10 @@ class SyncReport {
   /// Same-field changes one side lost (see the design, section 4.5).
   final List<SyncOverwrite> overwritten = [];
 
+  /// Rows removed here because "delete all data" ran on another device
+  /// (see the design, section 7.9); 0 when it did not.
+  int wiped = 0;
+
   /// Rows whose push was skipped because they are inside their failure
   /// backoff window (see `SyncFailureStore`). Not a failure either — they are
   /// simply waiting for their next attempt.

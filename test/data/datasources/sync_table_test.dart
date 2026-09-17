@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:medora/data/datasources/account_data_remote_datasource.dart';
 import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/stock_remote.dart';
@@ -341,10 +342,12 @@ void main() {
   group('SyncStateRemoteDatasource', () {
     test('reads the horizon', () async {
       final state = await SyncStateRemoteDatasource(
-        answering({'schema': 2, 'horizon': 4711}),
+        answering({'schema': 2, 'horizon': 4711, 'wipe': null}),
       ).read();
       expect(state.schema, 2);
       expect(state.horizon, 4711);
+      expect(state.wipeGeneration, 0);
+      expect(state.wipedAt, isNull);
       expect(seen.single.method, 'POST');
       expect(sent(0), 'http://supabase.test/rest/v1/rpc/medora_sync_state');
     });
@@ -371,6 +374,29 @@ void main() {
       });
     }
 
+    test('reads the account\'s last "delete all data"', () async {
+      final state = await SyncStateRemoteDatasource(
+        answering({
+          'schema': 2,
+          'horizon': 4711,
+          'wipe': {
+            'generation': 3,
+            'wiped_at': '2026-03-05T10:00:00.123456+01:00',
+          },
+        }),
+      ).read();
+      expect(state.wipeGeneration, 3);
+      expect(state.wipedAt, DateTime.utc(2026, 3, 5, 9, 0, 0, 123, 456));
+      expect(state.wipedAt!.isUtc, isTrue);
+      // A generation without a time cannot be followed: none.
+      final odd = parseSyncState({
+        'schema': 2,
+        'horizon': 1,
+        'wipe': {'generation': 3},
+      });
+      expect(odd.wipeGeneration, 0);
+    });
+
     test('an older schema is a missing migration too', () async {
       await expectLater(
         SyncStateRemoteDatasource(
@@ -387,6 +413,65 @@ void main() {
         ).read(),
         throwsA(isA<PostgrestException>()),
       );
+    });
+  });
+
+  group('AccountDataRemoteDatasource', () {
+    test('"delete all data" is one call to the server function', () async {
+      await AccountDataRemoteDatasource(answering(null)).deleteAllData();
+      expect(seen.single.method, 'POST');
+      expect(
+        sent(0),
+        'http://supabase.test/rest/v1/rpc/medora_delete_all_data',
+      );
+    });
+
+    test('a project without the function deletes the tables, children '
+        'first', () async {
+      final requests = <http.Request>[];
+      final client = SupabaseClient(
+        'http://supabase.test',
+        'anon-key',
+        httpClient: MockClient((request) async {
+          requests.add(request);
+          if (request.url.path.contains('/rpc/')) {
+            return http.Response(
+              jsonEncode({'code': 'PGRST202', 'message': 'no such function'}),
+              404,
+              request: request,
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          return http.Response('', 204, request: request);
+        }),
+      );
+      addTearDown(client.dispose);
+      await AccountDataRemoteDatasource(client).deleteAllData();
+      expect(
+        [
+          for (final r in requests.skip(1))
+            '${r.method} ${Uri.decodeComponent(r.url.toString())}',
+        ],
+        [
+          for (final t in [
+            'dose_logs',
+            'prescriptions',
+            'treatments',
+            'medications',
+          ])
+            'DELETE http://supabase.test/rest/v1/$t?id=neq.',
+        ],
+      );
+    });
+
+    test('any other error passes through, and nothing is deleted', () async {
+      await expectLater(
+        AccountDataRemoteDatasource(
+          answering({'code': '42501', 'message': 'denied'}, status: 403),
+        ).deleteAllData(),
+        throwsA(isA<PostgrestException>()),
+      );
+      expect(seen, hasLength(1));
     });
   });
 

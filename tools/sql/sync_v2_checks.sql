@@ -86,7 +86,7 @@ do $$
 declare t text; r text; p text;
 begin
   foreach t in array array['medications', 'treatments', 'prescriptions', 'dose_logs',
-                           'families', 'family_members', 'stock_changes'] loop
+                           'families', 'family_members', 'stock_changes', 'sync_wipes'] loop
     foreach r in array array['anon', 'authenticated'] loop
       foreach p in array array['TRUNCATE', 'TRIGGER', 'REFERENCES'] loop
         assert not has_table_privilege(r, 'public.' || t, p),
@@ -936,22 +936,83 @@ do $$ begin
   insert into dose_logs (id, prescription_id, scheduled_time) values ('b-d', 'b-p', '2026-09-10T08:00:00Z');
   perform apply_stock_change('bdbdbdbd-0000-0000-0000-000000000001', 'b-med', -1, null);
 end $$;
--- "Delete all data" (settings_dialogs.dart): hard deletes in FK order.
-delete from dose_logs where id <> '';
-delete from prescriptions where id <> '';
-delete from treatments where id <> '';
-delete from medications where id <> '';
+-- "Delete all data" (settings_dialogs.dart): one call removes B's rows and
+-- records the wipe for B's other devices.
 do $$ begin
+  assert jsonb_typeof(medora_sync_state()->'wipe') = 'null', 'wipe: none before the first';
+end $$;
+create temp table wipe1 as select medora_delete_all_data() as j;
+do $$
+declare j jsonb := (select j from wipe1);
+begin
+  assert (j->>'generation')::int = 1, 'wipe: the first is generation 1 ' || j::text;
   assert (select count(*) from medications) + (select count(*) from treatments)
        + (select count(*) from prescriptions) + (select count(*) from dose_logs)
        + (select count(*) from stock_changes) = 0, 'delete all: B has nothing left';
   assert apply_stock_change('bdbdbdbd-0000-0000-0000-000000000001', 'b-med', -1, null)
        = '{"status": "gone"}', 'delete all: a queued change is gone';
+  assert medora_sync_state()->'wipe' = jsonb_build_object('generation', 1, 'wiped_at', j->'wiped_at'),
+    'wipe: the sync state names it ' || (medora_sync_state())::text;
+  -- Only the function writes the marker.
+  begin
+    insert into sync_wipes (user_id, generation, wiped_at) values (auth.uid(), 9, now());
+    assert false, 'wipe: a client must not write the marker';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update sync_wipes set generation = 0;
+    assert false, 'wipe: a client must not change the marker';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from sync_wipes;
+    assert false, 'wipe: a client must not remove the marker';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+-- After the wipe: an insert from a device that has not seen it, of a row
+-- changed before it, is stored deleted as that person's delete; one
+-- changed after it, one from a device that has seen it, one from 0.3.0
+-- (no "@wipe") and a generated one are new data.
+insert into medications (id, user_id, name, write_id, edited_at, field_edited_at)
+  values ('w-stale', auth.uid(), 'Stale', gen_random_uuid(), now() - interval '1 hour', '{"@wipe": 0}'),
+         ('w-later', auth.uid(), 'Later', gen_random_uuid(), now(), '{"@wipe": 0}'),
+         ('w-seen', auth.uid(), 'Seen', gen_random_uuid(), now() - interval '1 hour',
+          jsonb_build_object('@wipe', 1, 'name', pg_temp.entry(now() - interval '1 hour')));
+insert into medications (id, user_id, name, updated_at)
+  values ('w-legacy', auth.uid(), 'Legacy', now() - interval '1 hour');
+insert into treatments (id, user_id, name, start_date, write_id, edited_at, field_edited_at)
+  values ('w-auto', auth.uid(), 'Auto', '2026-09-10', gen_random_uuid(), '1970-01-01T00:00:00Z', '{"@wipe": 0}');
+do $$
+declare wiped timestamptz := ((select j from wipe1)->>'wiped_at')::timestamptz;
+begin
+  assert (select deleted_at = wiped and edited_at = wiped and updated_at > wiped
+            from medications where id = 'w-stale'),
+    'wipe: a row changed before it, from a device that has not seen it, lands deleted as a person''s delete';
+  assert (select count(*) from medications
+           where id in ('w-later', 'w-seen', 'w-legacy') and deleted_at is null) = 3,
+    'wipe: a later change, a device that has seen it and 0.3.0 write new data';
+  assert (select deleted_at is null from treatments where id = 'w-auto'),
+    'wipe: a generated row is left to its parent';
+  assert (select not (field_edited_at ? '@wipe') and field_edited_at ? 'name'
+            from medications where id = 'w-seen'),
+    'wipe: the "@wipe" key is not kept in the map';
+end $$;
+-- A second wipe: generation 2, and the new data goes too.
+do $$
+declare j jsonb;
+begin
+  j := medora_delete_all_data();
+  assert (j->>'generation')::int = 2, 'wipe: the second is generation 2 ' || j::text;
+  assert (select count(*) from medications) + (select count(*) from treatments) = 0,
+    'wipe: the rows written since the first are gone';
 end $$;
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000a';
 do $$ begin
   assert (select count(*) from medications where id in ('m1', 'm2', 'lock-med')) = 3,
     'delete all: A''s rows untouched';
+  assert jsonb_typeof(medora_sync_state()->'wipe') = 'null', 'wipe: A sees no marker of B''s';
+  assert (select count(*) from sync_wipes) = 0, 'wipe: A cannot read B''s marker';
 end $$;
 
 -- Seen without row-level security: the removed medications' ledger rows
@@ -962,7 +1023,7 @@ do $$ begin
     'purge: no ledger row outlives its medication';
 end $$;
 
--- anon may call neither function.
+-- anon may call none of the functions.
 set role anon;
 do $$ begin
   begin
@@ -973,6 +1034,16 @@ do $$ begin
   begin
     perform apply_stock_change('cccccccc-0000-0000-0000-000000000001', 'm2', -1, null);
     assert false, 'anon must not change stock';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform medora_delete_all_data();
+    assert false, 'anon must not delete data';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from sync_wipes;
+    assert false, 'anon must not read the wipe marker';
   exception when insufficient_privilege then null;
   end;
 end $$;

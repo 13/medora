@@ -101,6 +101,7 @@ class TableSync {
     required this.remote,
     required this.newWriteId,
     required this.now,
+    this.wipeSeen,
   }) : policy = mergePolicyOf(table);
 
   final String table;
@@ -110,6 +111,10 @@ class TableSync {
   final String Function() newWriteId;
   final DateTime Function() now;
   final MergePolicy policy;
+
+  /// The "delete all data" generation this device has applied; every
+  /// insert sends it ([insertTimes]).
+  final int? Function()? wipeSeen;
 
   /// How many times one push tries again after the server moved on.
   static const maxAttempts = 2;
@@ -443,7 +448,7 @@ class TableSync {
     });
     if (server == null) {
       await remote.insertIfAbsent([
-        {...wire, ...stamp},
+        {...wire, ...stamp, 'field_edited_at': insertTimes(times)},
       ]);
       server = await remote.fetch(id);
       if (server == null) {
@@ -512,7 +517,9 @@ class TableSync {
         'edited_at': _wireTime(_editedAtOf(row, meta) ?? now()),
         // Empty when no column changed since the row was made here: the
         // server then reads edited_at for every column, as this device does.
-        'field_edited_at': FieldTimes.decode(row['field_edited_at']).toJson(),
+        'field_edited_at': insertTimes(
+          FieldTimes.decode(row['field_edited_at']),
+        ),
       },
     ]);
     final server = await remote.fetch(id);
@@ -632,9 +639,9 @@ class TableSync {
               'deleted_at': deletedAt,
               'write_id': writeId,
               'edited_at': editedAt,
-              'field_edited_at': FieldTimes.decode(
-                row['field_edited_at'],
-              ).toJson(),
+              'field_edited_at': insertTimes(
+                FieldTimes.decode(row['field_edited_at']),
+              ),
             },
           ]);
         }
@@ -1042,6 +1049,15 @@ class TableSync {
 
   // ── Helpers ────────────────────────────────────────────────
 
+  /// The `field_edited_at` an insert sends: [times], and under `@wipe` the
+  /// "delete all data" generation this device has applied, which the
+  /// server compares with the account's last wipe (a key no column has, so
+  /// the server keeps no entry for it).
+  Map<String, Object?> insertTimes(FieldTimes times) => {
+    ...times.toJson(),
+    wipeSeenKey: ?wipeSeen?.call(),
+  };
+
   /// Deletes the pending row [row] here, unsent, when a parent it names is
   /// deleted here or missing: that delete wins, and the server deletes the
   /// row with its parent. Returns whether it did.
@@ -1187,6 +1203,10 @@ class TableSync {
 
   static String _wireTime(DateTime time) => time.toUtc().toIso8601String();
 }
+
+/// The key under which an insert's `field_edited_at` carries the wipe
+/// generation its device has applied.
+const wipeSeenKey = '@wipe';
 
 /// What a bulk push did, by row id.
 class BulkPushResult {

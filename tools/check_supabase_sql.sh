@@ -158,3 +158,32 @@ if [[ "$first" != true/true || "$second" != true/true || "$third" != true/true ]
   exit 1
 fi
 echo "parent race check passed"
+
+# "Delete all data" and an insert at the same moment (the wipe marker): the
+# wipe waits for an insert already open and deletes its row; an insert that
+# starts while the wipe is open waits, then sees it, and a row changed
+# before the wipe from a device that had not seen it lands deleted. User C.
+psql_run -c "insert into auth.users (id) values ('00000000-0000-0000-0000-00000000000c');" >/dev/null
+as_c=(-c "set role authenticated" -c "set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000c'")
+wipe_insert() { # $1 id, $2 the wipe generation the device has seen
+  echo "insert into medications (id, user_id, name, write_id, edited_at, field_edited_at)
+        values ('$1', auth.uid(), 'Race', gen_random_uuid(), now() - interval '1 hour', '{\"@wipe\": $2}')"
+}
+# 1. The insert is open while the wipe runs.
+psql_bg "${as_c[@]}" -c "begin" -c "$(wipe_insert wipe-race-1 0)" -c "select pg_sleep(4)" -c "commit"
+sleep 1.5
+psql_run "${as_c[@]}" -c "select medora_delete_all_data()" >/dev/null
+sleep 3
+first=$(psql_run -At -c "select coalesce((select case when deleted_at is null then 'live' else 'deleted' end from medications where id = 'wipe-race-1'), 'gone');")
+# 2. The wipe is open while the insert runs.
+psql_bg "${as_c[@]}" -c "begin" -c "select medora_delete_all_data()" -c "select pg_sleep(4)" -c "commit"
+sleep 1.5
+psql_run "${as_c[@]}" -c "$(wipe_insert wipe-race-2 1)" >/dev/null
+sleep 3
+second=$(psql_run -At -c "select coalesce((select case when deleted_at is null then 'live' when edited_at = (select wiped_at from sync_wipes where user_id = '00000000-0000-0000-0000-00000000000c') then 'deleted-by-wipe' else 'deleted' end from medications where id = 'wipe-race-2'), 'gone');")
+wait || true
+if [[ "$first" != gone || "$second" != deleted-by-wipe ]]; then
+  echo "wipe race check failed: insert first=$first (want gone), wipe first=$second (want deleted-by-wipe)" >&2
+  exit 1
+fi
+echo "wipe race check passed"

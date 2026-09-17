@@ -143,6 +143,7 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'sync.last_pull_at.medications': '2026-01-01T00:00:00.000Z',
       'sync.pull_key.dose_logs': '1234|d1',
+      SyncCursorStore.wipeSeenKey: 'user-a|2',
       'theme_mode': 'dark',
     });
     final prefs = await SharedPreferences.getInstance();
@@ -166,6 +167,9 @@ void main() {
       isNull,
     );
     expect(await failures.listAll(), isEmpty);
+    // Nothing from before a wipe is left: the next sync records the
+    // account's generation afresh.
+    expect(prefs.getString(SyncCursorStore.wipeSeenKey), isNull);
     expect(
       prefs.getKeys().where((k) => k.startsWith(SyncFailureStore.keyPrefix)),
       isEmpty,

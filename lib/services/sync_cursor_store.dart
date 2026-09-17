@@ -38,8 +38,14 @@ class SyncCursorStore {
   /// The repair version whose full pull finished.
   static const pullRepairDoneKey = 'sync.pull_repair.done';
 
+  /// The last "delete all data" generation this device applied, as
+  /// `<user id>|<generation>`. Outside the cursor prefixes, so [clear]
+  /// keeps it; a local data wipe removes it.
+  static const wipeSeenKey = 'sync.wipe_seen';
+
   final SharedPreferences? _prefs;
   final Map<String, PullKey> _memoryKeys = {};
+  String? _memoryWipeSeen;
 
   /// An in-memory store holds nothing an older build wrote, so it has
   /// nothing to repair.
@@ -85,6 +91,33 @@ class SyncCursorStore {
       await prefs.remove(key);
     }
   }
+
+  /// The "delete all data" generation this device last applied for
+  /// [userId]; null when it has none for that account (a fresh install, a
+  /// wiped device, another account, or a build from before the marker).
+  Future<int?> wipeSeen(String userId) async {
+    final raw = _prefs?.getString(wipeSeenKey) ?? _memoryWipeSeen;
+    if (raw == null) return null;
+    final bar = raw.lastIndexOf('|');
+    if (bar < 0 || raw.substring(0, bar) != userId) return null;
+    return int.tryParse(raw.substring(bar + 1));
+  }
+
+  Future<void> setWipeSeen(String userId, int generation) async {
+    final value = '$userId|$generation';
+    final prefs = _prefs;
+    if (prefs == null) {
+      _memoryWipeSeen = value;
+      return;
+    }
+    await prefs.setString(wipeSeenKey, value);
+  }
+
+  /// True when this device still holds a pull cursor of a build before
+  /// sync v2 ([keyPrefix]): it synced under Medora 0.3.0 and has not run a
+  /// 0.4.0 cycle since.
+  bool get hasLegacyCursors =>
+      _prefs?.getKeys().any((k) => k.startsWith(keyPrefix)) ?? false;
 
   /// Called at the start of a sync cycle. True while the pull repair is not
   /// finished: the cycle's pull then counts as the repair pull, and the

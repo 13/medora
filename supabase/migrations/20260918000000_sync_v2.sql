@@ -12,7 +12,8 @@
 -- (no table rewrite, no trigger fires), so no row changes `updated_at`
 -- and no 0.3.0 device sees its pending edit turn stale. The one UPDATE
 -- (section 7) deletes the live rows it finds under a deleted parent, as
--- the app's own change.
+-- the app's own change. Section 8 adds "delete all data", which records a
+-- wipe marker (section 2b) every device follows.
 --
 -- Run it in one transaction (`supabase db push` and the SQL editor do).
 -- Every statement can be run again, so a failed run can simply be
@@ -95,6 +96,29 @@ create index if not exists idx_treat_sync on public.treatments    (user_id, sync
 create index if not exists idx_presc_sync on public.prescriptions (sync_xid, id);
 create index if not exists idx_dose_sync  on public.dose_logs     (sync_xid, id);
 
+-- 2b. The wipe marker ------------------------------------------------------
+--
+-- One row per user who used "delete all data" (medora_delete_all_data,
+-- section 8): how many times, and when the last one ran. Every device reads
+-- it with the sync state; one that sees a newer generation than it last
+-- saw removes what it holds from before `wiped_at` and pulls again. Only
+-- that function writes it; a user reads only their own row.
+
+create table if not exists public.sync_wipes (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  generation bigint not null,
+  wiped_at   timestamptz not null
+);
+
+alter table public.sync_wipes enable row level security;
+
+drop policy if exists "sync_wipes_select" on public.sync_wipes;
+create policy "sync_wipes_select" on public.sync_wipes
+  for select using (user_id = auth.uid());
+
+revoke all on public.sync_wipes from anon, authenticated;
+grant select on public.sync_wipes to authenticated;
+
 -- 3. The stamp trigger ------------------------------------------------------
 --
 -- Runs BEFORE the `<table>_updated_at` trigger: Postgres fires BEFORE
@@ -140,6 +164,11 @@ declare
   v_app_delete boolean := false;
   v_parent_deleted timestamptz;
   v_other_deleted  timestamptz;
+  -- "Delete all data" (section 8): the caller's last wipe, and the wipe
+  -- generation a 0.4.0 insert says its device has seen.
+  v_wiped_at   timestamptz;
+  v_generation bigint;
+  v_wipe_delete boolean := false;
   v_new    jsonb;
   v_old    jsonb;
   v_sent   jsonb;
@@ -175,6 +204,32 @@ begin
       -- still pulls it (Medora 0.3.0 pulls by updated_at). A generated
       -- row keeps its 1970 stamp and stays invisible to those cursors.
       new.updated_at := v_now;
+    end if;
+  end if;
+
+  -- A 0.4.0 insert from a device that has not seen the caller's last
+  -- "delete all data" (the wipe generation it sends under "@wipe" is
+  -- older), of a row a person last changed before that wipe, is stored
+  -- deleted, as that person's delete: the device read the sync state just
+  -- before the wipe, and its next cycle removes the row there too. A row
+  -- changed after the wipe is new data, and so is every insert from a
+  -- writer that sends no "@wipe" (Medora 0.3.0). The shared lock makes
+  -- inserts and the wipe (which takes it exclusively) run one after the
+  -- other, so this reads the wipe that is committed when the row lands.
+  if tg_op = 'INSERT' and auth.uid() is not null then
+    perform pg_advisory_xact_lock_shared(
+      hashtextextended('medora-wipe:' || auth.uid()::text, 0));
+    if new.deleted_at is null and new.write_id is not null
+       and jsonb_typeof(new.field_edited_at) = 'object'
+       and new.field_edited_at ? '@wipe'
+       and new.edited_at >= c_ceiling then
+      select w.wiped_at, w.generation into v_wiped_at, v_generation
+        from public.sync_wipes w where w.user_id = auth.uid();
+      if v_generation > (new.field_edited_at ->> '@wipe')::bigint
+         and new.edited_at <= v_wiped_at then
+        new.deleted_at := v_wiped_at;
+        v_wipe_delete := true;
+      end if;
     end if;
   end if;
 
@@ -278,6 +333,8 @@ begin
   if v_cascade or v_app_delete then
     -- After the column times: the columns a write changes keep its time.
     new.edited_at := c_epoch;
+  elsif v_wipe_delete then
+    new.edited_at := v_wiped_at;
   end if;
   return new;
 end;
@@ -338,8 +395,9 @@ revoke all on function public.cascade_tombstone_prescription() from public, anon
 -- Clients never truncate, add triggers or add foreign keys. Row-level
 -- security does not cover TRUNCATE, and Supabase grants all three by
 -- default, so one signed-in user could otherwise empty every user's rows
--- through any SQL surface. Hard DELETE ("delete all data") stays, under the
--- tables' policies.
+-- through any SQL surface. Hard DELETE stays, under the tables' policies
+-- ("delete all data" uses medora_delete_all_data, section 8, which also
+-- tells the user's other devices).
 revoke truncate, trigger, references
   on public.medications, public.treatments, public.prescriptions,
      public.dose_logs, public.families, public.family_members
@@ -361,7 +419,9 @@ set search_path = public, pg_temp
 as $$
   select jsonb_build_object(
     'schema', 2,
-    'horizon', pg_snapshot_xmin(pg_current_snapshot())::text::bigint
+    'horizon', pg_snapshot_xmin(pg_current_snapshot())::text::bigint,
+    'wipe', (select jsonb_build_object('generation', w.generation, 'wiped_at', w.wiped_at)
+               from public.sync_wipes w where w.user_id = auth.uid())
   )
 $$;
 
@@ -536,3 +596,53 @@ update public.dose_logs c
  where p.id = c.prescription_id
    and c.deleted_at is null
    and p.deleted_at is not null;
+
+-- 8. "Delete all data" -----------------------------------------------------
+--
+-- Removes every medication, treatment, prescription and dose of the caller,
+-- and records the wipe (section 2b) in the same transaction, so every other
+-- device of the account removes its copies on its next sync instead of
+-- keeping them (and writing them back with a later edit). Returns
+-- {"generation": g, "wiped_at": t}.
+--
+-- Runs with the owner's rights, so it can write the marker, which clients
+-- cannot; every delete names the caller's rows exactly as the tables'
+-- delete policies do (prescriptions and doses through the caller's
+-- treatments). The stock ledger goes with the medications (foreign key).
+-- The exclusive lock makes the caller's inserts wait for the wipe, or the
+-- wipe for them (medora_sync_stamp takes the shared side), so a row
+-- inserted meanwhile is either deleted here or sees this wipe.
+create or replace function public.medora_delete_all_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid        uuid := auth.uid();
+  v_at         timestamptz := now();
+  v_generation bigint;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '28000';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('medora-wipe:' || v_uid::text, 0));
+  insert into public.sync_wipes as w (user_id, generation, wiped_at)
+    values (v_uid, 1, v_at)
+    on conflict (user_id) do update
+      set generation = w.generation + 1, wiped_at = excluded.wiped_at
+    returning w.generation into v_generation;
+  delete from public.dose_logs d
+   using public.prescriptions p, public.treatments t
+   where d.prescription_id = p.id and p.treatment_id = t.id and t.user_id = v_uid;
+  delete from public.prescriptions p
+   using public.treatments t
+   where p.treatment_id = t.id and t.user_id = v_uid;
+  delete from public.treatments where user_id = v_uid;
+  delete from public.medications where user_id = v_uid;
+  return jsonb_build_object('generation', v_generation, 'wiped_at', v_at);
+end;
+$$;
+
+revoke all on function public.medora_delete_all_data() from public, anon;
+grant execute on function public.medora_delete_all_data() to authenticated;

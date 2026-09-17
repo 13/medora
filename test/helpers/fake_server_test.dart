@@ -232,6 +232,70 @@ void main() {
     });
   });
 
+  group('"delete all data" (the wipe marker), as '
+      'tools/sql/sync_v2_checks.sql checks it', () {
+    test('removes every row and the ledger in one request, and the sync '
+        'state names it', () {
+      core.legacyUpsert('medications', {'id': 'm1', 'name': 'Ibu'});
+      core.applyStockChange(opId: 'op', medicationId: 'm1', delta: -1);
+      expect(core.syncState()['wipe'], isNull);
+      final before = core.requests.length;
+      final answer = core.deleteAllData();
+      expect(core.requests.sublist(before), ['rpc:medora_delete_all_data']);
+      expect(answer, {'generation': 1, 'wiped_at': _iso(now)});
+      expect(core.rowsOf('medications'), isEmpty);
+      expect(core.ledger, isEmpty);
+      expect(core.syncState()['wipe'], {
+        'generation': 1,
+        'wiped_at': _iso(now),
+      });
+      now = now.add(const Duration(hours: 1));
+      expect(core.deleteAllData()['generation'], 2);
+    });
+
+    test('an insert from a device that has not seen it, of a row changed '
+        'before it, lands deleted as a person\'s delete; the rest is new '
+        'data', () {
+      final wipedAt = now;
+      core.deleteAllData();
+      now = now.add(const Duration(minutes: 5));
+      Map<String, dynamic> insert(
+        String id,
+        DateTime edited, {
+        Object? seen,
+        String? writeId = 'w',
+      }) {
+        core.insertIfAbsent('medications', [
+          {
+            'id': id,
+            'name': id,
+            'write_id': ?writeId,
+            'edited_at': _iso(edited),
+            'field_edited_at': {'@wipe': ?seen},
+          },
+        ]);
+        return core.rowsOf('medications')[id]!;
+      }
+
+      final hourAgo = now.subtract(const Duration(hours: 1));
+      final stale = insert('stale', hourAgo, seen: 0);
+      expect(stale['deleted_at'], _iso(wipedAt));
+      expect(stale['edited_at'], _iso(wipedAt));
+      expect(stale['updated_at'], _iso(now));
+      expect(stale['field_edited_at'], isEmpty, reason: 'no "@wipe" entry');
+      expect(insert('later', now, seen: 0)['deleted_at'], isNull);
+      expect(insert('seen', hourAgo, seen: 1)['deleted_at'], isNull);
+      expect(insert('no-key', hourAgo)['deleted_at'], isNull);
+      expect(insert('auto', DateTime.utc(1970), seen: 0)['deleted_at'], isNull);
+      core.legacyUpsert('medications', {
+        'id': 'legacy',
+        'name': 'legacy',
+        'updated_at': _iso(hourAgo),
+      });
+      expect(core.rowsOf('medications')['legacy']!['deleted_at'], isNull);
+    });
+  });
+
   test('the horizon holds back a transaction still open', () {
     final slow = core.begin();
     slow.insert('medications', {'id': 'slow', 'name': 'Slow'});

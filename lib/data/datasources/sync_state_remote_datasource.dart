@@ -12,12 +12,24 @@ const requiredSyncSchema = 2;
 
 /// One answer of `medora_sync_state()`.
 class SyncServerState {
-  const SyncServerState({required this.schema, required this.horizon});
+  const SyncServerState({
+    required this.schema,
+    required this.horizon,
+    this.wipeGeneration = 0,
+    this.wipedAt,
+  });
 
   final int schema;
 
   /// Every transaction below this id has finished (see `pullPage`).
   final int horizon;
+
+  /// How many times the signed-in user used "delete all data"
+  /// (`medora_delete_all_data`); 0 when never.
+  final int wipeGeneration;
+
+  /// When the last of those ran (server time); null when never.
+  final DateTime? wipedAt;
 }
 
 class SyncStateRemoteDatasource {
@@ -57,5 +69,18 @@ SyncServerState parseSyncState(Object? raw) {
   if (schema < requiredSyncSchema || horizon == null) {
     throw MissingMigrationException(migration: syncV2Migration, cause: raw);
   }
-  return SyncServerState(schema: schema, horizon: horizon);
+  final wipe = raw['wipe'];
+  final wipedAt = wipe is Map && wipe['wiped_at'] is String
+      ? DateTime.tryParse(wipe['wiped_at'] as String)?.toUtc()
+      : null;
+  final generation = wipe is Map
+      ? (wipe['generation'] as num?)?.toInt() ?? 0
+      : 0;
+  return SyncServerState(
+    schema: schema,
+    horizon: horizon,
+    // A generation without a time cannot be applied; it reads as none.
+    wipeGeneration: wipedAt == null ? 0 : generation,
+    wipedAt: wipedAt,
+  );
 }

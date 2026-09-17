@@ -213,6 +213,10 @@ class FakeServerCore {
   /// Every request answered, in order (`table:verb`), for request counts.
   final List<String> requests = [];
 
+  /// The account's "delete all data" marker (`sync_wipes`); the fake
+  /// serves one account.
+  ({int generation, DateTime wipedAt})? wipe;
+
   /// The most rows one fetch answers (PostgREST `max_rows`, the project's
   /// "Max rows" setting).
   int rowCap = 1000;
@@ -268,6 +272,21 @@ class FakeServerCore {
     }
     final weak = edited.isBefore(_weakCeiling);
     edited = weak ? _epoch : (edited.isAfter(now) ? now : edited);
+    // An insert from a device that has not seen the last wipe, of a row a
+    // person changed before it, lands deleted as that person's delete.
+    final sentMap = row['field_edited_at'];
+    final seen = sentMap is Map ? sentMap['@wipe'] : null;
+    final lastWipe = wipe;
+    final wipeDelete =
+        old == null &&
+        row['deleted_at'] == null &&
+        row['write_id'] != null &&
+        seen is int &&
+        !weak &&
+        lastWipe != null &&
+        lastWipe.generation > seen &&
+        !edited.isAfter(lastWipe.wipedAt);
+    if (wipeDelete) row['deleted_at'] = _iso(lastWipe.wipedAt);
     // The row stays or becomes the app's own tombstone.
     var appDelete = false;
     if (old != null &&
@@ -296,7 +315,11 @@ class FakeServerCore {
         appDelete = true;
       }
     }
-    if (cascade || appDelete) row['edited_at'] = _iso(_epoch);
+    if (cascade || appDelete) {
+      row['edited_at'] = _iso(_epoch);
+    } else if (wipeDelete) {
+      row['edited_at'] = _iso(lastWipe.wipedAt);
+    }
     if (old != null) {
       final automatic =
           row['write_id'] != null && row['edited_at'] == _iso(_epoch);
@@ -646,7 +669,37 @@ class FakeServerCore {
   /// `medora_sync_state()`.
   Map<String, dynamic> syncState() {
     requests.add('rpc:medora_sync_state');
-    return {'schema': 2, 'horizon': horizon};
+    final last = wipe;
+    return {
+      'schema': 2,
+      'horizon': horizon,
+      'wipe': last == null
+          ? null
+          : {'generation': last.generation, 'wiped_at': _iso(last.wipedAt)},
+    };
+  }
+
+  /// `medora_delete_all_data()`: every medication, treatment, prescription
+  /// and dose goes (with the ledger), and the marker moves on, at the
+  /// server's clock.
+  Map<String, dynamic> deleteAllData() {
+    requests.add('rpc:medora_delete_all_data');
+    final mark = requests.length;
+    final at = clock().toUtc();
+    wipe = (generation: (wipe?.generation ?? 0) + 1, wipedAt: at);
+    for (final table in const [
+      'dose_logs',
+      'prescriptions',
+      'treatments',
+      'medications',
+    ]) {
+      for (final id in rowsOf(table).keys.toList()) {
+        purge(table, id);
+      }
+    }
+    // One request: the deletes inside it are not requests of their own.
+    requests.removeRange(mark, requests.length);
+    return {'generation': wipe!.generation, 'wiped_at': _iso(at)};
   }
 }
 

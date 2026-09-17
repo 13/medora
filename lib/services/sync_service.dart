@@ -62,6 +62,7 @@ import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
+import 'package:medora/data/sync/remote_wipe.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/row_settle.dart';
 import 'package:medora/data/sync/stock_sync.dart';
@@ -103,6 +104,7 @@ class SyncService {
     DateTime Function()? now,
     this.onFirstSuccessfulSync,
     this.onPrescriptionsPulled,
+    this.onRemoteWipe,
     this.requestTimeout = const Duration(seconds: 30),
     this.capRetryDelay = const Duration(seconds: 15),
     this.maxPullPages = defaultMaxPullPages,
@@ -153,6 +155,12 @@ class SyncService {
   /// failure only logs.
   final Future<void> Function(PulledPrescriptions pulled)?
   onPrescriptionsPulled;
+
+  /// Called after this device removed its data because "delete all data"
+  /// ran on another device ([RemovedData.photos] are the photo files no
+  /// medication here uses any more). The reminders and lists refresh with
+  /// the cycle's end as always. A failure only logs.
+  final Future<void> Function(RemovedData removed)? onRemoteWipe;
 
   /// How long one request to the server may take before the cycle gives up
   /// on it. A timed-out request counts as a network failure: the row stays
@@ -232,6 +240,9 @@ class SyncService {
     'sync',
     (report) async {
       final state = await _remote(syncState!.read());
+      // Before anything is sent or pulled: a "delete all data" made on
+      // another device removes what this device holds from before it.
+      await _followRemoteWipe(state, report);
       // Only here, past every guard in [_run] and the migration check:
       // local-only mode, an offline device, a signed-out user and an
       // unmigrated project leave the repair for a later sync.
@@ -252,8 +263,13 @@ class SyncService {
   );
 
   /// Push ALL local rows regardless of sync_status: "my copy is the truth".
+  ///
+  /// That holds against a "delete all data" made on another device too:
+  /// this device's rows are sent as data written after it, which brings
+  /// them back everywhere.
   Future<SyncReport?> forcePush() => _run('force push', (report) async {
-    await _remote(syncState!.read());
+    final state = await _remote(syncState!.read());
+    await _recordWipeSeen(state);
     await _pushPendingChanges(report, forceAll: true);
   });
 
@@ -265,6 +281,8 @@ class SyncService {
     // still waiting to be pushed and no backoff record means anything.
     await _failures.clearAll();
     await AppDatabase.instance.clearAllData();
+    // Nothing from before any wipe is left here.
+    await _recordWipeSeen(state);
     await _pullAll(report, force: true, horizon: state.horizon);
     // Everything was pulled from the start: that is the repair.
     await _cursors.finishPullRepair();
@@ -436,6 +454,68 @@ class SyncService {
     });
   }
 
+  // ── "Delete all data" on another device ────────────────────
+
+  /// The wipe generation this device has applied for the signed-in
+  /// account, as read at the start of the running cycle; every insert
+  /// sends it (`TableSync.insertTimes`).
+  int? _wipeSeen;
+
+  /// Follows a "delete all data" made on another device (design section
+  /// 7.9): when the account's wipe generation in [state] is newer than the
+  /// one this device applied, the rows it holds from before the wipe go
+  /// ([removeLocalDataFromBefore]), with every pull key and backoff, so
+  /// the cycle pulls whatever the server has now.
+  ///
+  /// A device that has applied none for this account (a fresh install, a
+  /// sign-in, a wiped device) only records the generation: its data is the
+  /// person's to upload. The one exception is a device that still holds a
+  /// Medora 0.3.0 pull cursor: it synced before the wipe and never saw it.
+  Future<void> _followRemoteWipe(
+    SyncServerState state,
+    SyncReport report,
+  ) async {
+    final userId = _currentUserId()!;
+    final seen = await _cursors.wipeSeen(userId);
+    final generation = state.wipeGeneration;
+    final wipedAt = state.wipedAt;
+    final follow =
+        wipedAt != null &&
+        (seen == null
+            ? generation > 0 && _cursors.hasLegacyCursors
+            : generation > seen);
+    if (follow) {
+      final removed = await removeLocalDataFromBefore(wipedAt);
+      await _cursors.clear();
+      await _failures.clearAll();
+      report.wiped = removed.rows;
+      debugPrint(
+        'Sync: "delete all data" ran on another device at $wipedAt; '
+        'removed ${removed.rows} row(s) from before it',
+      );
+      final hook = onRemoteWipe;
+      if (hook != null && removed.rows > 0) {
+        try {
+          await hook(removed);
+        } catch (e) {
+          debugPrint('Sync: cleaning up after the remote wipe: $e');
+        }
+      }
+    }
+    if (seen != generation) await _cursors.setWipeSeen(userId, generation);
+    _wipeSeen = generation;
+  }
+
+  /// Records the account's wipe generation in [state] as applied, without
+  /// removing anything (a force push or a force pull decides for itself).
+  Future<void> _recordWipeSeen(SyncServerState state) async {
+    final userId = _currentUserId()!;
+    if (await _cursors.wipeSeen(userId) != state.wipeGeneration) {
+      await _cursors.setWipeSeen(userId, state.wipeGeneration);
+    }
+    _wipeSeen = state.wipeGeneration;
+  }
+
   // ── Push ───────────────────────────────────────────────────
 
   /// The per-row sync of one of the four merged tables.
@@ -460,6 +540,7 @@ class SyncService {
     remote: _TimedSyncTable(rows, requestTimeout),
     newWriteId: _newWriteId,
     now: _now,
+    wipeSeen: () => _wipeSeen,
   );
 
   Future<void> _pushPendingChanges(
@@ -991,11 +1072,13 @@ class SyncService {
   /// times. Every payload of a batch has the same keys, as one insert
   /// statement needs; an empty map means the edit time stands for every
   /// column, as it does here.
-  static Map<String, Object?> _newDosePayload(Map<String, dynamic> row) => {
+  Map<String, Object?> _newDosePayload(Map<String, dynamic> row) => {
     ...localWire('dose_logs', row),
     'write_id': row['sync_write_id'],
     'edited_at': (localRowTime(row) ?? automaticEditedAt).toIso8601String(),
-    'field_edited_at': FieldTimes.decode(row['field_edited_at']).toJson(),
+    'field_edited_at': _tables['dose_logs']!.insertTimes(
+      FieldTimes.decode(row['field_edited_at']),
+    ),
   };
 
   /// Inserts [batch] where the server lacks its rows and returns the rows

@@ -5,7 +5,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:medora/core/constants.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
@@ -103,26 +102,10 @@ void showDeleteAllDialog(
                 ? () async {
                     Navigator.pop(ctx);
                     try {
-                      // Try to delete remote data first
-                      final client = SupabaseConfig.clientOrNull;
-                      if (client != null && SupabaseConfig.isAuthenticated) {
-                        // Delete in FK order: dose_logs → prescriptions → treatments → medications
-                        await client
-                            .from(AppConstants.doseLogsTable)
-                            .delete()
-                            .neq('id', '');
-                        await client
-                            .from(AppConstants.prescriptionsTable)
-                            .delete()
-                            .neq('id', '');
-                        await client
-                            .from(AppConstants.treatmentsTable)
-                            .delete()
-                            .neq('id', '');
-                        await client
-                            .from(AppConstants.medicationsTable)
-                            .delete()
-                            .neq('id', '');
+                      // The server first: it also tells the other devices.
+                      final remote = ref.read(accountDataDatasourceProvider);
+                      if (remote != null && SupabaseConfig.isAuthenticated) {
+                        await remote.deleteAllData();
                       }
                       // If remote deletion is successful, delete local data
                       ref.read(reminderSchedulerProvider).reset();

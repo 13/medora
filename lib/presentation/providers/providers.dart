@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/data/datasources/account_data_remote_datasource.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -137,6 +138,14 @@ final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
 final syncStateDatasourceProvider = Provider<SyncStateRemoteDatasource?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : SyncStateRemoteDatasource(client);
+});
+
+/// "Delete all data" on the server; null in local-only mode.
+final accountDataDatasourceProvider = Provider<AccountDataRemoteDatasource?>((
+  ref,
+) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : AccountDataRemoteDatasource(client);
 });
 
 /// The stock changes waiting to go out (sync v2).
@@ -348,6 +357,16 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     // [syncStateStreamProvider] reconciles the reminders once the cycle ends.
     onPrescriptionsPulled: (pulled) async {
       await ref.read(doseScheduleServiceProvider).applyPulled(pulled);
+    },
+    // "Delete all data" on another device: the photos of the medications
+    // it removed here go too (the lists and reminders refresh when the
+    // cycle ends, as after every sync).
+    onRemoteWipe: (removed) async {
+      if (kIsWeb) return;
+      final photos = ref.read(photoStorageProvider);
+      for (final name in removed.photos) {
+        await photos.delete(name);
+      }
     },
   );
   if (service.isAvailable) service.startAutoSync();

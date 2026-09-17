@@ -56,7 +56,9 @@ class LocalDataWiper {
             .toList()) {
       await _prefs.remove(key);
     }
-    // No rows left, so this device no longer holds anyone's data.
+    // No rows left, so this device no longer holds anyone's data, nor has
+    // anything from before a "delete all data" to remove.
     await _prefs.remove(LocalUploadMarker.ownerKey);
+    await _prefs.remove(SyncCursorStore.wipeSeenKey);
   }
 }

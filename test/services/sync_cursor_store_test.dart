@@ -32,6 +32,35 @@ void main() {
     expect(prefs.getString('sync.last_pull_at.dose_logs'), isNull);
   });
 
+  group('the "delete all data" generation this device applied', () {
+    test('is kept per account, in memory', () async {
+      final store = SyncCursorStore.inMemory();
+      expect(await store.wipeSeen('u1'), isNull);
+      await store.setWipeSeen('u1', 2);
+      expect(await store.wipeSeen('u1'), 2);
+      expect(await store.wipeSeen('u2'), isNull, reason: 'another account');
+      await store.clear();
+      expect(await store.wipeSeen('u1'), 2, reason: 'not a cursor');
+      expect(store.hasLegacyCursors, isFalse);
+    });
+
+    test('is kept in prefs, outside the cursors; a 0.3.0 cursor is told '
+        'apart', () async {
+      SharedPreferences.setMockInitialValues({
+        'sync.last_pull_at.medications': '2026-03-04T11:00:00.000Z',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final store = SyncCursorStore(prefs);
+      expect(store.hasLegacyCursors, isTrue);
+      await store.setWipeSeen('user|with|bars', 7);
+      expect(prefs.getString(SyncCursorStore.wipeSeenKey), 'user|with|bars|7');
+      expect(await store.wipeSeen('user|with|bars'), 7);
+      await store.clear();
+      expect(store.hasLegacyCursors, isFalse);
+      expect(await store.wipeSeen('user|with|bars'), 7);
+    });
+  });
+
   group('pull repair (version 2)', () {
     Future<SharedPreferences> prefsWith(Map<String, Object> values) async {
       SharedPreferences.setMockInitialValues(values);
