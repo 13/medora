@@ -1117,8 +1117,8 @@ void main() {
 
       expect(shared, [
         'Sinusitis\n'
-            'Illness: Mar 3, 2026 – Ongoing\n'
-            'Sick leave: Mar 3, 2026 – Ongoing (Day 3)\n'
+            'Illness: Mar 3, 2026 – ongoing\n'
+            'Sick leave: Mar 3, 2026 – ongoing (Day 3)\n'
             'Certificate no.: 1234567890\n'
             'Doctor: Dr. Rossi, Bozen\n'
             'Medications:\n'
@@ -1130,7 +1130,7 @@ void main() {
       // Nobody was named, so there is no patient line.
       expect(shared.single, isNot(contains('Patient')));
       // A mail list or a notification shows the subject: no diagnosis.
-      expect(subjects, ['Illness record: Mar 3, 2026 – Ongoing']);
+      expect(subjects, ['Illness record: Mar 3, 2026 – ongoing']);
     });
 
     testWidgets('German shares German text, naming who was ill', (
@@ -1154,13 +1154,13 @@ void main() {
       expect(shared, [
         'Sinusitis\n'
             'Patient/in: Lena\n'
-            'Krankheit: 3. März 2026 – Laufend\n'
+            'Krankheit: 3. März 2026 – laufend\n'
             'Krankenstand: 3. März 2026 – 4. März 2026 (2 Tage)\n'
             'Medikamente:\n'
             '- Tachipirina: 1 Tablette · Bei Bedarf\n'
             '  3 Dosen eingenommen (3. März 2026 – 4. März 2026)',
       ]);
-      expect(subjects, ['Krankheitsverlauf: 3. März 2026 – Laufend']);
+      expect(subjects, ['Krankheitsverlauf: 3. März 2026 – laufend']);
     });
 
     testWidgets('Italian shares Italian text, naming who was ill', (
@@ -1185,14 +1185,14 @@ void main() {
       expect(shared, [
         'Sinusitis\n'
             'Paziente: Lena, Marco\n'
-            'Malattia: 3 mar 2026 – In corso\n'
+            'Malattia: 3 mar 2026 – in corso\n'
             'Farmaci:\n'
             '- Ibuprofen: 1 compressa · Ogni 8 ore · 7 giorni\n'
             '  5 su 7 assunte\n'
             '- Tachipirina: 1 compressa · Al bisogno\n'
             '  3 dosi assunte (3 mar 2026 – 4 mar 2026)',
       ]);
-      expect(subjects, ['Decorso della malattia: 3 mar 2026 – In corso']);
+      expect(subjects, ['Decorso della malattia: 3 mar 2026 – in corso']);
     });
 
     testWidgets('a dose stored without its unit takes the medication\'s, on '

@@ -116,6 +116,7 @@
   "startDate": "Startdatum",
   "endDate": "Enddatum",
   "ongoing": "Laufend",
+  "ongoingInline": "laufend",
   "sickLeave": "Krankenstand",
   "sickLeaveFrom": "Arbeitsunfähig von",
   "sickLeaveTo": "Arbeitsunfähig bis",

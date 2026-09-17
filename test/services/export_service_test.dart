@@ -224,7 +224,7 @@ void main() {
           doses: const [],
         ),
         'Vitamin D\n'
-        'Krankheit: 2. März 2026 – Laufend',
+        'Krankheit: 2. März 2026 – laufend',
       );
     });
 
@@ -243,7 +243,7 @@ void main() {
       expect(text.split('\n'), [
         'Magen-Darm',
         'Patient/in: Lena, Marco',
-        'Krankheit: 2. März 2026 – Laufend',
+        'Krankheit: 2. März 2026 – laufend',
       ]);
     });
 
@@ -259,7 +259,7 @@ void main() {
         doses: const [],
       );
       expect(text, isNot(contains('Patient')));
-      expect(text, 'Flu\nIllness: Mar 2, 2026 – Ongoing');
+      expect(text, 'Flu\nIllness: Mar 2, 2026 – ongoing');
     });
 
     test('blank certificate, doctor, patient and notes are left out', () {
@@ -277,7 +277,7 @@ void main() {
         prescriptions: const [],
         doses: const [],
       );
-      expect(text, 'Grippe\nKrankheit: 2. März 2026 – Laufend');
+      expect(text, 'Grippe\nKrankheit: 2. März 2026 – laufend');
     });
 
     test('an open leave counts its days so far', () {
@@ -295,7 +295,7 @@ void main() {
       );
       expect(
         text.split('\n')[2],
-        'Krankenstand: 3. März 2026 – Laufend (Tag 3)',
+        'Krankenstand: 3. März 2026 – laufend (Tag 3)',
       );
     });
 
@@ -314,7 +314,7 @@ void main() {
       );
       expect(text.split('\n'), [
         'Grippe',
-        'Krankheit: 2. März 2026 – Laufend',
+        'Krankheit: 2. März 2026 – laufend',
         'Arbeitsunfähig von: 20. März 2026',
       ]);
     });
@@ -429,7 +429,7 @@ void main() {
       expect(
         text,
         'Grippe\n'
-        'Krankheit: 2. März 2026 – Laufend\n'
+        'Krankheit: 2. März 2026 – laufend\n'
         'Medikamente:\n'
         '- ${l10n.unknownMedication}: Alle 8 Stunden · 7 Tage\n'
         '  1 von 2 eingenommen\n'
@@ -540,7 +540,7 @@ void main() {
         startDate: DateTime(2026, 3, 2),
       );
       final subject = episodeShareSubject(open, labelsFor('en'));
-      expect(subject, 'Illness record: Mar 2, 2026 – Ongoing');
+      expect(subject, 'Illness record: Mar 2, 2026 – ongoing');
       expect(subject, isNot(contains('Gastroenteritis')));
     });
 

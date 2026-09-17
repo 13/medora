@@ -354,6 +354,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get ongoing => 'Laufend';
 
   @override
+  String get ongoingInline => 'laufend';
+
+  @override
   String get sickLeave => 'Krankenstand';
 
   @override

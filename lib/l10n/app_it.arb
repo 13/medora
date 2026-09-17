@@ -116,6 +116,7 @@
   "startDate": "Data di inizio",
   "endDate": "Data di fine",
   "ongoing": "In corso",
+  "ongoingInline": "in corso",
   "sickLeave": "Malattia",
   "sickLeaveFrom": "In malattia dal",
   "sickLeaveTo": "In malattia fino al",

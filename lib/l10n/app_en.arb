@@ -172,6 +172,7 @@
   "startDate": "Start Date",
   "endDate": "End Date",
   "ongoing": "Ongoing",
+  "ongoingInline": "ongoing",
   "sickLeave": "Sick leave",
   "sickLeaveFrom": "Unable to work from",
   "sickLeaveTo": "Unable to work until",

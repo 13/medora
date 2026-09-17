@@ -248,7 +248,8 @@ class EpisodeLabels {
       symptoms: l10n.symptoms,
       medications: l10n.medications,
       notes: l10n.notes,
-      ongoing: l10n.ongoing,
+      // Mid-line ("2. März 2026 – laufend"), so lower case.
+      ongoing: l10n.ongoingInline,
       asNeeded: l10n.scheduleAsNeeded,
       unknownMedication: l10n.unknownMedication,
       days: l10n.sickLeaveDays,

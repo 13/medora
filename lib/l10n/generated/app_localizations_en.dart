@@ -349,6 +349,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ongoing => 'Ongoing';
 
   @override
+  String get ongoingInline => 'ongoing';
+
+  @override
   String get sickLeave => 'Sick leave';
 
   @override

@@ -706,6 +706,12 @@ abstract class AppLocalizations {
   /// **'Ongoing'**
   String get ongoing;
 
+  /// No description provided for @ongoingInline.
+  ///
+  /// In en, this message translates to:
+  /// **'ongoing'**
+  String get ongoingInline;
+
   /// No description provided for @sickLeave.
   ///
   /// In en, this message translates to:
