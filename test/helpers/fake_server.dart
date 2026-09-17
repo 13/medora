@@ -358,7 +358,14 @@ class FakeServerCore {
       if (old == null) {
         if (entry == null) continue;
       } else if (_same(row[key], old[key])) {
-        continue;
+        // An unchanged value: only a person's time sent for it, later than
+        // the one held, moves its entry (the same value set again later).
+        if (entry is! Map || entry['auto'] == true) continue;
+        final sentAt = _time(entry['at']);
+        if (sentAt == null || sentAt.isBefore(_weakCeiling)) continue;
+        final capped = sentAt.isAfter(now) ? now : sentAt;
+        final heldAt = _time((map[key] as Map?)?['at']);
+        if (heldAt != null && !capped.isAfter(heldAt)) continue;
       }
       // A changed column with no entry takes the time the write carried (a
       // legacy write: its arrival).

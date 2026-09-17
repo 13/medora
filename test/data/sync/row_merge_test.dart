@@ -129,6 +129,48 @@ void main() {
   });
 
   group('mergeRows', () {
+    group('the same value on both sides (review Minor 1)', () {
+      final eleven = DateTime.utc(2026, 3, 5, 11);
+      final local = {...base, 'sick_leave_ref': 'CERT'};
+      final remote = {...base, 'sick_leave_ref': 'CERT'};
+      final baseTimes = FieldTimes({'sick_leave_ref': FieldTime(nine)});
+      MergeResult merge(FieldTime mine, FieldTime theirs) => mergeRows(
+        base: base,
+        baseTimes: baseTimes,
+        local: local,
+        remote: remote,
+        localTimes: FieldTimes({'sick_leave_ref': mine}),
+        remoteTimes: FieldTimes({'sick_leave_ref': theirs}),
+        policy: treatmentMerge,
+      );
+
+      test('a person\'s later setting keeps its time and is still to send', () {
+        final result = merge(FieldTime(eleven), FieldTime(ten));
+        expect(result.row, remote);
+        expect(result.conflicts, isEmpty);
+        expect(result.sendsTimes, isTrue);
+        expect(result.times.of('sick_leave_ref'), FieldTime(eleven));
+      });
+
+      test('an earlier, or equal, setting takes the server\'s time', () {
+        for (final mine in [nine, ten]) {
+          final result = merge(FieldTime(mine), FieldTime(ten));
+          expect(result.sendsTimes, isFalse, reason: '$mine');
+          expect(result.times.of('sick_leave_ref'), FieldTime(ten));
+        }
+      });
+
+      test('the app\'s own setting never sends its time', () {
+        final result = merge(
+          FieldTime.automaticChange,
+          FieldTime.automaticChange,
+        );
+        expect(result.sendsTimes, isFalse);
+        final overAuto = merge(FieldTime(eleven), FieldTime.automaticChange);
+        expect(overAuto.sendsTimes, isTrue);
+      });
+    });
+
     group('a change back to the base\'s value (review Minor 1)', () {
       final eight = DateTime.utc(2026, 3, 5, 8);
       final baseTimes = FieldTimes({'sick_leave_ref': FieldTime(eight)});

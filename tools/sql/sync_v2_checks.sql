@@ -353,20 +353,48 @@ do $$ begin
   assert pg_temp.at('ft', 'notes') = (select notes_at from ft_d), 'map: and keeps the later time';
 end $$;
 
--- An entry for a column the write does not change is ignored; a column it
--- changes without an entry takes the row's edited_at; a map that is not
--- an object counts as none.
+-- An older entry for a column the write does not change is ignored; a
+-- column it changes without an entry takes the row's edited_at; a map that
+-- is not an object counts as none.
 update treatments set name = 'Flu', doctor = 'Dr. B', write_id = 'f0000000-0000-0000-0000-0000000000f1',
        edited_at = now() - interval '30 minutes',
-       field_edited_at = jsonb_build_object('name', pg_temp.entry(now()))
+       field_edited_at = jsonb_build_object('name', pg_temp.entry(now() - interval '6 hours'))
  where id = 'ft';
 do $$ begin
-  assert pg_temp.at('ft', 'name') < pg_temp.arrived('ft') - interval '4 hours',
-    'map: an entry for an unchanged column is ignored';
+  assert pg_temp.at('ft', 'name') between pg_temp.arrived('ft') - interval '301 minutes'
+                                      and pg_temp.arrived('ft') - interval '299 minutes',
+    'map: an older entry for an unchanged column is ignored';
   assert pg_temp.at('ft', 'doctor') between pg_temp.arrived('ft') - interval '31 minutes'
                                         and pg_temp.arrived('ft') - interval '29 minutes'
      and not pg_temp.auto('ft', 'doctor'),
     'map: a changed column with no entry takes the row''s edit time';
+end $$;
+-- The same value set again by a person, later (review Minor 1): its entry
+-- moves forward, as a person's; an automatic entry, or a future one past
+-- the arrival that is still not later, for an unchanged column does not.
+create temp table ft_f as select pg_temp.at('ft', 'notes') as notes_at, pg_temp.auto('ft', 'notes') as notes_auto;
+update treatments set name = 'Flu', notes = notes, write_id = 'f0000000-0000-0000-0000-0000000000f4',
+       edited_at = now() - interval '20 minutes',
+       field_edited_at = jsonb_build_object(
+         'name', pg_temp.entry(now() - interval '20 minutes'),
+         'notes', pg_temp.entry(now(), true))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'name') between pg_temp.arrived('ft') - interval '21 minutes'
+                                      and pg_temp.arrived('ft') - interval '19 minutes'
+     and not pg_temp.auto('ft', 'name'),
+    'map: the same value set again later moves its entry';
+  assert pg_temp.at('ft', 'notes') = (select notes_at from ft_f)
+     and pg_temp.auto('ft', 'notes') = (select notes_auto from ft_f),
+    'map: an automatic entry for an unchanged column is ignored';
+end $$;
+update treatments set name = 'Flu', write_id = 'f0000000-0000-0000-0000-0000000000f5',
+       edited_at = now() - interval '25 minutes',
+       field_edited_at = jsonb_build_object('name', pg_temp.entry(now() - interval '25 minutes'))
+ where id = 'ft';
+do $$ begin
+  assert pg_temp.at('ft', 'name') > pg_temp.arrived('ft') - interval '21 minutes',
+    'map: the same value set again with an older time leaves the entry';
 end $$;
 update treatments set doctor = 'Dr. C', write_id = 'f0000000-0000-0000-0000-0000000000f2',
        edited_at = now() - interval '10 minutes', field_edited_at = '["doctor"]'

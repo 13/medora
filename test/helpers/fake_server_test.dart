@@ -951,14 +951,14 @@ void main() {
       expect(m['name'], entry(hoursAgo(6)));
     });
 
-    test('an entry for an unchanged column is ignored; a changed column '
-        'without one takes the row time; a map that is not an object is '
-        'none', () {
+    test('an older entry for an unchanged column is ignored; a changed '
+        'column without one takes the row time; a map that is not an object '
+        'is none', () {
       write(
         {'name': 'Flu', 'doctor': 'Dr. B'},
         writeId: 'h',
         editedAt: hoursAgo(0.5),
-        times: {'name': entry(now)},
+        times: {'name': entry(hoursAgo(6))},
       );
       expect(at('name'), hoursAgo(5));
       expect([at('doctor'), auto('doctor')], [hoursAgo(0.5), false]);
@@ -970,6 +970,30 @@ void main() {
       );
       expect(at('doctor'), hoursAgo(0.25));
       expect(t()['field_edited_at'], isA<Map<String, dynamic>>());
+    });
+
+    test('the same value set again later by a person moves its entry; an '
+        'automatic entry, or an older one, for an unchanged column does not '
+        '(review Minor 1)', () {
+      final notesBefore = [at('notes'), auto('notes')];
+      write(
+        {'name': 'Flu'},
+        writeId: 'h2',
+        editedAt: hoursAgo(1 / 3),
+        times: {
+          'name': entry(hoursAgo(1 / 3)),
+          'notes': entry(now, auto: true),
+        },
+      );
+      expect([at('name'), auto('name')], [hoursAgo(1 / 3), false]);
+      expect([at('notes'), auto('notes')], notesBefore);
+      write(
+        {'name': 'Flu'},
+        writeId: 'h3',
+        editedAt: hoursAgo(0.5),
+        times: {'name': entry(hoursAgo(0.5))},
+      );
+      expect(at('name'), hoursAgo(1 / 3));
     });
 
     test('a 0.3.0 upsert stamps only the columns it changes, on arrival, '

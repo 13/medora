@@ -197,9 +197,9 @@ begin
   end if;
 
   -- Edit times per column. A 0.4.0 client sends an entry for each column
-  -- it writes; the entries are read only for the columns the write really
-  -- changes (an insert: the columns it names), and never for a legacy
-  -- write.
+  -- it writes; the entries are read for the columns the write really
+  -- changes (an insert: the columns it names), and for an unchanged column
+  -- only as a later person's time (below); never for a legacy write.
   if tg_op = 'INSERT' then
     v_sent := new.field_edited_at;
   else
@@ -225,8 +225,18 @@ begin
     v_entry := v_sent -> v_key;
     if tg_op = 'INSERT' then
       continue when v_entry is null;
-    else
-      continue when (v_new -> v_key) is not distinct from (v_old -> v_key);
+    elsif (v_new -> v_key) is not distinct from (v_old -> v_key) then
+      -- An unchanged value moves its entry only when the write sent a
+      -- person's time for it that is later than the one held: the same
+      -- value set again, later, is the latest edit of that column. Any
+      -- other entry for an unchanged column is ignored (a legacy write
+      -- sends none).
+      v_at := (v_entry ->> 'at')::timestamptz;
+      continue when v_at is null
+        or coalesce((v_entry ->> 'auto')::boolean, false)
+        or v_at < c_ceiling
+        or least(v_at, v_now)
+           <= coalesce((v_map -> v_key ->> 'at')::timestamptz, '-infinity');
     end if;
     -- A changed column with no entry takes the time the write carried
     -- (a legacy write: its arrival).

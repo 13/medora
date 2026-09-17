@@ -42,13 +42,23 @@ class MergeConflict {
 }
 
 class MergeResult {
-  const MergeResult(this.row, this.conflicts, this.times);
+  const MergeResult(
+    this.row,
+    this.conflicts,
+    this.times, {
+    this.sendsTimes = false,
+  });
   final Map<String, Object?> row;
   final List<MergeConflict> conflicts;
 
   /// The edit times of [row]: the server's, with this device's for the
   /// columns taken from here.
   final FieldTimes times;
+
+  /// True when a group holds the same values on both sides, but a person
+  /// here set them later than the server's times say: [row] equals the
+  /// server copy, and still has those times to send.
+  final bool sendsTimes;
 }
 
 /// The columns of [local] that differ from [base], bookkeeping and
@@ -103,6 +113,12 @@ bool _changedSince(String column, FieldTimes? times, FieldTimes? baseTimes) {
 /// every group counts as changed on both sides. Server-owned and
 /// bookkeeping columns always come from [remote].
 ///
+/// A group this side changed to the values the server already holds keeps
+/// this side's times when a person here made that change after the
+/// server's times for the group ([MergeResult.sendsTimes]): setting the
+/// same value later is the latest edit, and a third device's older change
+/// must lose to it.
+///
 /// The times a server copy carries are already capped at the moment the
 /// server received each change. A local change has not arrived yet, so its
 /// cap would be a later moment than any server copy's; comparing it
@@ -134,12 +150,29 @@ MergeResult mergeRows({
     baseTimes: baseTimes,
   );
   final done = <String>{};
+  var sendsTimes = false;
   for (final column in localChanged) {
     if (done.contains(column)) continue;
     final group = policy._groupOf(column);
     done.addAll(group);
     final sameValues = group.every((c) => local[c] == remote[c]);
-    if (sameValues) continue;
+    if (sameValues) {
+      // The same values: a person here who set them after the server's
+      // change to them made the latest edit of the group (review Minor 1),
+      // so this device's times are kept, and sent.
+      final here = group.where(localChanged.contains);
+      final mine = localTimes.strongestOf(here);
+      if (mine != null &&
+          !mine.automatic &&
+          beats(mine, remoteTimes.strongestOf(group))) {
+        for (final c in here) {
+          final time = localTimes.of(c);
+          if (time != null && !untimedColumns.contains(c)) times[c] = time;
+        }
+        sendsTimes = true;
+      }
+      continue;
+    }
     final remoteTouched = group.any(remoteChanged.contains);
     final takeLocal =
         !remoteTouched ||
@@ -163,7 +196,12 @@ MergeResult mergeRows({
       }
     }
   }
-  return MergeResult(merged, conflicts, FieldTimes(times));
+  return MergeResult(
+    merged,
+    conflicts,
+    FieldTimes(times),
+    sendsTimes: sendsTimes,
+  );
 }
 
 /// True when [a] and [b] hold the same client-written values.

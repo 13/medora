@@ -168,7 +168,8 @@ final parityScript = <ParityStep>[
   ),
   ParityStep.update(
     'one write: a column with its own time, one flagged automatic, one with '
-        'no time (the row time), and an entry for an unchanged column',
+        'no time (the row time), and a later person\'s entry for an '
+        'unchanged column, which moves it',
     'treatments',
     'par-t2',
     {
@@ -182,6 +183,24 @@ final parityScript = <ParityStep>[
         'name': _at('2020-03-09T00:00:00.000Z'),
         'end_date': _at('2020-03-03T00:00:00.000Z', auto: true),
         'is_active': _at('2020-03-02T00:00:00.000Z'),
+      },
+    },
+  ),
+  ParityStep.update(
+    'the same values again: an older entry and an automatic one for '
+        'unchanged columns are ignored',
+    'treatments',
+    'par-t2',
+    {
+      'name': 'Cold',
+      'is_active': false,
+      'sick_leave_ref': 'R2',
+      'write_id': _uuid(90),
+      'edited_at': '2020-03-10T00:00:00.000Z',
+      'field_edited_at': {
+        'name': _at('2020-03-08T00:00:00.000Z'),
+        'is_active': _at('2020-03-10T00:00:00.000Z', auto: true),
+        'sick_leave_ref': _at('2020-03-10T00:00:00.000Z'),
       },
     },
   ),

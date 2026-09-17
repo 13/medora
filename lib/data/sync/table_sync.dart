@@ -227,7 +227,10 @@ class TableSync {
       remoteTimes: meta.fieldTimes,
       policy: policy,
     );
-    final settled = !resurrect && sameContent(merge.row, remoteWire, policy);
+    final settled =
+        !resurrect &&
+        !merge.sendsTimes &&
+        sameContent(merge.row, remoteWire, policy);
     await _storeServer(
       txn,
       {...json, ...merge.row, if (resurrect) 'deleted_at': null},

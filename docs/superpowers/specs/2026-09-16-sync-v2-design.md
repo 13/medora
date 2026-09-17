@@ -239,7 +239,7 @@ The automatic changes are:
 
 **The trigger, per column:**
 
-- **An update** reads the entries a 0.4.0 client sent, and only for the columns whose value it really changes. A changed column without an entry takes the row's normalised `edited_at`.
+- **An update** reads the entries a 0.4.0 client sent for the columns whose value it really changes. A changed column without an entry takes the row's normalised `edited_at`. For a column whose value it does not change, a sent entry counts only when it is a person's time later than the one held (capped at arrival): the same value set again later is the latest edit of that column (review Minor 1). An older or automatic entry for an unchanged column is ignored.
 - **Normalising:** an entry before `1970-01-02`, or one sent with `auto`, is automatic and counts as `1970-01-01`. Any other time is capped at `now()`.
 - **Never back:** the stored time is the later of the time already held and the new one. The flag is the new change's.
 - **A writer without a new write id** (0.3.0, the cascade) is never read: its changed columns are stamped on arrival, as a person's change.
@@ -293,7 +293,8 @@ The server's times are already capped at arrival. A local change has not arrived
 - **Per group, by what changed since the base:**
   - a group only the local side changed takes the local values;
   - a group only the server changed, or neither, takes the server values;
-  - a group both sides changed to different values takes the side whose change to that group wins, by that group's own column times (§4.4).
+  - a group both sides changed to different values takes the side whose change to that group wins, by that group's own column times (§4.4);
+  - a group this side changed to the values the server already holds takes the server's values, and keeps this side's times when a person here made that change later than the server's times for the group. The row then still has those times to send (`MergeResult.sendsTimes`): it stays `pending_update`, and the push sends the column with its unchanged value and its later time (review Minor 1, found by the three-device random run: A sets 6 at 19:00, B offline sets 4 at 19:18, C, which had not seen A's change, sets 6 at 21:20; without this, the server kept 19:00 and B's 4 won).
 - **With no base** (rows from before v16, or a restore), every group counts as changed on both sides, so each group goes to the side whose column times win.
   - A restored row without a map meets the server's times column by column, with its one row time.
   - A row from before the migration has an empty map, so its `updated_at` stands for every column. A device's 0.3.0 change still waiting then loses to a newer server row, as it did under 0.3.0.
@@ -434,7 +435,7 @@ File: `supabase/migrations/20260918000000_sync_v2.sql`. Apply it after `20260917
 - after the Task 3 review (fix round) the checks also cover: no TRUNCATE, TRIGGER or REFERENCES for clients on any synced or family table, every kind of update moving `sync_xid`, stock values out of range, a medication removed from the server, a retry racing its original, and the app's family and "delete all data" flows. They pass on the real `supabase/postgres:15.8.1.085` image as well.
 - after the per-column revision (2026-09-17), the checks also fail when a column time goes back, when the cap at arrival is missing, when an older time overwrites an entry, when an unchanged column is stamped, when a legacy write's map is read, when a sent map is ignored or replaces the stored one, when the fill is missing or uses the arrival time, and when the stock or `deleted_at` gets an entry (14 mutants, all caught). The revision was checked on `postgres:15-alpine` only.
 - after the engine review (2026-09-17), the checks also cover: children stored deleted under a deleted treatment, medication or prescription (inserts, 0.4.0 updates that bring a row back, 0.3.0 upserts); the cascade as the app's own change; the one-time repair of live children; a 0.3.0 take bringing a dropped dose back, and every legacy write that must not; the fill capped at arrival, a write id without an edit time, and the automatic fill. 15 mutants of these rules, all caught, on `postgres:15-alpine`.
-- after the cycle review (2026-09-17), `tools/check_supabase_sql.sh` also runs two sessions against each other under row-level security: a dose insert left open while its prescription is deleted, the delete left open while the insert runs, and a prescription insert left open while its medication is deleted. Each child must end deleted, as the app's own delete. Without the parents read `FOR SHARE` every case fails.
+- after the cycle review (2026-09-17), the checks also cover: the same value set again by a person later moves its entry, an older or automatic entry for an unchanged column does not (review Minor 1, in `sync_v2_checks.sql` and in the parity script); a bulk "missed" and a bulk drop (cycle review I-5). `tools/check_supabase_sql.sh` also runs two sessions against each other under row-level security: a dose insert left open while its prescription is deleted, the delete left open while the insert runs, and a prescription insert left open while its medication is deleted. Each child must end deleted, as the app's own delete. Without the parents read `FOR SHARE` every case fails.
 - `tools/sql/fake_server_parity.sql`, which `test/helpers/fake_server_parity_test.dart` writes, runs the fake server's script of writes against the migration and fails on any row where Postgres answers differently (§12).
 
 ```sql
@@ -637,9 +638,9 @@ begin
   end if;
 
   -- Edit times per column. A 0.4.0 client sends an entry for each column
-  -- it writes; the entries are read only for the columns the write really
-  -- changes (an insert: the columns it names), and never for a legacy
-  -- write.
+  -- it writes; the entries are read for the columns the write really
+  -- changes (an insert: the columns it names), and for an unchanged column
+  -- only as a later person's time (below); never for a legacy write.
   if tg_op = 'INSERT' then
     v_sent := new.field_edited_at;
   else
@@ -665,8 +666,18 @@ begin
     v_entry := v_sent -> v_key;
     if tg_op = 'INSERT' then
       continue when v_entry is null;
-    else
-      continue when (v_new -> v_key) is not distinct from (v_old -> v_key);
+    elsif (v_new -> v_key) is not distinct from (v_old -> v_key) then
+      -- An unchanged value moves its entry only when the write sent a
+      -- person's time for it that is later than the one held: the same
+      -- value set again, later, is the latest edit of that column. Any
+      -- other entry for an unchanged column is ignored (a legacy write
+      -- sends none).
+      v_at := (v_entry ->> 'at')::timestamptz;
+      continue when v_at is null
+        or coalesce((v_entry ->> 'auto')::boolean, false)
+        or v_at < c_ceiling
+        or least(v_at, v_now)
+           <= coalesce((v_map -> v_key ->> 'at')::timestamptz, '-infinity');
     end if;
     -- A changed column with no entry takes the time the write carried
     -- (a legacy write: its arrival).

@@ -759,6 +759,107 @@ void main() {
       });
     }
 
+    group('the same value set again later (review Minor 1, random seed '
+        '107)', () {
+      /// A sets the doctor to Dr. Bianchi at 19:00 and syncs; B, offline,
+      /// sets Dr. Verdi at 19:18; C, which has not seen A's change, sets
+      /// Dr. Bianchi too, at 21:20. C's is the latest edit.
+      Future<void> sameValueLater(List<_Device> order) async {
+        serverNow = at(19);
+        await a.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+        serverNow = at(19, 1);
+        await a.sync();
+        serverNow = at(19, 18);
+        await b.edit('treatments', 't1', {'doctor': 'Dr. Verdi'});
+        serverNow = at(21, 20);
+        await c.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+        for (final device in order) {
+          serverNow = serverNow.add(const Duration(minutes: 5));
+          await device.sync();
+        }
+        serverNow = serverNow.add(const Duration(minutes: 5));
+        await syncAll([a, b, c]);
+      }
+
+      for (final (name, order) in [
+        ('C, then B', () => [c, b]),
+        ('B, then C', () => [b, c]),
+      ]) {
+        test('C\'s later edit wins: $name', () async {
+          await sameValueLater(order());
+          expect(
+            await everywhere('treatments', 't1', 'doctor'),
+            List.filled(4, 'Dr. Bianchi'),
+          );
+          expect(
+            serverTime('treatments', 't1', 'doctor'),
+            FieldTime(at(21, 20)),
+          );
+          // Settled: another round writes nothing.
+          final version = core.rowsOf('treatments')['t1']!['row_version'];
+          await syncAll([a, b, c]);
+          expect(core.rowsOf('treatments')['t1']!['row_version'], version);
+          for (final device in [a, b, c]) {
+            expect(
+              (await device.row('treatments', 't1'))!['sync_status'],
+              SyncStatus.synced,
+              reason: device.name,
+            );
+          }
+        });
+      }
+
+      test('the same value set earlier than the server\'s time sends '
+          'nothing', () async {
+        serverNow = at(19);
+        await a.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+        serverNow = at(18);
+        await c.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+        serverNow = at(19, 1);
+        await a.sync();
+        final version = core.rowsOf('treatments')['t1']!['row_version'];
+        serverNow = at(19, 5);
+        await c.sync();
+        expect(core.rowsOf('treatments')['t1']!['row_version'], version);
+        expect(serverTime('treatments', 't1', 'doctor'), FieldTime(at(19)));
+        expect(
+          (await c.row('treatments', 't1'))!['sync_status'],
+          SyncStatus.synced,
+        );
+      });
+
+      test('a pull in between keeps the later time waiting, merged with '
+          'a note made elsewhere', () async {
+        serverNow = at(19);
+        await a.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+        serverNow = at(19, 1);
+        await a.sync();
+        // C sets the same value later, and pulls before it pushes.
+        serverNow = at(21, 20);
+        await c.edit('treatments', 't1', {'doctor': 'Dr. Bianchi'});
+        serverNow = at(21, 25);
+        await c.pull();
+        expect(
+          (await c.row('treatments', 't1'))!['sync_status'],
+          SyncStatus.pendingUpdate,
+        );
+        // A notes something meanwhile; C pulls it before it pushes.
+        serverNow = at(21, 30);
+        await a.edit('treatments', 't1', {'notes': 'rest'});
+        await a.sync();
+        serverNow = at(21, 40);
+        await c.pull();
+        await c.push();
+        expect(serverTime('treatments', 't1', 'doctor'), FieldTime(at(21, 20)));
+        expect(await everywhere('treatments', 't1', 'notes'), [
+          'rest',
+          'after food',
+          'rest',
+          'rest',
+        ]);
+      });
+    });
+
     for (final (season, bAt, cAt, aAt) in [
       // Rome: 01:30 CET, 01:50 CET, then 03:10 CEST.
       (
