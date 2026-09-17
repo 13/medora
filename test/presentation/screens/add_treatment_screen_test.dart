@@ -243,7 +243,8 @@ void main() {
     await pickDate(tester, const Key('sickLeaveFromField'), day: 3);
     await openSection(tester); // collapse again
     expect(sectionVisible(tester), isFalse);
-    expect(find.text('Mar 3, 2026 – Ongoing'), findsOneWidget);
+    // Mid-line, so lower case, as in the shared text.
+    expect(find.text('Mar 3, 2026 – ongoing'), findsOneWidget);
   });
 
   testWidgets('an end date without a start date is rejected', (tester) async {

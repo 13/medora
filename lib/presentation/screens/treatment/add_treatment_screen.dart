@@ -343,7 +343,9 @@ class _AddTreatmentScreenState extends ConsumerState<AddTreatmentScreen> {
   String? _sickLeaveSummary(AppLocalizations l10n) {
     final from = _sickLeaveFrom;
     if (from != null) {
-      return '${from.formatted} – ${_sickLeaveTo.formattedOr(l10n.ongoing)}';
+      // Mid-line ("Mar 3, 2026 – ongoing"), so lower case.
+      return '${from.formatted} – '
+          '${_sickLeaveTo.formattedOr(l10n.ongoingInline)}';
     }
     return _textOrNull(_doctorController) ??
         _textOrNull(_sickLeaveRefController);
