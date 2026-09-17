@@ -64,6 +64,13 @@ jobs:
       - uses: actions/checkout@v4
       - run: psql --version
       - run: tools/check_supabase_sql.sh
+      # The same checks on Supabase's own Postgres image, whose `postgres`
+      # role is not a superuser and whose auth schema is the real one.
+      - name: SQL checks on the supabase/postgres image
+        run: tools/check_supabase_sql.sh
+        env:
+          USE_DOCKER: '1'
+          PG_IMAGE: public.ecr.aws/supabase/postgres:15.8.1.085
 
   build-web:
     runs-on: ubuntu-latest

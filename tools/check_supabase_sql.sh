@@ -4,10 +4,21 @@
 # tools/sql/. Needs either Docker (default) or PGHOST/PGUSER/PGPASSWORD
 # pointing at an empty scratch database (CI sets them; USE_DOCKER=0).
 # Never point it at a real Supabase project.
+#
+# PG_IMAGE picks the Docker image (default postgres:15-alpine). With
+# Supabase's own image (PG_IMAGE=public.ecr.aws/supabase/postgres:15.8.1.085)
+# the migrations run as its `postgres` role, which is not a superuser,
+# against its real auth schema and roles, so tools/sql/auth_shim.sql is
+# skipped. AUTH_SHIM=0 skips it on the USE_DOCKER=0 path too.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 use_docker="${USE_DOCKER:-1}"
+image="${PG_IMAGE:-postgres:15-alpine}"
+case "$image" in
+  *supabase/postgres*) auth_shim="${AUTH_SHIM:-0}" ;;
+  *) auth_shim="${AUTH_SHIM:-1}" ;;
+esac
 # Only warnings and errors: no NOTICE lines from IF NOT EXISTS.
 quiet="-c client_min_messages=warning"
 container=""
@@ -16,7 +27,7 @@ trap cleanup EXIT
 
 if [[ "$use_docker" == 1 ]]; then
   container="medora-sql-check-$$"
-  docker run -d --rm --name "$container" -e POSTGRES_PASSWORD=check postgres:15-alpine >/dev/null
+  docker run -d --rm --name "$container" -e POSTGRES_PASSWORD=check "$image" >/dev/null
   # Ask over TCP: while the image initialises the database it runs a
   # temporary server that answers on the socket only, then restarts it.
   ready=0
@@ -31,9 +42,10 @@ if [[ "$use_docker" == 1 ]]; then
     echo "postgres did not start" >&2
     exit 1
   fi
-  psql_run() { docker exec -i -e PGOPTIONS="$quiet" "$container" psql -v ON_ERROR_STOP=1 -U postgres -q "$@"; }
+  # Over TCP, as a client connects (the Supabase image trusts local TCP).
+  psql_run() { docker exec -i -e PGOPTIONS="$quiet" "$container" psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -q "$@"; }
   # A second session that keeps running while the script goes on.
-  psql_bg() { docker exec -d -e PGOPTIONS="$quiet" "$container" psql -U postgres -q "$@"; }
+  psql_bg() { docker exec -d -e PGOPTIONS="$quiet" "$container" psql -h 127.0.0.1 -U postgres -q "$@"; }
 else
   psql_run() { PGOPTIONS="$quiet" psql -v ON_ERROR_STOP=1 -q "$@"; }
   psql_bg() { PGOPTIONS="$quiet" psql -q "$@" >/dev/null 2>&1 & }
@@ -45,7 +57,9 @@ test -f "$sync_v2" || { echo "missing $sync_v2" >&2; exit 1; }
 # Every migration in file-name order (the order Supabase applies them),
 # each in a transaction of its own, as `supabase db push` runs them.
 {
-  cat tools/sql/auth_shim.sql
+  if [[ "$auth_shim" == 1 ]]; then
+    cat tools/sql/auth_shim.sql
+  fi
   for f in supabase/migrations/*.sql; do
     if [[ "$f" == "$sync_v2" ]]; then
       # A row from before sync v2.
