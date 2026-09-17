@@ -105,7 +105,8 @@ final List<Migration> kMigrations = [
   // the write attempt whose answer never came (`sync_write_id`). A dose the
   // app drops from a changed schedule is deleted on the server only while
   // it is still pending (`delete_guard`). Stock changes wait in their own
-  // outbox, as changes, never as totals.
+  // outbox, as changes, never as totals, in the order they were made
+  // (`seq`: the device clock can repeat a millisecond or step back).
   Migration(16, (db) async {
     for (final table in [
       'medications',
@@ -122,7 +123,8 @@ final List<Migration> kMigrations = [
     await db.execute('ALTER TABLE dose_logs ADD COLUMN delete_guard TEXT');
     await db.execute('''
       CREATE TABLE stock_outbox (
-        op_id TEXT PRIMARY KEY,
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        op_id TEXT NOT NULL UNIQUE,
         medication_id TEXT NOT NULL
           REFERENCES medications(id) ON DELETE CASCADE,
         delta INTEGER,
@@ -133,7 +135,7 @@ final List<Migration> kMigrations = [
     ''');
     await db.execute(
       'CREATE INDEX idx_local_stock_outbox_med '
-      'ON stock_outbox(medication_id, created_at)',
+      'ON stock_outbox(medication_id, seq)',
     );
   }),
 ];

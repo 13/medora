@@ -342,7 +342,14 @@ void main() {
     expect(await columnsOf(db, 'dose_logs'), contains('delete_guard'));
     expect(
       await columnsOf(db, 'stock_outbox'),
-      containsAll(['op_id', 'medication_id', 'delta', 'set_to', 'created_at']),
+      containsAll([
+        'seq',
+        'op_id',
+        'medication_id',
+        'delta',
+        'set_to',
+        'created_at',
+      ]),
     );
     await db.insert('medications', {'id': 'm1', 'name': 'M', 'quantity': 1});
     await expectLater(

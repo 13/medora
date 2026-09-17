@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../helpers/test_database.dart';
 
@@ -55,7 +56,8 @@ void main() {
     });
     tearDown(tearDownTestDatabase);
 
-    test('keeps changes oldest first, per medication, until removed', () async {
+    test('keeps changes in the order they were made, per medication, until '
+        'removed', () async {
       final db = await AppDatabase.instance.database;
       await db.transaction((txn) async {
         await StockOutboxLocalDatasource.enqueue(
@@ -77,20 +79,73 @@ void main() {
         );
       });
       final outbox = StockOutboxLocalDatasource();
+      // The order they were made in, whatever their clock times say.
       expect((await outbox.pending()).map((o) => o.opId), [
+        'late',
         'early',
         'other',
-        'late',
       ]);
       expect((await outbox.pending(medicationId: 'm1')).map((o) => o.opId), [
-        'early',
         'late',
+        'early',
       ]);
-      expect(await outbox.remove('early'), isTrue);
-      expect(await outbox.remove('early'), isFalse);
-      expect((await outbox.pending()).map((o) => o.opId), ['other', 'late']);
+      expect(await outbox.remove('late'), isTrue);
+      expect(await outbox.remove('late'), isFalse);
+      expect((await outbox.pending()).map((o) => o.opId), ['early', 'other']);
       await outbox.clearAll();
       expect(await outbox.pending(), isEmpty);
+    });
+
+    Future<int> replay(List<StockOp> ops) async {
+      final db = await AppDatabase.instance.database;
+      for (final op in ops) {
+        await StockOutboxLocalDatasource.enqueue(db, op);
+      }
+      return applyStockOps(5, await StockOutboxLocalDatasource().pending());
+    }
+
+    test('a count and a change made in the same millisecond replay in the '
+        'order they were made', () async {
+      // Op ids are random: here the later change sorts first.
+      expect(
+        await replay([
+          _op('zzz', setTo: 10, minute: 3),
+          _op('aaa', delta: -1, minute: 3),
+        ]),
+        9,
+      );
+    });
+
+    test('a change made after the clock stepped back still replays '
+        'last', () async {
+      expect(
+        await replay([
+          _op('first', setTo: 10, minute: 9),
+          _op('second', delta: -1, minute: 1),
+        ]),
+        9,
+      );
+    });
+
+    test('an op id is applied once: a second enqueue of it fails', () async {
+      final db = await AppDatabase.instance.database;
+      await StockOutboxLocalDatasource.enqueue(db, _op('a', delta: -1));
+      await expectLater(
+        StockOutboxLocalDatasource.enqueue(db, _op('a', delta: -1)),
+        throwsA(isA<DatabaseException>()),
+      );
+    });
+
+    test('the order survives a removal of the newest change', () async {
+      final db = await AppDatabase.instance.database;
+      final outbox = StockOutboxLocalDatasource();
+      await StockOutboxLocalDatasource.enqueue(db, _op('a', delta: -1));
+      await StockOutboxLocalDatasource.enqueue(db, _op('b', delta: -1));
+      await outbox.remove('b');
+      await StockOutboxLocalDatasource.enqueue(db, _op('c', delta: -1));
+      await outbox.remove('a');
+      await StockOutboxLocalDatasource.enqueue(db, _op('d', setTo: 1));
+      expect((await outbox.pending()).map((o) => o.opId), ['c', 'd']);
     });
 
     test('a medication deleted here takes its changes with it', () async {

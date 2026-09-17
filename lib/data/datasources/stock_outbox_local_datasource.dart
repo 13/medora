@@ -66,8 +66,12 @@ class StockOutboxLocalDatasource {
   static Future<void> enqueue(DatabaseExecutor txn, StockOp op) =>
       txn.insert(table, op.toRow());
 
-  /// The changes still waiting, oldest first; only [medicationId]'s when
-  /// given.
+  /// The changes still waiting, in the order they were made; only
+  /// [medicationId]'s when given.
+  ///
+  /// The order is the insertion order (`seq`), never `created_at`: two
+  /// changes can share a millisecond, and the clock can step back between
+  /// them. "Set to 10" then "−1" must replay as 9, not 10.
   Future<List<StockOp>> pending({String? medicationId}) async =>
       pendingIn(await _db, medicationId: medicationId);
 
@@ -80,7 +84,7 @@ class StockOutboxLocalDatasource {
       table,
       where: medicationId == null ? null : 'medication_id = ?',
       whereArgs: medicationId == null ? null : [medicationId],
-      orderBy: 'created_at, op_id',
+      orderBy: 'seq',
     );
     return rows.map(StockOp.fromRow).toList();
   }
