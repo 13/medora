@@ -1,6 +1,7 @@
 /// Medora - Family Repository Implementation (Offline-First)
 library;
 
+import 'package:medora/core/clock.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -19,11 +20,15 @@ class FamilyRepositoryImpl implements FamilyRepository {
     required this.localDatasource,
     required this.remoteDatasource,
     bool Function()? isOnline,
+    this._now = systemNow,
   }) : _isOnline = isOnline ?? (() => ConnectivityService.instance.isOnline);
 
   final FamilyLocalDatasource localDatasource;
   final FamilyRemoteDatasource? remoteDatasource;
   final bool Function() _isOnline;
+
+  /// The clock for the times a family or a membership is created at.
+  final Now _now;
 
   static const _uuid = Uuid();
 
@@ -37,13 +42,14 @@ class FamilyRepositoryImpl implements FamilyRepository {
       final familyId = _uuid.v4();
       final memberId = _uuid.v4();
       final userId = SupabaseConfig.currentUserId;
+      final now = _now();
 
       final family = FamilyModel(
         id: familyId,
         name: name,
         inviteCode: inviteCode,
         ownerId: userId,
-        createdAt: DateTime.now(),
+        createdAt: now,
       );
 
       final member = FamilyMemberModel(
@@ -52,7 +58,7 @@ class FamilyRepositoryImpl implements FamilyRepository {
         userId: userId,
         displayName: ownerDisplayName,
         role: 'owner',
-        joinedAt: DateTime.now(),
+        joinedAt: now,
       );
 
       await localDatasource.upsertFamily(

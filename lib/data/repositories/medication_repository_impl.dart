@@ -17,10 +17,17 @@ import 'package:medora/domain/repositories/medication_repository.dart';
 class MedicationRepositoryImpl implements MedicationRepository {
   /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
   /// failure only logs. Null in local-only mode, where nothing is pushed.
-  MedicationRepositoryImpl({required this.localDatasource, this._requestSync});
+  ///
+  /// [now] is the clock for the stamps a write sets.
+  MedicationRepositoryImpl({
+    required this.localDatasource,
+    this._requestSync,
+    this._now = systemNow,
+  });
 
   final MedicationLocalDatasource localDatasource;
   final RequestSync? _requestSync;
+  final Now _now;
 
   @override
   Future<Result<List<Medication>>> getMedications() async {
@@ -86,10 +93,11 @@ class MedicationRepositoryImpl implements MedicationRepository {
   @override
   Future<Result<Medication>> addMedication(Medication medication) async {
     try {
+      final now = _now();
       final model = MedicationModel.fromDomain(
         medication.copyWith(
-          updatedAt: DateTime.now(),
-          createdAt: medication.createdAt ?? DateTime.now(),
+          updatedAt: now,
+          createdAt: medication.createdAt ?? now,
         ),
       );
       await localDatasource.upsert(model, syncStatus: SyncStatus.pendingCreate);
@@ -111,7 +119,7 @@ class MedicationRepositoryImpl implements MedicationRepository {
       final previous = await localDatasource.getMedicationById(medication.id);
       final model = MedicationModel.fromDomain(
         medication.copyWith(
-          updatedAt: nextUpdatedAt(previous?.updatedAt, DateTime.now()),
+          updatedAt: nextUpdatedAt(previous?.updatedAt, _now()),
         ),
       );
       await localDatasource.upsert(

@@ -151,6 +151,7 @@ final medicationRepositoryProvider = Provider<MedicationRepository>(
       ref,
       ref.watch(medicationDatasourceProvider),
     ),
+    now: ref.watch(nowProvider),
   ),
 );
 
@@ -172,6 +173,7 @@ final prescriptionRepositoryProvider = Provider<PrescriptionRepository>(
       ref,
       ref.watch(prescriptionDatasourceProvider),
     ),
+    now: ref.watch(nowProvider),
   ),
 );
 
@@ -180,6 +182,7 @@ final doseLogRepositoryProvider = Provider<DoseLogRepository>(
     localDatasource: ref.watch(doseLogLocalDatasourceProvider),
     prescriptionLocal: ref.watch(prescriptionLocalDatasourceProvider),
     requestSync: _requestSyncInCloud(ref, ref.watch(doseLogDatasourceProvider)),
+    now: ref.watch(nowProvider),
   ),
 );
 
@@ -187,6 +190,7 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
   (ref) => FamilyRepositoryImpl(
     localDatasource: ref.watch(familyLocalDatasourceProvider),
     remoteDatasource: ref.watch(familyDatasourceProvider),
+    now: ref.watch(nowProvider),
   ),
 );
 
@@ -317,6 +321,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     familyRemote: ref.watch(familyDatasourceProvider),
     cursors: ref.watch(syncCursorStoreProvider),
     failures: ref.watch(syncFailureStoreProvider),
+    now: ref.watch(nowProvider),
     // Belt and braces: the auth screen records the data owner right after a
     // sign-in, but if that ever did not happen (an app killed mid-flow, a
     // session restored from disk) the first clean cycle records it.

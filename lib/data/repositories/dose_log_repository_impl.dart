@@ -19,15 +19,19 @@ import 'package:medora/domain/repositories/dose_log_repository.dart';
 class DoseLogRepositoryImpl implements DoseLogRepository {
   /// [requestSync] starts (or queues) a sync cycle; it is not awaited and a
   /// failure only logs. Null in local-only mode, where nothing is pushed.
+  ///
+  /// [now] is the clock for the times a write sets.
   DoseLogRepositoryImpl({
     required this.localDatasource,
     required this.prescriptionLocal,
     this._requestSync,
+    this._now = systemNow,
   });
 
   final DoseLogLocalDatasource localDatasource;
   final PrescriptionLocalDatasource prescriptionLocal;
   final RequestSync? _requestSync;
+  final Now _now;
 
   @override
   Future<Result<List<DoseLog>>> getDoseLogsByPrescription(
@@ -157,7 +161,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
 
   @override
   Future<Result<DoseLog>> markDoseTaken(String id) =>
-      _changeStatus(id, 'taken', takenTime: DateTime.now());
+      _changeStatus(id, 'taken', takenTime: _now());
 
   @override
   Future<Result<DoseLog>> markDoseSkipped(String id) =>
@@ -231,7 +235,7 @@ class DoseLogRepositoryImpl implements DoseLogRepository {
       final existingIds = {for (final m in existingModels) m.id};
 
       final newDoseLogs = <DoseLogModel>[];
-      final now = DateTime.now();
+      final now = _now();
       // A generated dose carries the weakest stamp there is, and the sync
       // cycle only inserts it where the server does not have it yet: a copy
       // of the same dose that someone took, skipped or marked on another
