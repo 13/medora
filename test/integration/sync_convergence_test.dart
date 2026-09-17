@@ -4,6 +4,8 @@
 /// Skipped automatically when the defines are absent.
 library;
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -20,6 +22,10 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/repositories/medication_repository_impl.dart';
+import 'package:medora/data/repositories/treatment_repository_impl.dart';
+import 'package:medora/domain/entities/medication.dart';
+import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -113,8 +119,140 @@ void main() {
     return (client: other, userId: res.user!.id);
   }
 
+  /// Two devices of the signed-in account, each with its own database file
+  /// and cursors; [TwoDeviceRun.on] opens one device's database at a time.
+  Future<TwoDeviceRun> twoDevices() async {
+    final dir = await Directory.systemTemp.createTemp('medora_it_');
+    addTearDown(() async {
+      await AppDatabase.instance.reset();
+      AppDatabase.debugPathOverride = null;
+      await dir.delete(recursive: true);
+    });
+    SyncService service() => SyncService(
+      medicationLocal: MedicationLocalDatasource(),
+      medicationRemote: MedicationRemoteDatasource(client),
+      treatmentLocal: TreatmentLocalDatasource(),
+      treatmentRemote: TreatmentRemoteDatasource(client),
+      prescriptionLocal: PrescriptionLocalDatasource(),
+      prescriptionRemote: PrescriptionRemoteDatasource(client),
+      doseLogLocal: DoseLogLocalDatasource(),
+      doseLogRemote: DoseLogRemoteDatasource(client),
+      familyLocal: FamilyLocalDatasource(),
+      familyRemote: FamilyRemoteDatasource(client),
+      syncState: SyncStateRemoteDatasource(client),
+      cursors: SyncCursorStore.inMemory(),
+      isOnline: () => true,
+      currentUserId: () => userId,
+      onlineStream: const Stream.empty(),
+    );
+    return TwoDeviceRun(
+      paths: ['${dir.path}/a.db', '${dir.path}/b.db'],
+      services: [service(), service()],
+    );
+  }
+
+  const cloudSkip =
+      'Set SUPABASE_URL and SUPABASE_ANON_KEY dart-defines to '
+      'run against a local Supabase';
+
   setUp(setUpTestDatabase);
   tearDown(tearDownTestDatabase);
+
+  test('S1: A ends the illness while B, offline, adds the certificate; both '
+      'changes stay on both devices and the server', () async {
+    final run = await twoDevices();
+    final id = const Uuid().v4();
+    TreatmentRepositoryImpl treatments() => TreatmentRepositoryImpl(
+      localDatasource: TreatmentLocalDatasource(),
+      requestSync: () async {},
+    );
+    await run.on(0, (sync) async {
+      await treatments().addTreatment(
+        Treatment(
+          id: id,
+          name: 'Sinusitis',
+          startDate: DateTime(2026, 3, 2),
+          sickLeaveFrom: DateTime(2026, 3, 2),
+        ),
+      );
+      await sync();
+    });
+    await run.on(1, (sync) => sync());
+    // B, offline: the certificate number.
+    await run.on(1, (_) async {
+      final t = (await treatments().getTreatmentById(id)).dataOrNull!;
+      await treatments().updateTreatment(t.copyWith(sickLeaveRef: 'CERT-B'));
+    });
+    // A ends the illness and syncs first.
+    await run.on(0, (sync) async {
+      await treatments().endTreatment(id, endSickLeave: true);
+      await sync();
+    });
+    await run.on(1, (sync) => sync());
+    await run.on(0, (sync) => sync());
+
+    for (final device in [0, 1]) {
+      await run.on(device, (_) async {
+        final t = (await treatments().getTreatmentById(id)).dataOrNull!;
+        expect(
+          [t.isActive, t.endDate != null, t.sickLeaveTo != null],
+          [false, true, true],
+          reason: 'device $device',
+        );
+        expect(t.sickLeaveRef, 'CERT-B', reason: 'device $device');
+      });
+    }
+    final server = await client
+        .from('treatments')
+        .select('is_active, sick_leave_ref, row_version')
+        .eq('id', id)
+        .single();
+    expect([server['is_active'], server['sick_leave_ref']], [false, 'CERT-B']);
+  }, skip: configured ? false : cloudSkip);
+
+  test('stock from two devices: each takes a tablet offline, 10 -> 8 '
+      'everywhere, one ledger row per change', () async {
+    final run = await twoDevices();
+    final id = const Uuid().v4();
+    MedicationRepositoryImpl medications() => MedicationRepositoryImpl(
+      localDatasource: MedicationLocalDatasource(),
+      requestSync: () async {},
+    );
+    await run.on(0, (sync) async {
+      await medications().addMedication(
+        Medication(id: id, name: 'Ibuprofen 400', quantity: 10),
+      );
+      await sync();
+    });
+    await run.on(1, (sync) => sync());
+    await run.on(1, (_) => medications().updateQuantity(id, -1));
+    await run.on(0, (_) => medications().updateQuantity(id, -1));
+    await run.on(0, (sync) => sync());
+    await run.on(1, (sync) => sync());
+    await run.on(0, (sync) => sync());
+
+    for (final device in [0, 1]) {
+      await run.on(device, (_) async {
+        final m = (await medications().getMedicationById(id)).dataOrNull!;
+        expect(m.quantity, 8, reason: 'device $device');
+      });
+    }
+    final server = await client
+        .from('medications')
+        .select('quantity')
+        .eq('id', id)
+        .single();
+    expect(server['quantity'], 8);
+    final ledger = await client
+        .from('stock_changes')
+        .select('delta, quantity_after')
+        .eq('medication_id', id)
+        .order('quantity_after', ascending: false);
+    expect(ledger, [
+      {'delta': -1, 'quantity_after': 9},
+      {'delta': -1, 'quantity_after': 8},
+    ]);
+  }, skip: configured ? false : cloudSkip);
 
   test(
     'create on A, pull on B, delete on B, gone on A',
@@ -225,4 +363,30 @@ void main() {
         : 'Set SUPABASE_URL and SUPABASE_ANON_KEY dart-defines to run '
               'against a local Supabase',
   );
+}
+
+/// Two devices, one database open at a time.
+class TwoDeviceRun {
+  TwoDeviceRun({required this.paths, required this.services});
+
+  final List<String> paths;
+  final List<SyncService> services;
+
+  /// Opens device [index]'s database and runs [body] with a function that
+  /// runs one clean sync cycle on that device.
+  Future<void> on(
+    int index,
+    Future<void> Function(Future<void> Function() sync) body,
+  ) async {
+    await AppDatabase.instance.reset();
+    AppDatabase.debugPathOverride = paths[index];
+    await body(() async {
+      final report = (await services[index].syncAll())!;
+      expect(
+        report.isClean,
+        isTrue,
+        reason: '${report.fatal} ${report.failures}',
+      );
+    });
+  }
 }

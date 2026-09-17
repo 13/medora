@@ -176,8 +176,11 @@ jobs:
         run: |
           test -n "$API_URL" || { echo "API_URL missing from 'supabase status -o env'"; exit 1; }
           test -n "$ANON_KEY" || { echo "ANON_KEY missing from 'supabase status -o env'"; exit 1; }
-          flutter test test/integration \
+          # One file at a time: a test that holds a transaction open holds
+          # back every other test's pull horizon.
+          flutter test test/integration --concurrency=1 \
             --dart-define=SUPABASE_URL="$API_URL" \
-            --dart-define=SUPABASE_ANON_KEY="$ANON_KEY"
+            --dart-define=SUPABASE_ANON_KEY="$ANON_KEY" \
+            --dart-define=SUPABASE_DB_CONTAINER=supabase_db_medora
       - if: always()
         run: supabase stop
