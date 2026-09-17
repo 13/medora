@@ -240,17 +240,45 @@ void main() {
     });
 
     test('an insert names its columns; a key a row leaves out is stored '
-        'null, as PostgREST does without missing=default', () async {
+        'null, as PostgREST does without missing=default, and a null a '
+        'column refuses fails the whole insert', () async {
       await wire.table('medications').insertIfAbsent([
         {'id': 'm1', 'user_id': 'u', 'name': 'One', 'quantity': 3},
       ]);
-      await wire.client().from('medications').upsert([
+      final client = wire.client();
+      await client.from('medications').upsert([
         {'id': 'm2', 'user_id': 'u', 'name': 'Two'},
         {'id': 'm3', 'user_id': 'u', 'name': 'Three', 'notes': 'n'},
       ], ignoreDuplicates: true);
       expect(wire.log.last, contains('columns=%22id%22%2C%22user_id%22'));
       expect(core.rowsOf('medications')['m2']!['notes'], isNull);
       expect(core.rowsOf('medications')['m3']!['notes'], 'n');
+      // `quantity` has a default, but a column list names it: the row
+      // without it sends null, which the column refuses (local Supabase:
+      // 23502, and nothing is stored).
+      await expectLater(
+        client.from('medications').upsert([
+          {'id': 'm4', 'user_id': 'u', 'name': 'Four', 'quantity': 1},
+          {'id': 'm5', 'user_id': 'u', 'name': 'Five'},
+        ], ignoreDuplicates: true),
+        throwsA(
+          isA<PostgrestException>()
+              .having((e) => e.code, 'code', '23502')
+              .having(
+                (e) => e.message,
+                'message',
+                'null value in column "quantity" of relation "medications" '
+                    'violates not-null constraint',
+              ),
+        ),
+      );
+      expect(core.rowsOf('medications').keys, ['m1', 'm2', 'm3']);
+      await expectLater(
+        wire.table('medications').patch('m1', {'name': null}),
+        throwsA(
+          isA<PostgrestException>().having((e) => e.code, 'code', '23502'),
+        ),
+      );
       // An id the server has is left alone.
       await wire.table('medications').insertIfAbsent([
         {'id': 'm1', 'user_id': 'u', 'name': 'Changed', 'quantity': 9},

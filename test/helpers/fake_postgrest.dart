@@ -14,8 +14,9 @@
 ///   [FakeServerCore.patchMany] so request counts match the Dart path;
 /// - `POST` with `Prefer: resolution=ignore-duplicates` or
 ///   `merge-duplicates`, `on_conflict=id` and `columns=…` (a key a row
-///   leaves out is stored as null, as PostgREST does without
-///   `missing=default`);
+///   leaves out is null, as PostgREST sends it without `missing=default`,
+///   so a `NOT NULL` column refuses the whole insert with 23502, as it
+///   refuses a null an update sets);
 /// - `Prefer: return=representation` and the object `Accept` header;
 /// - `/rpc/medora_sync_state`, `/rpc/apply_stock_change` and
 ///   `/rpc/medora_delete_all_data`.
@@ -58,6 +59,49 @@ const _timestamptzColumns = {
   'scheduled_time',
   'taken_time',
 };
+
+/// The `NOT NULL` columns of the synced tables that no trigger fills
+/// (`sync_xid`, `row_version` and `field_edited_at` are the trigger's).
+const _notNullColumns = {
+  'medications': {
+    'id',
+    'name',
+    'quantity',
+    'minimum_stock_level',
+    'is_archived',
+  },
+  'treatments': {'id', 'name', 'start_date', 'is_active'},
+  'prescriptions': {
+    'id',
+    'treatment_id',
+    'medication_id',
+    'dosage',
+    'interval_hours',
+    'duration_days',
+    'start_time',
+    'is_active',
+    'auto_diminish',
+    'schedule_type',
+  },
+  'dose_logs': {'id', 'prescription_id', 'scheduled_time', 'status'},
+};
+
+/// Postgres refuses a write that puts null into a `NOT NULL` column
+/// (23502), before anything is written.
+void _refuseNulls(String table, Iterable<Map<String, dynamic>> rows) {
+  for (final row in rows) {
+    for (final column in _notNullColumns[table] ?? const <String>{}) {
+      if (row.containsKey(column) && row[column] == null) {
+        throw PostgrestException(
+          message:
+              'null value in column "$column" of relation "$table" violates '
+              'not-null constraint',
+          code: '23502',
+        );
+      }
+    }
+  }
+}
 
 /// [raw] as Postgres writes a `timestamptz` to JSON in a UTC session:
 /// `2026-03-01T08:00:00+00:00`, `2026-03-01T08:00:00.5+00:00`. A time
@@ -238,6 +282,7 @@ class FakePostgrest {
         if (changes is! Map<String, dynamic>) {
           return _error(request, 400, 'PGRST102', 'not an object');
         }
+        _refuseNulls(table, [changes]);
         final written = _patch(table, filters, changes);
         if (written == null) {
           return _error(
@@ -286,6 +331,7 @@ class FakePostgrest {
           }
           shaped = rows;
         }
+        _refuseNulls(table, shaped);
         if (prefer.contains('resolution=ignore-duplicates')) {
           core.insertIfAbsent(table, shaped);
         } else if (prefer.contains('resolution=merge-duplicates')) {
