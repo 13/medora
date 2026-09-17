@@ -23,16 +23,19 @@ import 'dart:convert';
 /// Edit times before this mark a change the app made on its own.
 final DateTime automaticCeiling = DateTime.utc(1970, 1, 2);
 
-/// Columns with no edit time of their own: the bookkeeping, and the stock,
-/// which only the server's stock function writes.
-const untimedColumns = {
+/// Keys that are bookkeeping on every synced table: never merged, diffed or
+/// timed.
+const bookkeepingColumns = {
   'id',
   'user_id',
   'created_at',
   'updated_at',
   'deleted_at',
-  'quantity',
 };
+
+/// Columns with no edit time of their own: the bookkeeping, and the stock,
+/// which only the server's stock function writes.
+const untimedColumns = {...bookkeepingColumns, 'quantity'};
 
 /// When one column was last changed, and whether a person changed it.
 class FieldTime {

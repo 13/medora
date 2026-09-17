@@ -43,6 +43,56 @@ void main() {
       });
     });
 
+    test('lists a column changed back to the base\'s value by a person '
+        'after the base\'s own change to it', () {
+      final baseTimes = FieldTimes({
+        'name': FieldTime(nine),
+        'sick_leave_ref': FieldTime(nine),
+        'end_date': FieldTime.automaticChange,
+      });
+      final local = FieldTimes({
+        'name': FieldTime(ten),
+        'sick_leave_ref': FieldTime(nine),
+        'end_date': FieldTime(ten),
+        'is_active': FieldTime(ten),
+      });
+      expect(
+        changedColumns(
+          base,
+          base,
+          treatmentMerge,
+          times: local,
+          baseTimes: baseTimes,
+        ),
+        // is_active: the base's time for it is unknown.
+        {'name', 'end_date'},
+      );
+      // An automatic change, or an older time, is no change.
+      expect(
+        changedColumns(
+          base,
+          base,
+          treatmentMerge,
+          times: FieldTimes({
+            'name': FieldTime.automaticChange,
+            'sick_leave_ref': FieldTime(DateTime.utc(2026, 3, 5, 8)),
+          }),
+          baseTimes: baseTimes,
+        ),
+        isEmpty,
+      );
+      // Without the base's times only values count.
+      expect(changedColumns(base, base, treatmentMerge, times: local), isEmpty);
+    });
+
+    test('a key the base lacks counts as changed', () {
+      const narrow = {'id': 't1', 'name': 'Sinusitis'};
+      expect(
+        changedColumns(narrow, {...narrow, 'doctor': null}, treatmentMerge),
+        {'doctor'},
+      );
+    });
+
     test('never lists a server-owned column', () {
       const med = {'id': 'm1', 'name': 'Ibu', 'quantity': 10};
       expect(changedColumns(med, {...med, 'quantity': 8}, stockOwned), isEmpty);
@@ -50,6 +100,53 @@ void main() {
   });
 
   group('mergeRows', () {
+    group('a change back to the base\'s value (review Minor 1)', () {
+      final eight = DateTime.utc(2026, 3, 5, 8);
+      final baseTimes = FieldTimes({'sick_leave_ref': FieldTime(eight)});
+
+      test('made here after the server\'s change: it wins', () {
+        final result = mergeRows(
+          base: base,
+          baseTimes: baseTimes,
+          local: base,
+          remote: {...base, 'sick_leave_ref': 'Z'},
+          localTimes: FieldTimes({'sick_leave_ref': FieldTime(ten)}),
+          remoteTimes: FieldTimes({'sick_leave_ref': FieldTime(nine)}),
+          policy: treatmentMerge,
+        );
+        expect(result.row['sick_leave_ref'], isNull);
+        expect(result.conflicts.single.keptLocal, isTrue);
+        expect(result.times.of('sick_leave_ref'), FieldTime(ten));
+      });
+
+      test('made on the server after the change here: it wins', () {
+        final result = mergeRows(
+          base: base,
+          baseTimes: baseTimes,
+          local: {...base, 'sick_leave_ref': 'Y'},
+          remote: base,
+          localTimes: FieldTimes({'sick_leave_ref': FieldTime(nine)}),
+          remoteTimes: FieldTimes({'sick_leave_ref': FieldTime(ten)}),
+          policy: treatmentMerge,
+        );
+        expect(result.row['sick_leave_ref'], isNull);
+        expect(result.conflicts.single.keptLocal, isFalse);
+      });
+
+      test('made here before the server\'s change: the server\'s wins', () {
+        final result = mergeRows(
+          base: base,
+          baseTimes: baseTimes,
+          local: base,
+          remote: {...base, 'sick_leave_ref': 'Z'},
+          localTimes: FieldTimes({'sick_leave_ref': FieldTime(nine)}),
+          remoteTimes: FieldTimes({'sick_leave_ref': FieldTime(ten)}),
+          policy: treatmentMerge,
+        );
+        expect(result.row['sick_leave_ref'], 'Z');
+      });
+    });
+
     test('S1: different groups changed on each side are both kept', () {
       // A ended the illness (on the server); B added the certificate.
       final remote = {

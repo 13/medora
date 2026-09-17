@@ -9,11 +9,8 @@ library;
 
 import 'package:medora/data/local/field_times.dart';
 
-/// Stamps before this are the app's own changes, never a person's.
-final DateTime weakEditCeiling = DateTime.utc(1970, 1, 2);
-
 /// The edit time of a change the app made on its own.
-final DateTime automaticEditedAt = DateTime.utc(1970);
+final DateTime automaticEditedAt = FieldTime.automaticChange.at;
 
 /// How one synced table merges.
 class MergePolicy {
@@ -28,7 +25,7 @@ class MergePolicy {
   final Set<String> serverOwned;
 
   /// Keys that are bookkeeping on every table, never merged or diffed.
-  static const bookkeeping = {'id', 'user_id', 'updated_at', 'deleted_at'};
+  static const bookkeeping = bookkeepingColumns;
 
   Set<String> _groupOf(String column) =>
       groups.firstWhere((g) => g.contains(column), orElse: () => {column});
@@ -57,19 +54,45 @@ class MergeResult {
 /// The columns of [local] that differ from [base], bookkeeping and
 /// [MergePolicy.serverOwned] left out. A null [base] means "unknown": every
 /// column counts as changed.
+///
+/// With [times] (the copy's column times) and [baseTimes] (the base's), a
+/// column also counts when a person changed it after the base's change to
+/// it, even back to the base's value: that is the latest edit.
 Set<String> changedColumns(
   Map<String, Object?>? base,
   Map<String, Object?> local,
-  MergePolicy policy,
-) => {
+  MergePolicy policy, {
+  FieldTimes? times,
+  FieldTimes? baseTimes,
+}) => {
   for (final key in local.keys)
     if (!MergePolicy.bookkeeping.contains(key) &&
         !policy.serverOwned.contains(key) &&
-        (base == null || !base.containsKey(key) || base[key] != local[key]))
+        (base == null ||
+            !base.containsKey(key) ||
+            base[key] != local[key] ||
+            _changedSince(key, times, baseTimes)))
       key,
 };
 
+/// True when [times] holds a person's change to [column] later than the
+/// change [baseTimes] holds for it.
+bool _changedSince(String column, FieldTimes? times, FieldTimes? baseTimes) {
+  if (times == null || baseTimes == null) return false;
+  if (untimedColumns.contains(column)) return false;
+  final now = times.of(column);
+  final then = baseTimes.of(column);
+  return now != null &&
+      then != null &&
+      !now.automatic &&
+      now.at.isAfter(then.at);
+}
+
 /// Merges a local pending copy with the server's.
+///
+/// A column counts as changed on a side when its value differs from
+/// [base], or when that side's time for it is a person's change later than
+/// the base's ([baseTimes], when known): a change back to the base's value.
 ///
 /// Per group: a group only one side changed since [base] takes that side;
 /// a group both sides changed to different values takes the side whose
@@ -86,6 +109,7 @@ Set<String> changedColumns(
 /// uncapped gives the same answer.
 MergeResult mergeRows({
   required Map<String, Object?>? base,
+  FieldTimes? baseTimes,
   required Map<String, Object?> local,
   required Map<String, Object?> remote,
   required FieldTimes localTimes,
@@ -95,8 +119,20 @@ MergeResult mergeRows({
   final merged = Map<String, Object?>.of(remote);
   final times = remoteTimes.resolved(remote.keys);
   final conflicts = <MergeConflict>[];
-  final localChanged = changedColumns(base, local, policy);
-  final remoteChanged = changedColumns(base, remote, policy);
+  final localChanged = changedColumns(
+    base,
+    local,
+    policy,
+    times: localTimes,
+    baseTimes: baseTimes,
+  );
+  final remoteChanged = changedColumns(
+    base,
+    remote,
+    policy,
+    times: remoteTimes,
+    baseTimes: baseTimes,
+  );
   final done = <String>{};
   for (final column in localChanged) {
     if (done.contains(column)) continue;
@@ -183,4 +219,4 @@ MergePolicy mergePolicyOf(String table) => switch (table) {
 
 /// True when [editedAt] marks a change the app made on its own.
 bool isAutomaticEdit(DateTime? editedAt) =>
-    editedAt != null && editedAt.toUtc().isBefore(weakEditCeiling);
+    editedAt != null && FieldTime(editedAt).automatic;

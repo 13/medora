@@ -444,6 +444,113 @@ void main() {
     });
   });
 
+  group('an edit back to the old value (review Minor 1, P3)', () {
+    for (final order in ['A syncs first', 'B syncs first']) {
+      test('is the latest edit, and wins: $order', () async {
+        serverNow = DateTime.utc(2026, 3, 5, 9);
+        await a.edit('treatments', 't1', {'notes': 'Y'});
+        serverNow = DateTime.utc(2026, 3, 5, 9, 2);
+        await b.edit('treatments', 't1', {'notes': 'Z'});
+        await b.sync();
+        serverNow = DateTime.utc(2026, 3, 5, 9, 5);
+        await a.edit('treatments', 't1', {'notes': 'after food'});
+        serverNow = DateTime.utc(2026, 3, 5, 10);
+        await syncAll(order == 'A syncs first' ? [a, b] : [b, a]);
+        expect(await both('treatments', 't1', 'notes'), [
+          'after food',
+          'after food',
+          'after food',
+        ]);
+        for (final d in [a, b]) {
+          expect((await d.row('treatments', 't1'))!['sync_status'], 'synced');
+        }
+      });
+    }
+
+    test(
+      'an edit back made before the other device\'s change loses to it',
+      () async {
+        serverNow = DateTime.utc(2026, 3, 5, 9);
+        await a.edit('treatments', 't1', {'notes': 'Y'});
+        serverNow = DateTime.utc(2026, 3, 5, 9, 1);
+        await a.edit('treatments', 't1', {'notes': 'after food'});
+        serverNow = DateTime.utc(2026, 3, 5, 9, 2);
+        await b.edit('treatments', 't1', {'notes': 'Z'});
+        await b.sync();
+        serverNow = DateTime.utc(2026, 3, 5, 10);
+        await syncAll([a, b]);
+        expect(await both('treatments', 't1', 'notes'), ['Z', 'Z', 'Z']);
+      },
+    );
+
+    test('a take undone after a take on the other device: the later action '
+        'wins', () async {
+      serverNow = DateTime.utc(2026, 3, 5, 7);
+      await a.edit('dose_logs', 'd1', {
+        'status': 'taken',
+        'taken_time': a.now().toIso8601String(),
+      });
+      serverNow = DateTime.utc(2026, 3, 5, 7, 5);
+      await b.edit('dose_logs', 'd1', {
+        'status': 'taken',
+        'taken_time': b.now().toIso8601String(),
+      });
+      await b.sync();
+      serverNow = DateTime.utc(2026, 3, 5, 7, 10);
+      await a.edit('dose_logs', 'd1', {
+        'status': 'pending',
+        'taken_time': null,
+      });
+      serverNow = DateTime.utc(2026, 3, 5, 8);
+      await syncAll([a, b]);
+      expect(await both('dose_logs', 'd1', 'status'), [
+        'pending',
+        'pending',
+        'pending',
+      ]);
+    });
+
+    test('a device whose edit landed but whose answer was lost, with a '
+        'clock ahead, does not later undo a newer change elsewhere', () async {
+      a.skew = const Duration(hours: 2);
+      serverNow = DateTime.utc(2026, 3, 5, 9);
+      await a.edit('treatments', 't1', {'notes': 'Y'});
+      await a.edit('treatments', 't1', {'doctor': 'Dr. A'});
+      // A's first push lands, but A only learns of it on the next cycle,
+      // after another edit of its own.
+      final db = await a.open();
+      final engine = TableSync(
+        table: 'treatments',
+        remote: _LosingTable(core, 'treatments'),
+        newWriteId: () => 'a-lost',
+        now: a.now,
+      );
+      await expectLater(
+        engine.pushRow(
+          (await db.query('treatments', where: "id = 't1'")).single,
+          userId: 'u',
+        ),
+        throwsA(anything),
+      );
+      serverNow = DateTime.utc(2026, 3, 5, 9, 1);
+      await a.edit('treatments', 't1', {'doctor': 'Dr. B'});
+      await a.push();
+      // B changes the notes after A's arrived.
+      serverNow = DateTime.utc(2026, 3, 5, 9, 30);
+      await b.sync();
+      await b.edit('treatments', 't1', {'notes': 'Z'});
+      await b.sync();
+      serverNow = DateTime.utc(2026, 3, 5, 10);
+      await syncAll([a, b]);
+      expect(await both('treatments', 't1', 'notes'), ['Z', 'Z', 'Z']);
+      expect(await both('treatments', 't1', 'doctor'), [
+        'Dr. B',
+        'Dr. B',
+        'Dr. B',
+      ]);
+    });
+  });
+
   group('a person\'s change beats the app\'s own', () {
     Future<void> takeOnB(DateTime at, {String id = 'd1'}) async {
       serverNow = at;
@@ -1184,4 +1291,27 @@ void main() {
       await expectSettled([a, b]);
     });
   });
+}
+
+/// A table whose writes land, but whose answer never arrives.
+class _LosingTable extends FakeSyncTable {
+  _LosingTable(super.core, super.table);
+
+  @override
+  Future<Map<String, dynamic>?> patch(
+    String id,
+    Map<String, Object?> changes, {
+    int? ifVersion,
+    String? ifStatus,
+    bool ifLive = false,
+  }) async {
+    await super.patch(
+      id,
+      changes,
+      ifVersion: ifVersion,
+      ifStatus: ifStatus,
+      ifLive: ifLive,
+    );
+    throw StateError('answer lost');
+  }
 }

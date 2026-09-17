@@ -102,18 +102,38 @@ Map<String, Object?> localRowOf(
 FieldTimes localFieldTimes(Map<String, Object?> row) =>
     FieldTimes.decode(row['field_edited_at'], rowTime: localRowTime(row));
 
+/// The key under which `sync_base` keeps the base's column times; no
+/// column is called that.
+const _baseTimesKey = '@field_edited_at';
+
 /// The bookkeeping of one local row.
 class LocalSyncMeta {
-  const LocalSyncMeta({this.version, this.base, this.writeId, this.editedAt});
+  const LocalSyncMeta({
+    this.version,
+    this.base,
+    this.baseTimes,
+    this.writeId,
+    this.editedAt,
+  });
 
   factory LocalSyncMeta.fromRow(Map<String, Object?> row) {
     final rawBase = row['sync_base'] as String?;
     final rawEdited = row['edited_at'] as String?;
+    final base = rawBase == null
+        ? null
+        : (jsonDecode(rawBase) as Map<String, dynamic>);
+    final times = base?.remove(_baseTimesKey);
     return LocalSyncMeta(
       version: row['sync_version'] as int?,
-      base: rawBase == null
-          ? null
-          : (jsonDecode(rawBase) as Map<String, dynamic>),
+      base: base,
+      baseTimes: times is Map
+          ? FieldTimes.decode(
+              times['times'],
+              rowTime: times['row_time'] is String
+                  ? DateTime.tryParse(times['row_time'] as String)?.toUtc()
+                  : null,
+            )
+          : null,
       writeId: row['sync_write_id'] as String?,
       editedAt: rawEdited == null ? null : DateTime.tryParse(rawEdited),
     );
@@ -121,26 +141,57 @@ class LocalSyncMeta {
 
   final int? version;
   final Map<String, Object?>? base;
+
+  /// The server's column times for [base]; null when the base was stored
+  /// without them.
+  final FieldTimes? baseTimes;
   final String? writeId;
   final DateTime? editedAt;
 }
 
 /// The bookkeeping columns for a row now in step with the server row
-/// [version] / [base]. [editedAt] and [fieldTimes] are written only when
-/// given.
+/// [version] / [base], whose column times are [baseTimes]. [editedAt] and
+/// [fieldTimes] are written only when given.
 Map<String, Object?> syncMetaValues({
   required int? version,
   required Map<String, Object?>? base,
+  FieldTimes? baseTimes,
   String? writeId,
   DateTime? editedAt,
   FieldTimes? fieldTimes,
 }) => {
   'sync_version': version,
-  'sync_base': base == null ? null : jsonEncode(base),
+  'sync_base': base == null
+      ? null
+      : jsonEncode({
+          ...base,
+          if (baseTimes != null)
+            _baseTimesKey: {
+              'times': baseTimes.toJson(),
+              'row_time': baseTimes.rowTime?.toUtc().toIso8601String(),
+            },
+        }),
   'sync_write_id': writeId,
   if (editedAt != null) 'edited_at': editedAt.toUtc().toIso8601String(),
   if (fieldTimes != null) 'field_edited_at': fieldTimes.encode(),
 };
+
+/// The column times a pending row keeps once its base moves to the server
+/// copy [serverWire] (times [serverTimes]): the server's for every column
+/// whose value the local copy [localWire] shares (the server capped them),
+/// its own ([localTimes]) for the others, which it changed since.
+FieldTimes timesAgainstBase({
+  required Map<String, Object?> localWire,
+  required FieldTimes localTimes,
+  required Map<String, Object?> serverWire,
+  required FieldTimes serverTimes,
+}) => FieldTimes({
+  for (final column in localWire.keys)
+    if (!untimedColumns.contains(column))
+      column: ?(localWire[column] == serverWire[column]
+          ? serverTimes.of(column)
+          : localTimes.of(column)),
+});
 
 /// The bookkeeping columns cleared: nothing is known about the server copy.
 const Map<String, Object?> clearedSyncMeta = {

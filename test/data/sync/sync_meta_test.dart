@@ -4,6 +4,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
@@ -131,6 +132,38 @@ void main() {
         final meta = LocalSyncMeta.fromRow({'edited_at': raw});
         expect(meta.editedAt!.isAtSameMomentAs(instant), isTrue, reason: raw);
       }
+    });
+
+    test('keeps the base\'s column times with the base, apart from it', () {
+      final times = FieldTimes({
+        'name': FieldTime(DateTime.utc(2026, 3, 5, 9)),
+        'notes': FieldTime.automaticChange,
+      }, rowTime: DateTime.utc(2026, 3, 5, 8));
+      final values = syncMetaValues(
+        version: 2,
+        base: const {'id': 'x', 'name': 'Base'},
+        baseTimes: times,
+      );
+      final meta = LocalSyncMeta.fromRow(values);
+      expect(meta.base, {'id': 'x', 'name': 'Base'});
+      expect(meta.baseTimes!.entries, times.entries);
+      expect(meta.baseTimes!.rowTime, DateTime.utc(2026, 3, 5, 8));
+      // An empty map keeps the row time that stands for every column.
+      final empty = LocalSyncMeta.fromRow(
+        syncMetaValues(
+          version: 1,
+          base: const {'id': 'x'},
+          baseTimes: FieldTimes(const {}, rowTime: DateTime.utc(1970)),
+        ),
+      );
+      expect(empty.baseTimes!.of('name'), FieldTime.automaticChange);
+      // A base stored without times has none.
+      expect(
+        LocalSyncMeta.fromRow(
+          syncMetaValues(version: 1, base: const {'id': 'x'}),
+        ).baseTimes,
+        isNull,
+      );
     });
 
     test('round-trips its values', () {

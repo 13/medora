@@ -15,7 +15,8 @@ import 'package:sqflite/sqflite.dart';
 ///   server copy is stored as `synced` and becomes the base.
 /// - **Edited while the push was in flight:** the server copy becomes the
 ///   base and the row stays `pending_update`, so the next push sends only
-///   the newer difference.
+///   the newer difference. The columns it shares with the server copy take
+///   the server's times.
 /// - **Replaced by a pull meanwhile** (`synced` with another `updated_at`):
 ///   left as the pull stored it.
 /// - **Deleted meanwhile** (`pending_delete`) or gone: left alone; a pending
@@ -54,6 +55,7 @@ Future<bool> settlePushedRow(
         syncMetaValues(
           version: meta.rowVersion,
           base: base,
+          baseTimes: meta.fieldTimes,
           editedAt: meta.effectiveEditedAt,
           fieldTimes: meta.fieldTimes,
         ),
@@ -68,7 +70,17 @@ Future<bool> settlePushedRow(
     await txn.update(
       table,
       {
-        ...syncMetaValues(version: meta.rowVersion, base: base),
+        ...syncMetaValues(
+          version: meta.rowVersion,
+          base: base,
+          baseTimes: meta.fieldTimes,
+          fieldTimes: timesAgainstBase(
+            localWire: localWire(table, current),
+            localTimes: localFieldTimes(current),
+            serverWire: base,
+            serverTimes: meta.fieldTimes,
+          ),
+        ),
         'sync_status': SyncStatus.pendingUpdate,
       },
       where: 'id = ?',

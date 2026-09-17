@@ -198,6 +198,10 @@ void main() {
       );
     });
 
+    test('a column the copy before did not have counts, even when null', () {
+      expect(timedChanges(before, {...before, 'dosage': null}), {'dosage'});
+    });
+
     test('with nothing before, every data column counts', () {
       expect(timedChanges(null, before), {'status', 'taken_time', 'notes'});
     });

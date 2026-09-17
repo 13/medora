@@ -1089,6 +1089,30 @@ void main() {
       expect(localFieldTimes(row).entries, after.entries);
     });
 
+    test('a push of a column whose time is unknown, with the app\'s own '
+        'changes, goes out with the row time, not as automatic', () async {
+      await warmUp();
+      final db = await AppDatabase.instance.database;
+      // The map knows the app's own change to notes, and nothing of the
+      // doctor (a merge took it from here with no time).
+      await db.update('treatments', {
+        'notes': 'auto',
+        'doctor': 'Dr. Bianchi',
+        'sync_status': 'pending_update',
+        'edited_at': '2026-03-05T09:00:00.000Z',
+        'field_edited_at':
+            '{"notes":{"at":"1970-01-01T00:00:00.000Z","auto":true}}',
+      }, where: "id = 't1'");
+      await sync.pushRow(await local('t1'), userId: 'u');
+      final server = remote.get('t1')!;
+      expect(server['edited_at'], '2026-03-05T09:00:00.000Z');
+      expect(
+        serverTimes('t1').of('doctor'),
+        FieldTime(DateTime.utc(2026, 3, 5, 9)),
+      );
+      expect(serverTimes('t1').of('notes')!.automatic, isTrue);
+    });
+
     test('a settled row holds the server\'s times, capped when they '
         'arrived, not the ones this device sent', () async {
       await warmUp();

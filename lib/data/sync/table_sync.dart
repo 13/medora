@@ -208,7 +208,7 @@ class TableSync {
     final remoteWire = canonicalWire(table, json);
     final localCopy = localWire(table, local);
     if (ownWrite) {
-      return _adoptOwnWrite(txn, json, meta, remoteWire, localCopy);
+      return _adoptOwnWrite(txn, json, meta, remoteWire, localCopy, localTimes);
     }
     if (knownVersion != null && meta.rowVersion <= knownVersion) {
       return const PullApplied(PullOutcome.kept);
@@ -216,6 +216,7 @@ class TableSync {
 
     final merge = mergeRows(
       base: localMeta.base,
+      baseTimes: localMeta.baseTimes,
       local: localCopy,
       remote: remoteWire,
       localTimes: localTimes,
@@ -244,6 +245,7 @@ class TableSync {
     RemoteMeta meta,
     Map<String, Object?> remoteWire,
     Map<String, Object?> localCopy,
+    FieldTimes localTimes,
   ) async {
     final id = json['id']! as String;
     if (sameContent(localCopy, remoteWire, policy)) {
@@ -253,7 +255,17 @@ class TableSync {
     await txn.update(
       table,
       {
-        ...syncMetaValues(version: meta.rowVersion, base: remoteWire),
+        ...syncMetaValues(
+          version: meta.rowVersion,
+          base: remoteWire,
+          baseTimes: meta.fieldTimes,
+          fieldTimes: timesAgainstBase(
+            localWire: localCopy,
+            localTimes: localTimes,
+            serverWire: remoteWire,
+            serverTimes: meta.fieldTimes,
+          ),
+        ),
         'sync_status': SyncStatus.pendingUpdate,
       },
       where: 'id = ?',
@@ -286,6 +298,7 @@ class TableSync {
       syncMetaValues(
         version: meta.rowVersion,
         base: base ?? canonicalWire(table, json),
+        baseTimes: meta.fieldTimes,
         editedAt: editedAt ?? meta.effectiveEditedAt,
         fieldTimes: fieldTimes ?? meta.fieldTimes,
       ),
@@ -335,7 +348,13 @@ class TableSync {
         local = await _pushCreate(local, userId: userId, conflicts: conflicts);
         continue;
       }
-      final changes = patchColumns(policy, meta.base, localWire(table, local));
+      final changes = patchColumns(
+        policy,
+        meta.base,
+        localWire(table, local),
+        times: localFieldTimes(local),
+        baseTimes: meta.baseTimes,
+      );
       if (changes.isEmpty) {
         // Edited again since it was read: the next pass sends that edit.
         final marked = await _markSynced(id, local['updated_at']);
@@ -350,7 +369,14 @@ class TableSync {
         ...changes,
         'write_id': writeId,
         'edited_at': _wireTime(
-          writeTime(times.values) ?? _editedAtOf(local, meta) ?? now(),
+          writeTime(
+                times.values,
+                complete: changes.keys
+                    .where((c) => !untimedColumns.contains(c))
+                    .every(times.containsKey),
+              ) ??
+              _editedAtOf(local, meta) ??
+              now(),
         ),
         'field_edited_at': {
           for (final MapEntry(:key, :value) in times.entries)
@@ -702,8 +728,11 @@ class TableSync {
 /// The edit time a write that carries the column times [times] sends as
 /// its row's `edited_at`: the latest person's change; the automatic mark
 /// (1970) when every change is the app's own, so the server keeps
-/// `updated_at`; null when there is none.
-DateTime? writeTime(Iterable<FieldTime> times) {
+/// `updated_at`; null when there is none. [complete] is false when a sent
+/// column has no known time: the write is then never sent as automatic
+/// (the server would stamp that column as the app's own change, and an
+/// unknown time beats those), and null lets the caller use the row time.
+DateTime? writeTime(Iterable<FieldTime> times, {bool complete = true}) {
   DateTime? latest;
   var any = false;
   for (final time in times) {
@@ -711,17 +740,27 @@ DateTime? writeTime(Iterable<FieldTime> times) {
     if (time.automatic) continue;
     if (latest == null || time.at.isAfter(latest)) latest = time.at;
   }
-  return latest ?? (any ? automaticEditedAt : null);
+  return latest ?? (any && complete ? automaticEditedAt : null);
 }
 
-/// The columns of [local] a push sends: those that differ from [base], plus
-/// `deleted_at: null` when the base is a tombstone this row brings back.
+/// The columns of [local] a push sends: those changed since [base] (see
+/// [changedColumns]; [times] and [baseTimes] are the local and the base's
+/// column times), plus `deleted_at: null` when the base is a tombstone this
+/// row brings back.
 Map<String, Object?> patchColumns(
   MergePolicy policy,
   Map<String, Object?>? base,
-  Map<String, Object?> local,
-) => {
-  for (final column in changedColumns(base, local, policy))
+  Map<String, Object?> local, {
+  FieldTimes? times,
+  FieldTimes? baseTimes,
+}) => {
+  for (final column in changedColumns(
+    base,
+    local,
+    policy,
+    times: times,
+    baseTimes: baseTimes,
+  ))
     column: local[column],
   if (base?['deleted_at'] != null && local['deleted_at'] == null)
     'deleted_at': null,
