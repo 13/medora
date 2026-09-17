@@ -1,10 +1,12 @@
-/// The bottom bar's labels in the app's real fonts: always whole, on one
-/// line, never broken inside a word, and never smaller than at 1.0x.
+/// The bottom bar's labels in the app's real fonts: always whole words, on
+/// one line, and never smaller than 0.85x of their 1.0x size.
 ///
 /// `NavigationBar` caps its labels at 1.3x and gives each one a slot of a
-/// quarter of the screen. "Behandlungen" is 88.8 dp at 1.0x in a 90 dp slot
-/// on a 360 dp phone, so from about 1.02x it was broken mid-word. Clipped or
-/// broken text throws nothing, so this measures each label against its box.
+/// quarter of the screen. "Behandlungen" is 88.8 dp at 1.0x: in a 90 dp slot
+/// on a 360 dp phone it was broken mid-word from about 1.02x, and in an 80 dp
+/// slot on a 320 dp phone it was broken even at 1.0x. Clipped or broken text
+/// throws nothing, so this measures each label's widest unbreakable run and
+/// its whole width against its slot.
 library;
 
 import 'package:flutter/material.dart';
@@ -73,58 +75,77 @@ void main() {
     return p.textScaler.scale(fontSize);
   }
 
-  for (final locale in const ['en', 'de', 'it']) {
-    for (final scale in const [1.0, 1.02, 1.1, 1.2, 1.3, 1.6, 2.0]) {
-      testWidgets('360 dp, $locale, ${scale}x: every label is whole, on one '
-          'line, and no smaller than at 1.0x', (tester) async {
-        await pumpBar(tester, width: 360, locale: locale, scale: scale);
-        expect(tester.takeException(), isNull);
-        final sizes = <double>[];
-        for (final label in labelsOf(locale)) {
-          final where = '"$label" ($locale, ${scale}x)';
-          final fit = measureText(
-            tester,
-            find.descendant(
-              of: find.byType(NavigationBar),
-              matching: find.text(label),
-            ),
-          );
-          printOnFailure('$where: $fit');
-          expect(
-            fit.minIntrinsic,
-            lessThanOrEqualTo(fit.maxWidth + 0.01),
-            reason: '$where is broken inside a word',
-          );
-          expect(
-            fit.maxIntrinsic,
-            lessThanOrEqualTo(fit.maxWidth + 0.01),
-            reason: '$where does not fit on one line',
-          );
-          final p = paragraphOf(tester, label);
-          final oneLine = TextPainter(
-            text: p.text,
-            textDirection: p.textDirection,
-            textScaler: p.textScaler,
-          )..layout();
-          addTearDown(oneLine.dispose);
-          expect(
-            p.size.height,
-            lessThanOrEqualTo(oneLine.height + 0.01),
-            reason: '$where is not on one line',
-          );
-          final px = pxOf(p);
-          expect(
-            px,
-            greaterThanOrEqualTo(baseFontSize - 0.01),
-            reason: '$where is smaller than at 1.0x',
-          );
-          // Never larger than Flutter's own 1.3x cap for these labels.
-          expect(px, lessThanOrEqualTo(baseFontSize * 1.3 + 0.01));
-          sizes.add(px);
-        }
-        // One size for the whole bar, so the labels still read as a set.
-        expect(sizes.toSet(), hasLength(1));
-      });
+  /// The smallest a label may be drawn: 0.85x of its 1.0x size.
+  const floorFontSize = baseFontSize * 0.85;
+
+  for (final width in const [320.0, 360.0]) {
+    final slot = width / 4;
+    for (final locale in const ['en', 'de', 'it']) {
+      for (final scale in const [1.0, 1.02, 1.1, 1.2, 1.3, 1.6, 2.0]) {
+        testWidgets('${width.toInt()} dp, $locale, ${scale}x: every label is '
+            'a whole word on one line, at least 0.85x', (tester) async {
+          await pumpBar(tester, width: width, locale: locale, scale: scale);
+          expect(tester.takeException(), isNull);
+          final sizes = <double>[];
+          for (final label in labelsOf(locale)) {
+            final where = '"$label" (${width.toInt()} dp, $locale, ${scale}x)';
+            final fit = measureText(
+              tester,
+              find.descendant(
+                of: find.byType(NavigationBar),
+                matching: find.text(label),
+              ),
+            );
+            printOnFailure('$where: $fit, slot $slot');
+            // The paragraph may use the whole slot, and no more.
+            expect(fit.maxWidth, lessThanOrEqualTo(slot + 0.01));
+            // The widest unbreakable run fits: no word is broken.
+            expect(
+              fit.minIntrinsic,
+              lessThanOrEqualTo(fit.maxWidth + 0.01),
+              reason: '$where is broken inside a word',
+            );
+            expect(
+              fit.maxIntrinsic,
+              lessThanOrEqualTo(fit.maxWidth + 0.01),
+              reason: '$where does not fit on one line',
+            );
+            final p = paragraphOf(tester, label);
+            final oneLine = TextPainter(
+              text: p.text,
+              textDirection: p.textDirection,
+              textScaler: p.textScaler,
+            )..layout();
+            addTearDown(oneLine.dispose);
+            expect(
+              p.size.height,
+              lessThanOrEqualTo(oneLine.height + 0.01),
+              reason: '$where is not on one line',
+            );
+            final px = pxOf(p);
+            printOnFailure('$where: ${px.toStringAsFixed(2)} px');
+            expect(
+              px,
+              greaterThanOrEqualTo(floorFontSize - 0.01),
+              reason: '$where is smaller than 0.85x',
+            );
+            if (width >= 360) {
+              // Every label fits a 90 dp slot at 1.0x, so none is shrunk
+              // below its 1.0x size there.
+              expect(
+                px,
+                greaterThanOrEqualTo(baseFontSize - 0.01),
+                reason: '$where is smaller than at 1.0x',
+              );
+            }
+            // Never larger than Flutter's own 1.3x cap for these labels.
+            expect(px, lessThanOrEqualTo(baseFontSize * 1.3 + 0.01));
+            sizes.add(px);
+          }
+          // One size for the whole bar, so the labels still read as a set.
+          expect(sizes.toSet(), hasLength(1));
+        });
+      }
     }
   }
 
@@ -159,16 +180,35 @@ void main() {
     expect(pxOf(paragraphOf(tester, 'Behandlungen')), greaterThan(12));
   });
 
-  testWidgets('a label that cannot fit even at 1.0x is not made smaller', (
+  testWidgets('on a 320 dp phone, German is shrunk below 1.0x just enough', (
     tester,
   ) async {
-    // 320 dp: 80 dp slots, and "Behandlungen" is 88.8 dp at 1.0x. Material
-    // keeps the label at its normal size rather than shrink it past that.
-    await pumpBar(tester, width: 320, locale: 'de', scale: 1.6);
+    // 80 dp slots, and "Behandlungen" is 88.8 dp at 1.0x: it needs about
+    // 0.9x, which is above the 0.85x floor.
+    await pumpBar(tester, width: 320, locale: 'de', scale: 1.0);
+    final fit = measureText(
+      tester,
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Behandlungen'),
+      ),
+    );
+    expect(fit.maxIntrinsic, greaterThan(fit.maxWidth - 0.5));
+    final px = pxOf(paragraphOf(tester, 'Behandlungen'));
+    expect(px, lessThan(baseFontSize));
+    expect(px, greaterThan(floorFontSize));
+  });
+
+  testWidgets('a label that cannot fit even at 0.85x stays at 0.85x', (
+    tester,
+  ) async {
+    // 280 dp: 70 dp slots, and "Behandlungen" is about 75.5 dp at 0.85x.
+    // The floor wins; the label is not made any smaller.
+    await pumpBar(tester, width: 280, locale: 'de', scale: 1.6);
     for (final label in labelsOf('de')) {
       expect(
         pxOf(paragraphOf(tester, label)),
-        moreOrLessEquals(baseFontSize, epsilon: 0.01),
+        moreOrLessEquals(floorFontSize, epsilon: 0.01),
         reason: label,
       );
     }

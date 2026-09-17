@@ -18,6 +18,10 @@ class AppNavBar extends StatelessWidget {
   /// (`_kMaxLabelTextScaleFactor` in navigation_bar.dart).
   static const maxLabelScale = 1.3;
 
+  /// The smallest a label is drawn to fit its slot, as a fraction of its
+  /// 1.0x size. A label that does not fit even at this size stays at it.
+  static const minLabelShrink = 0.85;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -72,14 +76,16 @@ class AppNavBar extends StatelessWidget {
   /// semantics (both of which `NavigationBar` provides). The label `Text`
   /// has no `maxLines`, so a label wider than its slot was broken inside the
   /// word: "Behandlungen" is 88.8 dp at 1.0x in a 90 dp slot on a 360 dp
-  /// phone, and split from about 1.02x.
+  /// phone, and split from about 1.02x; in the 80 dp slot of a 320 dp phone
+  /// it split even at 1.0x.
   ///
   /// Returns null (Flutter's own style) when every label fits at the size the
   /// bar would give it. Otherwise all labels get the largest size at which
   /// the widest one fits, so they still read as a set, but never a smaller
-  /// one than at 1.0x (or at the user's own smaller setting). The long-press
-  /// tooltip keeps the user's full text size. Measured with the bar's own
-  /// clamped scaler, so a non-linear system scaler is handled too.
+  /// one than [minLabelShrink] of the 1.0x size (or of the user's own smaller
+  /// setting). The long-press tooltip keeps the user's full text size.
+  /// Measured with the bar's own clamped scaler, so a non-linear system
+  /// scaler is handled too.
   static WidgetStateProperty<TextStyle?>? _fittingLabelStyle(
     BuildContext context,
     List<String> labels,
@@ -130,8 +136,9 @@ class AppNavBar extends StatelessWidget {
 
     if (fits(baseSize)) return null;
 
-    // The smallest font size that still renders at the 1.0x size.
-    final floorPx = math.min(baseSize, scaler.scale(baseSize));
+    // The smallest font size that still renders at [minLabelShrink] of the
+    // 1.0x size.
+    final floorPx = minLabelShrink * math.min(baseSize, scaler.scale(baseSize));
     var lo = 0.0;
     var hi = baseSize;
     for (var i = 0; i < 20; i++) {
@@ -146,7 +153,7 @@ class AppNavBar extends StatelessWidget {
 
     // The largest font size between that floor and the unscaled size at
     // which every label fits. If none does, the floor wins: a label is
-    // never made smaller than it is at 1.0x.
+    // never made smaller than that, even if a word then breaks.
     var fitting = floor;
     if (fits(floor)) {
       lo = floor;
