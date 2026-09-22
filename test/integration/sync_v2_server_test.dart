@@ -203,6 +203,7 @@ void main() {
     final taken = ids.doses[0];
     final skipped = ids.doses[1];
     final deleted = ids.doses[2];
+    final noted = ids.doses[3];
     final before = {
       for (final r in await doses.fetchMany(ids.doses.sublist(0, 100)))
         r['id'] as String: r,
@@ -227,6 +228,13 @@ void main() {
       'id': ids.prescription,
       'medications': {'name': 'Bulk'},
     });
+    // Another device added a note: still pending, at version 2.
+    final note = await doses.patch(noted, {
+      'notes': 'with food',
+      'write_id': _uuid.v4(),
+      'edited_at': DateTime.now().toUtc().toIso8601String(),
+    }, ifVersion: 1);
+    expect([note!['row_version'], note['status']], [2, 'pending']);
 
     final writeId = _uuid.v4();
     final written = await doses.patchMany(
@@ -243,10 +251,17 @@ void main() {
       ifStatus: 'pending',
       ifLive: true,
     );
-    expect(written, hasLength(97));
+    expect(written, hasLength(96));
     expect(
       written.map((r) => r['id']),
-      isNot(anyOf(contains(taken), contains(skipped), contains(deleted))),
+      isNot(
+        anyOf(
+          contains(taken),
+          contains(skipped),
+          contains(deleted),
+          contains(noted),
+        ),
+      ),
     );
     for (final r in written) {
       expect(r['status'], 'missed');
@@ -264,10 +279,15 @@ void main() {
       });
     }
     final after = {
-      for (final r in await doses.fetchMany([taken, skipped, deleted]))
+      for (final r in await doses.fetchMany([taken, skipped, deleted, noted]))
         r['id'] as String: r['status'],
     };
-    expect(after, {taken: 'taken', skipped: 'skipped', deleted: 'pending'});
+    expect(after, {
+      taken: 'taken',
+      skipped: 'skipped',
+      deleted: 'pending',
+      noted: 'pending',
+    });
     // The same update again writes nothing: every row moved on.
     expect(
       await doses.patchMany(
