@@ -54,7 +54,20 @@ is needed.
 ## Optional: cloud sync with Supabase
 
 1. Apply the SQL files in `supabase/migrations/` in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
-   - **Fresh project** (nothing applied yet): `supabase db push` applies all five migrations.
+   - **Fresh project** (nothing applied yet): link it and push, and every
+     migration lands with its history recorded:
+
+     ```bash
+     supabase projects create <name> --org-id <org> --region <region> --db-password <password>
+     supabase link --project-ref <ref>
+     supabase db push          # applies all five, newest last
+     supabase migration list   # local and remote should match on every row
+     ```
+
+     Keep the database password somewhere safe: it is not recoverable, and
+     `--db-url` is the way past a project whose `cli_login_postgres` role the
+     CLI cannot re-provision (`permission denied to alter role`, which blocks
+     every write including `db push`).
    - **Existing install** that ran `20260901000000_initial_schema.sql` by hand: the migration history is empty, so `supabase db push` would try to replay the initial schema. Tell Supabase it is already applied first, then push:
 
      ```bash

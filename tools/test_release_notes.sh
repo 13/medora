@@ -40,7 +40,7 @@ check() { # check <label> <expected> <actual>
   printf 'ok: %s\n' "$1"
 }
 
-# --- the first release covers all history, and only feat/fix are grouped ---
+# --- the first release covers all history, and only feat/fix/perf are listed ---
 commit "chore: seed"
 commit "feat: first thing"
 commit "docs: not listed"
@@ -75,13 +75,28 @@ expected="## What's new in 0.0.2
 - plain fix"
 check "scopes, parens and markdown characters survive" "$expected" "$(tools/release_notes.sh v0.0.2)"
 
-# --- a release with nothing to group still says something ---
-commit "chore: only chores"
+# --- perf is user-facing and listed by subject ---
+commit "perf(sync): rows that change by the hundred go out by the hundred"
 git tag -a v0.0.3 -m v0.0.3
 expected="## What's new in 0.0.3
 
+### Performance
+- rows that change by the hundred go out by the hundred"
+check "perf is listed" "$expected" "$(tools/release_notes.sh v0.0.3)"
+
+# --- a maintenance-only release names what it held, rather than nothing ---
+# v0.4.1+20 shipped six commits of CI and refactoring work under a body that
+# said only "see the commit log", which told a reader less than nothing.
+commit "ci: gate the tag build on the suite"
+commit "refactor(sync): the cycle leaves SyncService"
+commit "docs(plans): the boxes are a record"
+git tag -a v0.0.4 -m v0.0.4
+expected="## What's new in 0.0.4
+
+No user-facing changes: 3 maintenance commit(s) (ci, docs, refactor).
+
 See the commit log for the full list of changes."
-check "a release with no feat/fix falls back" "$expected" "$(tools/release_notes.sh v0.0.3)"
+check "a maintenance-only release names its kinds" "$expected" "$(tools/release_notes.sh v0.0.4)"
 
 # --- an unknown tag fails loudly rather than publishing an empty body ---
 if tools/release_notes.sh v9.9.9 > /dev/null 2>&1; then
