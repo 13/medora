@@ -151,36 +151,9 @@ jobs:
           path: build/app/outputs/bundle/release/*.aab
 
   integration:
-    # Manual (workflow_dispatch) or PRs labelled "integration": runs the sync
-    # convergence test against a local Supabase started with the CLI.
+    # Manual (workflow_dispatch) or PRs labelled "integration". A tag runs the
+    # same workflow as a gate inside `release.yml`, which is where it can
+    # actually hold the build back.
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'integration')
-    runs-on: ubuntu-latest
     needs: test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version-file: .fvmrc
-          cache: true
-      - uses: supabase/setup-cli@v1
-        with:
-          version: 2.117.0
-      - run: supabase start
-      - name: Export local credentials
-        # `supabase status -o env` prints API_URL="...", ANON_KEY="...".
-        # The quotes are part of the output and GITHUB_ENV takes values
-        # literally, so they must be stripped or every value keeps them.
-        run: supabase status -o env | sed 's/"//g' >> "$GITHUB_ENV"
-      - run: flutter pub get
-      - name: Run the convergence test
-        run: |
-          test -n "$API_URL" || { echo "API_URL missing from 'supabase status -o env'"; exit 1; }
-          test -n "$ANON_KEY" || { echo "ANON_KEY missing from 'supabase status -o env'"; exit 1; }
-          # One file at a time: a test that holds a transaction open holds
-          # back every other test's pull horizon.
-          flutter test test/integration --concurrency=1 \
-            --dart-define=SUPABASE_URL="$API_URL" \
-            --dart-define=SUPABASE_ANON_KEY="$ANON_KEY" \
-            --dart-define=SUPABASE_DB_CONTAINER=supabase_db_medora
-      - if: always()
-        run: supabase stop
+    uses: ./.github/workflows/integration.yml

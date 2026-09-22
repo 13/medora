@@ -152,6 +152,15 @@ The four keystore secrets and these two are independent — CI will happily
 produce a correctly signed, cloud-less bundle if you configure only the first
 four.
 
+The integration tests are not part of `build-android`: they live in
+`.github/workflows/integration.yml`, a reusable workflow `ci.yml` calls on
+demand or on a labelled pull request and `release.yml` calls as a gate. It
+starts its own Supabase with the CLI and finds the database container with
+`docker ps --filter name=^supabase_db_` rather than assuming
+`supabase_db_medora` — the CLI names it after the project id in
+`supabase/config.toml`, but a stack started from a directory of another name
+keeps that name and the assumed one points at nothing.
+
 The gates are `env.ANDROID_KEYSTORE_BASE64 != ''` (the secrets are mapped into
 the job's `env:` because the `secrets` context is not usable in a step-level
 `if:`) and `github.ref == 'refs/heads/main' || startsWith(github.ref,
@@ -163,7 +172,13 @@ CI is needed to keep local release builds working.
 ## Cutting a release
 
 Releases are cut from `main` by pushing a tag; `.github/workflows/release.yml`
-does the rest.
+does the rest. The tag build waits for two gates before it signs anything:
+`gates` (the gen-l10n drift check, `dart format`, `flutter analyze
+--fatal-infos` and `flutter test`) and `integration` (the sync tests against a
+real local Supabase, through the reusable `Integration` workflow). CI's own run
+on `main` is not a substitute — a tag can point at any commit, and before
+v0.4.0+19 the two workflows ran in parallel, so the release published while the
+suite was still running.
 
 ```bash
 tools/release.sh 0.1.0+10
@@ -207,6 +222,8 @@ way the update sheet does; change one side and run both.
 
 The pushed tag triggers the `Release` workflow, which:
 
+0. Runs the `gates` and `integration` jobs first and stops there if either
+   fails, so nothing is built, signed or published from a red tree.
 1. Checks the tag matches `version:` in `pubspec.yaml` (`tools/release.sh`
    guarantees this, but the workflow re-checks in case a tag is pushed by
    hand) and fails immediately if the four `ANDROID_*` signing secrets are not

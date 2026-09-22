@@ -142,3 +142,7 @@ tools/phone_check/out/
 # tools/build_supplements_data.py is ever run by hand from the repo root.
 /integratori.csv.gz
 /integratori.meta.json
+
+# graphify knowledge graph: rebuilt from the tree with `/graphify`, and
+# graph.json alone is several megabytes.
+/graphify-out/

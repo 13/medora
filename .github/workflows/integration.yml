@@ -1,0 +1,56 @@
+# The sync tests against a real local Supabase: the real PostgREST and the
+# real `supabase/postgres` image, with every migration applied. The bulk
+# update's per-row conditions, the wipe generation, `.single()` under
+# row-level security and the deadlock retry are unreachable from the fakes,
+# so this is the only place they run.
+#
+# Reusable, because both callers need it for different reasons: `ci.yml` on
+# demand and on labelled pull requests, `release.yml` as a gate the tag build
+# waits for.
+name: Integration
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .fvmrc
+          cache: true
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+      - run: supabase start
+      - name: Export local credentials
+        # `supabase status -o env` prints API_URL="...", ANON_KEY="...".
+        # The quotes are part of the output and GITHUB_ENV takes values
+        # literally, so they must be stripped or every value keeps them.
+        #
+        # DB_CONTAINER is `supabase_db_` plus the project id, which the CLI
+        # takes from config.toml — except when the stack was started from a
+        # directory of another name, where the container keeps that name and
+        # a hardcoded `supabase_db_medora` points at nothing. Ask Docker for
+        # the name that exists instead of assuming it.
+        run: |
+          supabase status -o env | sed 's/"//g' >> "$GITHUB_ENV"
+          DB_CONTAINER="$(docker ps --filter 'name=^supabase_db_' --format '{{.Names}}' | head -1)"
+          test -n "$DB_CONTAINER" || { echo "no running supabase_db_* container"; exit 1; }
+          echo "DB_CONTAINER=$DB_CONTAINER" >> "$GITHUB_ENV"
+      - run: flutter pub get
+      - name: Run the integration tests
+        run: |
+          test -n "$API_URL" || { echo "API_URL missing from 'supabase status -o env'"; exit 1; }
+          test -n "$ANON_KEY" || { echo "ANON_KEY missing from 'supabase status -o env'"; exit 1; }
+          # One file at a time: a test that holds a transaction open holds
+          # back every other test's pull horizon.
+          flutter test test/integration --concurrency=1 \
+            --dart-define=SUPABASE_URL="$API_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$ANON_KEY" \
+            --dart-define=SUPABASE_DB_CONTAINER="$DB_CONTAINER"
+      - if: always()
+        run: supabase stop

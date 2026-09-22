@@ -227,4 +227,7 @@ bar) in light and dark, regenerated deliberately with `fvm flutter test
 test, skipped without the `SUPABASE_URL`/`SUPABASE_ANON_KEY` defines. CI
 (`.github/workflows/ci.yml`) runs the gen-l10n drift check, `dart format`,
 `flutter analyze --fatal-infos` and the tests, then builds web and an Android
-APK; the integration job is manual or label-triggered.
+APK. The integration tests live in their own reusable workflow
+(`.github/workflows/integration.yml`): manual, label-triggered on a pull
+request, and a gate `release.yml` waits for, so the tag build cannot publish
+ahead of them.

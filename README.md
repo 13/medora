@@ -114,7 +114,9 @@ fvm flutter test test/integration \
   --dart-define=SUPABASE_ANON_KEY=<anon key from `supabase status`>
 ```
 
-Without those defines the test is skipped, so a plain `fvm flutter test` needs no Supabase. In CI the same test runs in the `integration` job, which is triggered manually (**Run workflow**) or by adding the `integration` label to a pull request.
+Without those defines the test is skipped, so a plain `fvm flutter test` needs no Supabase. Pass `--dart-define=SUPABASE_DB_CONTAINER=<name>` as well for the tests that read the database directly; `supabase status` prints the project id, and the container is `supabase_db_` followed by it. The CLI takes that id from `supabase/config.toml`, so a stack started from a directory of another name keeps *that* name instead — `docker ps --filter name=^supabase_db_` is the reliable answer, and the port `supabase status` prints is not always 54321.
+
+In CI the same tests run in the reusable `Integration` workflow: triggered manually (**Run workflow**), by adding the `integration` label to a pull request, and as a gate inside `Release`, so a tag build never publishes before they pass.
 
 ## Development
 

@@ -8,7 +8,31 @@ permissions:
   contents: write
 
 jobs:
+  # The tag build publishes to the world, so it never starts before the suite
+  # is green. CI's own run on `main` is not enough: a tag can point at any
+  # commit, and `Release` and `CI` start in parallel — v0.4.0+19 published
+  # while CI was still running. The zone and fake-transport passes stay in
+  # ci.yml; this is the one pass that must hold for the artifact being signed.
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version-file: .fvmrc, cache: true }
+      - run: flutter pub get
+      - run: flutter gen-l10n
+      - run: git diff --exit-code -- lib/l10n/generated || (echo "Run 'flutter gen-l10n' and commit the result" && exit 1)
+      - run: dart format --set-exit-if-changed .
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+
+  # The sync tests against a real Supabase. They never gated a release before:
+  # ci.yml does not run on tags, and nothing made the tag build wait for it.
+  integration:
+    uses: ./.github/workflows/integration.yml
+
   release:
+    needs: [gates, integration]
     runs-on: ubuntu-latest
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
