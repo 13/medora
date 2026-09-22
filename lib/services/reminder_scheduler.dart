@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/services/notification_budget.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/rerun_guard.dart';
 
 class ReminderScheduler {
   ReminderScheduler({
@@ -38,8 +39,7 @@ class ReminderScheduler {
   final bool Function() _remindersEnabled;
   final DateTime Function() _now;
 
-  bool _running = false;
-  bool _rerunRequested = false;
+  final _reruns = RerunGuard();
 
   /// The message from the most recent reconcile attempt, or null when the
   /// last attempt succeeded. A failed attempt keeps the previous snapshot
@@ -53,23 +53,7 @@ class ReminderScheduler {
   ///
   /// If a reconcile is requested while one is already running, it is not
   /// dropped: the running reconcile reruns once more before returning.
-  Future<int> reconcile() async {
-    if (_running) {
-      _rerunRequested = true;
-      return 0;
-    }
-    _running = true;
-    var scheduled = 0;
-    try {
-      do {
-        _rerunRequested = false;
-        scheduled = await _reconcileOnce();
-      } while (_rerunRequested);
-      return scheduled;
-    } finally {
-      _running = false;
-    }
-  }
+  Future<int> reconcile() => _reruns.run(_reconcileOnce);
 
   /// Snapshot of the previous run: dose id → scheduled time. Null means
   /// "unknown, do a full cancel".

@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/services/reminder_port.dart';
+import 'package:medora/services/rerun_guard.dart';
 import 'package:medora/services/stock_alert_store.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
 
@@ -48,8 +49,7 @@ class StockReminderScheduler {
   /// instead of firing.
   bool _restored = false;
 
-  bool _running = false;
-  bool _rerunRequested = false;
+  final _reruns = RerunGuard();
 
   /// Forget what the booked alerts say, so the next [reconcile] books them
   /// all again.
@@ -76,23 +76,7 @@ class StockReminderScheduler {
   /// one reruns before returning. Without this, the startup run and the
   /// Settings switch can interleave and leave the snapshot describing a state
   /// that was never reached.
-  Future<int> reconcile() async {
-    if (_running) {
-      _rerunRequested = true;
-      return 0;
-    }
-    _running = true;
-    var scheduled = 0;
-    try {
-      do {
-        _rerunRequested = false;
-        scheduled = await _reconcileOnce();
-      } while (_rerunRequested);
-      return scheduled;
-    } finally {
-      _running = false;
-    }
-  }
+  Future<int> reconcile() => _reruns.run(_reconcileOnce);
 
   Future<int> _reconcileOnce() async {
     await _restore();
