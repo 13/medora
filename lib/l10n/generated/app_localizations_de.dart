@@ -1573,6 +1573,112 @@ class AppLocalizationsDe extends AppLocalizations {
       'Keine Verbindung. Prüfe dein Netzwerk und versuch es erneut.';
 
   @override
+  String get statsDaySick => 'krank';
+
+  @override
+  String get statsDayWell => 'nicht krank';
+
+  @override
+  String get statistics => 'Statistik';
+
+  @override
+  String get statsSickDaysTitle => 'Krankheitstage';
+
+  @override
+  String statsTotalDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Tage',
+      one: '1 Tag',
+      zero: 'Keine Tage',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String statsEpisodes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Episoden',
+      one: '1 Episode',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsLongest => 'Längste';
+
+  @override
+  String get statsAverage => 'Durchschnitt';
+
+  @override
+  String statsDaysShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count T',
+      one: '1 T',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsByMonth => 'Nach Monat';
+
+  @override
+  String get statsByIllness => 'Nach Krankheit';
+
+  @override
+  String get statsByIllnessNote =>
+      'Ein Tag mit zwei Krankheiten zählt für beide, daher kann die Summe größer sein als die Gesamtzahl.';
+
+  @override
+  String statsVsLastYear(int year) {
+    return 'Verglichen mit $year';
+  }
+
+  @override
+  String statsMoreThanLastYear(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Tage mehr',
+      one: '1 Tag mehr',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String statsFewerThanLastYear(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Tage weniger',
+      one: '1 Tag weniger',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsSameAsLastYear => 'Gleich viele';
+
+  @override
+  String statsNoLeaveThisYear(int year) {
+    return 'Kein Krankenstand in $year erfasst.';
+  }
+
+  @override
+  String get statsNoLeaveEver =>
+      'Erfasse Krankenstand bei einer Behandlung, dann füllt sich das hier.';
+
+  @override
+  String statsDayDetail(String date, String illnesses) {
+    return '$date: $illnesses';
+  }
+
+  @override
   String get signIn => 'Anmelden';
 
   @override

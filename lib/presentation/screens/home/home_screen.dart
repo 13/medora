@@ -11,6 +11,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/domain/sick_leave_stats.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
@@ -128,6 +129,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onSeeAll: () => _openLowStock(context, ref),
             ),
             const _LowStockCard(),
+
+            // Sick leave, only once there is any this year: a tile reading
+            // "no days" would be noise on the dashboard of someone who has
+            // never recorded a leave.
+            const _SickLeaveSummaryCard(),
           ],
         ),
       ),
@@ -871,6 +877,43 @@ class _ActiveTreatmentTile extends StatelessWidget {
       trailing: Icon(Icons.chevron_right, color: context.colors.outline),
       dense: true,
       onTap: () => context.push('/treatments/${treatment.id}'),
+    );
+  }
+}
+
+/// This year's sick-leave days, and the way into Statistics.
+///
+/// Hidden entirely when the year holds none: the count is derived from
+/// treatments, and someone who never records a leave should not carry a
+/// permanent zero on their dashboard.
+class _SickLeaveSummaryCard extends ConsumerWidget {
+  const _SickLeaveSummaryCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final now = ref.watch(nowProvider)();
+    final treatments = ref.watch(treatmentListProvider).value;
+    if (treatments == null) return const SizedBox.shrink();
+
+    final stats = SickLeaveStats.of(now.year, treatments, now: now);
+    if (stats.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Card(
+        child: ListTile(
+          key: const Key('home_sick_leave_summary'),
+          leading: Icon(Icons.insights_outlined, color: context.medora.warning),
+          title: Text(l10n.statsSickDaysTitle),
+          subtitle: Text(
+            '${now.year} · ${l10n.statsTotalDays(stats.totalDays)} · '
+            '${l10n.statsEpisodes(stats.episodes)}',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push(AppRoutes.stats),
+        ),
+      ),
     );
   }
 }

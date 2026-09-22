@@ -103,6 +103,13 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
           // Search is a short mode whose only exit is the close button, so
           // its app bar holds the field and that button only: the gear's
           // 48 dp cut the German hint from a 1.1x text scale.
+          if (!_isSearching)
+            IconButton(
+              key: const Key('treatments_stats'),
+              icon: const Icon(Icons.insights_outlined),
+              tooltip: l10n.statistics,
+              onPressed: () => context.push(AppRoutes.stats),
+            ),
           if (!_isSearching) const SettingsAction(),
         ],
       ),

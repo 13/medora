@@ -1,6 +1,8 @@
 # Sick-leave statistics and the year view — Implementation Plan
 
 **Date:** 2026-09-22. **Branch:** `main`, from v0.4.3+22.
+**Status: built.** Every step below landed; the boxes were ticked as each
+one went green, not afterwards.
 
 Two asks, one data source:
 
@@ -43,7 +45,7 @@ started, so that leave contributes to both.
 
 ## Steps
 
-- [ ] **Step 1 — the pure layer, tests first**
+- [x] **Step 1 — the pure layer, tests first**
   (`test/domain/sick_leave_stats_test.dart`, then
   `lib/domain/sick_leave_stats.dart`)
 
@@ -66,7 +68,7 @@ started, so that leave contributes to both.
     (overlap means a day appears under two names — the list is "days
     attributable to", and the plan says so in the UI rather than pretending)
 
-- [ ] **Step 2 — the year grid**
+- [x] **Step 2 — the year grid**
   (`test/presentation/widgets/year_months_grid_test.dart`, then
   `lib/presentation/widgets/year_months_grid.dart`)
 
@@ -80,7 +82,7 @@ started, so that leave contributes to both.
   weekday for a month starting on a Sunday; it survives 1.6x text scale at
   360 dp without overflow (the sweep every other screen here answers to).
 
-- [ ] **Step 3 — the screen** (`lib/presentation/screens/stats/stats_screen.dart`,
+- [x] **Step 3 — the screen** (`lib/presentation/screens/stats/stats_screen.dart`,
   route `/stats`)
 
   Year stepper at the top (bounded by the first year with any leave and the
@@ -90,16 +92,16 @@ started, so that leave contributes to both.
   leave at all — which is the common case for a new user and must not read
   as an error.
 
-- [ ] **Step 4 — getting there.** An action on the Treatments tab app bar,
+- [x] **Step 4 — getting there.** An action on the Treatments tab app bar,
   and a Home card when the current year has any sick leave. No new bottom-bar
   tab: the four-tab layout was just settled across three locales at 1.6x and
   a fifth would reopen it.
 
-- [ ] **Step 5 — strings.** `app_en/de/it.arb` for every label above,
+- [x] **Step 5 — strings.** `app_en/de/it.arb` for every label above,
   including the plural forms (`days`, `episodes`), then `gen-l10n`. German
   and Italian are the long ones — the stat tiles are the place layout breaks.
 
-- [ ] **Step 6 — gates.** `analyze --fatal-infos`, `dart format`, the full
+- [x] **Step 6 — gates.** `analyze --fatal-infos`, `dart format`, the full
   suite in UTC and `TZ=Europe/Rome` (this feature is all calendar arithmetic,
   so the zone pass is the one that matters), and through
   `MEDORA_FAKE_TRANSPORT=http`. Goldens only if the Home card changes an

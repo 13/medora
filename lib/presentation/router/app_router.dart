@@ -19,6 +19,7 @@ import 'package:medora/presentation/screens/medication/expiring_medications_scre
 import 'package:medora/presentation/screens/medication/medication_detail_screen.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
+import 'package:medora/presentation/screens/stats/stats_screen.dart';
 import 'package:medora/presentation/screens/treatment/add_treatment_screen.dart';
 import 'package:medora/presentation/screens/treatment/treatment_detail_screen.dart';
 import 'package:medora/presentation/widgets/biometric_gate.dart';
@@ -51,6 +52,7 @@ class AppRoutes {
   static const settings = '/settings';
   static const family = '/family';
   static const export = '/export';
+  static const stats = '/stats';
 }
 
 /// Pure redirect rule (unit-tested).
@@ -123,6 +125,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               initialEan: state.uri.queryParameters['ean'],
               lookupResult: state.extra,
             ),
+          ),
+          GoRoute(
+            path: AppRoutes.stats,
+            builder: (_, _) => const StatsScreen(),
           ),
           GoRoute(
             path: AppRoutes.expiringMedications,

@@ -1552,6 +1552,112 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authOffline => 'No connection. Check your network and try again.';
 
   @override
+  String get statsDaySick => 'sick';
+
+  @override
+  String get statsDayWell => 'not sick';
+
+  @override
+  String get statistics => 'Statistics';
+
+  @override
+  String get statsSickDaysTitle => 'Days signed off';
+
+  @override
+  String statsTotalDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days',
+      one: '1 day',
+      zero: 'No days',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String statsEpisodes(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count episodes',
+      one: '1 episode',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsLongest => 'Longest';
+
+  @override
+  String get statsAverage => 'Average';
+
+  @override
+  String statsDaysShort(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count d',
+      one: '1 d',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsByMonth => 'By month';
+
+  @override
+  String get statsByIllness => 'By illness';
+
+  @override
+  String get statsByIllnessNote =>
+      'A day with two illnesses counts for both, so these can add up to more than the total.';
+
+  @override
+  String statsVsLastYear(int year) {
+    return 'Compared with $year';
+  }
+
+  @override
+  String statsMoreThanLastYear(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days more',
+      one: '1 day more',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String statsFewerThanLastYear(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days fewer',
+      one: '1 day fewer',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get statsSameAsLastYear => 'The same';
+
+  @override
+  String statsNoLeaveThisYear(int year) {
+    return 'No sick leave recorded in $year.';
+  }
+
+  @override
+  String get statsNoLeaveEver =>
+      'Record sick leave on a treatment and this fills in.';
+
+  @override
+  String statsDayDetail(String date, String illnesses) {
+    return '$date: $illnesses';
+  }
+
+  @override
   String get signIn => 'Sign In';
 
   @override

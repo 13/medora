@@ -2791,6 +2791,120 @@ abstract class AppLocalizations {
   /// **'No connection. Check your network and try again.'**
   String get authOffline;
 
+  /// No description provided for @statsDaySick.
+  ///
+  /// In en, this message translates to:
+  /// **'sick'**
+  String get statsDaySick;
+
+  /// No description provided for @statsDayWell.
+  ///
+  /// In en, this message translates to:
+  /// **'not sick'**
+  String get statsDayWell;
+
+  /// No description provided for @statistics.
+  ///
+  /// In en, this message translates to:
+  /// **'Statistics'**
+  String get statistics;
+
+  /// No description provided for @statsSickDaysTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Days signed off'**
+  String get statsSickDaysTitle;
+
+  /// No description provided for @statsTotalDays.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No days} =1{1 day} other{{count} days}}'**
+  String statsTotalDays(int count);
+
+  /// No description provided for @statsEpisodes.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 episode} other{{count} episodes}}'**
+  String statsEpisodes(int count);
+
+  /// No description provided for @statsLongest.
+  ///
+  /// In en, this message translates to:
+  /// **'Longest'**
+  String get statsLongest;
+
+  /// No description provided for @statsAverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Average'**
+  String get statsAverage;
+
+  /// No description provided for @statsDaysShort.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 d} other{{count} d}}'**
+  String statsDaysShort(int count);
+
+  /// No description provided for @statsByMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'By month'**
+  String get statsByMonth;
+
+  /// No description provided for @statsByIllness.
+  ///
+  /// In en, this message translates to:
+  /// **'By illness'**
+  String get statsByIllness;
+
+  /// No description provided for @statsByIllnessNote.
+  ///
+  /// In en, this message translates to:
+  /// **'A day with two illnesses counts for both, so these can add up to more than the total.'**
+  String get statsByIllnessNote;
+
+  /// No description provided for @statsVsLastYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Compared with {year}'**
+  String statsVsLastYear(int year);
+
+  /// No description provided for @statsMoreThanLastYear.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day more} other{{count} days more}}'**
+  String statsMoreThanLastYear(int count);
+
+  /// No description provided for @statsFewerThanLastYear.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day fewer} other{{count} days fewer}}'**
+  String statsFewerThanLastYear(int count);
+
+  /// No description provided for @statsSameAsLastYear.
+  ///
+  /// In en, this message translates to:
+  /// **'The same'**
+  String get statsSameAsLastYear;
+
+  /// No description provided for @statsNoLeaveThisYear.
+  ///
+  /// In en, this message translates to:
+  /// **'No sick leave recorded in {year}.'**
+  String statsNoLeaveThisYear(int year);
+
+  /// No description provided for @statsNoLeaveEver.
+  ///
+  /// In en, this message translates to:
+  /// **'Record sick leave on a treatment and this fills in.'**
+  String get statsNoLeaveEver;
+
+  /// No description provided for @statsDayDetail.
+  ///
+  /// In en, this message translates to:
+  /// **'{date}: {illnesses}'**
+  String statsDayDetail(String date, String illnesses);
+
   /// No description provided for @signIn.
   ///
   /// In en, this message translates to:
