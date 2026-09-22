@@ -2,7 +2,7 @@ name: medora
 description: "Medora - Home Medicine Cabinet Manager"
 publish_to: 'none'
 
-version: 0.4.3+22
+version: 0.5.0+23
 
 environment:
   sdk: ^3.12.0
