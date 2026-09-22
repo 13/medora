@@ -3,8 +3,12 @@
 -- Run this once to set up a fresh Supabase project.
 -- ============================================================
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- No extension for the ids below: `gen_random_uuid()` is core Postgres (13+)
+-- and always reachable. `uuid-ossp` is not — Supabase installs extensions into
+-- the `extensions` schema, which `supabase start` happens to put on the search
+-- path and a remote `supabase db push` does not, so `uuid_generate_v4()` here
+-- applied locally and in CI while failing against every real project. That is
+-- why the first production schema was built by hand in the dashboard instead.
 
 -- ============================================================
 -- TABLES
@@ -83,7 +87,7 @@ CREATE TABLE IF NOT EXISTS dose_logs (
 );
 
 CREATE TABLE IF NOT EXISTS families (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   name TEXT NOT NULL,
   invite_code TEXT UNIQUE,
   owner_id UUID REFERENCES auth.users(id),
@@ -91,7 +95,7 @@ CREATE TABLE IF NOT EXISTS families (
 );
 
 CREATE TABLE IF NOT EXISTS family_members (
-  id TEXT PRIMARY KEY DEFAULT uuid_generate_v4()::text,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   family_id TEXT NOT NULL REFERENCES families(id) ON DELETE CASCADE,
   user_id UUID REFERENCES auth.users(id),
   display_name TEXT,
