@@ -2719,6 +2719,78 @@ abstract class AppLocalizations {
   /// **'Show archived'**
   String get showArchived;
 
+  /// No description provided for @checkYourEmailTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your e-mail'**
+  String get checkYourEmailTitle;
+
+  /// No description provided for @checkYourEmailBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We sent a confirmation link to {email}. Open it, then come back and sign in.'**
+  String checkYourEmailBody(String email);
+
+  /// No description provided for @resendConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Send it again'**
+  String get resendConfirmation;
+
+  /// No description provided for @confirmationResent.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmation e-mail sent again'**
+  String get confirmationResent;
+
+  /// No description provided for @resendCooldown.
+  ///
+  /// In en, this message translates to:
+  /// **'You can ask for another in {seconds}s'**
+  String resendCooldown(int seconds);
+
+  /// No description provided for @backToSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get backToSignIn;
+
+  /// No description provided for @authEmailTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'That e-mail already has an account. Sign in instead.'**
+  String get authEmailTaken;
+
+  /// No description provided for @authInvalidCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong e-mail or password.'**
+  String get authInvalidCredentials;
+
+  /// No description provided for @authWeakPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'That password is too weak. Use at least 6 characters.'**
+  String get authWeakPassword;
+
+  /// No description provided for @authInvalidEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'That does not look like an e-mail address.'**
+  String get authInvalidEmail;
+
+  /// No description provided for @authRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many attempts. Try again in {seconds}s.'**
+  String authRateLimited(int seconds);
+
+  /// No description provided for @authOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'No connection. Check your network and try again.'**
+  String get authOffline;
+
   /// No description provided for @signIn.
   ///
   /// In en, this message translates to:

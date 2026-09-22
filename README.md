@@ -81,8 +81,25 @@ is needed.
    - `20260916000000_medication_ean.sql` adds the `ean` column that a client on local schema v14 uploads with every medication.
    - `20260917000000_treatment_sick_leave.sql` adds the `sick_leave_from`, `sick_leave_to`, `sick_leave_ref` and `doctor` columns that a client on local schema v15 uploads with every treatment. Without it every treatment push fails, and the prescriptions and dose logs of new treatments fail with it. Do not use "discard" on those failed rows: it replaces the local treatment with the server copy, which has no sick-leave data.
    - `20260918000000_sync_v2.sql` adds the sync bookkeeping (`sync_xid`, `row_version`, `write_id`, `edited_at`), the `medora_sync_state` and `apply_stock_change` functions and the `stock_changes` ledger. Medora 0.4.0 does not sync at all without it (Settings names the file); Medora 0.3.0 keeps working with it. Apply it before any device runs 0.4.0. If it stops with a lock timeout, a long transaction was holding a table; run it again. Afterwards, never run `20260901000000_initial_schema.sql` again (it would undo part of sync v2), and do not enable read replicas for the project. `tools/check_supabase_sql.sh` checks the migrations against a throwaway Postgres 15 (Docker), never against your project.
-2. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
-3. Run or build with the defines:
+2. **Turn e-mail confirmation off** (Authentication → Sign In / Providers →
+   Email → *Confirm email*). Medora expects it off: `signUp` then returns a
+   session immediately and the person lands in the app.
+
+   With it on, Supabase mails a link pointing at the project's **Site URL**,
+   which defaults to `http://localhost:3000` — the app registers no URL
+   scheme and `AndroidManifest.xml` has no deep-link intent-filter, so
+   nothing can catch a redirect. Turning it on means doing that work first:
+   `app_links`, a `medora://` scheme, an Android intent-filter, iOS
+   `CFBundleURLTypes`, `emailRedirectTo` on the sign-up call, and the address
+   in the dashboard's redirect allow-list. A plain landing page is not enough
+   — `Supabase.initialize` uses the default PKCE flow, where the link carries
+   a code only the app can exchange.
+
+   The app copes either way: a sign-up that comes back without a session
+   shows a "check your e-mail" card with a resend button, rather than the
+   nothing at all it used to show.
+3. Copy `dart_defines.example.json` to `dart_defines.json` and fill in your project URL and anon/publishable key.
+4. Run or build with the defines:
 
 ```bash
 fvm flutter run --dart-define-from-file=dart_defines.json

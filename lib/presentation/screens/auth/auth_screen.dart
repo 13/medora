@@ -4,14 +4,18 @@
 /// Secondary path: sign in / sign up for cloud sync (only when the build is configured).
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
 import 'package:medora/presentation/providers/auth_providers.dart';
+import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
+import 'package:medora/presentation/screens/auth/auth_error_text.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -27,6 +31,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isSignUp = false;
   bool _obscurePassword = true;
 
+  /// The address a sign-up is waiting on confirmation for, or null when no
+  /// sign-up is waiting. Set only when Supabase gave back no session, which
+  /// is what e-mail confirmation looks like from here.
+  String? _awaitingConfirmation;
+
+  /// When the confirmation mail may be asked for again. Supabase rate-limits
+  /// resends per address and answers a too-early one with an error, so the
+  /// screen refuses first rather than spending the attempt.
+  DateTime? _resendAllowedAt;
+
+  /// How long a person waits between resends.
+  static const _resendCooldown = Duration(seconds: 60);
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -40,13 +57,52 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     final password = _passwordController.text;
     final auth = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
-      await auth.signUpWithEmail(email, password);
+      final outcome = await auth.signUpWithEmail(email, password);
+      if (!mounted) return;
+      if (outcome == SignUpOutcome.confirmationRequired) {
+        // The account exists and there is no session: say so, instead of
+        // leaving the form sitting there as though nothing had happened.
+        setState(() {
+          _awaitingConfirmation = email;
+          // The sign-up itself sent one: Supabase refuses another this soon,
+          // so the cooldown starts here rather than at the first press.
+          _resendAllowedAt = ref.read(nowProvider)().add(_resendCooldown);
+        });
+        return;
+      }
     } else {
       await auth.signInWithEmail(email, password);
     }
     if (!mounted) return;
     if (ref.read(authControllerProvider) is AsyncError) return;
     await _claimLocalDataForSignedInUser();
+  }
+
+  /// Asks for the confirmation mail again, unless the cooldown says not to.
+  Future<void> _resend() async {
+    final email = _awaitingConfirmation;
+    if (email == null) return;
+    final l10n = AppLocalizations.of(context);
+    final now = ref.read(nowProvider)();
+    final until = _resendAllowedAt;
+    if (until != null && now.isBefore(until)) {
+      // Refused here, not at the server: Supabase counts a too-early resend
+      // against the address either way, so spending it buys nothing.
+      final left = until.difference(now).inSeconds + 1;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.resendCooldown(left))));
+      return;
+    }
+    await ref.read(authControllerProvider.notifier).resendConfirmation(email);
+    if (!mounted) return;
+    if (ref.read(authControllerProvider) is AsyncError) return;
+    setState(
+      () => _resendAllowedAt = ref.read(nowProvider)().add(_resendCooldown),
+    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.confirmationResent)));
   }
 
   /// Decides what happens to the rows already on this device now that we know
@@ -113,9 +169,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     ref.listen(authControllerProvider, (previous, next) {
       if (next is AsyncError) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(next.error.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(authErrorMessage(next.error, l10n))),
+        );
       }
     });
 
@@ -193,76 +249,146 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextFormField(
-                            controller: _emailController,
-                            decoration: InputDecoration(
-                              labelText: l10n.email,
-                              prefixIcon: const Icon(Icons.email),
+                    if (_awaitingConfirmation != null)
+                      _ConfirmationPanel(
+                        email: _awaitingConfirmation!,
+                        busy: authState.isLoading,
+                        onResend: _resend,
+                        onBack: () => setState(() {
+                          _awaitingConfirmation = null;
+                          _isSignUp = false;
+                        }),
+                      )
+                    else
+                      Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextFormField(
+                              controller: _emailController,
+                              decoration: InputDecoration(
+                                labelText: l10n.email,
+                                prefixIcon: const Icon(Icons.email),
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email],
+                              validator: (v) => (v == null || !v.contains('@'))
+                                  ? l10n.invalidEmail
+                                  : null,
                             ),
-                            keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email],
-                            validator: (v) => (v == null || !v.contains('@'))
-                                ? l10n.invalidEmail
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passwordController,
-                            decoration: InputDecoration(
-                              labelText: l10n.password,
-                              prefixIcon: const Icon(Icons.lock),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                ),
-                                onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword,
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _passwordController,
+                              decoration: InputDecoration(
+                                labelText: l10n.password,
+                                prefixIcon: const Icon(Icons.lock),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility
+                                        : Icons.visibility_off,
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
                                 ),
                               ),
+                              obscureText: _obscurePassword,
+                              autofillHints: const [AutofillHints.password],
+                              validator: (v) => (v == null || v.length < 6)
+                                  ? l10n.passwordTooShort
+                                  : null,
                             ),
-                            obscureText: _obscurePassword,
-                            autofillHints: const [AutofillHints.password],
-                            validator: (v) => (v == null || v.length < 6)
-                                ? l10n.passwordTooShort
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          OutlinedButton(
-                            onPressed: authState.isLoading ? null : _submit,
-                            child: authState.isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Text(_isSignUp ? l10n.signUp : l10n.signIn),
-                          ),
-                          TextButton(
-                            onPressed: () =>
-                                setState(() => _isSignUp = !_isSignUp),
-                            child: Text(
-                              _isSignUp
-                                  ? l10n.alreadyHaveAccount
-                                  : l10n.dontHaveAccount,
+                            const SizedBox(height: 16),
+                            OutlinedButton(
+                              onPressed: authState.isLoading ? null : _submit,
+                              child: authState.isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Text(_isSignUp ? l10n.signUp : l10n.signIn),
                             ),
-                          ),
-                        ],
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _isSignUp = !_isSignUp),
+                              child: Text(
+                                _isSignUp
+                                    ? l10n.alreadyHaveAccount
+                                    : l10n.dontHaveAccount,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// What a sign-up that is waiting on its confirmation mail shows instead of
+/// the form: which address it went to, and a way to send it again.
+///
+/// The form is replaced rather than joined, because every field in it now
+/// belongs to an account that already exists — typing a different password
+/// there would do nothing.
+class _ConfirmationPanel extends StatelessWidget {
+  const _ConfirmationPanel({
+    required this.email,
+    required this.busy,
+    required this.onResend,
+    required this.onBack,
+  });
+
+  final String email;
+  final bool busy;
+  final Future<void> Function() onResend;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Icon(
+              Icons.mark_email_unread_outlined,
+              size: 32,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.checkYourEmailTitle,
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.checkYourEmailBody(email),
+              style: theme.textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: busy ? null : () => unawaited(onResend()),
+              child: Text(l10n.resendConfirmation),
+            ),
+            TextButton(onPressed: onBack, child: Text(l10n.backToSignIn)),
+          ],
         ),
       ),
     );

@@ -1527,6 +1527,52 @@ class AppLocalizationsDe extends AppLocalizations {
   String get showArchived => 'Archiv anzeigen';
 
   @override
+  String get checkYourEmailTitle => 'E-Mail prüfen';
+
+  @override
+  String checkYourEmailBody(String email) {
+    return 'Wir haben einen Bestätigungslink an $email geschickt. Öffne ihn und melde dich dann an.';
+  }
+
+  @override
+  String get resendConfirmation => 'Erneut senden';
+
+  @override
+  String get confirmationResent => 'Bestätigungs-E-Mail erneut gesendet';
+
+  @override
+  String resendCooldown(int seconds) {
+    return 'Neue Anfrage in ${seconds}s möglich';
+  }
+
+  @override
+  String get backToSignIn => 'Zurück';
+
+  @override
+  String get authEmailTaken =>
+      'Für diese E-Mail gibt es schon ein Konto. Melde dich stattdessen an.';
+
+  @override
+  String get authInvalidCredentials => 'E-Mail oder Passwort stimmt nicht.';
+
+  @override
+  String get authWeakPassword =>
+      'Das Passwort ist zu schwach. Mindestens 6 Zeichen.';
+
+  @override
+  String get authInvalidEmail =>
+      'Das sieht nicht nach einer E-Mail-Adresse aus.';
+
+  @override
+  String authRateLimited(int seconds) {
+    return 'Zu viele Versuche. Versuch es in ${seconds}s erneut.';
+  }
+
+  @override
+  String get authOffline =>
+      'Keine Verbindung. Prüfe dein Netzwerk und versuch es erneut.';
+
+  @override
   String get signIn => 'Anmelden';
 
   @override
