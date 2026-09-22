@@ -1,5 +1,11 @@
 # Settings polish, JSON backup, runtime cloud configuration — Implementation Plan
 
+> **Status: a record, not a checklist.** The work in this plan has shipped.
+> The `- [ ]` boxes below were never ticked as it went and are not a progress
+> record — they are the plan's original step markers, left as written. What
+> actually landed is in the git history for the files each step names, and in
+> `docs/architecture.md` for the shape it settled into.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Four user-visible fixes: (1) About shows version, build number, build date, commit and channel; (2) the AIFA database tile no longer wraps its long title into a narrow column; (3) full JSON backup export/import for the local database (+ photos); (4) cloud sync becomes usable in builds without baked-in Supabase configuration by entering the project URL and anon key in Settings.

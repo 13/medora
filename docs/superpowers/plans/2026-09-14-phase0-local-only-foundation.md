@@ -1,5 +1,11 @@
 # Phase 0 — Build & Local-Only Foundation Implementation Plan
 
+> **Status: a record, not a checklist.** The work in this plan has shipped.
+> The `- [ ]` boxes below were never ticked as it went and are not a progress
+> record — they are the plan's original step markers, left as written. What
+> actually landed is in the git history for the files each step names, and in
+> `docs/architecture.md` for the shape it settled into.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Medora build and run from a fresh clone with no configuration and no network, with cloud sync (Supabase) as an optional mode, a migration ledger, platform gating, and a working test/CI baseline.

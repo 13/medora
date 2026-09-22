@@ -1,5 +1,11 @@
 # Sync v2 and the settings gear — Implementation Plan
 
+> **Status: a record, not a checklist.** The work in this plan has shipped.
+> The `- [ ]` boxes below were never ticked as it went and are not a progress
+> record — they are the plan's original step markers, left as written. What
+> actually landed is in the git history for the files each step names, and in
+> `docs/architecture.md` for the shape it settled into.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > **Validation (probe, before this plan was written).**

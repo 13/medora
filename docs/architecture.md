@@ -4,6 +4,11 @@ Offline-first Flutter app: everything works with no network and no account, and
 Supabase sync is an optional layer on top. This file is the map; the design
 rationale lives in `docs/superpowers/specs/`.
 
+`docs/superpowers/plans/` holds the implementation plans those specs were
+built from. They are a record of how each piece was approached, not a status
+board: their `- [ ]` step boxes were never ticked as the work went, so read
+them as history and this file (plus the git log) for what is true now.
+
 ## Layers
 
 `lib/` is split by responsibility, dependencies pointing inwards only:

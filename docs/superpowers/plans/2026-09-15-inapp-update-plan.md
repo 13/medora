@@ -1,5 +1,11 @@
 # In-app Updates from GitHub Releases — Implementation Plan
 
+> **Status: a record, not a checklist.** The work in this plan has shipped.
+> The `- [ ]` boxes below were never ticked as it went and are not a progress
+> record — they are the plan's original step markers, left as written. What
+> actually landed is in the git history for the files each step names, and in
+> `docs/architecture.md` for the shape it settled into.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Tagged releases produce signed, predictably named APKs on GitHub Releases, and the Android app can find, download, verify and install the newest one from Settings or a Home banner.

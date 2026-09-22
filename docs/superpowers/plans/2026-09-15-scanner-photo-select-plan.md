@@ -1,5 +1,11 @@
 # AIC scanner: take a photo, then choose the code — Implementation Plan
 
+> **Status: a record, not a checklist.** The work in this plan has shipped.
+> The `- [ ]` boxes below were never ticked as it went and are not a progress
+> record — they are the plan's original step markers, left as written. What
+> actually landed is in the git history for the files each step names, and in
+> `docs/architecture.md` for the shape it settled into.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the continuous live-stream OCR (a growing, jumping list of text lines) with a deliberate flow: the user takes one photo (or picks one from the gallery), Medora recognises text on that still image, shows the photo with every detected code highlighted, and the user taps the code to use — AIC codes first.

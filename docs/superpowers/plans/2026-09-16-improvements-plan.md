@@ -1,5 +1,11 @@
 # Medora improvements (scanner accuracy, register freshness, reminders, refactor) — Implementation Plan
 
+> **Status: a record, not a checklist.** The work in this plan has shipped.
+> The `- [ ]` boxes below were never ticked as it went and are not a progress
+> record — they are the plan's original step markers, left as written. What
+> actually landed is in the git history for the files each step names, and in
+> `docs/architecture.md` for the shape it settled into.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the photo scanner read and show the *right* code (corrected supplement codes, barcode stripes, a user-driven zoom-and-rescan, three named misread rules), keep the offline registers fresh and say so, add low-stock/expiry reminders, EAN memory and register name search, and leave the four largest screens split into testable widget files — without changing any golden.
