@@ -2381,6 +2381,12 @@ class AppLocalizationsIt extends AppLocalizations {
   String get rxUnitsToAdd => 'Unità da aggiungere';
 
   @override
+  String get rxTooManyPacks => 'Più di quanto prescritto';
+
+  @override
+  String get rxLinkMedication => 'Collega a un farmaco dell\'armadietto';
+
+  @override
   String get rxCollectedOn => 'Ritirata il';
 
   @override
@@ -2407,6 +2413,11 @@ class AppLocalizationsIt extends AppLocalizations {
   @override
   String rxShareText(String nre, String taxCode) {
     return 'Ricetta $nre\nCodice fiscale $taxCode';
+  }
+
+  @override
+  String rxShareTextNreOnly(String nre) {
+    return 'Ricetta $nre';
   }
 
   @override

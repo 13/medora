@@ -26,6 +26,7 @@ class AsyncValueView<T> extends StatelessWidget {
     this.emptyWhen,
     this.empty,
     this.compact = false,
+    this.nonDataWrapper,
   });
 
   final AsyncValue<T> value;
@@ -36,6 +37,12 @@ class AsyncValueView<T> extends StatelessWidget {
   final Widget? empty;
   final bool compact;
 
+  /// Wraps the loading and error states only (never [data], which builds
+  /// its own chrome). A screen whose `data` branch returns a full
+  /// `Scaffold` needs this to give loading/error an `AppBar` and a
+  /// `Material` ancestor too, rather than floating bare in the page.
+  final Widget Function(Widget child)? nonDataWrapper;
+
   @override
   Widget build(BuildContext context) {
     return value.when(
@@ -45,12 +52,18 @@ class AsyncValueView<T> extends StatelessWidget {
         if (emptyWhen?.call(d) == true && empty != null) return empty!;
         return data(d);
       },
-      loading: () =>
-          loading ??
-          (compact
-              ? const Card(child: _CompactLoading())
-              : const LoadingWidget()),
-      error: (e, _) => _ErrorView(error: e, onRetry: onRetry, compact: compact),
+      loading: () {
+        final w =
+            loading ??
+            (compact
+                ? const Card(child: _CompactLoading())
+                : const LoadingWidget());
+        return nonDataWrapper?.call(w) ?? w;
+      },
+      error: (e, _) {
+        final w = _ErrorView(error: e, onRetry: onRetry, compact: compact);
+        return nonDataWrapper?.call(w) ?? w;
+      },
     );
   }
 }

@@ -4141,6 +4141,18 @@ abstract class AppLocalizations {
   /// **'Units to add'**
   String get rxUnitsToAdd;
 
+  /// No description provided for @rxTooManyPacks.
+  ///
+  /// In en, this message translates to:
+  /// **'More than prescribed'**
+  String get rxTooManyPacks;
+
+  /// No description provided for @rxLinkMedication.
+  ///
+  /// In en, this message translates to:
+  /// **'Link to a medicine in the cabinet'**
+  String get rxLinkMedication;
+
   /// No description provided for @rxCollectedOn.
   ///
   /// In en, this message translates to:
@@ -4194,6 +4206,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prescription {nre}\nTax code {taxCode}'**
   String rxShareText(String nre, String taxCode);
+
+  /// No description provided for @rxShareTextNreOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription {nre}'**
+  String rxShareTextNreOnly(String nre);
 
   /// No description provided for @rxExpiringTitle.
   ///

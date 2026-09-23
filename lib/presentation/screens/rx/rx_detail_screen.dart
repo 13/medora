@@ -90,9 +90,11 @@ class RxDetailScreen extends ConsumerWidget {
         final result = await repo.deleteRx(rx.id);
         if (!context.mounted) return;
         result.when(
+          // Pop first: invalidating before the pop lands would refetch the
+          // now-deleted prescription and flash its error view underneath.
           success: (_) {
-            invalidateRx(ref);
             Navigator.of(context).maybePop();
+            invalidateRx(ref);
           },
           failure: (_) => _reportFailure(context),
         );
@@ -102,9 +104,13 @@ class RxDetailScreen extends ConsumerWidget {
   Future<void> _share(BuildContext context, Rx rx, Person? person) async {
     final l10n = AppLocalizations.of(context);
     final box = context.findRenderObject() as RenderBox?;
+    final taxCode = person?.taxCode;
+    final text = taxCode == null || taxCode.isEmpty
+        ? l10n.rxShareTextNreOnly(rx.nre ?? '')
+        : l10n.rxShareText(rx.nre ?? '', taxCode);
     await SharePlus.instance.share(
       ShareParams(
-        text: l10n.rxShareText(rx.nre ?? '', person?.taxCode ?? ''),
+        text: text,
         sharePositionOrigin: box == null
             ? null
             : box.localToGlobal(Offset.zero) & box.size,
@@ -118,8 +124,17 @@ class RxDetailScreen extends ConsumerWidget {
     Rx rx,
     RxItem item,
   ) async {
-    final meds = await ref.read(medicationListProvider.future);
+    final List<Medication> meds;
+    try {
+      meds = await ref.read(medicationListProvider.future);
+    } catch (_) {
+      if (!context.mounted) return;
+      _reportFailure(context);
+      return;
+    }
     if (!context.mounted) return;
+    // Nothing to link to: don't pop up an empty picker.
+    if (meds.isEmpty) return;
     final word = item.description.split(' ').first.toLowerCase();
     final sorted = [...meds]
       ..sort((a, b) {
@@ -166,6 +181,11 @@ class RxDetailScreen extends ConsumerWidget {
     return AsyncValueView<RxWithDispensings>(
       value: ref.watch(rxByIdProvider(rxId)),
       onRetry: () async => ref.invalidate(rxByIdProvider(rxId)),
+      // The `data` branch below builds its own full Scaffold (title, share
+      // and menu actions); loading/error otherwise render with no AppBar,
+      // no back button and (for the error view's button) no Material
+      // ancestor.
+      nonDataWrapper: (child) => Scaffold(appBar: AppBar(), body: child),
       data: (entry) {
         final rx = entry.rx;
         final person = persons.where((p) => p.id == rx.personId).firstOrNull;
@@ -299,7 +319,7 @@ class RxDetailScreen extends ConsumerWidget {
                   trailing: i.medicationId == null
                       ? IconButton(
                           icon: const Icon(Icons.link),
-                          tooltip: l10n.rxAddToStock,
+                          tooltip: l10n.rxLinkMedication,
                           onPressed: () => _linkMedication(context, ref, rx, i),
                         )
                       : const Icon(Icons.inventory_2_outlined),

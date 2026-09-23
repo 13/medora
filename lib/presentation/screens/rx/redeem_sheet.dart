@@ -52,21 +52,29 @@ class _RedeemSheet extends ConsumerStatefulWidget {
 class _RedeemSheetState extends ConsumerState<_RedeemSheet> {
   final _pharmacy = TextEditingController();
   late final List<_Line> _lines;
+  late final Map<String, int> _given;
   bool _saving = false;
+
+  bool get _repeatable => widget.entry.rx.maxDispensings != null;
+
+  /// True when [l] is selected and asks for more packs than are left on a
+  /// non-repeatable prescription (a repeatable one has no such ceiling).
+  bool _tooMany(_Line l) {
+    if (!l.selected || _repeatable) return false;
+    final remaining = l.item.packs - (_given[l.item.id] ?? 0);
+    return (int.tryParse(l.packs.text) ?? 0) > remaining;
+  }
 
   @override
   void initState() {
     super.initState();
-    final given = RxRules.dispensedPacks(widget.entry.dispensings);
+    _given = RxRules.dispensedPacks(widget.entry.dispensings);
     _lines = [
       for (final i in widget.entry.rx.items)
-        if ((given[i.id] ?? 0) < i.packs ||
-            widget.entry.rx.maxDispensings != null)
+        if ((_given[i.id] ?? 0) < i.packs || _repeatable)
           _Line(
             i,
-            widget.entry.rx.maxDispensings != null
-                ? i.packs
-                : i.packs - (given[i.id] ?? 0),
+            _repeatable ? i.packs : i.packs - (_given[i.id] ?? 0),
             addToStock: i.medicationId != null,
           ),
     ];
@@ -107,10 +115,12 @@ class _RedeemSheetState extends ConsumerState<_RedeemSheet> {
         .read(rxRepositoryProvider)
         .redeem(rx.id, dispensings);
     if (!mounted) return;
-    invalidateRx(ref);
-    ref.invalidate(medicationListProvider);
     result.when(
-      success: (_) => Navigator.of(context).pop(),
+      success: (_) {
+        invalidateRx(ref);
+        ref.invalidate(medicationListProvider);
+        Navigator.of(context).pop();
+      },
       failure: (_) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -123,86 +133,103 @@ class _RedeemSheetState extends ConsumerState<_RedeemSheet> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final canSave =
+        !_saving &&
+        _lines.isNotEmpty &&
+        _lines.any(
+          (l) => l.selected && (int.tryParse(l.packs.text) ?? 0) > 0,
+        ) &&
+        !_lines.any(_tooMany);
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
         right: 16,
         bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.rxRedeemTitle,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          if (_lines.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(l10n.rxNothingLeft),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.rxRedeemTitle,
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          for (final l in _lines)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  children: [
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: l.selected,
-                      title: Text(l.item.description),
-                      onChanged: (v) => setState(() => l.selected = v ?? false),
-                    ),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 88,
-                          child: TextField(
-                            controller: l.packs,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              labelText: l10n.rxItemPacks,
-                            ),
-                            onChanged: (v) => l.units.text =
-                                '${proposedUnits(l.item, int.tryParse(v) ?? 0)}',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        if (l.item.medicationId != null)
-                          Expanded(
+            if (_lines.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(l10n.rxNothingLeft),
+              ),
+            for (final (idx, l) in _lines.indexed)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    children: [
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        value: l.selected,
+                        title: Text(l.item.description),
+                        onChanged: (v) =>
+                            setState(() => l.selected = v ?? false),
+                      ),
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 88,
                             child: TextField(
-                              controller: l.units,
-                              enabled: l.addToStock,
+                              key: Key('rx_redeem_packs_$idx'),
+                              controller: l.packs,
                               keyboardType: TextInputType.number,
                               decoration: InputDecoration(
-                                labelText: l10n.rxUnitsToAdd,
+                                labelText: l10n.rxItemPacks,
+                                errorText: _tooMany(l)
+                                    ? l10n.rxTooManyPacks
+                                    : null,
                               ),
+                              onChanged: (v) => setState(() {
+                                l.units.text =
+                                    '${proposedUnits(l.item, int.tryParse(v) ?? 0)}';
+                              }),
                             ),
                           ),
-                      ],
-                    ),
-                    if (l.item.medicationId != null)
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: l.addToStock,
-                        title: Text(l10n.rxAddToStock),
-                        onChanged: (v) => setState(() => l.addToStock = v),
+                          const SizedBox(width: 12),
+                          if (l.item.medicationId != null)
+                            Expanded(
+                              child: TextField(
+                                controller: l.units,
+                                enabled: l.addToStock,
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(
+                                  labelText: l10n.rxUnitsToAdd,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                      if (l.item.medicationId != null)
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: l.addToStock,
+                          title: Text(l10n.rxAddToStock),
+                          onChanged: (v) => setState(() => l.addToStock = v),
+                        ),
+                    ],
+                  ),
                 ),
               ),
+            TextField(
+              controller: _pharmacy,
+              decoration: InputDecoration(labelText: l10n.rxPharmacy),
             ),
-          TextField(
-            controller: _pharmacy,
-            decoration: InputDecoration(labelText: l10n.rxPharmacy),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: _saving || _lines.isEmpty ? null : _save,
-            child: Text(l10n.rxRedeem),
-          ),
-        ],
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('rx_redeem_save'),
+              onPressed: canSave ? _save : null,
+              child: Text(l10n.rxRedeem),
+            ),
+          ],
+        ),
       ),
     );
   }

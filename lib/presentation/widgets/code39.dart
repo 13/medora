@@ -9,6 +9,9 @@
 /// entry, including the `*` start/stop character.
 library;
 
+import 'dart:math' show max;
+
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 abstract final class Code39 {
@@ -77,6 +80,26 @@ abstract final class Code39 {
     }
     return modules;
   }
+
+  /// Runs of consecutive dark modules in [modules], as `(start, length)`
+  /// pairs — one per bar, so the painter draws one rect per bar instead of
+  /// one per module (which left antialiased seams inside wide bars).
+  static List<(int start, int length)> darkRuns(List<bool> modules) {
+    final runs = <(int, int)>[];
+    var i = 0;
+    while (i < modules.length) {
+      if (!modules[i]) {
+        i++;
+        continue;
+      }
+      final start = i;
+      while (i < modules.length && modules[i]) {
+        i++;
+      }
+      runs.add((start, i - start));
+    }
+    return runs;
+  }
 }
 
 class Code39Barcode extends StatelessWidget {
@@ -89,16 +112,34 @@ class Code39Barcode extends StatelessWidget {
   Widget build(BuildContext context) {
     final modules = Code39.encode(data);
     if (modules == null) return const SizedBox.shrink();
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     // Always black on white, whatever the theme: a scanner needs contrast
     // and a quiet zone, not the app's colours.
     return ColoredBox(
       color: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: SizedBox(
-          height: height,
-          width: double.infinity,
-          child: CustomPaint(painter: _Code39Painter(modules)),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Snap the module to whole device pixels: a fractional module
+            // width forces the antialiased-rect-per-module painting this
+            // replaces, which draws grey seams inside wide bars and an
+            // uneven narrow/wide ratio a real scanner can misread.
+            final module =
+                max(1, (constraints.maxWidth * dpr / modules.length).floor()) /
+                dpr;
+            final quietZone = max(16.0, 10 * module);
+            return Padding(
+              padding: EdgeInsets.symmetric(horizontal: quietZone),
+              child: SizedBox(
+                height: height,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: _Code39Painter(modules, module: module, dpr: dpr),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -106,19 +147,32 @@ class Code39Barcode extends StatelessWidget {
 }
 
 class _Code39Painter extends CustomPainter {
-  _Code39Painter(this.modules);
+  _Code39Painter(this.modules, {required this.module, required this.dpr});
+
   final List<bool> modules;
+  final double module;
+  final double dpr;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final module = size.width / modules.length;
-    final paint = Paint()..color = Colors.black;
-    for (var i = 0; i < modules.length; i++) {
-      if (!modules[i]) continue;
-      canvas.drawRect(Rect.fromLTWH(i * module, 0, module, size.height), paint);
+    final paint = Paint()
+      ..color = Colors.black
+      ..isAntiAlias = false;
+    final barcodeWidth = modules.length * module;
+    // Centred: the canvas is usually a little wider than the exact modules
+    // count once the module width is snapped to whole device pixels.
+    final left = (size.width - barcodeWidth) / 2;
+    for (final (start, length) in Code39.darkRuns(modules)) {
+      canvas.drawRect(
+        Rect.fromLTWH(left + start * module, 0, length * module, size.height),
+        paint,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(_Code39Painter old) => old.modules != modules;
+  bool shouldRepaint(_Code39Painter old) =>
+      !listEquals(old.modules, modules) ||
+      old.module != module ||
+      old.dpr != dpr;
 }

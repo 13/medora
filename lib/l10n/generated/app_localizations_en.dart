@@ -2362,6 +2362,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rxUnitsToAdd => 'Units to add';
 
   @override
+  String get rxTooManyPacks => 'More than prescribed';
+
+  @override
+  String get rxLinkMedication => 'Link to a medicine in the cabinet';
+
+  @override
   String get rxCollectedOn => 'Collected on';
 
   @override
@@ -2388,6 +2394,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String rxShareText(String nre, String taxCode) {
     return 'Prescription $nre\nTax code $taxCode';
+  }
+
+  @override
+  String rxShareTextNreOnly(String nre) {
+    return 'Prescription $nre';
   }
 
   @override
