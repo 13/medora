@@ -4,6 +4,9 @@
 /// datasources and [FakePostgrest].
 library;
 
+import 'dart:typed_data';
+
+import 'package:medora/data/datasources/attachment_remote_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
@@ -14,7 +17,8 @@ import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/models/family_member_model.dart';
 import 'package:medora/data/models/family_model.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show PostgrestException, StorageException;
 
 import 'fake_postgrest.dart';
 import 'fake_server.dart';
@@ -50,6 +54,11 @@ class FakeServer {
       transport: transport,
     );
     rx = FakeRxRemote(core, transport: transport);
+    attachments = FakeAttachmentRemote(
+      core,
+      currentUserId: currentUserId,
+      transport: transport,
+    );
     families = FakeFamilyRemote(clock, currentUserId: currentUserId);
     state = FakeSyncState(core, transport: transport);
   }
@@ -63,6 +72,9 @@ class FakeServer {
 
   /// Persons, prescription documents and their dispensings.
   late final FakeRxRemote rx;
+
+  /// Attachment rows and the bucket holding their bytes.
+  late final FakeAttachmentRemote attachments;
   late final FakeFamilyRemote families;
   late final FakeSyncState state;
 }
@@ -198,6 +210,123 @@ class FakeRxRemote implements RxRemoteDatasource {
     for (final t in [persons, rx, dispensings]) {
       t.missingFrom = rxMigration;
     }
+  }
+}
+
+class FakeAttachmentRemote implements AttachmentRemoteDatasource {
+  FakeAttachmentRemote(
+    FakeServerCore core, {
+    String currentUserId = 'user-a',
+    FakeTransport? transport,
+  }) : rows = FakeSyncTable(core, 'attachments', transport: transport),
+       store = FakeAttachmentStore(currentUserId: currentUserId);
+
+  @override
+  final FakeSyncTable rows;
+  @override
+  final FakeAttachmentStore store;
+
+  /// A project that never ran [attachmentsMigration]: no table (and no
+  /// bucket).
+  void dropTable() => rows.missingFrom = attachmentsMigration;
+}
+
+/// The private `attachments` bucket in memory. Like the storage policies,
+/// it refuses any path outside the current user's folder
+/// (`<currentUserId>/...`), with the error storage-api gives.
+class FakeAttachmentStore implements AttachmentStore {
+  FakeAttachmentStore({this.currentUserId = 'user-a'});
+
+  /// Whose folder the caller may use.
+  String currentUserId;
+
+  /// The stored objects by path.
+  final Map<String, Uint8List> objects = {};
+
+  /// The MIME type each object was uploaded with.
+  final Map<String, String> mimes = {};
+
+  int uploads = 0;
+  int downloads = 0;
+  int removes = 0;
+  int lists = 0;
+
+  /// The next this many calls (of any kind) throw, as a network error.
+  int failNext = 0;
+
+  /// The folder [path] sits in, as `storage.foldername(name)[1]`; null for
+  /// a path outside any folder.
+  static String? ownerOf(String path) {
+    final slash = path.indexOf('/');
+    return slash <= 0 ? null : path.substring(0, slash);
+  }
+
+  void _call() {
+    if (failNext > 0) {
+      failNext--;
+      throw const StorageException(
+        'Connection refused',
+        statusCode: 'ClientException',
+      );
+    }
+  }
+
+  bool _mine(String path) => ownerOf(path) == currentUserId;
+
+  @override
+  Future<void> upload(
+    String path,
+    Uint8List bytes, {
+    required String mime,
+  }) async {
+    uploads++;
+    _call();
+    if (!_mine(path)) {
+      throw const StorageException(
+        'new row violates row-level security policy',
+        error: 'Unauthorized',
+        statusCode: '403',
+      );
+    }
+    // Already there counts as done, as SupabaseAttachmentStore does.
+    if (objects.containsKey(path)) return;
+    objects[path] = Uint8List.fromList(bytes);
+    mimes[path] = mime;
+  }
+
+  @override
+  Future<Uint8List> download(String path) async {
+    downloads++;
+    _call();
+    final bytes = _mine(path) ? objects[path] : null;
+    if (bytes == null) throw AttachmentNotFound(path);
+    return Uint8List.fromList(bytes);
+  }
+
+  @override
+  Future<void> remove(List<String> paths) async {
+    removes++;
+    _call();
+    for (final path in paths) {
+      // Another user's objects are silently left alone.
+      if (_mine(path)) {
+        objects.remove(path);
+        mimes.remove(path);
+      }
+    }
+  }
+
+  @override
+  Future<List<String>> listFolder(String folder) async {
+    lists++;
+    _call();
+    if (folder != currentUserId) return const [];
+    return [
+      for (final path in objects.keys)
+        if (path.startsWith('$folder/') &&
+            !path.substring(folder.length + 1).contains('/'))
+          path,
+    ]..sort();
   }
 }
 

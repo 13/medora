@@ -38,6 +38,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:medora/data/datasources/account_data_remote_datasource.dart';
+import 'package:medora/data/datasources/attachment_remote_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
@@ -94,6 +95,16 @@ const _notNullColumns = {
     'packs',
     'dispensed_on',
     'user_id',
+  },
+  'attachments': {
+    'id',
+    'user_id',
+    'owner_kind',
+    'owner_id',
+    'kind',
+    'mime',
+    'size_bytes',
+    'sha256',
   },
 };
 
@@ -198,6 +209,7 @@ class FakePostgrest {
     'persons': _rx.persons,
     'rx': _rx.rx,
     'rx_dispensings': _rx.dispensings,
+    'attachments': AttachmentRemoteDatasource(_client).rows,
   };
 
   /// The app's own `PostgrestSyncTable` for [name], talking to this fake.

@@ -20,8 +20,8 @@
 /// - **Pull.** Each table is read from its stored key up to the server's
 ///   horizon, in pages; a pending local row is merged, not overwritten.
 ///
-/// For medications, treatments, prescriptions, dose logs, persons, rx and
-/// dispensings this is the only push path: the repositories write locally
+/// For medications, treatments, prescriptions, dose logs, persons, rx,
+/// dispensings and attachment rows this is the only push path: the repositories write locally
 /// and ask for a [syncAll], which queues behind a running cycle. One
 /// [syncAll] re-runs itself at most [SyncService.maxAutomaticReruns] times,
 /// then retries once after [SyncService.capRetryDelay]. Every request to the
@@ -42,6 +42,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:medora/core/supabase_config.dart';
+import 'package:medora/data/datasources/attachment_remote_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
@@ -97,6 +98,7 @@ class SyncService {
     required this.doseLogLocal,
     required this.doseLogRemote,
     this.rxRemote,
+    this.attachmentRemote,
     required this.familyLocal,
     required this.familyRemote,
     required this.syncState,
@@ -151,6 +153,10 @@ class SyncService {
   /// The prescription tables; null in local-only mode, and in a build or
   /// test that does not sync them.
   final RxRemoteDatasource? rxRemote;
+
+  /// The attachment rows (and their bucket); null in local-only mode, and
+  /// in a build or test that does not sync them.
+  final AttachmentRemoteDatasource? attachmentRemote;
   final FamilyLocalDatasource familyLocal;
   final FamilyRemoteDatasource? familyRemote;
 
@@ -281,18 +287,28 @@ class SyncService {
   /// A project without the prescription tables (the rx migration not yet
   /// applied) keeps this device's prescriptions: they were never uploaded,
   /// so clearing them would lose them for good, and their fetch would fail
-  /// the whole force pull. The rest is still replaced by the server's, and
+  /// the whole force pull. The same holds for the attachment rows (and the
+  /// removals still owed to the bucket) on a project without the
+  /// attachments migration. The rest is still replaced by the server's, and
   /// the report names the missing migration, as an ordinary sync does.
   Future<SyncReport?> forcePull() => _run('force pull', (report) async {
     final state = await _remote(syncState!.read());
     // Probed before anything is cleared; any other error aborts here, with
     // nothing lost.
-    final rxMissing = await _missingRxTables();
+    final rxMissing = await _missingTables(
+      rxRemote == null ? const [] : const ['persons', 'rx', 'rx_dispensings'],
+    );
+    final attachmentsMissing = await _missingTables(
+      attachmentRemote == null ? const [] : const ['attachments'],
+    );
     await _cursors.clear();
     // Every local row is about to be replaced by the server's, so no row is
     // still waiting to be pushed and no backoff record means anything.
     await _failures.clearAll();
-    await AppDatabase.instance.clearAllData(keepRx: rxMissing.isNotEmpty);
+    await AppDatabase.instance.clearAllData(
+      keepRx: rxMissing.isNotEmpty,
+      keepAttachments: attachmentsMissing.isNotEmpty,
+    );
     // Nothing from before any wipe is left here.
     await _recordWipeSeen(state);
     await _pullAll(
@@ -300,21 +316,23 @@ class SyncService {
       force: true,
       horizon: state.horizon,
       pullRx: rxMissing.isEmpty,
+      pullAttachments: attachmentsMissing.isEmpty,
     );
-    for (final missing in rxMissing) {
+    for (final missing in [...rxMissing, ...attachmentsMissing]) {
       report.failures.add(SyncFailure(missing.table, '*', 'pull: $missing'));
     }
     // Everything was pulled from the start: that is the repair.
     await _cursors.finishPullRepair();
   });
 
-  /// The prescription tables the project lacks: one single-row read of
-  /// each, which a project without the rx migration answers with a
+  /// The [tables] the project lacks: one single-row read of each, which a
+  /// project without the migration creating it answers with a
   /// [MissingTableException].
-  Future<List<MissingTableException>> _missingRxTables() async {
-    if (rxRemote == null) return const [];
+  Future<List<MissingTableException>> _missingTables(
+    List<String> tables,
+  ) async {
     final missing = <MissingTableException>[];
-    for (final table in const ['persons', 'rx', 'rx_dispensings']) {
+    for (final table in tables) {
       try {
         await _remote(_tables[table]!.remote.fetch(_probeId));
       } on MissingTableException catch (e) {
@@ -324,7 +342,7 @@ class SyncService {
     return missing;
   }
 
-  /// An id no row has, for [_missingRxTables].
+  /// An id no row has, for [_missingTables].
   static const _probeId = '00000000-0000-0000-0000-000000000000';
 
   /// How many times one [syncAll] runs another cycle on its own, for rows
@@ -428,6 +446,8 @@ class SyncService {
       'rx': _tableSync('rx', rxRemote!.rx),
       'rx_dispensings': _tableSync('rx_dispensings', rxRemote!.dispensings),
     },
+    if (attachmentRemote != null)
+      'attachments': _tableSync('attachments', attachmentRemote!.rows),
   };
 
   /// `apply_stock_change`, with every request under [requestTimeout].
@@ -470,7 +490,7 @@ class SyncService {
 
     // FK order: Families -> Medications (then their stock changes) ->
     // Treatments -> Prescriptions -> DoseLogs; then Persons -> Rx ->
-    // RxDispensings
+    // RxDispensings; then Attachments
     await _pushBatch('families', report, familyWhere, familyWhereArgs, (
       row,
     ) async {
@@ -552,6 +572,10 @@ class SyncService {
       for (final table in const ['persons', 'rx', 'rx_dispensings']) {
         await _pushTable(table, report, userId, forceAll: forceAll);
       }
+    }
+    // An attachment row names its owner without a key the server checks.
+    if (attachmentRemote != null) {
+      await _pushTable('attachments', report, userId, forceAll: forceAll);
     }
   }
 
@@ -1098,6 +1122,7 @@ class SyncService {
     'persons': <String>[],
     'rx': ['rx_dispensings'],
     'rx_dispensings': <String>[],
+    'attachments': <String>[],
   };
 
   /// Give up on a row that keeps failing to push: replace the local copy with
@@ -1124,7 +1149,8 @@ class SyncService {
           'dose_logs' ||
           'persons' ||
           'rx' ||
-          'rx_dispensings':
+          'rx_dispensings' ||
+          'attachments':
         final remote = await _remote(_tables[table]!.remote.fetch(id));
         final db = await AppDatabase.instance.database;
         await db.delete(table, where: 'id = ?', whereArgs: [id]);
@@ -1239,12 +1265,14 @@ class SyncService {
   /// Returns false when a fetch failed, so some table was not read to its
   /// end (or to [maxPullPages]).
   ///
-  /// [pullRx] false leaves out the prescription tables (see [forcePull]).
+  /// [pullRx] false leaves out the prescription tables, [pullAttachments]
+  /// false the attachment rows (see [forcePull]).
   Future<bool> _pullAll(
     SyncReport report, {
     required bool force,
     required int horizon,
     bool pullRx = true,
+    bool pullAttachments = true,
   }) async {
     final pulled = PulledPrescriptions();
     final families = await _pullFamilies(report, failFast: force);
@@ -1280,6 +1308,15 @@ class SyncService {
       );
       rxTables = !roots.contains(false) && dispensings;
     }
+    var attachments = true;
+    if (attachmentRemote != null && pullAttachments) {
+      attachments = await _pullTable(
+        'attachments',
+        report,
+        force: force,
+        horizon: horizon,
+      );
+    }
     final hook = onPrescriptionsPulled;
     if (hook != null && !pulled.isEmpty) {
       try {
@@ -1292,7 +1329,8 @@ class SyncService {
         !both.contains(false) &&
         prescriptions &&
         doses &&
-        rxTables;
+        rxTables &&
+        attachments;
   }
 
   /// The default for [maxPullPages]: 50,000 rows per table per cycle.

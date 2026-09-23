@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/account_data_remote_datasource.dart';
+import 'package:medora/data/datasources/attachment_remote_datasource.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
@@ -159,6 +160,13 @@ final doseLogDatasourceProvider = Provider<DoseLogRemoteDatasource?>((ref) {
 final rxRemoteDatasourceProvider = Provider<RxRemoteDatasource?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : RxRemoteDatasource(client);
+});
+
+/// Attachment rows and the private bucket of their bytes on the server;
+/// null in local-only mode.
+final attachmentRemoteProvider = Provider<AttachmentRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : AttachmentRemoteDatasource(client);
 });
 
 final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
@@ -424,6 +432,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     doseLogLocal: ref.watch(doseLogLocalDatasourceProvider),
     doseLogRemote: ref.watch(doseLogDatasourceProvider),
     rxRemote: ref.watch(rxRemoteDatasourceProvider),
+    attachmentRemote: ref.watch(attachmentRemoteProvider),
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
     syncState: ref.watch(syncStateDatasourceProvider),

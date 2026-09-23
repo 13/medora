@@ -10,6 +10,11 @@
 # the migrations run as its `postgres` role, which is not a superuser,
 # against its real auth schema and roles, so tools/sql/auth_shim.sql is
 # skipped. AUTH_SHIM=0 skips it on the USE_DOCKER=0 path too.
+#
+# tools/sql/storage_shim.sql runs on both, as a superuser: it stands in for
+# the storage schema that Supabase's storage server creates (none of it on
+# plain Postgres, the bucket settings on Supabase's image). STORAGE_SHIM=0
+# skips it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,6 +24,7 @@ case "$image" in
   *supabase/postgres*) auth_shim="${AUTH_SHIM:-0}" ;;
   *) auth_shim="${AUTH_SHIM:-1}" ;;
 esac
+storage_shim="${STORAGE_SHIM:-1}"
 # Only warnings and errors: no NOTICE lines from IF NOT EXISTS.
 quiet="-c client_min_messages=warning"
 container=""
@@ -44,22 +50,33 @@ if [[ "$use_docker" == 1 ]]; then
   fi
   # Over TCP, as a client connects (the Supabase image trusts local TCP).
   psql_run() { docker exec -i -e PGOPTIONS="$quiet" "$container" psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -q "$@"; }
+  # A superuser: Supabase's image keeps `postgres` from its storage tables.
+  case "$image" in
+    *supabase/postgres*) admin=supabase_admin ;;
+    *) admin=postgres ;;
+  esac
+  psql_admin() { docker exec -i -e PGOPTIONS="$quiet" "$container" psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$admin" -d postgres -q "$@"; }
   # A second session that keeps running while the script goes on.
   psql_bg() { docker exec -d -e PGOPTIONS="$quiet" "$container" psql -h 127.0.0.1 -U postgres -q "$@"; }
 else
   psql_run() { PGOPTIONS="$quiet" psql -v ON_ERROR_STOP=1 -q "$@"; }
+  psql_admin() { psql_run "$@"; }
   psql_bg() { PGOPTIONS="$quiet" psql -q "$@" >/dev/null 2>&1 & }
 fi
 
 sync_v2=supabase/migrations/20260918000000_sync_v2.sql
 test -f "$sync_v2" || { echo "missing $sync_v2" >&2; exit 1; }
 
+if [[ "$auth_shim" == 1 ]]; then
+  psql_run < tools/sql/auth_shim.sql >/dev/null
+fi
+if [[ "$storage_shim" == 1 ]]; then
+  psql_admin < tools/sql/storage_shim.sql >/dev/null
+fi
+
 # Every migration in file-name order (the order Supabase applies them),
 # each in a transaction of its own, as `supabase db push` runs them.
 {
-  if [[ "$auth_shim" == 1 ]]; then
-    cat tools/sql/auth_shim.sql
-  fi
   for f in supabase/migrations/*.sql; do
     if [[ "$f" == "$sync_v2" ]]; then
       # A row from before sync v2.
@@ -91,6 +108,8 @@ psql_run < tools/sql/sync_v2_checks.sql
 psql_run < tools/sql/fake_server_parity.sql
 # Prescriptions (20260923000000_rx.sql).
 psql_run < tools/sql/rx_checks.sql
+# Attachments and their bucket (20260924000000_attachments.sql).
+psql_run < tools/sql/attachments_checks.sql
 
 # The horizon holds back a row whose transaction is still open.
 psql_run -c "insert into medications (id, user_id, name) values ('slow-owner', '00000000-0000-0000-0000-00000000000a', 'x');" >/dev/null

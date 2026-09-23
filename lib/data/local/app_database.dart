@@ -242,13 +242,18 @@ class AppDatabase {
   }
 
   /// Empties every table; with [keepRx], all but the prescription tables
-  /// (`persons`, `rx`, `rx_dispensings`), which a force pull from a server
-  /// without them could never bring back. The `attachments` and
-  /// `attachment_removals` tables are always cleared, regardless of [keepRx].
-  Future<void> clearAllData({bool keepRx = false}) async {
+  /// (`persons`, `rx`, `rx_dispensings`), and with [keepAttachments], all
+  /// but `attachments` and `attachment_removals`: a force pull from a
+  /// server without them could never bring their rows back.
+  Future<void> clearAllData({
+    bool keepRx = false,
+    bool keepAttachments = false,
+  }) async {
     final db = await database;
-    await db.delete('attachment_removals');
-    await db.delete('attachments');
+    if (!keepAttachments) {
+      await db.delete('attachment_removals');
+      await db.delete('attachments');
+    }
     // First: its rows reference medications.
     await db.delete('stock_outbox');
     await db.delete('dose_logs');

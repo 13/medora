@@ -60,6 +60,7 @@ class Harness {
     prescriptions = this.server.prescriptions;
     doses = this.server.doses;
     rx = this.server.rx;
+    attachments = this.server.attachments;
     family = this.server.families;
     this.cursors = cursors ?? SyncCursorStore.inMemory();
     failures = SyncFailureStore.inMemory();
@@ -73,6 +74,7 @@ class Harness {
       doseLogLocal: DoseLogLocalDatasource(),
       doseLogRemote: doses,
       rxRemote: rx,
+      attachmentRemote: attachments,
       familyLocal: familyLocal ?? FamilyLocalDatasource(),
       familyRemote: family,
       syncState: this.server.state,
@@ -101,6 +103,7 @@ class Harness {
   late final FakePrescriptionRemote prescriptions;
   late final FakeDoseLogRemote doses;
   late final FakeRxRemote rx;
+  late final FakeAttachmentRemote attachments;
   late final FakeFamilyRemote family;
   late final SyncCursorStore cursors;
   late final SyncFailureStore failures;
