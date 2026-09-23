@@ -256,8 +256,9 @@ const doseLogMerge = MergePolicy(
 /// needs to move together.
 const personMerge = MergePolicy(groups: []);
 
-/// Validity follows the kind and the issue date, so the three move
-/// together; the items list merges as one value.
+/// Validity follows the kind and the issue date: the kind, the issue date,
+/// the validity, the dispensing limit and the priority move together, as do
+/// closing and cancelling; the items list merges as one value.
 const rxMerge = MergePolicy(
   groups: [
     {'kind', 'issued_on', 'valid_until', 'max_dispensings', 'priority'},

@@ -8,6 +8,7 @@ import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/rx_remote_datasource.dart';
 import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
@@ -48,6 +49,7 @@ class FakeServer {
       rows: doseRows?.call(core),
       transport: transport,
     );
+    rx = FakeRxRemote(core, transport: transport);
     families = FakeFamilyRemote(clock, currentUserId: currentUserId);
     state = FakeSyncState(core, transport: transport);
   }
@@ -58,6 +60,9 @@ class FakeServer {
   late final FakeTreatmentRemote treatments;
   late final FakePrescriptionRemote prescriptions;
   late final FakeDoseLogRemote doses;
+
+  /// Persons, prescription documents and their dispensings.
+  late final FakeRxRemote rx;
   late final FakeFamilyRemote families;
   late final FakeSyncState state;
 }
@@ -172,6 +177,20 @@ class FakeDoseLogRemote implements DoseLogRemoteDatasource {
   @override
   final FakeSyncTable rows;
   FakeSyncTable get table => rows;
+}
+
+class FakeRxRemote implements RxRemoteDatasource {
+  FakeRxRemote(FakeServerCore core, {FakeTransport? transport})
+    : persons = FakeSyncTable(core, 'persons', transport: transport),
+      rx = FakeSyncTable(core, 'rx', transport: transport),
+      dispensings = FakeSyncTable(core, 'rx_dispensings', transport: transport);
+
+  @override
+  final FakeSyncTable persons;
+  @override
+  final FakeSyncTable rx;
+  @override
+  final FakeSyncTable dispensings;
 }
 
 class FakeSyncState implements SyncStateRemoteDatasource {

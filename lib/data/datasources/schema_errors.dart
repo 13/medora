@@ -7,6 +7,8 @@
 /// "discard", which replaces the local data with the server's.
 library;
 
+import 'dart:convert';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// A Supabase project whose [table] has no [column], which [migration]
@@ -100,4 +102,57 @@ class MissingMigrationException implements Exception {
       'The Supabase project is missing the sync v2 migration. '
       'Apply $migration to the project, then sync again'
       '${cause is PostgrestException ? ' (server: ${(cause! as PostgrestException).message})' : ''}.';
+}
+
+/// A Supabase project without the table [table], which [migration] creates.
+/// PostgREST answers `PGRST205` for a table not in its schema cache,
+/// Postgres `42P01` for one that does not exist.
+class MissingTableException implements Exception {
+  const MissingTableException({
+    required this.table,
+    required this.migration,
+    required this.cause,
+  });
+
+  final String table;
+  final String migration;
+  final PostgrestException cause;
+
+  @override
+  String toString() =>
+      'The Supabase project has no $table table. '
+      'Apply $migration to the project, then sync again '
+      '(server: ${cause.message}).';
+}
+
+/// [error] read as a missing [table], else null.
+MissingTableException? missingTable(
+  Object error, {
+  required String table,
+  required String migration,
+}) {
+  if (error is! PostgrestException) return null;
+  final code = _serverCode(error);
+  if (code != 'PGRST205' && code != '42P01') return null;
+  return MissingTableException(
+    table: table,
+    migration: migration,
+    cause: error,
+  );
+}
+
+/// The code the server gave [error]. A `maybeSingle` request (postgrest
+/// 2.9) throws the server's error again as the HTTP status, with the raw
+/// answer as its message, so the code is read back out of that answer.
+String? _serverCode(PostgrestException error) {
+  final code = error.code;
+  if (code == null || int.tryParse(code) == null) return code;
+  try {
+    if (jsonDecode(error.message) case {'code': final String inner}) {
+      return inner;
+    }
+  } on FormatException {
+    // Not an answer body: the code stands.
+  }
+  return code;
 }

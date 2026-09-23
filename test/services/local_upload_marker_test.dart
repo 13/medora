@@ -51,6 +51,53 @@ void main() {
     expect(await cursors.pullKey('medications'), isNull);
   });
 
+  test('persons, rx and dispensings are uploaded too, against a fresh read '
+      'of the server', () async {
+    final db = await AppDatabase.instance.database;
+    const meta = {
+      'sync_status': SyncStatus.synced,
+      'sync_version': 3,
+      'sync_base': '{}',
+      'sync_write_id': 'w1',
+    };
+    await db.insert('persons', {'id': 'p1', 'name': 'Ben', ...meta});
+    await db.insert('rx', {
+      'id': 'r1',
+      'kind': 'ssn',
+      'issued_on': '2026-03-01',
+      ...meta,
+    });
+    await db.insert('rx_dispensings', {
+      'id': 'd1',
+      'rx_id': 'r1',
+      'item_id': 'i1',
+      'packs': 1,
+      'dispensed_on': '2026-03-02',
+      ...meta,
+    });
+
+    expect(await makeMarker().markAllForUpload('user-a'), 3);
+    for (final table in ['persons', 'rx', 'rx_dispensings']) {
+      final row = (await db.query(table)).single;
+      expect(row['sync_status'], SyncStatus.pendingUpdate, reason: table);
+      expect(row['sync_version'], isNull, reason: table);
+      expect(row['sync_base'], isNull, reason: table);
+      expect(row['sync_write_id'], isNull, reason: table);
+    }
+  });
+
+  test('a person alone is data from another account', () async {
+    final db = await AppDatabase.instance.database;
+    await db.insert('persons', {
+      'id': 'p1',
+      'name': 'Ben',
+      'sync_status': SyncStatus.synced,
+    });
+    final marker = makeMarker();
+    await marker.setOwner('user-a');
+    expect(await marker.hasDataFromAnotherAccount('user-b'), isTrue);
+  });
+
   group('stock changes still waiting', () {
     late Database db;
     setUp(() async {

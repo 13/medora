@@ -41,6 +41,7 @@ import 'package:medora/data/datasources/account_data_remote_datasource.dart';
 import 'package:medora/data/datasources/dose_log_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/rx_remote_datasource.dart';
 import 'package:medora/data/datasources/stock_remote.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
@@ -84,6 +85,16 @@ const _notNullColumns = {
     'schedule_type',
   },
   'dose_logs': {'id', 'prescription_id', 'scheduled_time', 'status'},
+  'persons': {'id', 'name', 'user_id'},
+  'rx': {'id', 'kind', 'issued_on', 'user_id'},
+  'rx_dispensings': {
+    'id',
+    'rx_id',
+    'item_id',
+    'packs',
+    'dispensed_on',
+    'user_id',
+  },
 };
 
 /// Postgres refuses a write that puts null into a `NOT NULL` column
@@ -178,11 +189,15 @@ class FakePostgrest {
 
   late final SupabaseClient _client = client();
   late final _medications = MedicationRemoteDatasource(_client);
+  late final _rx = RxRemoteDatasource(_client);
   late final Map<String, SyncTable> _tables = {
     'medications': _medications.rows,
     'treatments': TreatmentRemoteDatasource(_client).rows,
     'prescriptions': PrescriptionRemoteDatasource(_client).rows,
     'dose_logs': DoseLogRemoteDatasource(_client).rows,
+    'persons': _rx.persons,
+    'rx': _rx.rx,
+    'rx_dispensings': _rx.dispensings,
   };
 
   /// The app's own `PostgrestSyncTable` for [name], talking to this fake.

@@ -94,6 +94,55 @@ void main() {
     expect(removed.photos, ['unknown.jpg'], reason: 'old.jpg is still used');
   });
 
+  test('persons, prescription documents and dispensings made before the '
+      'wipe go; those made after it stay', () async {
+    final db = await AppDatabase.instance.database;
+    Future<void> row(String table, Map<String, Object?> values) =>
+        db.insert(table, {'sync_status': 'synced', ...values});
+    await row('persons', {
+      'id': 'p-old',
+      'name': 'Ben',
+      'created_at': before(),
+    });
+    await row('persons', {'id': 'p-new', 'name': 'Ann', 'created_at': after()});
+    await row('rx', {
+      'id': 'r-old',
+      'kind': 'ssn',
+      'issued_on': '2026-03-01',
+      'created_at': before(),
+    });
+    await row('rx', {
+      'id': 'r-new',
+      'kind': 'white',
+      'issued_on': '2026-03-05',
+      'created_at': after(),
+    });
+    // A dispensing made after the wipe under an old rx goes with its rx.
+    await row('rx_dispensings', {
+      'id': 'd-under-old',
+      'rx_id': 'r-old',
+      'item_id': 'i1',
+      'packs': 1,
+      'dispensed_on': '2026-03-05',
+      'created_at': after(),
+    });
+    await row('rx_dispensings', {
+      'id': 'd-old',
+      'rx_id': 'r-new',
+      'item_id': 'i1',
+      'packs': 1,
+      'dispensed_on': '2026-03-04',
+      'created_at': before(),
+    });
+
+    final removed = await removeLocalDataFromBefore(wipedAt);
+
+    expect(await ids('persons'), ['p-new']);
+    expect(await ids('rx'), ['r-new']);
+    expect(await ids('rx_dispensings'), isEmpty);
+    expect(removed.rows, 4);
+  });
+
   test('nothing to remove', () async {
     final removed = await removeLocalDataFromBefore(wipedAt);
     expect(removed.rows, 0);

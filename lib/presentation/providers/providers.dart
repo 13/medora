@@ -20,6 +20,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/rx_remote_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
@@ -128,6 +129,13 @@ final prescriptionDatasourceProvider = Provider<PrescriptionRemoteDatasource?>((
 final doseLogDatasourceProvider = Provider<DoseLogRemoteDatasource?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client == null ? null : DoseLogRemoteDatasource(client);
+});
+
+/// Persons, prescription documents and their dispensings on the server;
+/// null in local-only mode.
+final rxRemoteDatasourceProvider = Provider<RxRemoteDatasource?>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  return client == null ? null : RxRemoteDatasource(client);
 });
 
 final familyDatasourceProvider = Provider<FamilyRemoteDatasource?>((ref) {
@@ -338,6 +346,7 @@ final syncServiceProvider = Provider<SyncService>((ref) {
     prescriptionRemote: ref.watch(prescriptionDatasourceProvider),
     doseLogLocal: ref.watch(doseLogLocalDatasourceProvider),
     doseLogRemote: ref.watch(doseLogDatasourceProvider),
+    rxRemote: ref.watch(rxRemoteDatasourceProvider),
     familyLocal: ref.watch(familyLocalDatasourceProvider),
     familyRemote: ref.watch(familyDatasourceProvider),
     syncState: ref.watch(syncStateDatasourceProvider),

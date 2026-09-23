@@ -20,8 +20,8 @@
 /// - **Pull.** Each table is read from its stored key up to the server's
 ///   horizon, in pages; a pending local row is merged, not overwritten.
 ///
-/// For medications, treatments, prescriptions and dose logs this is the only
-/// push path: the repositories write locally and ask for a [syncAll], which
+/// For medications, treatments, prescriptions, dose logs, persons, rx and
+/// dispensings this is the only push path: the repositories write locally and ask for a [syncAll], which
 /// queues behind a running cycle. One [syncAll] re-runs itself at most
 /// [SyncService.maxAutomaticReruns] times, then retries once after
 /// [SyncService.capRetryDelay]. Every request to the server has a timeout
@@ -49,6 +49,7 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/rx_remote_datasource.dart';
 import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/stock_remote.dart';
@@ -94,6 +95,7 @@ class SyncService {
     required this.prescriptionRemote,
     required this.doseLogLocal,
     required this.doseLogRemote,
+    this.rxRemote,
     required this.familyLocal,
     required this.familyRemote,
     required this.syncState,
@@ -144,6 +146,10 @@ class SyncService {
   final PrescriptionRemoteDatasource? prescriptionRemote;
   final DoseLogLocalDatasource doseLogLocal;
   final DoseLogRemoteDatasource? doseLogRemote;
+
+  /// The prescription tables; null in local-only mode, and in a build or
+  /// test that does not sync them.
+  final RxRemoteDatasource? rxRemote;
   final FamilyLocalDatasource familyLocal;
   final FamilyRemoteDatasource? familyRemote;
 
@@ -370,7 +376,7 @@ class SyncService {
 
   // ── Push ───────────────────────────────────────────────────
 
-  /// The per-row sync of one of the four merged tables.
+  /// The per-row sync of each merged table.
   late final Map<String, TableSync> _tables = {
     if (medicationRemote != null)
       'medications': _tableSync('medications', medicationRemote!.rows),
@@ -380,6 +386,11 @@ class SyncService {
       'prescriptions': _tableSync('prescriptions', prescriptionRemote!.rows),
     if (doseLogRemote != null)
       'dose_logs': _tableSync('dose_logs', doseLogRemote!.rows),
+    if (rxRemote != null) ...{
+      'persons': _tableSync('persons', rxRemote!.persons),
+      'rx': _tableSync('rx', rxRemote!.rx),
+      'rx_dispensings': _tableSync('rx_dispensings', rxRemote!.dispensings),
+    },
   };
 
   /// `apply_stock_change`, with every request under [requestTimeout].
@@ -421,7 +432,8 @@ class SyncService {
         : [SyncStatus.synced, SyncStatus.pendingDelete];
 
     // FK order: Families -> Medications (then their stock changes) ->
-    // Treatments -> Prescriptions -> DoseLogs
+    // Treatments -> Prescriptions -> DoseLogs; then Persons -> Rx ->
+    // RxDispensings
     await _pushBatch('families', report, familyWhere, familyWhereArgs, (
       row,
     ) async {
@@ -497,6 +509,13 @@ class SyncService {
       forceAll: forceAll,
       skipCreates: !forceAll,
     );
+    // Prescriptions stand apart from the dosing tables: persons and rx
+    // name nothing the server checks, and a dispensing follows its rx.
+    if (rxRemote != null) {
+      for (final table in const ['persons', 'rx', 'rx_dispensings']) {
+        await _pushTable(table, report, userId, forceAll: forceAll);
+      }
+    }
   }
 
   /// Reads, in bulk, the server copies of the pending rows of [table] that
@@ -1039,6 +1058,9 @@ class SyncService {
     'treatments': ['prescriptions', 'dose_logs'],
     'prescriptions': ['dose_logs'],
     'dose_logs': <String>[],
+    'persons': <String>[],
+    'rx': ['rx_dispensings'],
+    'rx_dispensings': <String>[],
   };
 
   /// Give up on a row that keeps failing to push: replace the local copy with
@@ -1059,7 +1081,13 @@ class SyncService {
   /// surface the error and the user can try again.
   Future<void> discardFailedRow(String table, String id) async {
     switch (table) {
-      case 'medications' || 'treatments' || 'prescriptions' || 'dose_logs':
+      case 'medications' ||
+          'treatments' ||
+          'prescriptions' ||
+          'dose_logs' ||
+          'persons' ||
+          'rx' ||
+          'rx_dispensings':
         final remote = await _remote(_tables[table]!.remote.fetch(id));
         final db = await AppDatabase.instance.database;
         await db.delete(table, where: 'id = ?', whereArgs: [id]);
@@ -1198,6 +1226,20 @@ class SyncService {
       horizon: horizon,
       pulled: pulled,
     );
+    var rxTables = true;
+    if (rxRemote != null) {
+      final roots = await Future.wait([
+        _pullTable('persons', report, force: force, horizon: horizon),
+        _pullTable('rx', report, force: force, horizon: horizon),
+      ]);
+      final dispensings = await _pullTable(
+        'rx_dispensings',
+        report,
+        force: force,
+        horizon: horizon,
+      );
+      rxTables = !roots.contains(false) && dispensings;
+    }
     final hook = onPrescriptionsPulled;
     if (hook != null && !pulled.isEmpty) {
       try {
@@ -1206,7 +1248,11 @@ class SyncService {
         debugPrint('Sync: generating doses for pulled prescriptions: $e');
       }
     }
-    return families && !both.contains(false) && prescriptions && doses;
+    return families &&
+        !both.contains(false) &&
+        prescriptions &&
+        doses &&
+        rxTables;
   }
 
   /// The default for [maxPullPages]: 50,000 rows per table per cycle.

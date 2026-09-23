@@ -37,6 +37,9 @@ class LocalUploadMarker {
     'treatments',
     'prescriptions',
     'dose_logs',
+    'persons',
+    'rx',
+    'rx_dispensings',
   ];
 
   /// The account the data on this device was last uploaded under, if known.
@@ -85,6 +88,9 @@ class LocalUploadMarker {
         'treatments',
         'prescriptions',
         'dose_logs',
+        'persons',
+        'rx',
+        'rx_dispensings',
       ]) {
         await txn.update(table, const {
           'sync_version': null,

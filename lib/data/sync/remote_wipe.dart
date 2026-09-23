@@ -22,11 +22,11 @@ class RemovedData {
   final List<String> photos;
 }
 
-/// Removes every medication, treatment, prescription and dose this device
-/// created before [wipedAt] (by their `created_at`; a row without one
-/// counts as older), whatever its sync state: synced copies, and changes
-/// still waiting to be sent, which belong to rows the person deleted
-/// everywhere. A row created after [wipedAt] stays, with its sync state:
+/// Removes every medication, treatment, prescription, dose, person,
+/// prescription document (rx) and dispensing this device created before
+/// [wipedAt] (by their `created_at`; a row without one counts as older),
+/// whatever its sync state: synced copies, and changes still waiting to be
+/// sent, which belong to rows the person deleted everywhere. A row created after [wipedAt] stays, with its sync state:
 /// it is new data. Children go with a removed parent, and stock changes
 /// with their medication (the local foreign keys cascade). Families are
 /// not part of "delete all data" and stay.
@@ -37,7 +37,15 @@ Future<RemovedData> removeDataFromBefore(
   DatabaseExecutor db,
   DateTime wipedAt,
 ) async {
-  const tables = ['medications', 'treatments', 'prescriptions', 'dose_logs'];
+  const tables = [
+    'medications',
+    'treatments',
+    'prescriptions',
+    'dose_logs',
+    'persons',
+    'rx',
+    'rx_dispensings',
+  ];
   Future<int> count() async {
     var n = 0;
     for (final table in tables) {

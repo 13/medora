@@ -121,13 +121,16 @@ class PostgrestSyncTable implements SyncTable {
   /// A write the server refuses for a column it lacks becomes a
   /// [MissingColumnException] naming [migration] ([fallbackColumn] when the
   /// server names none), or [syncV2Migration] when the column is one of
-  /// [syncV2Columns].
+  /// [syncV2Columns]. A request to a project without the table itself
+  /// becomes a [MissingTableException] naming [tableMigration], when the
+  /// table is one a later migration creates.
   PostgrestSyncTable(
     this._client,
     this.table, {
     String select = '*',
     this.migration,
     this.fallbackColumn,
+    this.tableMigration,
   }) : assert(select.startsWith('*'), 'select must include every column'),
        _select = select;
 
@@ -137,10 +140,30 @@ class PostgrestSyncTable implements SyncTable {
   final String? migration;
   final String? fallbackColumn;
 
+  /// The migration that creates [table]; null for the tables every project
+  /// has.
+  final String? tableMigration;
+
+  Future<T> _read<T>(Future<T> Function() send) async {
+    try {
+      return await send();
+    } on PostgrestException catch (e) {
+      final missing = tableMigration == null
+          ? null
+          : missingTable(e, table: table, migration: tableMigration!);
+      if (missing != null) throw missing;
+      rethrow;
+    }
+  }
+
   Future<T> _write<T>(Future<T> Function() send) async {
     try {
       return await send();
     } on PostgrestException catch (e) {
+      final noTable = tableMigration == null
+          ? null
+          : missingTable(e, table: table, migration: tableMigration!);
+      if (noTable != null) throw noTable;
       final missing = missingColumn(
         e,
         table: table,
@@ -165,20 +188,25 @@ class PostgrestSyncTable implements SyncTable {
   Future<List<Map<String, dynamic>>> page({
     required PullKey? after,
     required int horizon,
-  }) async => pullPage(
-    _client.from(table).select(_select),
-    after: after,
-    horizon: horizon,
+  }) => _read(
+    () async => pullPage(
+      _client.from(table).select(_select),
+      after: after,
+      horizon: horizon,
+    ),
   );
 
   @override
-  Future<Map<String, dynamic>?> fetch(String id) =>
-      _client.from(table).select(_select).eq('id', id).maybeSingle();
+  Future<Map<String, dynamic>?> fetch(String id) => _read(
+    () async => _client.from(table).select(_select).eq('id', id).maybeSingle(),
+  );
 
   @override
   Future<List<Map<String, dynamic>>> fetchMany(List<String> ids) async {
     if (ids.isEmpty) return const [];
-    return _client.from(table).select(_select).inFilter('id', ids);
+    return _read(
+      () async => _client.from(table).select(_select).inFilter('id', ids),
+    );
   }
 
   @override

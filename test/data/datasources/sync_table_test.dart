@@ -256,6 +256,52 @@ void main() {
     },
   );
 
+  group('a project without the table', () {
+    const missing = {
+      'code': 'PGRST205',
+      'message': "Could not find the table 'public.rx' in the schema cache",
+    };
+
+    test('names the migration that creates it, on reads and writes', () async {
+      for (final call in <Future<Object?> Function(PostgrestSyncTable)>[
+        (t) => t.page(after: null, horizon: 900),
+        (t) => t.fetch('r1'),
+        (t) => t.fetchMany(['r1']),
+        (t) => t.patch('r1', {'notes': 'x'}, ifVersion: 1),
+        (t) => t.insertIfAbsent([
+          {'id': 'r1'},
+        ]),
+      ]) {
+        final table = PostgrestSyncTable(
+          answering(missing, status: 404),
+          'rx',
+          migration: 'supabase/migrations/20260923000000_rx.sql',
+          tableMigration: 'supabase/migrations/20260923000000_rx.sql',
+        );
+        await expectLater(
+          call(table),
+          throwsA(
+            isA<MissingTableException>()
+                .having((e) => e.table, 'table', 'rx')
+                .having(
+                  (e) => e.migration,
+                  'migration',
+                  'supabase/migrations/20260923000000_rx.sql',
+                ),
+          ),
+        );
+      }
+    });
+
+    test('a table every project has passes the error on', () async {
+      final table = PostgrestSyncTable(
+        answering(missing, status: 404),
+        'treatments',
+      );
+      await expectLater(table.fetch('t1'), throwsA(isA<PostgrestException>()));
+    });
+  });
+
   group('afterPullPage', () {
     Map<String, dynamic> row(int xid, String id) => {'id': id, 'sync_xid': xid};
 

@@ -757,9 +757,9 @@ class FakeServerCore {
     };
   }
 
-  /// `medora_delete_all_data()`: every medication, treatment, prescription
-  /// and dose goes (with the ledger), and the marker moves on, at the
-  /// server's clock.
+  /// `medora_delete_all_data()`: every medication, treatment, prescription,
+  /// dose, person, prescription document (rx) and dispensing goes (with the
+  /// ledger), and the marker moves on, at the server's clock.
   Map<String, dynamic> deleteAllData() {
     requests.add('rpc:medora_delete_all_data');
     final mark = requests.length;
