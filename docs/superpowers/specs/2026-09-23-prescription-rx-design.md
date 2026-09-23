@@ -137,7 +137,7 @@ Contents are immutable: a new file is a new attachment.
   `ssn` 30 days, `white` 30 days, `white_repeatable` 6 months and at most
   10 dispensings, `referral` no default (the user enters it; the field stays
   empty and the Rx never auto-expires). For referrals the priority instead gives a
-  **book-by hint** shown on the card (U 72 h, B 10 days, D 30 days, P 120 days).
+  **visit-by hint** shown on the card (U 72 h, B 10 days, D 30 days, P 120 days).
   Phase A's first task checks every value against current national/ASDAA
   sources and records the source URL in the table; the table is the only place
   they live.

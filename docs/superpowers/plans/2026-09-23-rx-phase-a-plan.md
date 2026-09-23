@@ -31,7 +31,7 @@
 Create:
 - `lib/domain/rx/tax_code.dart` — codice fiscale normalise/validate.
 - `lib/domain/rx/nre.dart` — NRE normalise/validate.
-- `lib/domain/rx/rx_rules.dart` — validity table, book-by hint, status, dispensed packs, pack-size parse.
+- `lib/domain/rx/rx_rules.dart` — validity table, visit-by hint, status, dispensed packs, pack-size parse.
 - `lib/domain/entities/person.dart`, `lib/domain/entities/rx.dart`, `lib/domain/entities/rx_dispensing.dart`.
 - `lib/data/models/person_model.dart`, `rx_model.dart`, `rx_dispensing_model.dart`.
 - `lib/data/datasources/synced_local_table.dart` — shared pending-write logic for the three new tables.
@@ -71,7 +71,7 @@ Modify:
   - `abstract final class Nre { static String normalize(String raw); static bool isValid(String raw); }`
   - `enum RxKind { ssn, white, whiteRepeatable, referral }` with `String get wire` (`ssn`, `white`, `white_repeatable`, `referral`) and `static RxKind fromWire(String?)` (unknown → `ssn`).
   - `enum RxPriority { u, b, d, p }` with `String get wire` (`U`,`B`,`D`,`P`) and `static RxPriority? fromWire(String?)`.
-  - `abstract final class RxValidity { static DateTime? defaultValidUntil(RxKind kind, DateTime issuedOn); static int? defaultMaxDispensings(RxKind kind); static DateTime bookBy(RxPriority p, DateTime issuedOn); }`
+  - `abstract final class RxValidity { static DateTime? defaultValidUntil(RxKind kind, DateTime issuedOn); static int? defaultMaxDispensings(RxKind kind); static DateTime visitBy(RxPriority p, DateTime issuedOn); }`
 
 - [ ] **Step 1: Verify the rule values against sources**
 
@@ -83,7 +83,7 @@ Use WebSearch/WebFetch (Italian: "validità ricetta SSN 30 giorni escluso giorno
 | white | 30 days | same |
 | white repeatable | 6 months, max 10 dispensings | `issuedOn + 6 months` |
 | referral | none (user enters) | — |
-| book-by U / B / D / P | 3 / 10 / 30 / 120 days | `issuedOn + n days` |
+| visit-by U / B / D / P | 3 / 10 / 30 / 120 days | `issuedOn + n days` |
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -189,11 +189,11 @@ void main() {
     expect(RxValidity.defaultValidUntil(RxKind.referral, issued), isNull);
   });
 
-  test('book-by dates follow the priority class', () {
-    expect(RxValidity.bookBy(RxPriority.u, issued), DateTime(2026, 9, 26));
-    expect(RxValidity.bookBy(RxPriority.b, issued), DateTime(2026, 10, 3));
-    expect(RxValidity.bookBy(RxPriority.d, issued), DateTime(2026, 10, 23));
-    expect(RxValidity.bookBy(RxPriority.p, issued), DateTime(2027, 1, 21));
+  test('visit-by dates follow the priority class', () {
+    expect(RxValidity.visitBy(RxPriority.u, issued), DateTime(2026, 9, 26));
+    expect(RxValidity.visitBy(RxPriority.b, issued), DateTime(2026, 10, 3));
+    expect(RxValidity.visitBy(RxPriority.d, issued), DateTime(2026, 10, 23));
+    expect(RxValidity.visitBy(RxPriority.p, issued), DateTime(2027, 1, 21));
   });
 
   test('wire names round-trip, unknown kinds read as SSN', () {
@@ -316,11 +316,11 @@ enum RxPriority {
   d('D', 30),
   p('P', 120);
 
-  const RxPriority(this.wire, this.bookWithinDays);
+  const RxPriority(this.wire, this.visitWithinDays);
   final String wire;
 
   /// Days from issue within which the visit should take place.
-  final int bookWithinDays;
+  final int visitWithinDays;
 
   static RxPriority? fromWire(String? raw) {
     for (final p in values) {
@@ -353,10 +353,10 @@ abstract final class RxValidity {
   static int? defaultMaxDispensings(RxKind kind) =>
       kind == RxKind.whiteRepeatable ? _repeatableDispensings : null;
 
-  static DateTime bookBy(RxPriority priority, DateTime issuedOn) => DateTime(
+  static DateTime visitBy(RxPriority priority, DateTime issuedOn) => DateTime(
     issuedOn.year,
     issuedOn.month,
-    issuedOn.day + priority.bookWithinDays,
+    issuedOn.day + priority.visitWithinDays,
   );
 
   /// [months] later, on the same day or the month's last day when that
@@ -3467,8 +3467,8 @@ Append before the closing `}` of each ARB (keep the file's existing formatting; 
   "rxGroupDone": "Done & expired",
   "rxDaysLeft": "{days, plural, =0{Last day} =1{1 day left} other{{days} days left}}",
   "@rxDaysLeft": { "placeholders": { "days": { "type": "int" } } },
-  "rxBookBy": "Book by {date}",
-  "@rxBookBy": { "placeholders": { "date": { "type": "String" } } },
+  "rxVisitBy": "Visit by {date}",
+  "@rxVisitBy": { "placeholders": { "date": { "type": "String" } } },
   "rxShowAtPharmacy": "Show at pharmacy",
   "rxTaxCode": "Tax code",
   "rxTaxCodeInvalid": "Not a valid tax code",
@@ -3550,8 +3550,8 @@ German (`app_de.arb`):
   "rxGroupDone": "Erledigt & abgelaufen",
   "rxDaysLeft": "{days, plural, =0{Letzter Tag} =1{Noch 1 Tag} other{Noch {days} Tage}}",
   "@rxDaysLeft": { "placeholders": { "days": { "type": "int" } } },
-  "rxBookBy": "Buchen bis {date}",
-  "@rxBookBy": { "placeholders": { "date": { "type": "String" } } },
+  "rxVisitBy": "Termin bis {date}",
+  "@rxVisitBy": { "placeholders": { "date": { "type": "String" } } },
   "rxShowAtPharmacy": "In der Apotheke zeigen",
   "rxTaxCode": "Steuernummer",
   "rxTaxCodeInvalid": "Keine gültige Steuernummer",
@@ -3633,8 +3633,8 @@ Italian (`app_it.arb`):
   "rxGroupDone": "Concluse e scadute",
   "rxDaysLeft": "{days, plural, =0{Ultimo giorno} =1{Ancora 1 giorno} other{Ancora {days} giorni}}",
   "@rxDaysLeft": { "placeholders": { "days": { "type": "int" } } },
-  "rxBookBy": "Prenotare entro il {date}",
-  "@rxBookBy": { "placeholders": { "date": { "type": "String" } } },
+  "rxVisitBy": "Da erogare entro il {date}",
+  "@rxVisitBy": { "placeholders": { "date": { "type": "String" } } },
   "rxShowAtPharmacy": "Mostra in farmacia",
   "rxTaxCode": "Codice fiscale",
   "rxTaxCodeInvalid": "Codice fiscale non valido",
@@ -4450,7 +4450,7 @@ class _RxTile extends StatelessWidget {
       RxStatus.open || RxStatus.partial when left != null =>
         l10n.rxDaysLeft(left),
       RxStatus.open || RxStatus.partial when priority != null =>
-        l10n.rxBookBy(RxValidity.bookBy(priority, rx.issuedOn).formatted),
+        l10n.rxVisitBy(RxValidity.visitBy(priority, rx.issuedOn).formatted),
       RxStatus.open || RxStatus.partial => null,
       _ => rxStatusLabel(l10n, status),
     };
@@ -5626,8 +5626,8 @@ class RxDetailScreen extends ConsumerWidget {
               if (canCollect && left != null) Text(l10n.rxDaysLeft(left)),
               if (canCollect && left == null && rx.priority != null)
                 Text(
-                  l10n.rxBookBy(
-                    RxValidity.bookBy(rx.priority!, rx.issuedOn).formatted,
+                  l10n.rxVisitBy(
+                    RxValidity.visitBy(rx.priority!, rx.issuedOn).formatted,
                   ),
                 ),
               const SizedBox(height: 8),
