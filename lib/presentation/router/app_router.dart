@@ -19,6 +19,7 @@ import 'package:medora/presentation/screens/medication/expiring_medications_scre
 import 'package:medora/presentation/screens/medication/medication_detail_screen.dart';
 import 'package:medora/presentation/screens/persons/person_form_screen.dart';
 import 'package:medora/presentation/screens/persons/person_list_screen.dart';
+import 'package:medora/presentation/screens/rx/rx_detail_screen.dart';
 import 'package:medora/presentation/screens/rx/rx_form_screen.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
@@ -218,6 +219,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: AppRoutes.editRx,
             builder: (_, state) =>
                 RxFormScreen(rxId: state.pathParameters['id']),
+          ),
+          GoRoute(
+            path: AppRoutes.rxDetail,
+            builder: (_, state) =>
+                RxDetailScreen(rxId: state.pathParameters['id']!),
           ),
           GoRoute(
             path: AppRoutes.export,

@@ -6,10 +6,18 @@ void main() {
   test('presentation layer uses theme tokens, not static colors', () {
     final offenders = <String>[];
     final allowed = RegExp(r'Colors\.(transparent|black)\b');
+    // A barcode has to read black-on-white to a scanner whatever the app's
+    // theme is (dark mode would print a light barcode on a dark page), so
+    // these two intentionally paint fixed colors rather than theme tokens.
+    const exemptFiles = {
+      'lib/presentation/screens/rx/pharmacy_screen.dart',
+      'lib/presentation/widgets/code39.dart',
+    };
     for (final file in Directory(
       'lib/presentation',
     ).listSync(recursive: true).whereType<File>()) {
       if (!file.path.endsWith('.dart')) continue;
+      if (exemptFiles.any(file.path.endsWith)) continue;
       final lines = file.readAsLinesSync();
       for (var i = 0; i < lines.length; i++) {
         final line = lines[i];
