@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/services/reminder_service.dart';
 
 void main() {
@@ -34,6 +35,34 @@ void main() {
 
     expect(router.routerDelegate.currentConfiguration.uri.path, '/doses');
     expect(find.text('doses'), findsOneWidget);
+  });
+
+  testWidgets('a prescription alert opens that prescription', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(path: '/', builder: (_, _) => const Text('home')),
+        GoRoute(path: '/doses', builder: (_, _) => const Text('doses')),
+        GoRoute(
+          path: AppRoutes.rxDetail,
+          builder: (_, state) => Text('rx ${state.pathParameters['id']}'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+
+    ReminderService.router = router;
+    ReminderService.instance.handleNotificationTap('rx:r1');
+    await tester.pumpAndSettle();
+
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/rx/r1');
+    expect(find.text('rx r1'), findsOneWidget);
+
+    // Other payloads still open the doses, as before.
+    ReminderService.instance.handleNotificationTap('medication:m1');
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/doses');
   });
 
   test('a tap without a router assigned is a no-op', () {

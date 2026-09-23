@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_text.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
@@ -98,13 +99,19 @@ class ReminderService implements ReminderPort {
   void _onNotificationResponse(NotificationResponse response) =>
       handleNotificationTap(response.payload);
 
-  /// Navigate to the doses screen when a notification is tapped. When
-  /// [router] has not been assigned yet (e.g. a cold start from a
+  /// Navigate when a notification is tapped: a prescription alert
+  /// (`rx:<id>`) opens that prescription, everything else the doses screen.
+  /// When [router] has not been assigned yet (e.g. a cold start from a
   /// notification, before `main.dart` finishes building the router), the
   /// route is remembered and applied as soon as [router] is set.
   @visibleForTesting
   void handleNotificationTap(String? payload) {
-    const route = '/doses';
+    final rxId = payload != null && payload.startsWith('rx:')
+        ? payload.substring(3)
+        : '';
+    final route = rxId.isEmpty
+        ? AppRoutes.doses
+        : AppRoutes.rxDetail.replaceFirst(':id', rxId);
     final currentRouter = router;
     if (currentRouter == null) {
       _pendingRoute = route;
@@ -226,9 +233,9 @@ class ReminderService implements ReminderPort {
       title: stockAlertTitle(alert.kind, l10n: l10n),
       body: stockAlertBody(alert, l10n: l10n),
       scheduledTime: alert.when,
-      // Routed like a dose reminder today; the id is carried so a tap can
-      // open the medication (or, for an rxExpiry alert, the prescription)
-      // itself later.
+      // A tap on an rxExpiry alert opens the prescription
+      // ([handleNotificationTap]); the medication id is carried so a tap
+      // can open the medication itself later.
       payload: alert.kind == StockAlertKind.rxExpiry
           ? 'rx:${alert.medicationId}'
           : 'medication:${alert.medicationId}',
