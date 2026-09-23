@@ -13,18 +13,15 @@ import 'package:medora/domain/entities/intake_count.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/entities/treatment.dart';
-import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
-import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
-import 'package:medora/presentation/router/app_router.dart';
-import 'package:medora/presentation/screens/rx/rx_labels.dart';
+import 'package:medora/presentation/screens/rx/treatment_rx_section.dart';
 import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/screens/treatment/prescription_sheet.dart';
 import 'package:medora/presentation/screens/treatment/widgets/prescription_card.dart';
@@ -56,8 +53,6 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
     final prescriptionsAsync = ref.watch(
       prescriptionsByTreatmentProvider(widget.treatmentId),
     );
-    final rxAsync = ref.watch(rxForTreatmentProvider(widget.treatmentId));
-    final persons = ref.watch(personsProvider).value ?? const [];
     // Null while the doses load or when they cannot be read: no intake
     // line then, rather than a "Not taken" that is not known to be true.
     final dosesAsync = ref.watch(
@@ -406,83 +401,7 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
                 },
               ),
               const SizedBox(height: 20),
-
-              // Prescriptions (rx) section, same Wrap pattern as above: a
-              // Row would overflow at a 1.6x text scale in German.
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    l10n.rxTab,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () {
-                      final matching = persons
-                          .where((p) => treatment.patientTags.any(p.matchesTag))
-                          .toList();
-                      final personId = matching.length == 1
-                          ? matching.single.id
-                          : null;
-                      var location =
-                          '${AppRoutes.addRx}?treatmentId=${widget.treatmentId}';
-                      if (personId != null) {
-                        location = '$location&personId=$personId';
-                      }
-                      context.push(location);
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(l10n.add),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              AsyncValueView<List<RxWithDispensings>>(
-                value: rxAsync,
-                compact: true,
-                onRetry: () async =>
-                    ref.invalidate(rxForTreatmentProvider(widget.treatmentId)),
-                emptyWhen: (rx) => rx.isEmpty,
-                empty: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(l10n.rxNoneYet),
-                  ),
-                ),
-                data: (entries) {
-                  return Column(
-                    children: entries.map((entry) {
-                      final rx = entry.rx;
-                      final title = rx.items.isEmpty
-                          ? rxKindShort(l10n, rx.kind)
-                          : rx.items.map((i) => i.description).join(', ');
-                      return Card(
-                        child: ListTile(
-                          title: Text(
-                            title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            [
-                              rxKindShort(l10n, rx.kind),
-                              rxStatusLabel(l10n, entry.statusAt(now)),
-                            ].join(' · '),
-                          ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => context.push(
-                            AppRoutes.rxDetail.replaceFirst(':id', rx.id),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
+              TreatmentRxSection(treatment: treatment),
             ],
           );
         },
