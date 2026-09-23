@@ -132,9 +132,12 @@ class _RxAttachmentsSectionState extends ConsumerState<RxAttachmentsSection> {
   void _reportFailure() =>
       _showMessage(AppLocalizations.of(context).genericError);
 
-  Future<void> _pickAndAdd(
-    Future<({String path, String? name})?> Function() pick,
-  ) async {
+  Future<void> _pickAndAdd(AttachmentPicker picker, _Source source) async {
+    final pick = switch (source) {
+      _Source.camera => picker.camera,
+      _Source.gallery => picker.gallery,
+      _Source.file => picker.file,
+    };
     final ({String path, String? name})? picked;
     try {
       picked = await pick();
@@ -182,6 +185,43 @@ class _RxAttachmentsSectionState extends ConsumerState<RxAttachmentsSection> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+      // The import has read the file by now (success or not): drop our
+      // own content-URI copy, or the platform picker's own cache copy,
+      // now that nothing needs it.
+      await _cleanUpPicked(
+        picked.path,
+        picker: picker,
+        viaFilePicker: source == _Source.file,
+      );
+    }
+  }
+
+  /// Deletes [filePath] when it lives inside the app's temp/cache
+  /// directory — our own content-URI copy from [PlatformAttachmentPicker
+  /// .file], or a cache copy the platform picker itself returned — never a
+  /// path outside it (e.g. a real file from the user's own storage).
+  /// [viaFilePicker] also asks the `file_picker` plugin to drop its own
+  /// temporary files, once this device's installed version supports it.
+  Future<void> _cleanUpPicked(
+    String filePath, {
+    required AttachmentPicker picker,
+    required bool viaFilePicker,
+  }) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (path.isWithin(tempDir.path, filePath)) {
+        final file = File(filePath);
+        if (file.existsSync()) await file.delete();
+      }
+    } catch (_) {
+      // Best-effort: worst case a leftover temp file, never surfaced.
+    }
+    if (viaFilePicker && picker is PlatformAttachmentPicker) {
+      try {
+        await fp.FilePicker.clearTemporaryFiles();
+      } catch (_) {
+        // Not supported on every platform; harmless either way.
+      }
     }
   }
 
@@ -214,52 +254,27 @@ class _RxAttachmentsSectionState extends ConsumerState<RxAttachmentsSection> {
       ),
     );
     if (source == null || !mounted) return;
-    final picker = ref.read(attachmentPickerProvider);
-    switch (source) {
-      case _Source.camera:
-        await _pickAndAdd(picker.camera);
-      case _Source.gallery:
-        await _pickAndAdd(picker.gallery);
-      case _Source.file:
-        await _pickAndAdd(picker.file);
-    }
+    await _pickAndAdd(ref.read(attachmentPickerProvider), source);
   }
 
+  /// Deletes [a] and reports the real outcome regardless of whether this
+  /// section is still mounted by the time the repository answers (the
+  /// viewer may still be up on top of it and needs the true result to
+  /// decide whether to pop); only the SnackBar/invalidation are UI work,
+  /// so those stay behind the `mounted` guard.
   Future<bool> _delete(Attachment a) async {
     final result = await ref.read(attachmentRepositoryProvider).delete(a.id);
-    if (!mounted) return false;
-    return result.when(
-      success: (_) {
-        _invalidate();
-        return true;
-      },
-      failure: (_) {
-        _reportFailure();
-        return false;
-      },
-    );
+    if (mounted) {
+      result.when(
+        success: (_) => _invalidate(),
+        failure: (_) => _reportFailure(),
+      );
+    }
+    return result.isSuccess;
   }
 
   Future<void> _confirmDelete(Attachment a) async {
-    final l10n = AppLocalizations.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.rxAttachmentDelete),
-        content: Text(l10n.rxAttachmentDeleteConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(l10n.delete),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    if (!await confirmDeleteAttachment(context) || !mounted) return;
     await _delete(a);
   }
 
@@ -360,7 +375,7 @@ class _Thumbnail extends ConsumerStatefulWidget {
   });
 
   final Attachment attachment;
-  final VoidCallback onTap;
+  final Future<void> Function() onTap;
   final VoidCallback onLongPress;
 
   @override
@@ -368,13 +383,40 @@ class _Thumbnail extends ConsumerStatefulWidget {
 }
 
 class _ThumbnailState extends ConsumerState<_Thumbnail> {
-  late final Future<File?> _fileFuture = _resolve();
+  late Future<File?> _fileFuture = _resolve();
 
+  @override
+  void didUpdateWidget(covariant _Thumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The same slot (same `ValueKey`) can end up pointing at a different
+    // attachment (or the same one after a kind-affecting change); either
+    // way the previously resolved file no longer applies.
+    if (oldWidget.attachment.id != widget.attachment.id ||
+        oldWidget.attachment.kind != widget.attachment.kind) {
+      setState(() {
+        _fileFuture = _resolve();
+      });
+    }
+  }
+
+  /// Only a photo's thumbnail depends on the local file; skip the lookup
+  /// for PDFs entirely.
   Future<File?> _resolve() async {
+    if (widget.attachment.kind != AttachmentKind.photo) return null;
     final file = await ref
         .read(attachmentFilesProvider)
         .fileFor(widget.attachment);
     return file.existsSync() ? file : null;
+  }
+
+  Future<void> _handleTap() async {
+    await widget.onTap();
+    // A tap may have just downloaded the file (or deleted the attachment
+    // outright); either way, re-resolve so the thumbnail reflects it.
+    if (!mounted) return;
+    setState(() {
+      _fileFuture = _resolve();
+    });
   }
 
   Widget _placeholder(IconData icon) => Container(
@@ -389,7 +431,7 @@ class _ThumbnailState extends ConsumerState<_Thumbnail> {
 
   @override
   Widget build(BuildContext context) => InkWell(
-    onTap: widget.onTap,
+    onTap: _handleTap,
     onLongPress: widget.onLongPress,
     child: SizedBox(
       width: 72,
@@ -410,6 +452,8 @@ class _ThumbnailState extends ConsumerState<_Thumbnail> {
                       height: 72,
                       fit: BoxFit.cover,
                       cacheWidth: 216,
+                      errorBuilder: (context, error, stackTrace) =>
+                          _placeholder(Icons.broken_image_outlined),
                     ),
                   );
                 }
