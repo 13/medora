@@ -188,7 +188,7 @@ FieldTimes timesAgainstBase({
 }) => FieldTimes({
   for (final column in localWire.keys)
     if (!untimedColumns.contains(column))
-      column: ?(localWire[column] == serverWire[column]
+      column: ?(wireValueEquals(localWire[column], serverWire[column])
           ? serverTimes.of(column)
           : localTimes.of(column)),
 });

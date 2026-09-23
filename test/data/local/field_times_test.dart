@@ -207,6 +207,46 @@ void main() {
     });
   });
 
+  group('wireValueEquals', () {
+    test('lists of maps with the same content are equal', () {
+      expect(
+        wireValueEquals(
+          [
+            {'id': 'i1', 'packs': 2},
+          ],
+          [
+            {'id': 'i1', 'packs': 2},
+          ],
+        ),
+        isTrue,
+      );
+    });
+
+    test('a differing element makes the lists unequal', () {
+      expect(
+        wireValueEquals(
+          [
+            {'id': 'i1', 'packs': 2},
+          ],
+          [
+            {'id': 'i1', 'packs': 3},
+          ],
+        ),
+        isFalse,
+      );
+    });
+
+    test('null and an empty list are not equal', () {
+      expect(wireValueEquals(null, <Object?>[]), isFalse);
+    });
+
+    test('scalars still compare by ==', () {
+      expect(wireValueEquals('a', 'a'), isTrue);
+      expect(wireValueEquals('a', 'b'), isFalse);
+      expect(wireValueEquals(1, 1), isTrue);
+    });
+  });
+
   group('fieldTimesAfterWrite', () {
     Map<String, Object?> wire(Map<String, Object?> row) => {
       'id': row['id'],

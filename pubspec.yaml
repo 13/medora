@@ -10,6 +10,7 @@ environment:
 dependencies:
   # Sorted alphabetically (sort_pub_dependencies lint).
   camera: ^0.12.0
+  collection: ^1.19.1
   connectivity_plus: ^7.0.0
   crypto: ^3.0.7
   csv: ^8.0.0

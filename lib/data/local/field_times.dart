@@ -20,6 +20,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
+
 /// Edit times before this mark a change the app made on its own.
 final DateTime automaticCeiling = DateTime.utc(1970, 1, 2);
 
@@ -181,6 +183,13 @@ class FieldTimes {
   String? encode() => entries.isEmpty ? null : jsonEncode(toJson());
 }
 
+/// Equal as wire values: a list or a map (a jsonb column, e.g. `items`) by
+/// content, every other value by `==`. `==` on a `List`/`Map` is identity,
+/// so a freshly built jsonb value (a model's `toJson()`) never equals an
+/// earlier one by `==` alone, even with the same content.
+const _wireEquality = DeepCollectionEquality();
+bool wireValueEquals(Object? a, Object? b) => _wireEquality.equals(a, b);
+
 /// The columns of the wire copy [after] whose value differs from [before],
 /// [untimedColumns] left out. With no [before], every column counts.
 Set<String> timedChanges(
@@ -189,7 +198,9 @@ Set<String> timedChanges(
 ) => {
   for (final MapEntry(:key, :value) in after.entries)
     if (!untimedColumns.contains(key) &&
-        (before == null || !before.containsKey(key) || before[key] != value))
+        (before == null ||
+            !before.containsKey(key) ||
+            !wireValueEquals(before[key], value)))
       key,
 };
 

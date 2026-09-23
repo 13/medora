@@ -80,7 +80,7 @@ Set<String> changedColumns(
         !policy.serverOwned.contains(key) &&
         (base == null ||
             !base.containsKey(key) ||
-            base[key] != local[key] ||
+            !wireValueEquals(base[key], local[key]) ||
             _changedSince(key, times, baseTimes)))
       key,
 };
@@ -155,7 +155,7 @@ MergeResult mergeRows({
     if (done.contains(column)) continue;
     final group = policy._groupOf(column);
     done.addAll(group);
-    final sameValues = group.every((c) => local[c] == remote[c]);
+    final sameValues = group.every((c) => wireValueEquals(local[c], remote[c]));
     if (sameValues) {
       // The same values: a person here who set them after the server's
       // change to them made the latest edit of the group (review Minor 1),

@@ -3,6 +3,7 @@ import 'package:medora/data/datasources/person_local_datasource.dart';
 import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
 import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/person_model.dart';
 import 'package:medora/data/models/rx_dispensing_model.dart';
 import 'package:medora/data/models/rx_model.dart';
@@ -73,6 +74,70 @@ void main() {
     final row = (await db.query('rx')).single;
     expect(row['edited_at'], isNotNull);
     expect(row['field_edited_at'] as String?, contains('doctor'));
+  });
+
+  test('a doctor-only pending update does not restamp items '
+      '(a fresh List each toJson() must not read as a change)', () async {
+    // A real, advancing clock: `RxModel.toJson()` builds a new `items`
+    // List every call, so an identity comparison of wire values would
+    // see it as "changed" on every write, however small, and keep
+    // bumping its edit time. This is only visible from the second
+    // pending write on: the first one always fills every column's time
+    // from the row's own time (`FieldTimes.stamped`'s empty-map branch),
+    // items included.
+    var now = at;
+    final local = RxLocalDatasource(now: () => now);
+    await local.upsert(rx, syncStatus: SyncStatus.pendingCreate);
+    now = at.add(const Duration(minutes: 1));
+    await local.upsert(
+      rx.copyWith(updatedAt: now),
+      syncStatus: SyncStatus.pendingUpdate,
+    );
+    now = at.add(const Duration(minutes: 2));
+    await local.upsert(
+      rx.copyWith(doctor: 'Dr. Rossi', updatedAt: now),
+      syncStatus: SyncStatus.pendingUpdate,
+    );
+    final db = await AppDatabase.instance.database;
+    final row = (await db.query('rx')).single;
+    final times = FieldTimes.decode(row['field_edited_at']);
+    expect(
+      times.entries['doctor'],
+      FieldTime(at.add(const Duration(minutes: 2))),
+    );
+    // Not moved by either the second or third write: still the first
+    // write's edited_at, from the initial fill.
+    expect(times.entries['items'], FieldTime(at));
+  });
+
+  test('an items change stamps items in field_edited_at', () async {
+    var now = at;
+    final local = RxLocalDatasource(now: () => now);
+    await local.upsert(rx, syncStatus: SyncStatus.pendingCreate);
+    now = at.add(const Duration(minutes: 1));
+    final changed = RxModel(
+      id: rx.id,
+      personId: rx.personId,
+      kind: rx.kind,
+      nre: rx.nre,
+      issuedOn: rx.issuedOn,
+      validUntil: rx.validUntil,
+      items: const [
+        RxItem(
+          id: 'i1',
+          description: 'Tachipirina 20 cpr',
+          packs: 3,
+          nonSubstitutable: true,
+        ),
+      ],
+      createdAt: rx.createdAt,
+      updatedAt: now,
+    );
+    await local.upsert(changed, syncStatus: SyncStatus.pendingUpdate);
+    final db = await AppDatabase.instance.database;
+    final row = (await db.query('rx')).single;
+    final times = FieldTimes.decode(row['field_edited_at']);
+    expect(times.entries['items'], FieldTime(now));
   });
 
   test('markDeleted leaves a pending tombstone that getAll hides', () async {

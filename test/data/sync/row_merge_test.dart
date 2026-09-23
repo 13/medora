@@ -811,4 +811,74 @@ void main() {
     );
     expect(sameContent(base, {...base, 'name': 'x'}, treatmentMerge), isFalse);
   });
+
+  group('a jsonb column (a fresh List each time it is built)', () {
+    // `items` on `rx` is a jsonb column: `RxModel.toJson()` builds a fresh
+    // `List<Map>` every call, so two copies with the same content are never
+    // `identical` and never `==` unless the comparison is by content.
+    const noGroups = MergePolicy(groups: []);
+    final rxBase = {
+      'id': 'r1',
+      'items': [
+        {'id': 'i1', 'packs': 2},
+      ],
+    };
+
+    test('changedColumns does not list an equal-content items list', () {
+      final local = {
+        'id': 'r1',
+        'items': [
+          {'id': 'i1', 'packs': 2},
+        ],
+      };
+      expect(changedColumns(rxBase, local, noGroups), isEmpty);
+    });
+
+    test('changedColumns still lists items whose content differs', () {
+      final local = {
+        'id': 'r1',
+        'items': [
+          {'id': 'i1', 'packs': 3},
+        ],
+      };
+      expect(changedColumns(rxBase, local, noGroups), {'items'});
+    });
+
+    test('sameContent treats equal-content items lists as unchanged', () {
+      final other = {
+        'id': 'r1',
+        'items': [
+          {'id': 'i1', 'packs': 2},
+        ],
+      };
+      expect(sameContent(rxBase, other, noGroups), isTrue);
+    });
+
+    test('mergeRows raises no conflict when both sides hold the same '
+        'items content', () {
+      final local = {
+        ...rxBase,
+        'items': [
+          {'id': 'i1', 'packs': 2},
+        ],
+        'doctor': 'Dr. Rossi',
+      };
+      final remote = {
+        ...rxBase,
+        'items': [
+          {'id': 'i1', 'packs': 2},
+        ],
+      };
+      final result = mergeRows(
+        base: rxBase,
+        local: local,
+        remote: remote,
+        localTimes: rowTimes(ten),
+        remoteTimes: rowTimes(nine),
+        policy: noGroups,
+      );
+      expect(result.conflicts, isEmpty);
+      expect(result.row['doctor'], 'Dr. Rossi');
+    });
+  });
 }
