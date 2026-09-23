@@ -81,6 +81,36 @@ abstract final class Code39 {
     return modules;
   }
 
+  /// The module width, quiet zone and left offset to paint `modules`
+  /// modules into a canvas `width` dp wide at device pixel ratio `dpr`.
+  ///
+  /// The module is snapped to a whole number of device pixels (so wide
+  /// bars stay an exact multiple of narrow ones and painting needs no
+  /// antialiasing). The quiet zone is at least 16dp and at least 10
+  /// modules — a real scanner needs that clear margin either side of the
+  /// bars, so it is sized in from the start (`modules + 20` stands in for
+  /// the bars plus roughly two quiet zones) rather than computed from a
+  /// module picked to fill the whole width and then carved out of it,
+  /// which starved the quiet zone or pushed bars past the edges on a
+  /// narrow screen.
+  static ({double module, double quietZone, double left}) layout({
+    required double width,
+    required double dpr,
+    required int modules,
+  }) {
+    var mpx = max(1, (width * dpr / (modules + 20)).floor());
+    var module = mpx / dpr;
+    var quietZone = max(16.0, 10 * module);
+    while (modules * module + 2 * quietZone > width && mpx > 1) {
+      mpx--;
+      module = mpx / dpr;
+      quietZone = max(16.0, 10 * module);
+    }
+    // Centred, snapped to whole device pixels like the module itself.
+    final left = ((width - modules * module) / 2 * dpr).floor() / dpr;
+    return (module: module, quietZone: quietZone, left: left);
+  }
+
   /// Runs of consecutive dark modules in [modules], as `(start, length)`
   /// pairs — one per bar, so the painter draws one rect per bar instead of
   /// one per module (which left antialiased seams inside wide bars).
@@ -121,21 +151,27 @@ class Code39Barcode extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Snap the module to whole device pixels: a fractional module
-            // width forces the antialiased-rect-per-module painting this
-            // replaces, which draws grey seams inside wide bars and an
-            // uneven narrow/wide ratio a real scanner can misread.
-            final module =
-                max(1, (constraints.maxWidth * dpr / modules.length).floor()) /
-                dpr;
-            final quietZone = max(16.0, 10 * module);
-            return Padding(
-              padding: EdgeInsets.symmetric(horizontal: quietZone),
+            // The full width goes to Code39.layout, which sizes the quiet
+            // zone in from the start; painting must use that same full
+            // width, or the canvas is narrowed a second time and the bars
+            // spread back into the quiet zone it just computed.
+            final layout = Code39.layout(
+              width: constraints.maxWidth,
+              dpr: dpr,
+              modules: modules.length,
+            );
+            // ClipRect: a screen too narrow even for the shrunk-to-1px
+            // module still must not paint past this widget's bounds.
+            return ClipRect(
               child: SizedBox(
                 height: height,
                 width: double.infinity,
                 child: CustomPaint(
-                  painter: _Code39Painter(modules, module: module, dpr: dpr),
+                  painter: _Code39Painter(
+                    modules,
+                    module: layout.module,
+                    left: layout.left,
+                  ),
                 ),
               ),
             );
@@ -147,21 +183,20 @@ class Code39Barcode extends StatelessWidget {
 }
 
 class _Code39Painter extends CustomPainter {
-  _Code39Painter(this.modules, {required this.module, required this.dpr});
+  _Code39Painter(this.modules, {required this.module, required this.left});
 
   final List<bool> modules;
   final double module;
-  final double dpr;
+
+  /// Left offset of the first bar, as computed by [Code39.layout] — already
+  /// centred and clear of the quiet zone.
+  final double left;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.black
       ..isAntiAlias = false;
-    final barcodeWidth = modules.length * module;
-    // Centred: the canvas is usually a little wider than the exact modules
-    // count once the module width is snapped to whole device pixels.
-    final left = (size.width - barcodeWidth) / 2;
     for (final (start, length) in Code39.darkRuns(modules)) {
       canvas.drawRect(
         Rect.fromLTWH(left + start * module, 0, length * module, size.height),
@@ -174,5 +209,5 @@ class _Code39Painter extends CustomPainter {
   bool shouldRepaint(_Code39Painter old) =>
       !listEquals(old.modules, modules) ||
       old.module != module ||
-      old.dpr != dpr;
+      old.left != left;
 }

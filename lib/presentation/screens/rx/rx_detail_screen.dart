@@ -25,6 +25,14 @@ import 'package:share_plus/share_plus.dart';
 
 enum _Action { edit, markDone, cancelRx, delete }
 
+/// The text shared for [nre]/[taxCode] — with the tax code when there is
+/// one on file, NRE-only otherwise. Pure so it's testable without the
+/// `share_plus` platform channel.
+String rxShareMessage(AppLocalizations l10n, String? nre, String? taxCode) =>
+    taxCode == null || taxCode.isEmpty
+    ? l10n.rxShareTextNreOnly(nre ?? '')
+    : l10n.rxShareText(nre ?? '', taxCode);
+
 class RxDetailScreen extends ConsumerWidget {
   const RxDetailScreen({super.key, required this.rxId});
 
@@ -90,11 +98,14 @@ class RxDetailScreen extends ConsumerWidget {
         final result = await repo.deleteRx(rx.id);
         if (!context.mounted) return;
         result.when(
-          // Pop first: invalidating before the pop lands would refetch the
-          // now-deleted prescription and flash its error view underneath.
+          // Pop, and invalidate only the lists — not rxByIdProvider(rx.id):
+          // the route is still mounted during the pop animation, so
+          // invalidating the deleted prescription's own provider would
+          // refetch it and flash the error view underneath before the
+          // route is gone.
           success: (_) {
             Navigator.of(context).maybePop();
-            invalidateRx(ref);
+            invalidateRxLists(ref);
           },
           failure: (_) => _reportFailure(context),
         );
@@ -104,10 +115,7 @@ class RxDetailScreen extends ConsumerWidget {
   Future<void> _share(BuildContext context, Rx rx, Person? person) async {
     final l10n = AppLocalizations.of(context);
     final box = context.findRenderObject() as RenderBox?;
-    final taxCode = person?.taxCode;
-    final text = taxCode == null || taxCode.isEmpty
-        ? l10n.rxShareTextNreOnly(rx.nre ?? '')
-        : l10n.rxShareText(rx.nre ?? '', taxCode);
+    final text = rxShareMessage(l10n, rx.nre, person?.taxCode);
     await SharePlus.instance.share(
       ShareParams(
         text: text,

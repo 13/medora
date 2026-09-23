@@ -9,6 +9,7 @@ import 'package:medora/domain/entities/rx_dispensing.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/l10n/generated/app_localizations_en.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
@@ -54,6 +55,26 @@ class _FailingMeds extends MedicationListNotifier {
 }
 
 void main() {
+  final l10n = AppLocalizationsEn();
+
+  test('share text includes the tax code when there is one on file', () {
+    expect(
+      rxShareMessage(l10n, '0410A1234567890', 'RSSMRA85T10A562S'),
+      'Prescription 0410A1234567890\nTax code RSSMRA85T10A562S',
+    );
+  });
+
+  test('share text falls back to NRE-only with no tax code on file', () {
+    expect(
+      rxShareMessage(l10n, '0410A1234567890', null),
+      'Prescription 0410A1234567890',
+    );
+    expect(
+      rxShareMessage(l10n, '0410A1234567890', ''),
+      'Prescription 0410A1234567890',
+    );
+  });
+
   final rx = Rx(
     id: 'rx1',
     personId: 'p1',

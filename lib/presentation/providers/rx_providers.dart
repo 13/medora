@@ -36,3 +36,13 @@ void invalidateRx(WidgetRef ref) {
   ref.invalidate(rxByIdProvider);
   ref.invalidate(rxForTreatmentProvider);
 }
+
+/// Refresh the prescription lists after a delete, but not
+/// `rxByIdProvider`: the detail route is still mounted during its pop
+/// animation, and invalidating the just-deleted prescription's own
+/// provider would refetch it there and flash the error view before the
+/// route is gone.
+void invalidateRxLists(WidgetRef ref) {
+  ref.invalidate(rxListProvider);
+  ref.invalidate(rxForTreatmentProvider);
+}

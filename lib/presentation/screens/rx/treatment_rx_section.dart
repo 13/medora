@@ -28,7 +28,8 @@ class TreatmentRxSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Prescriptions (rx) section, same Wrap pattern as above: a
+        // Prescriptions (rx) section header, same Wrap pattern as the
+        // prescriptions-document section in treatment_detail_screen.dart: a
         // Row would overflow at a 1.6x text scale in German.
         Wrap(
           alignment: WrapAlignment.spaceBetween,

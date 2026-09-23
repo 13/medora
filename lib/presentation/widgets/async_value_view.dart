@@ -37,8 +37,10 @@ class AsyncValueView<T> extends StatelessWidget {
   final Widget? empty;
   final bool compact;
 
-  /// Wraps the loading and error states only (never [data], which builds
-  /// its own chrome). A screen whose `data` branch returns a full
+  /// Wraps the loading and error states only — never [data] (which builds
+  /// its own chrome) and never [empty] (rendered as-is, since it's a
+  /// caller-supplied widget for a successfully loaded, empty result, not a
+  /// non-data state). A screen whose `data` branch returns a full
   /// `Scaffold` needs this to give loading/error an `AppBar` and a
   /// `Material` ancestor too, rather than floating bare in the page.
   final Widget Function(Widget child)? nonDataWrapper;

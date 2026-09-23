@@ -162,6 +162,53 @@ void main() {
     expect(save.onPressed, isNull);
   });
 
+  testWidgets(
+    'entering more than what remains after a partial collection flags it, '
+    'entering exactly what remains does not',
+    (tester) async {
+      final entry = RxWithDispensings(
+        Rx(
+          id: 'rx1',
+          kind: RxKind.ssn,
+          issuedOn: DateTime(2026, 9),
+          createdAt: DateTime(2026, 9),
+          items: const [RxItem(id: 'i0', description: 'Item 0', packs: 3)],
+        ),
+        [
+          RxDispensing(
+            id: 'd0',
+            rxId: 'rx1',
+            itemId: 'i0',
+            packs: 2,
+            dispensedOn: DateTime(2026, 9, 10),
+          ),
+        ],
+      );
+      await pump(tester, entry);
+
+      // 1 pack remains (3 prescribed, 2 already collected).
+      await tester.enterText(find.byKey(const Key('rx_redeem_packs_0')), '2');
+      await tester.pumpAndSettle();
+      expect(find.text('More than prescribed'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('rx_redeem_save')))
+            .onPressed,
+        isNull,
+      );
+
+      await tester.enterText(find.byKey(const Key('rx_redeem_packs_0')), '1');
+      await tester.pumpAndSettle();
+      expect(find.text('More than prescribed'), findsNothing);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('rx_redeem_save')))
+            .onPressed,
+        isNotNull,
+      );
+    },
+  );
+
   testWidgets('a repeatable prescription is not capped at what remains', (
     tester,
   ) async {
