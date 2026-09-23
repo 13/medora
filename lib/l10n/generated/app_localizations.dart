@@ -3822,6 +3822,456 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cloud configuration removed from this device'**
   String get cloudConfigCleared;
+
+  /// No description provided for @rxTab.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescriptions'**
+  String get rxTab;
+
+  /// No description provided for @rxNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New prescription'**
+  String get rxNew;
+
+  /// No description provided for @rxEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit prescription'**
+  String get rxEdit;
+
+  /// No description provided for @rxNoneYet.
+  ///
+  /// In en, this message translates to:
+  /// **'No prescriptions yet'**
+  String get rxNoneYet;
+
+  /// No description provided for @rxNoneYetHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the number, validity and what is left to collect at hand'**
+  String get rxNoneYetHint;
+
+  /// No description provided for @rxAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add prescription'**
+  String get rxAdd;
+
+  /// No description provided for @rxKind.
+  ///
+  /// In en, this message translates to:
+  /// **'Type'**
+  String get rxKind;
+
+  /// No description provided for @rxKindSsn.
+  ///
+  /// In en, this message translates to:
+  /// **'National health service (SSN)'**
+  String get rxKindSsn;
+
+  /// No description provided for @rxKindWhite.
+  ///
+  /// In en, this message translates to:
+  /// **'Private (white)'**
+  String get rxKindWhite;
+
+  /// No description provided for @rxKindWhiteRepeatable.
+  ///
+  /// In en, this message translates to:
+  /// **'Private, repeatable'**
+  String get rxKindWhiteRepeatable;
+
+  /// No description provided for @rxKindReferral.
+  ///
+  /// In en, this message translates to:
+  /// **'Referral'**
+  String get rxKindReferral;
+
+  /// No description provided for @rxKindShortSsn.
+  ///
+  /// In en, this message translates to:
+  /// **'SSN'**
+  String get rxKindShortSsn;
+
+  /// No description provided for @rxKindShortWhite.
+  ///
+  /// In en, this message translates to:
+  /// **'White'**
+  String get rxKindShortWhite;
+
+  /// No description provided for @rxKindShortWhiteRepeatable.
+  ///
+  /// In en, this message translates to:
+  /// **'Repeatable'**
+  String get rxKindShortWhiteRepeatable;
+
+  /// No description provided for @rxKindShortReferral.
+  ///
+  /// In en, this message translates to:
+  /// **'Referral'**
+  String get rxKindShortReferral;
+
+  /// No description provided for @rxNre.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription number (NRE)'**
+  String get rxNre;
+
+  /// No description provided for @rxNreInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'15 letters or digits'**
+  String get rxNreInvalid;
+
+  /// No description provided for @rxNreDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'This prescription number is already saved'**
+  String get rxNreDuplicate;
+
+  /// No description provided for @rxOpenExisting.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get rxOpenExisting;
+
+  /// No description provided for @rxIssuedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Issued on'**
+  String get rxIssuedOn;
+
+  /// No description provided for @rxValidUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'Valid until'**
+  String get rxValidUntil;
+
+  /// No description provided for @rxExemption.
+  ///
+  /// In en, this message translates to:
+  /// **'Exemption code'**
+  String get rxExemption;
+
+  /// No description provided for @rxPriority.
+  ///
+  /// In en, this message translates to:
+  /// **'Priority'**
+  String get rxPriority;
+
+  /// No description provided for @rxPriorityU.
+  ///
+  /// In en, this message translates to:
+  /// **'U – within 72 hours'**
+  String get rxPriorityU;
+
+  /// No description provided for @rxPriorityB.
+  ///
+  /// In en, this message translates to:
+  /// **'B – within 10 days'**
+  String get rxPriorityB;
+
+  /// No description provided for @rxPriorityD.
+  ///
+  /// In en, this message translates to:
+  /// **'D – within 30 days'**
+  String get rxPriorityD;
+
+  /// No description provided for @rxPriorityP.
+  ///
+  /// In en, this message translates to:
+  /// **'P – within 120 days'**
+  String get rxPriorityP;
+
+  /// No description provided for @rxMaxDispensings.
+  ///
+  /// In en, this message translates to:
+  /// **'Max. collections'**
+  String get rxMaxDispensings;
+
+  /// No description provided for @rxPerson.
+  ///
+  /// In en, this message translates to:
+  /// **'Person'**
+  String get rxPerson;
+
+  /// No description provided for @rxNoPerson.
+  ///
+  /// In en, this message translates to:
+  /// **'No person'**
+  String get rxNoPerson;
+
+  /// No description provided for @rxUnknownPerson.
+  ///
+  /// In en, this message translates to:
+  /// **'Unknown person'**
+  String get rxUnknownPerson;
+
+  /// No description provided for @rxItems.
+  ///
+  /// In en, this message translates to:
+  /// **'Medicines'**
+  String get rxItems;
+
+  /// No description provided for @rxAddItem.
+  ///
+  /// In en, this message translates to:
+  /// **'Add medicine'**
+  String get rxAddItem;
+
+  /// No description provided for @rxItemDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Medicine'**
+  String get rxItemDescription;
+
+  /// No description provided for @rxItemPacks.
+  ///
+  /// In en, this message translates to:
+  /// **'Packs'**
+  String get rxItemPacks;
+
+  /// No description provided for @rxNonSubstitutable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not substitutable'**
+  String get rxNonSubstitutable;
+
+  /// No description provided for @rxStatusOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get rxStatusOpen;
+
+  /// No description provided for @rxStatusPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Partly collected'**
+  String get rxStatusPartial;
+
+  /// No description provided for @rxStatusRedeemed.
+  ///
+  /// In en, this message translates to:
+  /// **'Collected'**
+  String get rxStatusRedeemed;
+
+  /// No description provided for @rxStatusExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'Expired'**
+  String get rxStatusExpired;
+
+  /// No description provided for @rxStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get rxStatusCancelled;
+
+  /// No description provided for @rxGroupDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done & expired'**
+  String get rxGroupDone;
+
+  /// No description provided for @rxDaysLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{Last day} =1{1 day left} other{{days} days left}}'**
+  String rxDaysLeft(int days);
+
+  /// No description provided for @rxVisitBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Visit by {date}'**
+  String rxVisitBy(String date);
+
+  /// No description provided for @rxShowAtPharmacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Show at pharmacy'**
+  String get rxShowAtPharmacy;
+
+  /// No description provided for @rxTaxCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax code'**
+  String get rxTaxCode;
+
+  /// No description provided for @rxTaxCodeInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Not a valid tax code'**
+  String get rxTaxCodeInvalid;
+
+  /// No description provided for @rxRedeem.
+  ///
+  /// In en, this message translates to:
+  /// **'Collect'**
+  String get rxRedeem;
+
+  /// No description provided for @rxRedeemTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Collect at the pharmacy'**
+  String get rxRedeemTitle;
+
+  /// No description provided for @rxPharmacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Pharmacy'**
+  String get rxPharmacy;
+
+  /// No description provided for @rxAddToStock.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to stock'**
+  String get rxAddToStock;
+
+  /// No description provided for @rxUnitsToAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Units to add'**
+  String get rxUnitsToAdd;
+
+  /// No description provided for @rxCollectedOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Collected on'**
+  String get rxCollectedOn;
+
+  /// No description provided for @rxCollections.
+  ///
+  /// In en, this message translates to:
+  /// **'Collections'**
+  String get rxCollections;
+
+  /// No description provided for @rxRemoveCollection.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get rxRemoveCollection;
+
+  /// No description provided for @rxMarkDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as done'**
+  String get rxMarkDone;
+
+  /// No description provided for @rxCancelRx.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel prescription'**
+  String get rxCancelRx;
+
+  /// No description provided for @rxDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete prescription'**
+  String get rxDelete;
+
+  /// No description provided for @rxDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this prescription and its collections?'**
+  String get rxDeleteConfirm;
+
+  /// No description provided for @rxShare.
+  ///
+  /// In en, this message translates to:
+  /// **'Share number'**
+  String get rxShare;
+
+  /// No description provided for @rxShareText.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription {nre}\nTax code {taxCode}'**
+  String rxShareText(String nre, String taxCode);
+
+  /// No description provided for @rxExpiringTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescriptions expiring'**
+  String get rxExpiringTitle;
+
+  /// No description provided for @rxNothingLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing left to collect'**
+  String get rxNothingLeft;
+
+  /// No description provided for @notificationRxExpiryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription expiring'**
+  String get notificationRxExpiryTitle;
+
+  /// No description provided for @notificationRxExpiryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{days, plural, =0{{name}: last valid day} =1{{name}: valid until tomorrow} other{{name}: valid {days} more days}}'**
+  String notificationRxExpiryBody(String name, int days);
+
+  /// No description provided for @notificationAskForRx.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask your doctor for a new prescription'**
+  String get notificationAskForRx;
+
+  /// No description provided for @persons.
+  ///
+  /// In en, this message translates to:
+  /// **'Persons'**
+  String get persons;
+
+  /// No description provided for @personsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tax codes and exemptions for prescriptions'**
+  String get personsHint;
+
+  /// No description provided for @personNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New person'**
+  String get personNew;
+
+  /// No description provided for @personEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit person'**
+  String get personEdit;
+
+  /// No description provided for @personExemptions.
+  ///
+  /// In en, this message translates to:
+  /// **'Exemption codes'**
+  String get personExemptions;
+
+  /// No description provided for @personExemptionsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. E01, 048'**
+  String get personExemptionsHint;
+
+  /// No description provided for @personDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete person'**
+  String get personDelete;
+
+  /// No description provided for @personDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete {name}? Prescriptions stay.'**
+  String personDeleteConfirm(String name);
+
+  /// No description provided for @personNoneYet.
+  ///
+  /// In en, this message translates to:
+  /// **'No persons yet'**
+  String get personNoneYet;
 }
 
 class _AppLocalizationsDelegate

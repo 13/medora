@@ -2221,4 +2221,254 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get cloudConfigCleared =>
       'Cloud-Konfiguration von diesem Gerät entfernt';
+
+  @override
+  String get rxTab => 'Rezepte';
+
+  @override
+  String get rxNew => 'Neues Rezept';
+
+  @override
+  String get rxEdit => 'Rezept bearbeiten';
+
+  @override
+  String get rxNoneYet => 'Noch keine Rezepte';
+
+  @override
+  String get rxNoneYetHint =>
+      'Nummer, Gültigkeit und was noch abzuholen ist, immer griffbereit';
+
+  @override
+  String get rxAdd => 'Rezept hinzufügen';
+
+  @override
+  String get rxKind => 'Art';
+
+  @override
+  String get rxKindSsn => 'Sanitätsbetrieb (SSN)';
+
+  @override
+  String get rxKindWhite => 'Privat (weiß)';
+
+  @override
+  String get rxKindWhiteRepeatable => 'Privat, wiederholbar';
+
+  @override
+  String get rxKindReferral => 'Überweisung';
+
+  @override
+  String get rxKindShortSsn => 'SSN';
+
+  @override
+  String get rxKindShortWhite => 'Weiß';
+
+  @override
+  String get rxKindShortWhiteRepeatable => 'Wiederholbar';
+
+  @override
+  String get rxKindShortReferral => 'Überweisung';
+
+  @override
+  String get rxNre => 'Rezeptnummer (NRE)';
+
+  @override
+  String get rxNreInvalid => '15 Buchstaben oder Ziffern';
+
+  @override
+  String get rxNreDuplicate => 'Diese Rezeptnummer ist schon gespeichert';
+
+  @override
+  String get rxOpenExisting => 'Öffnen';
+
+  @override
+  String get rxIssuedOn => 'Ausgestellt am';
+
+  @override
+  String get rxValidUntil => 'Gültig bis';
+
+  @override
+  String get rxExemption => 'Befreiungscode';
+
+  @override
+  String get rxPriority => 'Priorität';
+
+  @override
+  String get rxPriorityU => 'U – innerhalb 72 Stunden';
+
+  @override
+  String get rxPriorityB => 'B – innerhalb 10 Tagen';
+
+  @override
+  String get rxPriorityD => 'D – innerhalb 30 Tagen';
+
+  @override
+  String get rxPriorityP => 'P – innerhalb 120 Tagen';
+
+  @override
+  String get rxMaxDispensings => 'Max. Abholungen';
+
+  @override
+  String get rxPerson => 'Person';
+
+  @override
+  String get rxNoPerson => 'Keine Person';
+
+  @override
+  String get rxUnknownPerson => 'Unbekannte Person';
+
+  @override
+  String get rxItems => 'Medikamente';
+
+  @override
+  String get rxAddItem => 'Medikament hinzufügen';
+
+  @override
+  String get rxItemDescription => 'Medikament';
+
+  @override
+  String get rxItemPacks => 'Packungen';
+
+  @override
+  String get rxNonSubstitutable => 'Nicht substituierbar';
+
+  @override
+  String get rxStatusOpen => 'Offen';
+
+  @override
+  String get rxStatusPartial => 'Teilweise eingelöst';
+
+  @override
+  String get rxStatusRedeemed => 'Eingelöst';
+
+  @override
+  String get rxStatusExpired => 'Abgelaufen';
+
+  @override
+  String get rxStatusCancelled => 'Storniert';
+
+  @override
+  String get rxGroupDone => 'Erledigt & abgelaufen';
+
+  @override
+  String rxDaysLeft(int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: 'Noch $days Tage',
+      one: 'Noch 1 Tag',
+      zero: 'Letzter Tag',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String rxVisitBy(String date) {
+    return 'Termin bis $date';
+  }
+
+  @override
+  String get rxShowAtPharmacy => 'In der Apotheke zeigen';
+
+  @override
+  String get rxTaxCode => 'Steuernummer';
+
+  @override
+  String get rxTaxCodeInvalid => 'Keine gültige Steuernummer';
+
+  @override
+  String get rxRedeem => 'Einlösen';
+
+  @override
+  String get rxRedeemTitle => 'In der Apotheke einlösen';
+
+  @override
+  String get rxPharmacy => 'Apotheke';
+
+  @override
+  String get rxAddToStock => 'Zum Bestand hinzufügen';
+
+  @override
+  String get rxUnitsToAdd => 'Einheiten hinzufügen';
+
+  @override
+  String get rxCollectedOn => 'Eingelöst am';
+
+  @override
+  String get rxCollections => 'Einlösungen';
+
+  @override
+  String get rxRemoveCollection => 'Entfernen';
+
+  @override
+  String get rxMarkDone => 'Als erledigt markieren';
+
+  @override
+  String get rxCancelRx => 'Rezept stornieren';
+
+  @override
+  String get rxDelete => 'Rezept löschen';
+
+  @override
+  String get rxDeleteConfirm => 'Dieses Rezept und seine Einlösungen löschen?';
+
+  @override
+  String get rxShare => 'Nummer teilen';
+
+  @override
+  String rxShareText(String nre, String taxCode) {
+    return 'Rezept $nre\nSteuernummer $taxCode';
+  }
+
+  @override
+  String get rxExpiringTitle => 'Rezepte laufen ab';
+
+  @override
+  String get rxNothingLeft => 'Nichts mehr abzuholen';
+
+  @override
+  String get notificationRxExpiryTitle => 'Rezept läuft ab';
+
+  @override
+  String notificationRxExpiryBody(String name, int days) {
+    String _temp0 = intl.Intl.pluralLogic(
+      days,
+      locale: localeName,
+      other: '$name: noch $days Tage gültig',
+      one: '$name: gültig bis morgen',
+      zero: '$name: letzter gültiger Tag',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get notificationAskForRx => 'Beim Arzt ein neues Rezept anfragen';
+
+  @override
+  String get persons => 'Personen';
+
+  @override
+  String get personsHint => 'Steuernummern und Befreiungen für Rezepte';
+
+  @override
+  String get personNew => 'Neue Person';
+
+  @override
+  String get personEdit => 'Person bearbeiten';
+
+  @override
+  String get personExemptions => 'Befreiungscodes';
+
+  @override
+  String get personExemptionsHint => 'z. B. E01, 048';
+
+  @override
+  String get personDelete => 'Person löschen';
+
+  @override
+  String personDeleteConfirm(String name) {
+    return '$name löschen? Rezepte bleiben erhalten.';
+  }
+
+  @override
+  String get personNoneYet => 'Noch keine Personen';
 }
