@@ -1,6 +1,7 @@
 /// Medora - Rx Dispensing Model
 library;
 
+import 'package:medora/data/models/model_time.dart';
 import 'package:medora/domain/entities/rx_dispensing.dart';
 
 class RxDispensingModel {
@@ -40,9 +41,9 @@ class RxDispensingModel {
         dispensedOn: DateTime.parse(json['dispensed_on'] as String),
         pharmacy: json['pharmacy'] as String?,
         unitsAdded: (json['units_added'] as num?)?.toInt() ?? 0,
-        createdAt: _time(json['created_at']),
-        updatedAt: _time(json['updated_at']),
-        deletedAt: _time(json['deleted_at']),
+        createdAt: parseStamp(json['created_at']),
+        updatedAt: parseStamp(json['updated_at']),
+        deletedAt: parseStamp(json['deleted_at']),
       );
 
   factory RxDispensingModel.fromLocalMap(Map<String, dynamic> map) =>
@@ -86,7 +87,4 @@ class RxDispensingModel {
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   );
-
-  static DateTime? _time(Object? raw) =>
-      raw is String ? DateTime.tryParse(raw) : null;
 }

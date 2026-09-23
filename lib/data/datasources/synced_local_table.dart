@@ -15,17 +15,16 @@ import 'package:medora/data/local/field_times.dart';
 import 'package:sqflite/sqflite.dart';
 
 class SyncedLocalTable<M> {
+  // A private named parameter, matching the hand-written datasources'
+  // `_now` (e.g. `TreatmentLocalDatasource`): callers pass it as `_now:`.
   SyncedLocalTable({
     required this.table,
     required this.rowOf,
     required this.wireOf,
     required this.fromRow,
     required this.updatedAtOf,
-    // Named `now` on the outside; kept private once stored (matches the
-    // hand-written datasources' `_now`).
-    required Now now,
-    // ignore: prefer_initializing_formals
-  }) : _now = now;
+    required this._now,
+  });
 
   final String table;
 
@@ -134,12 +133,19 @@ class SyncedLocalTable<M> {
 
   Future<void> clearAll() async => (await _db).delete(table);
 
-  /// Stamp shared by every `rowOf`: the pending write's `edited_at`.
-  static Map<String, Object?> pendingStamp(
-    String syncStatus,
+  /// The bookkeeping stamps shared by every `rowOf`: `created_at`,
+  /// `updated_at`, `deleted_at` (defaulting the first two to [at], a new
+  /// row's write time), `sync_status`, and, for a pending write, `edited_at`.
+  static Map<String, Object?> rowStamps(
+    DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? deletedAt,
+    String syncStatus,
     DateTime at,
   ) => {
+    'created_at': (createdAt ?? at).toIso8601String(),
+    'updated_at': (updatedAt ?? at).toIso8601String(),
+    'deleted_at': deletedAt?.toIso8601String(),
     'sync_status': syncStatus,
     if (syncStatus != SyncStatus.synced)
       'edited_at': editedAtText(updatedAt ?? at, at),

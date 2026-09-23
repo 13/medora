@@ -44,10 +44,13 @@ class PersonLocalDatasource {
     final at = now();
     return {
       ...m.toJson(),
-      'created_at': (m.createdAt ?? at).toIso8601String(),
-      'updated_at': (m.updatedAt ?? at).toIso8601String(),
-      'deleted_at': m.deletedAt?.toIso8601String(),
-      ...SyncedLocalTable.pendingStamp(syncStatus, m.updatedAt, at),
+      ...SyncedLocalTable.rowStamps(
+        m.createdAt,
+        m.updatedAt,
+        m.deletedAt,
+        syncStatus,
+        at,
+      ),
     };
   }
 }

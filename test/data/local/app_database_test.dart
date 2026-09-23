@@ -539,6 +539,20 @@ void main() {
       'delta': -1,
       'created_at': '2026-01-01T08:00:00.000Z',
     });
+    await db.insert('persons', {'id': 'per1', 'name': 'Ben'});
+    await db.insert('rx', {
+      'id': 'r1',
+      'person_id': 'per1',
+      'kind': 'ssn',
+      'issued_on': '2026-01-01',
+    });
+    await db.insert('rx_dispensings', {
+      'id': 'rd1',
+      'rx_id': 'r1',
+      'item_id': 'i1',
+      'packs': 1,
+      'dispensed_on': '2026-01-02',
+    });
 
     await AppDatabase.instance.clearAllData();
 
@@ -550,6 +564,9 @@ void main() {
       'families',
       'family_members',
       'stock_outbox',
+      'persons',
+      'rx',
+      'rx_dispensings',
     ]) {
       expect(await db.query(table), isEmpty, reason: table);
     }

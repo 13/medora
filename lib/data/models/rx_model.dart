@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:medora/data/models/model_time.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
 
@@ -59,18 +60,18 @@ class RxModel {
     kind: RxKind.fromWire(json['kind'] as String?),
     nre: json['nre'] as String?,
     issuedOn: DateTime.parse(json['issued_on'] as String),
-    validUntil: _date(json['valid_until']),
+    validUntil: parseStamp(json['valid_until']),
     doctor: json['doctor'] as String?,
     exemptionCode: json['exemption_code'] as String?,
     priority: RxPriority.fromWire(json['priority'] as String?),
     maxDispensings: (json['max_dispensings'] as num?)?.toInt(),
     items: parseItems(json['items']),
-    closedOn: _date(json['closed_on']),
+    closedOn: parseStamp(json['closed_on']),
     cancelled: json['cancelled'] == true || json['cancelled'] == 1,
     notes: json['notes'] as String?,
-    createdAt: _time(json['created_at']),
-    updatedAt: _time(json['updated_at']),
-    deletedAt: _time(json['deleted_at']),
+    createdAt: parseStamp(json['created_at']),
+    updatedAt: parseStamp(json['updated_at']),
+    deletedAt: parseStamp(json['deleted_at']),
   );
 
   /// A local row: `items` is JSON text, `cancelled` 0/1.
@@ -179,8 +180,4 @@ class RxModel {
   );
 
   static String _dateText(DateTime d) => d.toIso8601String().split('T').first;
-  static DateTime? _date(Object? raw) =>
-      raw is String ? DateTime.tryParse(raw) : null;
-  static DateTime? _time(Object? raw) =>
-      raw is String ? DateTime.tryParse(raw) : null;
 }

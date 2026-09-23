@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/models/model_time.dart';
 import 'package:medora/domain/entities/person.dart';
 
 class PersonModel {
@@ -39,9 +40,9 @@ class PersonModel {
     taxCode: json['tax_code'] as String?,
     exemptions: MedicationModel.parseTags(json['exemptions']),
     notes: json['notes'] as String?,
-    createdAt: _time(json['created_at']),
-    updatedAt: _time(json['updated_at']),
-    deletedAt: _time(json['deleted_at']),
+    createdAt: parseStamp(json['created_at']),
+    updatedAt: parseStamp(json['updated_at']),
+    deletedAt: parseStamp(json['deleted_at']),
   );
 
   /// A local SQLite row; same keys as the server's.
@@ -94,7 +95,4 @@ class PersonModel {
         updatedAt: updatedAt ?? this.updatedAt,
         deletedAt: deletedAt ?? this.deletedAt,
       );
-
-  static DateTime? _time(Object? raw) =>
-      raw is String ? DateTime.tryParse(raw) : null;
 }
