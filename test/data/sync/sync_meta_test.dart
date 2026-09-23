@@ -1,17 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
+import 'package:medora/data/datasources/person_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
+import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/models/person_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
+import 'package:medora/data/models/rx_dispensing_model.dart';
+import 'package:medora/data/models/rx_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/sync_meta.dart';
 import 'package:medora/domain/entities/dose_log.dart';
+import 'package:medora/domain/entities/rx.dart';
+import 'package:medora/domain/rx/rx_rules.dart';
 
 import '../../helpers/fake_server.dart';
 import '../../helpers/test_database.dart';
@@ -86,6 +94,46 @@ void main() {
         takenTime: doseTime.add(const Duration(minutes: 7)),
         status: DoseStatus.taken,
         notes: 'late',
+        updatedAt: editedHere,
+      ),
+      SyncStatus.pendingCreate,
+    ),
+    'persons': PersonLocalDatasource.rowOf(
+      PersonModel(
+        id: 'pe1',
+        name: 'Anna',
+        taxCode: 'RSSMRA85T10A562S',
+        exemptions: const ['esente'],
+        notes: 'allergic to penicillin',
+        updatedAt: editedHere,
+      ),
+      SyncStatus.pendingCreate,
+    ),
+    'rx': RxLocalDatasource.rowOf(
+      RxModel(
+        id: 'r1',
+        personId: 'pe1',
+        treatmentId: 't1',
+        kind: RxKind.ssn,
+        nre: '0410A1234567890',
+        issuedOn: DateTime(2026, 3, 20),
+        validUntil: DateTime(2026, 4, 19),
+        doctor: 'Dr. Rossi',
+        priority: RxPriority.b,
+        items: const [RxItem(id: 'i1', description: 'Brufen')],
+        notes: 'take with food',
+        updatedAt: editedHere,
+      ),
+      SyncStatus.pendingCreate,
+    ),
+    'rx_dispensings': RxDispensingLocalDatasource.rowOf(
+      RxDispensingModel(
+        id: 'rd1',
+        rxId: 'r1',
+        itemId: 'i1',
+        packs: 1,
+        dispensedOn: DateTime(2026, 3, 21),
+        pharmacy: 'Farmacia Centrale',
         updatedAt: editedHere,
       ),
       SyncStatus.pendingCreate,

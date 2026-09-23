@@ -1,6 +1,6 @@
 /// Medora - A synced row's local bookkeeping (sync v2).
 ///
-/// Next to its data, every local row of the four synced tables keeps:
+/// Next to its data, every local row of the synced tables keeps:
 /// - `edited_at`: when its last change was made here (1970 for a change the
 ///   app made on its own);
 /// - `field_edited_at`: when each column was last changed ([FieldTimes]);
@@ -14,12 +14,18 @@ import 'dart:convert';
 
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
+import 'package:medora/data/datasources/person_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
+import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/data/models/person_model.dart';
 import 'package:medora/data/models/prescription_model.dart';
+import 'package:medora/data/models/rx_dispensing_model.dart';
+import 'package:medora/data/models/rx_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 
 /// The tables sync v2 merges, in foreign-key order.
@@ -28,6 +34,9 @@ const syncedTables = [
   'treatments',
   'prescriptions',
   'dose_logs',
+  'persons',
+  'rx',
+  'rx_dispensings',
 ];
 
 /// The bookkeeping columns of a synced local row.
@@ -48,6 +57,9 @@ Map<String, Object?> canonicalWire(String table, Map<String, dynamic> json) =>
       'treatments' => TreatmentModel.fromJson(json).toJson(),
       'prescriptions' => PrescriptionModel.fromJson(json).toJson(),
       'dose_logs' => DoseLogModel.fromJson(json).toJson(),
+      'persons' => PersonModel.fromJson(json).toJson(),
+      'rx' => RxModel.fromJson(json).toJson(),
+      'rx_dispensings' => RxDispensingModel.fromJson(json).toJson(),
       _ => throw ArgumentError.value(table, 'table', 'not a synced table'),
     };
 
@@ -68,6 +80,18 @@ Map<String, Object?> localWire(
   }).toJson(),
   'prescriptions' => PrescriptionModel.fromLocalMap(row).toJson(),
   'dose_logs' => DoseLogModel.fromLocalMap(row).toJson(),
+  'persons' => PersonModel.fromLocalMap({
+    ...row,
+    'user_id': userId ?? row['user_id'],
+  }).toJson(),
+  'rx' => RxModel.fromLocalMap({
+    ...row,
+    'user_id': userId ?? row['user_id'],
+  }).toJson(),
+  'rx_dispensings' => RxDispensingModel.fromLocalMap({
+    ...row,
+    'user_id': userId ?? row['user_id'],
+  }).toJson(),
   _ => throw ArgumentError.value(table, 'table', 'not a synced table'),
 };
 
@@ -92,6 +116,15 @@ Map<String, Object?> localRowOf(
   ),
   'dose_logs' => DoseLogLocalDatasource.rowOf(
     DoseLogModel.fromJson(json),
+    syncStatus,
+  ),
+  'persons' => PersonLocalDatasource.rowOf(
+    PersonModel.fromJson(json),
+    syncStatus,
+  ),
+  'rx' => RxLocalDatasource.rowOf(RxModel.fromJson(json), syncStatus),
+  'rx_dispensings' => RxDispensingLocalDatasource.rowOf(
+    RxDispensingModel.fromJson(json),
     syncStatus,
   ),
   _ => throw ArgumentError.value(table, 'table', 'not a synced table'),

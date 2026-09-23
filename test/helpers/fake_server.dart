@@ -172,6 +172,54 @@ const serverColumns = <String, Map<String, Object?>>{
     'deleted_at': null,
     ..._syncColumns,
   },
+  'persons': {
+    'id': null,
+    'user_id': null,
+    'name': null,
+    'tax_code': null,
+    'exemptions': null,
+    'notes': null,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    ..._syncColumns,
+  },
+  'rx': {
+    'id': null,
+    'user_id': null,
+    'person_id': null,
+    'treatment_id': null,
+    'kind': null,
+    'nre': null,
+    'issued_on': null,
+    'valid_until': null,
+    'doctor': null,
+    'exemption_code': null,
+    'priority': null,
+    'max_dispensings': null,
+    'items': <Object?>[],
+    'closed_on': null,
+    'cancelled': false,
+    'notes': null,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    ..._syncColumns,
+  },
+  'rx_dispensings': {
+    'id': null,
+    'user_id': null,
+    'rx_id': null,
+    'item_id': null,
+    'packs': null,
+    'dispensed_on': null,
+    'pharmacy': null,
+    'units_added': 0,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    ..._syncColumns,
+  },
 };
 
 Map<String, Object?> _entry(DateTime at, bool auto) => {
@@ -182,8 +230,11 @@ Map<String, Object?> _entry(DateTime at, bool auto) => {
 final _zoned = RegExp(r'T.*(Z|[+-]\d\d:\d\d)$');
 
 /// Equal as Postgres compares the stored values: a timestamp written as
-/// `Z` equals the same instant written as `+00:00`.
+/// `Z` equals the same instant written as `+00:00`; a jsonb value (a List
+/// or Map, e.g. `rx.items`) by its content, since each write builds a
+/// fresh Dart collection.
 bool _same(Object? a, Object? b) {
+  if (a is List || a is Map || b is List || b is Map) return _sameJson(a, b);
   if (a == b) return true;
   if (a is String && b is String && _zoned.hasMatch(a) && _zoned.hasMatch(b)) {
     return DateTime.parse(a).isAtSameMomentAs(DateTime.parse(b));
@@ -211,6 +262,7 @@ const _cascade = {
   'treatments': ('prescriptions', 'treatment_id'),
   'medications': ('prescriptions', 'medication_id'),
   'prescriptions': ('dose_logs', 'prescription_id'),
+  'rx': ('rx_dispensings', 'rx_id'),
 };
 
 class FakeServerCore {
@@ -361,6 +413,7 @@ class FakeServerCore {
         deletedAt('treatments', row['treatment_id']) ??
             deletedAt('medications', row['medication_id']),
       'dose_logs' => deletedAt('prescriptions', row['prescription_id']),
+      'rx_dispensings' => deletedAt('rx', row['rx_id']),
       _ => null,
     };
   }
@@ -713,6 +766,9 @@ class FakeServerCore {
     final at = clock().toUtc();
     wipe = (generation: (wipe?.generation ?? 0) + 1, wipedAt: at);
     for (final table in const [
+      'rx_dispensings',
+      'rx',
+      'persons',
       'dose_logs',
       'prescriptions',
       'treatments',

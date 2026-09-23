@@ -1683,7 +1683,7 @@ void main() {
   test('isAutomaticEdit', () {
     expect(isAutomaticEdit(automaticEditedAt), isTrue);
     expect(isAutomaticEdit(DateTime.utc(2026)), isFalse);
-    expect(syncedTables, hasLength(4));
+    expect(syncedTables, hasLength(7));
   });
 }
 

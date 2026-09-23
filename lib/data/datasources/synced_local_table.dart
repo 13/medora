@@ -15,8 +15,10 @@ import 'package:medora/data/local/field_times.dart';
 import 'package:sqflite/sqflite.dart';
 
 class SyncedLocalTable<M> {
-  // A private named parameter, matching the hand-written datasources'
-  // `_now` (e.g. `TreatmentLocalDatasource`): callers pass it as `_now:`.
+  // A private field initialized from a constructor parameter, matching the
+  // hand-written datasources' `_now` (e.g. `TreatmentLocalDatasource`):
+  // callers pass it as `now:` (Dart drops the leading underscore from a
+  // `this._field` parameter's name).
   SyncedLocalTable({
     required this.table,
     required this.rowOf,

@@ -1,9 +1,9 @@
 /// Medora - Pull and push of one synced table (sync v2).
 ///
 /// The sync cycle (`SyncService`) decides when and in which order; this
-/// class does the per-row work for medications, treatments, prescriptions
-/// and dose logs: it applies a pulled row (storing it, merging it with a
-/// pending local change, or deleting), and pushes one pending row
+/// class does the per-row work for the synced tables ([syncedTables]): it
+/// applies a pulled row (storing it, merging it with a pending local
+/// change, or deleting), and pushes one pending row
 /// (conditional on the server version it was based on, recognising its own
 /// write when an answer was lost). It records nothing about failures: an
 /// error propagates to the cycle, which backs the row off.
@@ -78,6 +78,7 @@ List<(String, String)> parentsOf(String table, Map<String, Object?> row) {
         parent('medications', 'medication_id'),
       ],
       'dose_logs' => [parent('prescriptions', 'prescription_id')],
+      'rx_dispensings' => [parent('rx', 'rx_id')],
       _ => null,
     }?.nonNulls,
   ];

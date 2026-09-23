@@ -252,12 +252,31 @@ const doseLogMerge = MergePolicy(
   ],
 );
 
+/// A person's tax code and exemptions are independent columns; nothing
+/// needs to move together.
+const personMerge = MergePolicy(groups: []);
+
+/// Validity follows the kind and the issue date, so the three move
+/// together; the items list merges as one value.
+const rxMerge = MergePolicy(
+  groups: [
+    {'kind', 'issued_on', 'valid_until', 'max_dispensings', 'priority'},
+    {'closed_on', 'cancelled'},
+  ],
+);
+
+/// A dispensing is written once and only ever deleted.
+const rxDispensingMerge = MergePolicy(groups: []);
+
 /// The policy of [table].
 MergePolicy mergePolicyOf(String table) => switch (table) {
   'medications' => medicationMerge,
   'treatments' => treatmentMerge,
   'prescriptions' => prescriptionMerge,
   'dose_logs' => doseLogMerge,
+  'persons' => personMerge,
+  'rx' => rxMerge,
+  'rx_dispensings' => rxDispensingMerge,
   _ => throw ArgumentError.value(table, 'table', 'not a merged table'),
 };
 
