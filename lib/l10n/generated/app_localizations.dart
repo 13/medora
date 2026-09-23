@@ -3994,7 +3994,7 @@ abstract class AppLocalizations {
   /// No description provided for @rxMaxDispensings.
   ///
   /// In en, this message translates to:
-  /// **'Max. collections'**
+  /// **'Max. pharmacy visits'**
   String get rxMaxDispensings;
 
   /// No description provided for @rxPerson.

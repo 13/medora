@@ -964,7 +964,7 @@
   "rxPriorityB": "B – within 10 days",
   "rxPriorityD": "D – within 30 days",
   "rxPriorityP": "P – within 120 days",
-  "rxMaxDispensings": "Max. collections",
+  "rxMaxDispensings": "Max. pharmacy visits",
   "rxPerson": "Person",
   "rxNoPerson": "No person",
   "rxUnknownPerson": "Unknown person",

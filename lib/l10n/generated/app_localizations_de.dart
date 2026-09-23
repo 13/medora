@@ -2308,7 +2308,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get rxPriorityP => 'P – innerhalb 120 Tagen';
 
   @override
-  String get rxMaxDispensings => 'Max. Abholungen';
+  String get rxMaxDispensings => 'Max. Apothekenbesuche';
 
   @override
   String get rxPerson => 'Person';
