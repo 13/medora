@@ -35,6 +35,12 @@ class AccountDataRemoteDatasource {
   /// database cannot delete storage objects itself. A failure there is
   /// thrown (the rows are gone by then, and a retry finishes the job); a
   /// project without the attachments bucket has nothing to remove.
+  ///
+  /// An upload still running on another device (or this one) when the
+  /// folder is listed can land just after it: that object outlives the
+  /// wipe. The window is narrow (one file's upload), the object is in the
+  /// user's own private folder, and the next delete-all removes it, so it
+  /// is accepted rather than guarded against.
   Future<void> deleteAllData() async {
     await _deleteRows();
     await _deleteAttachmentObjects();

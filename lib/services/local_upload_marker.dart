@@ -75,7 +75,8 @@ class LocalUploadMarker {
   /// of the same account must still reach its stock, and a cloud restore
   /// queues the restored counts before it calls this. The new account has
   /// none of the old one's medications, so each is created with its local
-  /// quantity instead.
+  /// quantity instead. For the same reason attachments forget their storage
+  /// paths, so their files are uploaded again under the new account.
   ///
   /// Everything runs in one transaction: a kill half-way must not leave the
   /// bases gone and the rows still `synced`, which would never upload them.
@@ -100,7 +101,19 @@ class LocalUploadMarker {
           'sync_write_id': null,
         });
       }
-      if (accountChanged) await txn.delete('stock_outbox');
+      if (accountChanged) {
+        await txn.delete('stock_outbox');
+        // The files were uploaded into the old account's storage folder,
+        // which this account cannot read. Forgetting the paths (and the
+        // owner, which the sync stamps again) makes the transfer upload
+        // them again into this account's folder. An attachment whose file
+        // is not on this device cannot be recovered: it stays without a
+        // path and shows as not available.
+        await txn.update('attachments', const {
+          'remote_path': null,
+          'user_id': null,
+        });
+      }
       var count = 0;
       for (final table in tables) {
         final ownRowOnly = table == 'family_members';

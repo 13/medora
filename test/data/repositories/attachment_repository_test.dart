@@ -5,11 +5,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/attachment_files.dart';
+import 'package:medora/data/models/attachment_model.dart';
 import 'package:medora/data/repositories/attachment_repository_impl.dart';
 import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/services/attachment_import.dart';
 
 import '../../helpers/test_database.dart';
+
+/// A datasource on which a delete lands right after [getById] returns.
+class _RacingLocal extends AttachmentLocalDatasource {
+  _RacingLocal({super.now});
+
+  String? deleteAfterRead;
+
+  @override
+  Future<AttachmentModel?> getById(String id) async {
+    final row = await super.getById(id);
+    if (deleteAfterRead == id) {
+      deleteAfterRead = null;
+      await markDeleted(id);
+    }
+    return row;
+  }
+}
 
 void main() {
   setUp(setUpTestDatabase);
@@ -194,4 +212,38 @@ void main() {
       expect(remaining.dataOrNull, isEmpty);
     },
   );
+
+  test('markUploaded does not revive a row deleted after it was read; the '
+      'object is queued for removal', () async {
+    final racing = _RacingLocal(now: () => now);
+    final r = AttachmentRepositoryImpl(
+      local: racing,
+      files: files,
+      now: () => now,
+    );
+    final added = (await r.add(
+      AttachmentOwnerKind.rx,
+      'r1',
+      imported(),
+    )).dataOrNull!;
+    final path = 'u1/${added.fileName}';
+    racing.deleteAfterRead = added.id;
+
+    final result = await r.markUploaded(added.id, path);
+
+    expect(result.dataOrNull, isFalse);
+    final row = (await (await AppDatabase.instance.database).query(
+      'attachments',
+    )).single;
+    expect(row['deleted_at'], isNotNull);
+    expect(row['sync_status'], SyncStatus.pendingDelete);
+    expect(row['remote_path'], isNull);
+    expect(await racing.pendingRemovals(), [path]);
+  });
+
+  test('markUploaded of a row that is gone queues the object', () async {
+    final result = await repo.markUploaded('nope', 'u1/nope.jpg');
+    expect(result.dataOrNull, isFalse);
+    expect(await local.pendingRemovals(), ['u1/nope.jpg']);
+  });
 }

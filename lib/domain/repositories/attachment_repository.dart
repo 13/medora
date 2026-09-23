@@ -25,7 +25,7 @@ abstract class AttachmentRepository {
 
   Future<Result<void>> deleteForOwner(AttachmentOwnerKind kind, String ownerId);
 
-  /// Records a finished upload; refused (and the object queued for
-  /// removal) when the attachment was deleted meanwhile.
+  /// Records a finished upload; refused with false (and the object queued
+  /// for removal) when the attachment was deleted meanwhile or is gone.
   Future<Result<bool>> markUploaded(String id, String remotePath);
 }

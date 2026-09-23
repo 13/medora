@@ -77,6 +77,10 @@ class AttachmentTransfer {
 
   final _guard = RerunGuard();
 
+  /// Downloads in flight by attachment id: a second [open] of the same
+  /// attachment waits for the first instead of downloading it again.
+  final _opening = <String, Future<File?>>{};
+
   /// Failed items by key, with when they may be tried again. Kept in
   /// memory only: a restart retries everything at once, which is fine.
   final _backoff = <String, ({int failures, DateTime retryAt})>{};
@@ -120,7 +124,7 @@ class AttachmentTransfer {
     }
     var report = TransferReport.none;
     try {
-      report += await _removals(store);
+      report += await _removals(store, uid);
       report += await _uploads(store, uid);
       report += await _sweep();
     } catch (e) {
@@ -144,10 +148,13 @@ class AttachmentTransfer {
     );
   }
 
-  Future<TransferReport> _removals(AttachmentStore store) async {
+  /// Removes the queued objects in [uid]'s folder. Another account's
+  /// paths (queued before a sign-out) stay queued: this user cannot remove
+  /// them, and completing them would forget them.
+  Future<TransferReport> _removals(AttachmentStore store, String uid) async {
     final due = [
       for (final path in await _local.pendingRemovals())
-        if (!_waiting('rm:$path')) path,
+        if (path.startsWith('$uid/') && !_waiting('rm:$path')) path,
     ];
     var removed = 0;
     var failed = 0;
@@ -212,7 +219,8 @@ class AttachmentTransfer {
       marked.when(
         success: (recorded) {
           _backoff.remove(a.id);
-          // False: deleted meanwhile; the object is queued for removal.
+          // False: deleted or gone meanwhile; the object is queued for
+          // removal.
           if (recorded) uploaded++;
         },
         failure: (message) {
@@ -227,7 +235,9 @@ class AttachmentTransfer {
 
   /// Deletes local files whose attachment has no row at all. A row that
   /// exists, live or a tombstone still waiting to be pushed, keeps its
-  /// file; so does a file written within [sweepGrace].
+  /// file; so does a file written within [sweepGrace]. A `.part` file (a
+  /// write still running, or one a kill interrupted) never matches a row,
+  /// so it goes once it is older than [sweepGrace].
   Future<TransferReport> _sweep() async {
     final ids = (await _local.getAllIds()).toSet();
     final cutoff = _now().subtract(sweepGrace);
@@ -244,7 +254,15 @@ class AttachmentTransfer {
 
   /// The file of [a], downloading it when it is not here yet. Null when it
   /// is not uploaded yet, gone from storage, or cannot be fetched now.
-  Future<File?> open(Attachment a) async {
+  Future<File?> open(Attachment a) => _opening[a.id] ??= _open(a).whenComplete(
+    // A block body: returning the removed future would make this wait on
+    // itself.
+    () {
+      _opening.remove(a.id);
+    },
+  );
+
+  Future<File?> _open(Attachment a) async {
     try {
       final file = await _files.fileFor(a);
       if (file.existsSync()) return file;
@@ -254,6 +272,10 @@ class AttachmentTransfer {
         return null;
       }
       final bytes = await store.download(path);
+      if (bytes.length != a.sizeBytes) {
+        debugPrint('Attachments: ${a.id} downloaded with the wrong size');
+        return null;
+      }
       return await _files.write(a.fileName, bytes);
     } on AttachmentNotFound {
       debugPrint('Attachments: ${a.id} is not in storage');

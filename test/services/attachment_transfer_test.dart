@@ -10,6 +10,10 @@ import 'package:medora/data/repositories/attachment_repository_impl.dart';
 import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/domain/entities/attachment_import_result.dart';
 import 'package:medora/services/attachment_transfer.dart';
+import 'package:medora/services/local_upload_marker.dart';
+import 'package:medora/services/sync_cursor_store.dart';
+import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_remotes.dart';
 import '../helpers/test_database.dart';
@@ -22,6 +26,16 @@ class _GatedStore extends FakeAttachmentStore {
 
   Completer<void>? gate;
   Future<void> Function()? afterUpload;
+  Completer<void>? downloadGate;
+  int downloadsStarted = 0;
+
+  @override
+  Future<Uint8List> download(String path) async {
+    downloadsStarted++;
+    final g = downloadGate;
+    if (g != null) await g.future;
+    return super.download(path);
+  }
 
   @override
   Future<void> upload(
@@ -314,5 +328,137 @@ void main() {
     expect(report.uploaded, 1);
     expect(report.removed, 1, reason: 'the second pass ran');
     expect((await rowOf(a.id))['remote_path'], '$_uid/${a.id}.jpg');
+  });
+
+  Attachment synced(String id, {int sizeBytes = 2}) => Attachment(
+    id: id,
+    ownerKind: AttachmentOwnerKind.rx,
+    ownerId: 'r1',
+    kind: AttachmentKind.photo,
+    mime: 'image/jpeg',
+    sizeBytes: sizeBytes,
+    sha256: 'x',
+    remotePath: '$_uid/$id.jpg',
+  );
+
+  test('two opens of the same attachment download it once', () async {
+    final a = synced('a9');
+    store.objects['$_uid/a9.jpg'] = Uint8List.fromList([7, 8]);
+    store.downloadGate = Completer<void>();
+    final t = transfer();
+    final first = t.open(a);
+    final second = t.open(a);
+    while (store.downloadsStarted == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    // Give the second open every chance to start its own download.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(store.downloadsStarted, 1);
+    store.downloadGate!.complete();
+    final files = await Future.wait([first, second]);
+    expect(store.downloads, 1);
+    expect(await files[0]!.readAsBytes(), [7, 8]);
+    expect(files[1]!.path, files[0]!.path);
+    // A later open that has to download again is not stuck on the first.
+    await files[0]!.delete();
+    store.downloadGate = null;
+    expect(await t.open(a), isNotNull);
+    expect(store.downloads, 2);
+  });
+
+  test('a download of the wrong size is not written', () async {
+    final a = synced('a9');
+    store.objects['$_uid/a9.jpg'] = Uint8List.fromList([7, 8, 9]);
+    expect(await transfer().open(a), isNull);
+    expect(await files.listNames(), isEmpty);
+  });
+
+  test('a file is written under a temporary name first: a failed write '
+      'leaves nothing under its own name', () async {
+    final dir = Directory(p.join(root.path, AttachmentFiles.folder));
+    await dir.create(recursive: true);
+    // The temporary file cannot be written: a directory is in its way.
+    await Directory(p.join(dir.path, 'x.jpg.part')).create();
+    await expectLater(files.write('x.jpg', [1, 2]), throwsA(anything));
+    expect(File(p.join(dir.path, 'x.jpg')).existsSync(), isFalse);
+    await Directory(p.join(dir.path, 'x.jpg.part')).delete();
+
+    final file = await files.write('x.jpg', [1, 2]);
+    expect(await file.readAsBytes(), [1, 2]);
+    expect(await files.listNames(), ['x.jpg'], reason: 'no temporary left');
+  });
+
+  test(
+    'sweep deletes a stale partial download and keeps a fresh one',
+    () async {
+      await add();
+      final dir = Directory(p.join(root.path, AttachmentFiles.folder));
+      final stale = File(p.join(dir.path, 'old.jpg.part'))
+        ..writeAsBytesSync([1]);
+      stale.setLastModifiedSync(now.subtract(const Duration(hours: 1)));
+      final fresh = File(p.join(dir.path, 'new.jpg.part'))
+        ..writeAsBytesSync([1]);
+      fresh.setLastModifiedSync(now.subtract(const Duration(minutes: 1)));
+      final report = await transfer().run();
+      expect(report.swept, 1);
+      expect(stale.existsSync(), isFalse);
+      expect(fresh.existsSync(), isTrue);
+    },
+  );
+
+  test("removals of another user's objects stay queued", () async {
+    await local.enqueueRemoval('user-b/x.jpg');
+    await local.enqueueRemoval('$_uid/y.jpg');
+    store.objects['$_uid/y.jpg'] = Uint8List.fromList([1]);
+    final report = await transfer().run();
+    expect(report.removed, 1);
+    expect(store.objects, isEmpty);
+    expect(await local.pendingRemovals(), ['user-b/x.jpg']);
+  });
+
+  test('a row gone before its upload is recorded: the object is queued and '
+      'not retried', () async {
+    final a = await add();
+    final path = '$_uid/${a.id}.jpg';
+    store.afterUpload = () async {
+      store.afterUpload = null;
+      await (await AppDatabase.instance.database).delete('attachments');
+    };
+    final t = transfer();
+    final report = await t.run();
+    expect(report.uploaded, 0);
+    expect(report.failed, 0);
+    expect(await local.pendingRemovals(), [path]);
+    final next = await t.run();
+    expect(next.removed, 1);
+    expect(store.objects, isEmpty);
+  });
+
+  test('after an account change the files are uploaded again into the new '
+      "account's folder", () async {
+    final a = await add();
+    await transfer().run();
+    expect((await rowOf(a.id))['remote_path'], '$_uid/${a.id}.jpg');
+    await (await AppDatabase.instance.database).update('attachments', {
+      'user_id': _uid,
+      'sync_status': SyncStatus.synced,
+    });
+    SharedPreferences.setMockInitialValues({LocalUploadMarker.ownerKey: _uid});
+    final marker = LocalUploadMarker(
+      database: AppDatabase.instance,
+      cursors: SyncCursorStore.inMemory(),
+      prefs: await SharedPreferences.getInstance(),
+    );
+    await marker.markAllForUpload('user-b');
+    final row = await rowOf(a.id);
+    expect(row['remote_path'], isNull);
+    expect(row['user_id'], isNull);
+
+    uid = 'user-b';
+    store.currentUserId = 'user-b';
+    final report = await transfer().run();
+    expect(report.uploaded, 1);
+    expect(store.objects, contains('user-b/${a.id}.jpg'));
+    expect((await rowOf(a.id))['remote_path'], 'user-b/${a.id}.jpg');
   });
 }

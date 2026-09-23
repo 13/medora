@@ -52,15 +52,57 @@ class SyncedLocalTable<M> {
       await _store(db, id, row);
       return;
     }
-    await db.transaction((txn) async {
-      row['field_edited_at'] = fieldTimesAfterWrite(
-        previous: await _stored(txn, id),
-        after: row,
-        wireOf: wireOf,
-        at: editedAtOf(updatedAtOf(model) ?? at, at),
-      );
-      await _store(txn, id, row);
-    });
+    await db.transaction(
+      (txn) async => _storePending(txn, model, row, await _stored(txn, id), at),
+    );
+  }
+
+  /// Stores [row] (of [model]) as a pending write over [previous], stamping
+  /// `field_edited_at` for the columns that changed.
+  Future<void> _storePending(
+    DatabaseExecutor txn,
+    M model,
+    Map<String, dynamic> row,
+    Map<String, Object?>? previous,
+    DateTime at,
+  ) async {
+    row['field_edited_at'] = fieldTimesAfterWrite(
+      previous: previous,
+      after: row,
+      wireOf: wireOf,
+      at: editedAtOf(updatedAtOf(model) ?? at, at),
+    );
+    await _store(txn, row['id'] as String, row);
+  }
+
+  /// Within [txn]: when the row [id] exists and is not deleted, stores
+  /// [change] of it as a pending write ([syncStatus]), stamped as [upsert]
+  /// stamps it, and returns true. Returns false and writes nothing when the
+  /// row is gone or deleted, so a delete that lands between a caller's read
+  /// and this write is never overwritten by a live row.
+  Future<bool> updateLiveIn(
+    Transaction txn,
+    String id,
+    M Function(M current) change, {
+    required String syncStatus,
+  }) async {
+    assert(syncStatus != SyncStatus.synced, 'a pending write only');
+    final previous = await _stored(txn, id);
+    if (previous == null ||
+        previous['deleted_at'] != null ||
+        previous['sync_status'] == SyncStatus.pendingDelete) {
+      return false;
+    }
+    final at = _now();
+    final model = change(fromRow(previous));
+    await _storePending(
+      txn,
+      model,
+      rowOf(model, syncStatus, now: () => at),
+      previous,
+      at,
+    );
+    return true;
   }
 
   /// UPDATE first: INSERT OR REPLACE deletes the row first and would

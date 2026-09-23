@@ -145,28 +145,23 @@ class AttachmentRepositoryImpl implements AttachmentRepository {
   Future<Result<bool>> markUploaded(String id, String remotePath) async {
     try {
       final row = await local.getById(id);
-      if (row == null) return const Result.failure('Attachment not found');
-      if (p.basename(remotePath) != row.toDomain().fileName) {
+      if (row != null && p.basename(remotePath) != row.toDomain().fileName) {
         return const Result.failure('Attachment path does not match');
       }
-      if (row.deletedAt != null) {
-        // Deleted meanwhile: nothing to point at any more, so the object
-        // that just finished uploading is queued for removal instead.
-        await local.enqueueRemoval(remotePath);
-        return const Result.success(false);
-      }
-      final now = _now();
-      // Writing pendingUpdate on a never-pushed row is safe because sync_version == null
-      // is treated as a create (TableSync.pushRow → _pushCreate).
-      await local.upsert(
-        row.copyWith(
-          remotePath: remotePath,
-          updatedAt: nextUpdatedAt(row.updatedAt, now),
-        ),
-        syncStatus: SyncStatus.pendingUpdate,
+      // One conditional write: a delete landing after the read above must
+      // not be overwritten by a live row. A row deleted meanwhile, or gone
+      // altogether (hard-deleted after its tombstone synced, or wiped), has
+      // nothing to point at any more, so the object that just finished
+      // uploading is queued for removal instead. Writing pendingUpdate on a
+      // never-pushed row is safe because sync_version == null is treated as
+      // a create (TableSync.pushRow → _pushCreate).
+      final recorded = await local.setRemotePathIfLive(
+        id,
+        remotePath,
+        updatedAt: (stored) => nextUpdatedAt(stored, _now()),
       );
-      _syncSoon();
-      return const Result.success(true);
+      if (recorded) _syncSoon();
+      return Result.success(recorded);
     } catch (e, st) {
       return Result.failure('Failed to record the upload: $e', st);
     }

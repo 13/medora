@@ -34,12 +34,28 @@ class AttachmentFiles {
 
   Future<bool> has(Attachment a) async => (await fileFor(a)).existsSync();
 
+  /// Suffix of a file still being written.
+  static const partSuffix = '.part';
+
   /// Write [bytes] into the attachments folder under [fileName] (basename
-  /// only).
+  /// only). The bytes go to `<fileName>.part` first and are renamed into
+  /// place, so the file appears only complete: a kill half-way leaves a
+  /// `.part` file, which the orphan sweep removes, never a truncated one.
   Future<File> write(String fileName, List<int> bytes) async {
     final dir = await _attachmentsDir();
-    final file = File(p.join(dir.path, p.basename(fileName)));
-    return file.writeAsBytes(bytes, flush: true);
+    final target = p.join(dir.path, p.basename(fileName));
+    final part = File('$target$partSuffix');
+    try {
+      await part.writeAsBytes(bytes, flush: true);
+      return await part.rename(target);
+    } catch (_) {
+      try {
+        if (part.existsSync()) await part.delete();
+      } catch (_) {
+        // Best effort: the orphan sweep removes it later.
+      }
+      rethrow;
+    }
   }
 
   Future<void> delete(String fileName) async {
