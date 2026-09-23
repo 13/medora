@@ -146,27 +146,37 @@ class ReminderService implements ReminderPort {
         : strings.notificationReminderInMinutes(medicationName, minutesBefore);
   }
 
-  /// Title for a stock or expiry notification.
+  /// Title for a stock, expiry or prescription-expiry notification.
   @visibleForTesting
   static String stockAlertTitle(StockAlertKind kind, {AppLocalizations? l10n}) {
     final strings = l10n ?? resolveLocalizations();
     if (strings == null) {
-      return kind == StockAlertKind.expiry ? 'Expiring soon' : 'Running low';
+      return switch (kind) {
+        StockAlertKind.expiry => 'Expiring soon',
+        StockAlertKind.lowStock => 'Running low',
+        StockAlertKind.rxExpiry => 'Prescription expiring',
+      };
     }
-    return kind == StockAlertKind.expiry
-        ? strings.notificationExpiryTitle
-        : strings.notificationLowStockTitle;
+    return switch (kind) {
+      StockAlertKind.expiry => strings.notificationExpiryTitle,
+      StockAlertKind.lowStock => strings.notificationLowStockTitle,
+      StockAlertKind.rxExpiry => strings.notificationRxExpiryTitle,
+    };
   }
 
-  /// Body for a stock or expiry notification. The English fallbacks mirror
-  /// the ARB plural branches, so an unsupported platform locale still reads
-  /// naturally at 0 and 1.
+  /// Body for a stock, expiry or prescription-expiry notification. The
+  /// English fallbacks mirror the ARB plural branches, so an unsupported
+  /// platform locale still reads naturally at 0 and 1.
+  ///
+  /// A low-stock alert that [StockAlert.askForRx] adds a second line asking
+  /// for a new prescription — the whole point of that flag is that the
+  /// notification, not just the medication screen, says so.
   @visibleForTesting
   static String stockAlertBody(StockAlert alert, {AppLocalizations? l10n}) {
     final strings = l10n ?? resolveLocalizations();
     final name = alert.medicationName;
     if (strings == null) {
-      return switch (alert.kind) {
+      final body = switch (alert.kind) {
         StockAlertKind.expiry => switch (alert.days) {
           0 => '$name expires today',
           1 => '$name expires tomorrow',
@@ -177,11 +187,28 @@ class ReminderService implements ReminderPort {
           1 => '$name: 1 left',
           _ => '$name: ${alert.quantity} left',
         },
+        StockAlertKind.rxExpiry => switch (alert.days) {
+          0 => '$name: last valid day',
+          1 => '$name: valid until tomorrow',
+          _ => '$name: valid ${alert.days} more days',
+        },
       };
+      return alert.askForRx
+          ? '$body\nAsk your doctor for a new prescription'
+          : body;
     }
-    return alert.kind == StockAlertKind.expiry
-        ? strings.notificationExpiryBody(name, alert.days)
-        : strings.notificationLowStockBody(name, alert.quantity);
+    final body = switch (alert.kind) {
+      StockAlertKind.expiry => strings.notificationExpiryBody(name, alert.days),
+      StockAlertKind.lowStock => strings.notificationLowStockBody(
+        name,
+        alert.quantity,
+      ),
+      StockAlertKind.rxExpiry => strings.notificationRxExpiryBody(
+        name,
+        alert.days,
+      ),
+    };
+    return alert.askForRx ? '$body\n${strings.notificationAskForRx}' : body;
   }
 
   @override
@@ -200,8 +227,11 @@ class ReminderService implements ReminderPort {
       body: stockAlertBody(alert, l10n: l10n),
       scheduledTime: alert.when,
       // Routed like a dose reminder today; the id is carried so a tap can
-      // open the medication itself later.
-      payload: 'medication:${alert.medicationId}',
+      // open the medication (or, for an rxExpiry alert, the prescription)
+      // itself later.
+      payload: alert.kind == StockAlertKind.rxExpiry
+          ? 'rx:${alert.medicationId}'
+          : 'medication:${alert.medicationId}',
       l10n: l10n,
     );
   }
@@ -227,11 +257,16 @@ class ReminderService implements ReminderPort {
   @override
   Future<void> cancelAll() => cancelAllReminders();
 
-  /// Whether [id] belongs to the stock and expiry scheduler.
+  /// Whether [id] belongs to the stock, expiry and prescription-expiry
+  /// scheduler.
   ///
-  /// [stockAlertId] hands out offsets 8 and 9 of the same 16-slot block the
-  /// dose reminders take offsets 0-3 of, so the low nibble says who owns it.
-  static bool _isStockAlertId(int id) => (id & 0xF) == 0x8 || (id & 0xF) == 0x9;
+  /// [stockAlertId] hands out offsets 8, 9 and 10 of the same 16-slot block
+  /// the dose reminders take offsets 0-3 of, so the low nibble says who owns
+  /// it. Missing offset 10 here would make a cold start's dose-reminder
+  /// cancel wipe every prescription-expiry alert along with it — the same
+  /// bug offsets 8 and 9 exist to prevent for the stock alerts.
+  static bool _isStockAlertId(int id) =>
+      const {0x8, 0x9, 0xA}.contains(id & 0xF);
 
   @override
   Future<void> cancelAllDoses() async {

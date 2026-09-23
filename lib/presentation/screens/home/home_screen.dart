@@ -11,6 +11,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/domain/sick_leave_stats.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
@@ -18,6 +19,7 @@ import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_list_filter_provider.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/main_shell_screen.dart';
@@ -129,6 +131,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onSeeAll: () => _openLowStock(context, ref),
             ),
             const _LowStockCard(),
+
+            // Prescriptions running out, only once there is one within the
+            // week: this card is silent otherwise, same as the sick leave
+            // one below it.
+            const _RxExpiringCard(),
 
             // Sick leave, only once there is any this year: a tile reading
             // "no days" would be noise on the dashboard of someone who has
@@ -757,6 +764,58 @@ class _LowStockCard extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Prescriptions expiring soon: open or partially collected, with a known
+/// last valid day at most a week away. Hidden entirely otherwise, same as
+/// the sick leave card below it.
+class _RxExpiringCard extends ConsumerWidget {
+  const _RxExpiringCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final now = ref.watch(nowProvider)();
+    final list = ref.watch(rxListProvider).value ?? const [];
+    final soon = [
+      for (final e in list)
+        if (e.statusAt(now) case RxStatus.open || RxStatus.partial)
+          if (RxRules.daysLeft(e.rx, now) case final d? when d <= 7) e,
+    ]..sort((a, b) => a.rx.validUntil!.compareTo(b.rx.validUntil!));
+    if (soon.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        _SectionHeader(
+          title: l10n.rxExpiringTitle,
+          // The prescriptions tab, not a dedicated "expiring" filter: this
+          // is phase A, so landing on the treatments tab is one tap from the
+          // full list rather than a filtered view of it.
+          onSeeAll: () => MainShellScope.of(context)?.switchTab(2),
+        ),
+        Card(
+          child: Column(
+            children: [
+              for (final e in soon.take(3))
+                ListTile(
+                  leading: const Icon(Icons.receipt_long_outlined),
+                  title: Text(
+                    e.rx.items.map((i) => i.description).join(', '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(l10n.rxDaysLeft(RxRules.daysLeft(e.rx, now)!)),
+                  onTap: () => context.push(
+                    AppRoutes.rxDetail.replaceFirst(':id', e.rx.id),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

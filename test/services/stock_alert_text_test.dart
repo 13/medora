@@ -4,16 +4,22 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/services/reminder_service.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
 
-StockAlert _alert(StockAlertKind kind, {int days = 0, int quantity = 0}) =>
-    StockAlert(
-      id: 1,
-      medicationId: 'm',
-      medicationName: 'Aspirin',
-      kind: kind,
-      when: DateTime(2026, 9, 17, 9),
-      days: days,
-      quantity: quantity,
-    );
+StockAlert _alert(
+  StockAlertKind kind, {
+  int days = 0,
+  int quantity = 0,
+  bool askForRx = false,
+  String medicationName = 'Aspirin',
+}) => StockAlert(
+  id: 1,
+  medicationId: 'm',
+  medicationName: medicationName,
+  kind: kind,
+  when: DateTime(2026, 9, 17, 9),
+  days: days,
+  quantity: quantity,
+  askForRx: askForRx,
+);
 
 String _expiry(int days, {AppLocalizations? l10n}) =>
     ReminderService.stockAlertBody(
@@ -108,5 +114,23 @@ void main() {
       ReminderService.stockAlertTitle(StockAlertKind.lowStock),
       'Running low',
     );
+  });
+
+  test('a low-stock alert that needs a prescription says so too', () {
+    final l10n = lookupAppLocalizations(const Locale('en'));
+    final body = ReminderService.stockAlertBody(
+      _alert(StockAlertKind.lowStock, quantity: 2, askForRx: true),
+      l10n: l10n,
+    );
+    expect(body, endsWith('Ask your doctor for a new prescription'));
+  });
+
+  test('an rxExpiry alert reads "who – what: valid N more days"', () {
+    final l10n = lookupAppLocalizations(const Locale('en'));
+    final body = ReminderService.stockAlertBody(
+      _alert(StockAlertKind.rxExpiry, days: 3, medicationName: 'Ben – Brufen'),
+      l10n: l10n,
+    );
+    expect(body, 'Ben – Brufen: valid 3 more days');
   });
 }

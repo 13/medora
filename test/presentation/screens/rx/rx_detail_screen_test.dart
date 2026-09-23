@@ -14,7 +14,12 @@ import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/rx/rx_detail_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../helpers/fake_reminder_port.dart';
+import '../../../helpers/test_database.dart';
 
 class _Repo implements RxRepository {
   _Repo({this.byId});
@@ -55,6 +60,12 @@ class _FailingMeds extends MedicationListNotifier {
 }
 
 void main() {
+  setUp(() async {
+    await setUpTestDatabase();
+    SharedPreferences.setMockInitialValues({});
+  });
+  tearDown(tearDownTestDatabase);
+
   final l10n = AppLocalizationsEn();
 
   test('share text includes the tax code when there is one on file', () {
@@ -99,6 +110,14 @@ void main() {
           ),
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23)),
           if (meds != null) medicationListProvider.overrideWith(meds),
+          // Closing, collecting or deleting invalidates the rx providers,
+          // which now also re-plans the stock scheduler (Task 11): it needs
+          // real prefs and a fake notification port rather than the
+          // platform plugin.
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          reminderPortProvider.overrideWithValue(FakePort()),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,

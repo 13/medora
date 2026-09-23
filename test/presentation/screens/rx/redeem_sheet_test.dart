@@ -9,7 +9,12 @@ import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/rx/redeem_sheet.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../helpers/fake_reminder_port.dart';
+import '../../../helpers/test_database.dart';
 
 class _Repo implements RxRepository {
   final redeemed = <List<RxDispensing>>[];
@@ -39,6 +44,12 @@ class _Repo implements RxRepository {
 }
 
 void main() {
+  setUp(() async {
+    await setUpTestDatabase();
+    SharedPreferences.setMockInitialValues({});
+  });
+  tearDown(tearDownTestDatabase);
+
   test('proposed units multiply packs by the pack size in the description', () {
     const item = RxItem(id: 'i', description: 'Tachipirina 20 compresse');
     expect(proposedUnits(item, 2), 40);
@@ -66,6 +77,13 @@ void main() {
         overrides: [
           rxRepositoryProvider.overrideWithValue(repo),
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23)),
+          // Confirming a redeem invalidates the rx providers, which now also
+          // re-plans the stock scheduler (Task 11): it needs real prefs and
+          // a fake notification port rather than the platform plugin.
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          reminderPortProvider.overrideWithValue(FakePort()),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,

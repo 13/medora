@@ -10,18 +10,18 @@ import 'package:medora/services/stock_expiry_reminders.dart';
 abstract class ReminderPort {
   /// Cancel every pending notification owned by the app, of every kind.
   ///
-  /// A blunt instrument: it takes the stock and expiry alerts too, so only
-  /// a caller that owns *both* schedulers may use it, and it must then tell
-  /// both to forget their snapshots. A scheduler recovering its own state
-  /// wants [cancelAllDoses] instead.
+  /// A blunt instrument: it takes the stock, expiry and prescription-expiry
+  /// alerts too, so only a caller that owns *both* schedulers may use it,
+  /// and it must then tell both to forget their snapshots. A scheduler
+  /// recovering its own state wants [cancelAllDoses] instead.
   Future<void> cancelAll();
 
-  /// Cancel every pending dose reminder, leaving the stock and expiry
-  /// alerts alone.
+  /// Cancel every pending dose reminder, leaving the stock, expiry and
+  /// prescription-expiry alerts alone.
   ///
   /// The dose scheduler's recovery move when it has no snapshot to diff
-  /// against. The id spaces are disjoint ([StockAlert.id] uses offsets 8 and
-  /// 9), which is what makes sparing them possible.
+  /// against. The id spaces are disjoint ([StockAlert.id] uses offsets 8, 9
+  /// and 10), which is what makes sparing them possible.
   Future<void> cancelAllDoses();
 
   /// Cancel the pending notifications for one dose.
@@ -34,7 +34,7 @@ abstract class ReminderPort {
     required String medicationName,
   });
 
-  /// Schedule one stock or expiry notification.
+  /// Schedule one stock, expiry or prescription-expiry notification.
   ///
   /// Uses [StockAlert.id], which is disjoint from the dose reminder ids, so
   /// the two schedulers never cancel each other's notifications.
@@ -47,6 +47,7 @@ abstract class ReminderPort {
   /// from the stored decision afterwards.
   Future<bool> ensurePermissions();
 
-  /// Cancel one stock or expiry notification by its [StockAlert.id].
+  /// Cancel one stock, expiry or prescription-expiry notification by its
+  /// [StockAlert.id].
   Future<void> cancelStockAlert(int id);
 }

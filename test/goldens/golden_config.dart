@@ -8,12 +8,14 @@ import 'package:medora/core/theme.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -164,6 +166,10 @@ Future<void> pumpGolden(
       (ref, day) async =>
           day == goldenToday ? (doses ?? goldenDoses()) : <DoseLog>[],
     ),
+    // No fixture has a prescription, so the Home rx-expiring card (Task 11)
+    // stays hidden; without this override the provider would hit the real
+    // (unset-up) rx database instead of resolving deterministically.
+    rxListProvider.overrideWith((ref) async => <RxWithDispensings>[]),
   ];
 
   await tester.pumpWidget(

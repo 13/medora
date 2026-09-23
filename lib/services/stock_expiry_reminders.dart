@@ -12,7 +12,7 @@ import 'package:medora/core/constants.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/services/notification_budget.dart';
 
-enum StockAlertKind { expiry, lowStock }
+enum StockAlertKind { expiry, lowStock, rxExpiry }
 
 /// The hour of day stock and expiry notifications fire.
 const int stockAlertHour = 9;
@@ -35,12 +35,21 @@ class StockAlert {
     required this.when,
     required this.days,
     required this.quantity,
+    this.askForRx = false,
   });
 
   final int id;
+
+  /// For [StockAlertKind.rxExpiry], the prescription's id.
   final String medicationId;
+
+  /// For [StockAlertKind.rxExpiry], the prescription's label.
   final String medicationName;
   final StockAlertKind kind;
+
+  /// A low-stock alert for a medication taken on a schedule with no open
+  /// prescription left: the notification also says to ask for one.
+  final bool askForRx;
 
   /// Local time the notification fires. Always [stockAlertHour]:00.
   final DateTime when;
@@ -64,13 +73,14 @@ class StockAlert {
   /// tomorrow's notification saying "2 left" for an empty box.
   String get fingerprint =>
       '${when.millisecondsSinceEpoch}|${kind.index}|$days|$quantity|'
-      '$medicationName';
+      '$medicationName|${askForRx ? 1 : 0}';
 }
 
-/// Notification id for one medication and kind.
+/// Notification id for one medication (or prescription, for
+/// [StockAlertKind.rxExpiry]) and kind.
 ///
 /// Shares `ReminderService.notificationBaseId`'s hash space but uses offsets
-/// 8 and 9, which dose reminders (offsets 0-3) never take.
+/// 8, 9 and 10, which dose reminders (offsets 0-3) never take.
 int stockAlertId(String medicationId, StockAlertKind kind) {
   var hash = 0x811C9DC5;
   for (final unit in medicationId.codeUnits) {
@@ -78,7 +88,12 @@ int stockAlertId(String medicationId, StockAlertKind kind) {
     hash = (hash * 0x01000193) & 0xFFFFFFFF;
   }
   // Dose reminders take offsets 0-3 of the same 16-slot block.
-  return (hash & 0x7FFFFFF0) | (kind == StockAlertKind.expiry ? 0x8 : 0x9);
+  return (hash & 0x7FFFFFF0) |
+      switch (kind) {
+        StockAlertKind.expiry => 0x8,
+        StockAlertKind.lowStock => 0x9,
+        StockAlertKind.rxExpiry => 0xA,
+      };
 }
 
 /// The next [stockAlertHour]:00 at or after both [from] and [now].
@@ -90,7 +105,11 @@ int stockAlertId(String medicationId, StockAlertKind kind) {
 /// rather than a [Duration]: a duration is exact elapsed time, so adding one
 /// "day" across a daylight-saving transition moves the wall-clock hour, and
 /// these alerts exist to fire at [stockAlertHour] sharp.
-DateTime _nextAlertTime(DateTime from, DateTime now) {
+///
+/// Public because the prescription-expiry planner (`rx_reminders.dart`)
+/// books alerts on the same hour and reuses this exactly rather than
+/// duplicating it.
+DateTime nextAlertTime(DateTime from, DateTime now) {
   final day = DateTime(from.year, from.month, from.day, stockAlertHour);
   final today = DateTime(now.year, now.month, now.day, stockAlertHour);
   final earliest = now.isBefore(today)
@@ -121,6 +140,7 @@ List<StockAlert> stockAlertsFor(
   int expiryLeadDays = AppConstants.expiryWarningDays,
   int horizonDays = stockAlertHorizonDays,
   int limit = kStockNotificationBudget,
+  Set<String> needsRx = const {},
 }) {
   final horizon = DateTime(
     now.year,
@@ -133,7 +153,7 @@ List<StockAlert> stockAlertsFor(
     if (m.isArchived) continue;
     final expiry = m.expiryDate;
     if (expiry != null && !m.expiredAt(now)) {
-      final when = _nextAlertTime(
+      final when = nextAlertTime(
         DateTime(expiry.year, expiry.month, expiry.day - expiryLeadDays),
         now,
       );
@@ -162,20 +182,34 @@ List<StockAlert> stockAlertsFor(
           medicationId: m.id,
           medicationName: m.name,
           kind: StockAlertKind.lowStock,
-          when: _nextAlertTime(now, now),
+          when: nextAlertTime(now, now),
           days: 0,
           quantity: m.quantity,
+          askForRx: needsRx.contains(m.id),
         ),
       );
     }
   }
-  // The id is a tie-break, not decoration: every low-stock alert carries the
-  // same `when`, which is a total tie, and `List.sort` is not stable — so
-  // without it the order the cabinet happened to return would decide which
-  // medication silently loses its alert to the limit below.
-  alerts.sort((a, b) {
-    final byTime = a.when.compareTo(b.when);
-    return byTime != 0 ? byTime : a.id.compareTo(b.id);
-  });
-  return alerts.length > limit ? alerts.sublist(0, limit) : alerts;
+  return sortAndCapAlerts(alerts, limit: limit);
+}
+
+/// Earliest first, at most [limit].
+///
+/// The id is a tie-break, not decoration: every low-stock alert (and every
+/// prescription-expiry alert booked on the same reconcile) can carry the
+/// same `when`, which is a total tie, and `List.sort` is not stable — so
+/// without it the order the source list happened to return would decide
+/// which alert silently loses to the limit below. Shared by [stockAlertsFor]
+/// and the scheduler's merge of stock and prescription alerts, so both kinds
+/// compete for the same pending-notification budget on equal terms.
+List<StockAlert> sortAndCapAlerts(
+  List<StockAlert> alerts, {
+  int limit = kStockNotificationBudget,
+}) {
+  final sorted = [...alerts]
+    ..sort((a, b) {
+      final byTime = a.when.compareTo(b.when);
+      return byTime != 0 ? byTime : a.id.compareTo(b.id);
+    });
+  return sorted.length > limit ? sorted.sublist(0, limit) : sorted;
 }

@@ -13,8 +13,13 @@ import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
+import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/rx/rx_form_screen.dart';
 import 'package:medora/presentation/widgets/forms/date_picker_field.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../helpers/fake_reminder_port.dart';
+import '../../../helpers/test_database.dart';
 
 class _Repo implements RxRepository {
   _Repo({this.refuse, this.byId, this.byIdCompleter});
@@ -59,6 +64,12 @@ class _Repo implements RxRepository {
 }
 
 void main() {
+  setUp(() async {
+    await setUpTestDatabase();
+    SharedPreferences.setMockInitialValues({});
+  });
+  tearDown(tearDownTestDatabase);
+
   Future<_Repo> pump(
     WidgetTester tester, {
     String? refuse,
@@ -75,6 +86,13 @@ void main() {
             (ref) async => const [Person(id: 'p1', name: 'Ben')],
           ),
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23, 10)),
+          // `_save` invalidates the rx providers, which now also re-plans the
+          // stock scheduler (Task 11): it needs real prefs and a fake
+          // notification port rather than the platform plugin.
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
+          reminderPortProvider.overrideWithValue(FakePort()),
         ],
         child: MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,

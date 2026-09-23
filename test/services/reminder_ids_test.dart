@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/services/reminder_service.dart';
+import 'package:medora/services/stock_expiry_reminders.dart';
 
 void main() {
   test(
@@ -19,5 +20,11 @@ void main() {
     final a = ReminderService.notificationBaseId('dose-a');
     final b = ReminderService.notificationBaseId('dose-b');
     expect(a, isNot(b));
+  });
+
+  test('prescription expiry ids use offset 10 of the block', () {
+    final id = stockAlertId('r1', StockAlertKind.rxExpiry);
+    expect(id & 0xF, 0xA);
+    expect(id, isNot(stockAlertId('r1', StockAlertKind.expiry)));
   });
 }

@@ -133,7 +133,10 @@ void main() {
     final alerts = stockAlertsFor([
       _med(id: 'a', quantity: 0, expiryDate: DateTime(2026, 9, 20)),
     ], now);
-    expect(alerts.map((a) => a.kind), containsAll(StockAlertKind.values));
+    expect(
+      alerts.map((a) => a.kind),
+      containsAll([StockAlertKind.expiry, StockAlertKind.lowStock]),
+    );
     expect(alerts.map((a) => a.id).toSet(), hasLength(2));
     expect(
       alerts.firstWhere((a) => a.kind == StockAlertKind.expiry).quantity,
@@ -221,5 +224,19 @@ void main() {
     expect(first & 0xF, 8);
     expect(stockAlertId('a', StockAlertKind.lowStock) & 0xF, 9);
     expect(first, lessThan(0x7FFFFFFF));
+  });
+
+  test('a low-stock alert that needs a prescription says so, and its '
+      'fingerprint changes with it', () {
+    final low = _med(id: 'a', quantity: 1, minimumStockLevel: 5);
+    final plain = stockAlertsFor([low], DateTime(2026, 9, 1, 10)).single;
+    final asking = stockAlertsFor(
+      [low],
+      DateTime(2026, 9, 1, 10),
+      needsRx: {'a'},
+    ).single;
+    expect(plain.askForRx, isFalse);
+    expect(asking.askForRx, isTrue);
+    expect(asking.fingerprint, isNot(plain.fingerprint));
   });
 }

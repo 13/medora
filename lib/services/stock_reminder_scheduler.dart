@@ -1,12 +1,13 @@
-/// Medora - Stock and expiry reminder scheduler.
+/// Medora - Stock, expiry and prescription-expiry reminder scheduler.
 ///
-/// The second scheduler: it owns stock and expiry notifications only, while
-/// [ReminderScheduler] owns the dose reminders. The two never disturb each
-/// other because [stockAlertId] hands out ids in slots (offsets 8 and 9) that
-/// dose reminders never take — which is also why this one never calls
-/// `cancelAll()`, and why the dose scheduler's own full cancel spares those
-/// two offsets. It cancels its own ids one by one, from the snapshot of the
-/// previous run, which is persisted so a restart still knows them.
+/// The second scheduler: it owns stock, expiry and prescription-expiry
+/// notifications, while [ReminderScheduler] owns the dose reminders. The two
+/// never disturb each other because [stockAlertId] hands out ids in slots
+/// (offsets 8, 9 and 10) that dose reminders never take — which is also why
+/// this one never calls `cancelAll()`, and why the dose scheduler's own full
+/// cancel spares those three offsets. It cancels its own ids one by one,
+/// from the snapshot of the previous run, which is persisted so a restart
+/// still knows them.
 ///
 /// The snapshot records what each alert *says* ([StockAlert.fingerprint]),
 /// not merely when it fires: the text is baked in at booking time, so a
@@ -16,11 +17,29 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
+import 'package:medora/domain/entities/person.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
+import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/rerun_guard.dart';
+import 'package:medora/services/rx_reminders.dart';
 import 'package:medora/services/stock_alert_store.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
+
+/// What the prescription reminders need, read once per reconcile.
+class RxReminderInputs {
+  const RxReminderInputs({
+    required this.rx,
+    required this.persons,
+    required this.plannedMedicationIds,
+  });
+
+  final List<RxWithDispensings> rx;
+  final Map<String, Person> persons;
+
+  /// Medications of active dosing plans.
+  final Set<String> plannedMedicationIds;
+}
 
 class StockReminderScheduler {
   StockReminderScheduler({
@@ -29,6 +48,7 @@ class StockReminderScheduler {
     required bool Function() stockRemindersEnabled,
     Now? now,
     StockAlertStore? store,
+    this._rxInputs,
   }) : _enabled = stockRemindersEnabled,
        _now = now ?? systemNow,
        _store = store ?? StockAlertStore.inMemory();
@@ -38,6 +58,11 @@ class StockReminderScheduler {
   final bool Function() _enabled;
   final Now _now;
   final StockAlertStore _store;
+
+  /// Reads the prescriptions, persons and planned medications a reconcile
+  /// needs to plan prescription-expiry alerts. Null (no seam given, in
+  /// tests that do not exercise prescriptions) plans none.
+  final Future<RxReminderInputs?> Function()? _rxInputs;
 
   /// The previous run's alerts: notification id → what it says
   /// ([StockAlert.fingerprint]).
@@ -98,8 +123,30 @@ class StockReminderScheduler {
     // and cancel every alert already scheduled.
     if (medications == null) return _scheduled.length;
 
+    // Null (no inputs, or they failed to load) plans no prescription alerts
+    // but keeps every stock alert: a prescription read must never cost the
+    // cabinet its reminders.
+    RxReminderInputs? rx;
+    try {
+      rx = await _rxInputs?.call();
+    } catch (e) {
+      debugPrint('Stock reminders: could not load prescriptions: $e');
+    }
+    final now = _now();
+    final needsRx = rx == null
+        ? const <String>{}
+        : medicationsNeedingRx(
+            lowStock: medications,
+            planned: rx.plannedMedicationIds,
+            rx: rx.rx,
+            now: now,
+          );
     final desired = {
-      for (final alert in stockAlertsFor(medications, _now())) alert.id: alert,
+      for (final alert in sortAndCapAlerts([
+        ...stockAlertsFor(medications, now, needsRx: needsRx),
+        if (rx != null) ...rxExpiryAlertsFor(rx.rx, rx.persons, now),
+      ]))
+        alert.id: alert,
     };
     final toSchedule = desired.values
         .where((alert) => _scheduled[alert.id] != alert.fingerprint)

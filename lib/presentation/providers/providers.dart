@@ -37,6 +37,8 @@ import 'package:medora/data/repositories/prescription_repository_impl.dart';
 import 'package:medora/data/repositories/rx_repository_impl.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/data/sync/request_sync.dart';
+import 'package:medora/domain/entities/person.dart';
+import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/domain/repositories/family_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
@@ -329,6 +331,25 @@ final stockReminderSchedulerProvider = Provider<StockReminderScheduler>((ref) {
     // booked in a previous session can only be cancelled if its id survived
     // the restart.
     store: StockAlertStore(ref.watch(sharedPreferencesProvider)),
+    rxInputs: () async {
+      final rx = await ref.read(rxRepositoryProvider).getAll();
+      final persons = await ref.read(personRepositoryProvider).getPersons();
+      final plans = await ref
+          .read(prescriptionRepositoryProvider)
+          .getActivePrescriptions();
+      final list = rx.dataOrNull;
+      if (list == null) return null;
+      return RxReminderInputs(
+        rx: list,
+        persons: {
+          for (final p in persons.dataOrNull ?? const <Person>[]) p.id: p,
+        },
+        plannedMedicationIds: {
+          for (final p in plans.dataOrNull ?? const <Prescription>[])
+            p.medicationId,
+        },
+      );
+    },
   );
 
   // Notification text is baked in when the alert is scheduled, so a language

@@ -6,7 +6,12 @@ import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/domain/entities/medication.dart';
+import 'package:medora/domain/entities/person.dart';
+import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
+import 'package:medora/domain/repositories/rx_repository.dart';
+import 'package:medora/domain/rx/rx_rules.dart';
+import 'package:medora/services/notification_budget.dart';
 import 'package:medora/services/stock_alert_store.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
 import 'package:medora/services/stock_reminder_scheduler.dart';
@@ -535,4 +540,91 @@ void main() {
     expect(await scheduler.reconcile(), 1);
     expect(port.stockAlerts, hasLength(1));
   });
+
+  RxWithDispensings openRx(String id, DateTime validUntil) => RxWithDispensings(
+    Rx(
+      id: id,
+      personId: 'p1',
+      kind: RxKind.ssn,
+      issuedOn: now,
+      validUntil: validUntil,
+      items: const [RxItem(id: 'i1', description: 'Brufen')],
+    ),
+    const [],
+  );
+  const persons = {'p1': Person(id: 'p1', name: 'Ben')};
+
+  test(
+    'prescription-expiry alerts are booked alongside stock alerts',
+    () async {
+      final port = FakePort();
+      final scheduler = StockReminderScheduler(
+        port: port,
+        medications: repo(),
+        stockRemindersEnabled: () => true,
+        now: () => now,
+        rxInputs: () async => RxReminderInputs(
+          rx: [openRx('r1', DateTime(2026, 9, 20))],
+          persons: persons,
+          plannedMedicationIds: const {},
+        ),
+      );
+
+      expect(await scheduler.reconcile(), 1);
+      expect(port.stockAlerts.single.kind, StockAlertKind.rxExpiry);
+      expect(port.stockAlerts.single.medicationId, 'r1');
+    },
+  );
+
+  test('a failing rx load plans no rx alerts but keeps stock alerts', () async {
+    final db = await AppDatabase.instance.database;
+    await _seedMed(db, quantity: 1);
+
+    final port = FakePort();
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+      rxInputs: () async => throw StateError('rx load failed'),
+    );
+
+    expect(await scheduler.reconcile(), 1);
+    expect(port.stockAlerts.single.kind, StockAlertKind.lowStock);
+  });
+
+  test(
+    'the merged stock and prescription alerts still honour the budget',
+    () async {
+      final db = await AppDatabase.instance.database;
+      for (var i = 0; i < kStockNotificationBudget; i++) {
+        await _seedMed(db, name: 'm$i', quantity: 0);
+      }
+
+      final port = FakePort();
+      final scheduler = StockReminderScheduler(
+        port: port,
+        medications: repo(),
+        stockRemindersEnabled: () => true,
+        now: () => now,
+        rxInputs: () async => RxReminderInputs(
+          // Far enough out that its lead window opens well after every
+          // low-stock alert's "as soon as possible" slot, so it is the one
+          // the budget drops rather than crowding out a nearer alert.
+          rx: [openRx('r1', DateTime(now.year, now.month, now.day + 30))],
+          persons: persons,
+          plannedMedicationIds: const {},
+        ),
+      );
+
+      expect(await scheduler.reconcile(), kStockNotificationBudget);
+      expect(
+        port.stockAlerts.any((a) => a.kind == StockAlertKind.rxExpiry),
+        isFalse,
+        reason:
+            'every low-stock alert is due sooner, so the shared budget keeps '
+            'them over a prescription still weeks from its own window',
+      );
+    },
+  );
 }
