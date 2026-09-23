@@ -30,7 +30,7 @@ class AttachmentFiles {
 
   /// The file for [a]; it may not exist yet.
   Future<File> fileFor(Attachment a) async =>
-      File(p.join((await _attachmentsDir()).path, a.fileName));
+      File(p.join((await _attachmentsDir()).path, p.basename(a.fileName)));
 
   Future<bool> has(Attachment a) async => (await fileFor(a)).existsSync();
 

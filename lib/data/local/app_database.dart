@@ -243,7 +243,8 @@ class AppDatabase {
 
   /// Empties every table; with [keepRx], all but the prescription tables
   /// (`persons`, `rx`, `rx_dispensings`), which a force pull from a server
-  /// without them could never bring back.
+  /// without them could never bring back. The `attachments` and
+  /// `attachment_removals` tables are always cleared, regardless of [keepRx].
   Future<void> clearAllData({bool keepRx = false}) async {
     final db = await database;
     await db.delete('attachment_removals');
