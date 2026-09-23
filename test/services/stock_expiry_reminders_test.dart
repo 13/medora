@@ -226,6 +226,12 @@ void main() {
     expect(first, lessThan(0x7FFFFFFF));
   });
 
+  test('isRxAlertId matches only the rxExpiry offset', () {
+    expect(isRxAlertId(stockAlertId('a', StockAlertKind.rxExpiry)), isTrue);
+    expect(isRxAlertId(stockAlertId('a', StockAlertKind.expiry)), isFalse);
+    expect(isRxAlertId(stockAlertId('a', StockAlertKind.lowStock)), isFalse);
+  });
+
   test('a low-stock alert that needs a prescription says so, and its '
       'fingerprint changes with it', () {
     final low = _med(id: 'a', quantity: 1, minimumStockLevel: 5);

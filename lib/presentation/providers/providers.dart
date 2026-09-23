@@ -333,12 +333,23 @@ final stockReminderSchedulerProvider = Provider<StockReminderScheduler>((ref) {
     store: StockAlertStore(ref.watch(sharedPreferencesProvider)),
     rxInputs: () async {
       final rx = await ref.read(rxRepositoryProvider).getAll();
+      final list = rx.dataOrNull;
+      if (list == null) return null;
       final persons = await ref.read(personRepositoryProvider).getPersons();
+      persons.when(
+        success: (_) {},
+        failure: (message) =>
+            debugPrint('Stock reminders: could not load persons: $message'),
+      );
       final plans = await ref
           .read(prescriptionRepositoryProvider)
           .getActivePrescriptions();
-      final list = rx.dataOrNull;
-      if (list == null) return null;
+      plans.when(
+        success: (_) {},
+        failure: (message) => debugPrint(
+          'Stock reminders: could not load dosing plans: $message',
+        ),
+      );
       return RxReminderInputs(
         rx: list,
         persons: {

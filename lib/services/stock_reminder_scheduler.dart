@@ -125,7 +125,9 @@ class StockReminderScheduler {
 
     // Null (no inputs, or they failed to load) plans no prescription alerts
     // but keeps every stock alert: a prescription read must never cost the
-    // cabinet its reminders.
+    // cabinet its reminders. Any rx alert already booked is preserved
+    // separately below (see `keptRxAlerts`), by id, since there is nothing
+    // here to rebuild it from.
     RxReminderInputs? rx;
     try {
       rx = await _rxInputs?.call();
@@ -133,6 +135,13 @@ class StockReminderScheduler {
       debugPrint('Stock reminders: could not load prescriptions: $e');
     }
     final now = _now();
+    // Chose the simpler of the two options for a failed rx read: a low-stock
+    // alert's `askForRx` is recomputed from `needsRx` regardless (so it can
+    // flip off and re-book that alert without its "ask your doctor" line
+    // until the next successful read), rather than also freezing every
+    // low-stock fingerprint to dodge that. The one guarantee this method
+    // keeps is that a prescription read never costs the cabinet a *booked
+    // alert* — stock or rx.
     final needsRx = rx == null
         ? const <String>{}
         : medicationsNeedingRx(
@@ -161,6 +170,13 @@ class StockReminderScheduler {
 
     try {
       for (final id in _scheduled.keys.toList()) {
+        // A failed prescription read must not cost the cabinet its
+        // already-booked rx alerts: with no fresh `RxReminderInputs` there is
+        // no `StockAlert` to diff against, so the id is left exactly as it
+        // was rather than read as "no longer wanted" and cancelled. (Its
+        // `askForRx` low-stock sibling, if any, does not get the same
+        // treatment here — see the comment on `keptRxAlerts` below.)
+        if (rx == null && isRxAlertId(id)) continue;
         // Gone, moved, or saying something else now: the old notification
         // must go before the replacement is booked.
         if (desired[id]?.fingerprint != _scheduled[id]) {
@@ -177,9 +193,20 @@ class StockReminderScheduler {
       return _scheduled.length;
     }
 
+    // The ids skipped above are not in `desired` (rx == null means
+    // `rxExpiryAlertsFor` never ran), so a plain rebuild from `desired.values`
+    // would silently drop them from the snapshot even though nothing was
+    // cancelled or re-booked. Carry them over untouched.
+    final keptRxAlerts = rx == null
+        ? {
+            for (final id in _scheduled.keys)
+              if (isRxAlertId(id)) id: _scheduled[id]!,
+          }
+        : const <int, String>{};
     _scheduled
       ..clear()
-      ..addEntries(desired.values.map((a) => MapEntry(a.id, a.fingerprint)));
+      ..addEntries(desired.values.map((a) => MapEntry(a.id, a.fingerprint)))
+      ..addAll(keptRxAlerts);
     await _store.save(_scheduled);
     debugPrint('Stock reminders: ${_scheduled.length} alert(s) scheduled');
     return _scheduled.length;

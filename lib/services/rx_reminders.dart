@@ -25,7 +25,14 @@ List<StockAlert> rxExpiryAlertsFor(
   Map<String, Person> persons,
   DateTime now, {
   int leadDays = rxExpiryLeadDays,
+  int horizonDays = stockAlertHorizonDays,
 }) {
+  final horizon = DateTime(
+    now.year,
+    now.month,
+    now.day + horizonDays,
+    stockAlertHour,
+  );
   final alerts = <StockAlert>[];
   for (final entry in rx) {
     final status = entry.statusAt(now);
@@ -39,8 +46,13 @@ List<StockAlert> rxExpiryAlertsFor(
       until.day - leadDays,
       stockAlertHour,
     );
-    final when = nextAlertTime(lead, now);
+    // Before the lead alert opens, it *is* the next one due — not "the next
+    // unpassed slot", which would slide a day later on every reconcile run
+    // after it (day-2, day-1, ...) instead of leaving exactly one more alert
+    // (the last day) once it has fired.
+    final when = now.isBefore(lead) ? lead : nextAlertTime(last, now);
     if (when.isAfter(last)) continue;
+    if (when.isAfter(horizon)) continue;
     alerts.add(
       StockAlert(
         id: stockAlertId(entry.rx.id, StockAlertKind.rxExpiry),

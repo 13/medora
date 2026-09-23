@@ -27,4 +27,14 @@ void main() {
     expect(id & 0xF, 0xA);
     expect(id, isNot(stockAlertId('r1', StockAlertKind.expiry)));
   });
+
+  test('0x8, 0x9 and 0xA are stock alert ids; 0x0-0x3 (dose offsets) are '
+      'not', () {
+    for (final offset in [0x8, 0x9, 0xA]) {
+      expect(ReminderService.isStockAlertIdForTest(offset), isTrue);
+    }
+    for (final offset in [0x0, 0x1, 0x2, 0x3]) {
+      expect(ReminderService.isStockAlertIdForTest(offset), isFalse);
+    }
+  });
 }

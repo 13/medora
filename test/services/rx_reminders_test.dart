@@ -42,14 +42,29 @@ void main() {
     expect(alerts.single.medicationName, 'Ben – Brufen');
   });
 
-  test('inside the three days: the next 09:00, then the last day', () {
+  test('the day after the lead alert has fired: the last day, not another '
+      'sliding lead slot', () {
+    // Lead for a rx valid until 25 Sep is 22 Sep 09:00; `now` (23 Sep
+    // 10:00) is a day past it. The only alert left to book is the last
+    // day itself, not "the next unpassed slot" (which would be a fresh
+    // alert every day: 24 Sep, then 25 Sep, ...).
     final a = rxExpiryAlertsFor(
       [entry('r1', DateTime(2026, 9, 25))],
       persons,
       now,
     );
-    expect(a.single.when, DateTime(2026, 9, 24, 9));
-    expect(a.single.days, 1);
+    expect(a.single.when, DateTime(2026, 9, 25, 9));
+    expect(a.single.days, 0);
+  });
+
+  test('on the last day itself, before 09:00: still due at 09:00', () {
+    final a = rxExpiryAlertsFor(
+      [entry('r1', DateTime(2026, 9, 23))],
+      persons,
+      DateTime(2026, 9, 23, 7),
+    );
+    expect(a.single.when, DateTime(2026, 9, 23, 9));
+    expect(a.single.days, 0);
   });
 
   test('past 09:00 on the last day: nothing left to remind', () {
@@ -59,6 +74,25 @@ void main() {
       DateTime(2026, 9, 23, 10),
     );
     expect(a, isEmpty);
+  });
+
+  test('a prescription expiring well beyond the horizon is left for a '
+      'later run', () {
+    final farOff = DateTime(2026, 9, 23).add(const Duration(days: 200));
+    expect(rxExpiryAlertsFor([entry('r1', farOff)], persons, now), isEmpty);
+  });
+
+  test('honours a shorter horizon like stockAlertsFor', () {
+    expect(
+      rxExpiryAlertsFor(
+        [entry('r1', DateTime(2026, 10))],
+        persons,
+        now,
+        horizonDays: 3,
+      ),
+      isEmpty,
+      reason: 'the lead alert (28 Sep) is more than 3 days after 23 Sep',
+    );
   });
 
   test('collected, expired or without validity: no alert', () {

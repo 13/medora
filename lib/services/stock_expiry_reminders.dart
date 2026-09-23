@@ -96,6 +96,16 @@ int stockAlertId(String medicationId, StockAlertKind kind) {
       };
 }
 
+/// Whether [id] belongs to a prescription-expiry alert
+/// ([StockAlertKind.rxExpiry]).
+///
+/// Reuses [stockAlertId]'s offset scheme (low nibble `0xA`) so the scheduler
+/// can recognise a previously booked rx alert's id without the [StockAlert]
+/// that produced it — needed when a failed prescription read leaves no such
+/// object to compare against, but the alert already booked must still be
+/// left alone.
+bool isRxAlertId(int id) => (id & 0xF) == 0xA;
+
 /// The next [stockAlertHour]:00 at or after both [from] and [now].
 ///
 /// [now] itself never qualifies: an alert planned at 10:00 today fires at

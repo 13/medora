@@ -557,6 +557,9 @@ void main() {
   test(
     'prescription-expiry alerts are booked alongside stock alerts',
     () async {
+      final db = await AppDatabase.instance.database;
+      final low = await _seedMed(db, quantity: 1);
+
       final port = FakePort();
       final scheduler = StockReminderScheduler(
         port: port,
@@ -570,11 +573,63 @@ void main() {
         ),
       );
 
-      expect(await scheduler.reconcile(), 1);
-      expect(port.stockAlerts.single.kind, StockAlertKind.rxExpiry);
-      expect(port.stockAlerts.single.medicationId, 'r1');
+      expect(await scheduler.reconcile(), 2);
+      expect(port.stockAlerts.map((a) => a.kind).toSet(), {
+        StockAlertKind.lowStock,
+        StockAlertKind.rxExpiry,
+      });
+      expect(
+        port.stockAlerts
+            .firstWhere((a) => a.kind == StockAlertKind.rxExpiry)
+            .medicationId,
+        'r1',
+      );
+      expect(
+        port.stockAlerts
+            .firstWhere((a) => a.kind == StockAlertKind.lowStock)
+            .medicationId,
+        low,
+      );
     },
   );
+
+  test('a booked rx alert survives a later reconcile whose rx read fails: '
+      'not cancelled, not re-booked', () async {
+    final port = FakePort();
+    var failRx = false;
+    final scheduler = StockReminderScheduler(
+      port: port,
+      medications: repo(),
+      stockRemindersEnabled: () => true,
+      now: () => now,
+      rxInputs: () async {
+        if (failRx) throw StateError('rx load failed');
+        return RxReminderInputs(
+          rx: [openRx('r1', DateTime(2026, 9, 20))],
+          persons: persons,
+          plannedMedicationIds: const {},
+        );
+      },
+    );
+
+    expect(await scheduler.reconcile(), 1);
+    final rxId = port.stockAlerts.single.id;
+    expect(isRxAlertId(rxId), isTrue);
+    port.stockAlerts.clear();
+
+    failRx = true;
+    expect(await scheduler.reconcile(), 1);
+    expect(
+      port.stockAlerts,
+      isEmpty,
+      reason: 'a failed rx read must not re-book it either',
+    );
+    expect(
+      port.cancelledStockAlerts,
+      isEmpty,
+      reason: 'a failed rx read must not cancel it',
+    );
+  });
 
   test('a failing rx load plans no rx alerts but keeps stock alerts', () async {
     final db = await AppDatabase.instance.database;

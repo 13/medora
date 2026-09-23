@@ -268,6 +268,12 @@ class ReminderService implements ReminderPort {
   static bool _isStockAlertId(int id) =>
       const {0x8, 0x9, 0xA}.contains(id & 0xF);
 
+  /// Test seam for [_isStockAlertId]: private members are not visible from
+  /// the test suite, and this predicate is exactly the id-guard a missing
+  /// offset would silently break.
+  @visibleForTesting
+  static bool isStockAlertIdForTest(int id) => _isStockAlertId(id);
+
   @override
   Future<void> cancelAllDoses() async {
     if (!_supported) return;
