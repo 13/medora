@@ -13,6 +13,7 @@ import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/intake_count.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/prescription.dart';
+import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/entities/treatment.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:path_provider/path_provider.dart';
@@ -340,7 +341,9 @@ String episodeShareSubject(Treatment treatment, EpisodeLabels labels) =>
 ///
 /// Pure, so it is unit-testable without a share sheet. [dosageText] formats
 /// a prescription's dose: the caller passes `prescriptionDosageLabel`, which
-/// lives in the presentation layer.
+/// lives in the presentation layer. [rx] is the prescription documents
+/// linked to the episode; [rxText] formats one — the caller passes a
+/// presentation-layer formatter, like [dosageText].
 String buildEpisodeSummary({
   required Treatment treatment,
   required List<Prescription> prescriptions,
@@ -349,6 +352,8 @@ String buildEpisodeSummary({
   required DateTime now,
   required Duration grace,
   required String Function(Prescription) dosageText,
+  List<Rx> rx = const [],
+  String Function(Rx)? rxText,
 }) {
   final date = labels.date;
   String? text(String? value) {
@@ -417,6 +422,12 @@ String buildEpisodeSummary({
         labels,
       );
       if (intake != null) lines.add('  $intake');
+    }
+  }
+
+  if (rx.isNotEmpty && rxText != null) {
+    for (final r in rx) {
+      lines.add('- ${rxText(r)}');
     }
   }
 

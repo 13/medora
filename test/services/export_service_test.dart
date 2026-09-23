@@ -6,7 +6,9 @@ import 'package:intl/intl.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/intake_count.dart';
 import 'package:medora/domain/entities/prescription.dart';
+import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/services/export_service.dart';
@@ -563,6 +565,29 @@ void main() {
         treatmentActive: false,
       );
       expect(intakeText(c, labels), '14 von 15 eingenommen');
+    });
+
+    test('the episode lists its prescriptions after the medicines', () {
+      final text = buildEpisodeSummary(
+        treatment: sinusitis,
+        prescriptions: const [],
+        doses: const [],
+        labels: labelsFor('en'),
+        now: DateTime(2026, 3, 12),
+        grace: Duration.zero,
+        dosageText: (_) => '',
+        rx: [
+          Rx(
+            id: 'r1',
+            kind: RxKind.ssn,
+            nre: '0410A1234567890',
+            issuedOn: DateTime(2026, 3, 2),
+            items: const [RxItem(id: 'i1', description: 'Brufen 400')],
+          ),
+        ],
+        rxText: (r) => 'SSN ${r.nre} – ${r.items.first.description}',
+      );
+      expect(text, contains('SSN 0410A1234567890 – Brufen 400'));
     });
   });
 

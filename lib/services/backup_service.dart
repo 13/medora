@@ -115,6 +115,9 @@ class BackupService {
     'dose_logs',
     'families',
     'family_members',
+    'persons',
+    'rx',
+    'rx_dispensings',
   ];
 
   /// Insert order that satisfies every foreign key.
@@ -125,6 +128,9 @@ class BackupService {
     'treatments',
     'prescriptions',
     'dose_logs',
+    'persons',
+    'rx',
+    'rx_dispensings',
   ];
 
   /// Tables a restore never stamps `pending_update`.
@@ -143,6 +149,9 @@ class BackupService {
     'treatments',
     'prescriptions',
     'dose_logs',
+    'persons',
+    'rx',
+    'rx_dispensings',
   };
 
   /// Columns that describe this device's sync state, never carried by a

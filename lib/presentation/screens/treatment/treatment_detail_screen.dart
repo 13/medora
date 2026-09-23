@@ -13,14 +13,17 @@ import 'package:medora/domain/entities/intake_count.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/prescription.dart';
 import 'package:medora/domain/entities/treatment.dart';
+import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/formatters.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
+import 'package:medora/presentation/screens/rx/rx_labels.dart';
 import 'package:medora/presentation/screens/rx/treatment_rx_section.dart';
 import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/screens/treatment/prescription_sheet.dart';
@@ -462,6 +465,14 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
             .read(medicationListProvider.future)
             .then<List<Medication>?>((m) => m, onError: (_) => null),
       );
+      // A failed read must not stop the share: the episode still has its
+      // illness and doses without its prescriptions.
+      final rx = await ref
+          .read(rxForTreatmentProvider(widget.treatmentId).future)
+          .then<List<RxWithDispensings>>(
+            (r) => r,
+            onError: (_) => const <RxWithDispensings>[],
+          );
       final labels = EpisodeLabels.fromL10n(l10n);
       text = buildEpisodeSummary(
         treatment: treatment,
@@ -475,6 +486,14 @@ class _TreatmentDetailScreenState extends ConsumerState<TreatmentDetailScreen> {
           p,
           medicationUnit: units[p.medicationId],
         ),
+        rx: [for (final e in rx) e.rx],
+        rxText: (r) => [
+          rxKindShort(l10n, r.kind),
+          ?r.nre,
+          if (r.items.isNotEmpty)
+            '– ${r.items.map((i) => i.description).join(', ')}',
+          '(${labels.date(r.issuedOn)})',
+        ].join(' '),
       );
       subject = episodeShareSubject(treatment, labels);
     } catch (_) {

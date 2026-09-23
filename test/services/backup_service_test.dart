@@ -154,6 +154,53 @@ void main() {
     expect(statuses, {SyncStatus.synced});
   });
 
+  test(
+    'persons, prescriptions and dispensings survive a backup round trip',
+    () async {
+      final db = await AppDatabase.instance.database;
+      const stamps = {
+        'created_at': '2026-09-23T10:00:00.000',
+        'updated_at': '2026-09-23T10:00:00.000',
+        'sync_status': 'synced',
+      };
+      await db.insert('persons', {
+        'id': 'p1',
+        'name': 'Ben',
+        'tax_code': 'RSSMRA85T10A562S',
+        'exemptions': '["E01"]',
+        ...stamps,
+      });
+      await db.insert('rx', {
+        'id': 'r1',
+        'person_id': 'p1',
+        'kind': 'ssn',
+        'nre': '0410A1234567890',
+        'issued_on': '2026-09-20',
+        'items': '[{"id":"i1","description":"Brufen","packs":1}]',
+        'cancelled': 0,
+        ...stamps,
+      });
+      await db.insert('rx_dispensings', {
+        'id': 'd1',
+        'rx_id': 'r1',
+        'item_id': 'i1',
+        'packs': 1,
+        'dispensed_on': '2026-09-22',
+        'units_added': 0,
+        ...stamps,
+      });
+      final file = await makeService().exportToFile(outDir);
+      await AppDatabase.instance.clearAllData();
+      await makeService().restore(file, mode: RestoreMode.replace);
+      expect(
+        (await db.query('persons')).single['tax_code'],
+        'RSSMRA85T10A562S',
+      );
+      expect((await db.query('rx')).single['nre'], '0410A1234567890');
+      expect((await db.query('rx_dispensings')).single['rx_id'], 'r1');
+    },
+  );
+
   test('a remembered pack EAN survives export and restore', () async {
     final db = await AppDatabase.instance.database;
     await db.insert('medications', {
@@ -916,6 +963,55 @@ void main() {
       expect((await db.query('medications')).single['quantity'], 4);
     }
   });
+
+  test(
+    'an old backup with no persons, rx or rx_dispensings keys still restores',
+    () async {
+      final db = await AppDatabase.instance.database;
+      final file = File(p.join(outDir.path, 'v15_no_rx.json'))
+        ..writeAsStringSync(
+          jsonEncode({
+            'format': 'medora-backup',
+            'version': 1,
+            'schemaVersion': 15,
+            'createdAt': '2026-09-01T08:00:00.000Z',
+            'appVersion': '0.3.0+18',
+            'tables': {
+              'medications': [
+                {
+                  'id': 'm15',
+                  'name': 'Tachipirina',
+                  'quantity': 4,
+                  'minimum_stock_level': 0,
+                  'created_at': '2026-08-01T08:00:00.000',
+                  'updated_at': '2026-08-02T08:00:00.000',
+                },
+              ],
+              'treatments': <Object?>[],
+              'prescriptions': <Object?>[],
+              'dose_logs': <Object?>[],
+              'families': <Object?>[],
+              'family_members': <Object?>[],
+              // persons/rx/rx_dispensings deliberately absent.
+            },
+            'photos': <String, Object?>{},
+          }),
+        );
+
+      final manifest = await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+      );
+
+      expect(manifest.rowCounts['persons'], 0);
+      expect(manifest.rowCounts['rx'], 0);
+      expect(manifest.rowCounts['rx_dispensings'], 0);
+      expect((await db.query('medications')).single['id'], 'm15');
+      expect(await db.query('persons'), isEmpty);
+      expect(await db.query('rx'), isEmpty);
+      expect(await db.query('rx_dispensings'), isEmpty);
+    },
+  );
 
   test(
     'a backup with a broken reference leaves the database untouched',
