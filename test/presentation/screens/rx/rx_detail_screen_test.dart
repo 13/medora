@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,8 +24,12 @@ import '../../../helpers/fake_reminder_port.dart';
 import '../../../helpers/test_database.dart';
 
 class _Repo implements RxRepository {
-  _Repo({this.byId});
+  _Repo({this.byId, this.undoGate});
   final Result<RxWithDispensings>? byId;
+
+  /// When set, `undoDispensing` waits for it, so a test can hold it open.
+  final Completer<void>? undoGate;
+  final undone = <String>[];
 
   @override
   Future<Result<RxWithDispensings>> getById(String id) async =>
@@ -42,8 +48,11 @@ class _Repo implements RxRepository {
   Future<Result<RedeemOutcome>> redeem(String id, List<RxDispensing> d) async =>
       const Result.success(RedeemOutcome());
   @override
-  Future<Result<void>> undoDispensing(String id) async =>
-      const Result.success(null);
+  Future<Result<void>> undoDispensing(String id) async {
+    undone.add(id);
+    await undoGate?.future;
+    return const Result.success(null);
+  }
 }
 
 /// Always empty, so `_linkMedication` sees a load that resolves but has
@@ -182,5 +191,55 @@ void main() {
     expect(find.byType(SimpleDialog), findsNothing);
     expect(find.text('Something went wrong'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('removing a collection asks first, and a second tap while it '
+      'runs does nothing', (tester) async {
+    final gate = Completer<void>();
+    final repo = _Repo(
+      byId: Result.success(
+        RxWithDispensings(rx, [
+          RxDispensing(
+            id: 'd1',
+            rxId: 'rx1',
+            itemId: 'i1',
+            packs: 1,
+            dispensedOn: DateTime(2026, 9, 22),
+          ),
+        ]),
+      ),
+      undoGate: gate,
+    );
+    await pump(tester, repo: repo, meds: _EmptyMeds.new);
+    await tester.dragUntilVisible(
+      find.byIcon(Icons.undo),
+      find.byType(Scrollable).first,
+      const Offset(0, -200),
+    );
+
+    // Cancel keeps it.
+    await tester.tap(find.byIcon(Icons.undo));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Remove this collection? The stock is not changed.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(repo.undone, isEmpty);
+
+    // Confirmed: removed once, and the button is off until it is done.
+    await tester.tap(find.byIcon(Icons.undo));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+    await tester.pumpAndSettle();
+    expect(repo.undone, ['d1']);
+    await tester.tap(find.byIcon(Icons.undo), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(repo.undone, ['d1']);
+
+    gate.complete();
+    await tester.pumpAndSettle();
   });
 }

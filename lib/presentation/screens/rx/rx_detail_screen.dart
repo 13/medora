@@ -355,19 +355,9 @@ class RxDetailScreen extends ConsumerWidget {
                         ?d.pharmacy,
                       ].join(' · '),
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.undo),
-                      tooltip: l10n.rxRemoveCollection,
-                      onPressed: () async {
-                        final result = await ref
-                            .read(rxRepositoryProvider)
-                            .undoDispensing(d.id);
-                        if (!context.mounted) return;
-                        result.when(
-                          success: (_) => invalidateRx(ref),
-                          failure: (_) => _reportFailure(context),
-                        );
-                      },
+                    trailing: _RemoveCollectionButton(
+                      dispensingId: d.id,
+                      onFailure: _reportFailure,
                     ),
                   ),
               ],
@@ -377,4 +367,66 @@ class RxDetailScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+/// Removes one collection after asking; off while the removal runs, so a
+/// second tap cannot send it twice.
+class _RemoveCollectionButton extends ConsumerStatefulWidget {
+  const _RemoveCollectionButton({
+    required this.dispensingId,
+    required this.onFailure,
+  });
+
+  final String dispensingId;
+  final void Function(BuildContext context) onFailure;
+
+  @override
+  ConsumerState<_RemoveCollectionButton> createState() =>
+      _RemoveCollectionButtonState();
+}
+
+class _RemoveCollectionButtonState
+    extends ConsumerState<_RemoveCollectionButton> {
+  bool _busy = false;
+
+  Future<void> _remove() async {
+    setState(() => _busy = true);
+    try {
+      final l10n = AppLocalizations.of(context);
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          content: Text(l10n.rxRemoveCollectionConfirm),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(l10n.rxRemoveCollection),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      final result = await ref
+          .read(rxRepositoryProvider)
+          .undoDispensing(widget.dispensingId);
+      if (!mounted) return;
+      result.when(
+        success: (_) => invalidateRx(ref),
+        failure: (_) => widget.onFailure(context),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    icon: const Icon(Icons.undo),
+    tooltip: AppLocalizations.of(context).rxRemoveCollection,
+    onPressed: _busy ? null : _remove,
+  );
 }
