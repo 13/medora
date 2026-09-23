@@ -21,6 +21,7 @@ import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/rx/rx_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../helpers/fake_attachment_repository.dart';
 import '../../../helpers/fake_reminder_port.dart';
 import '../../../helpers/test_database.dart';
 
@@ -128,6 +129,11 @@ void main() {
             await SharedPreferences.getInstance(),
           ),
           reminderPortProvider.overrideWithValue(FakePort()),
+          // The attachments section (below the items) reads these; a real
+          // repository would try to open sqlite, which isn't set up here.
+          attachmentRepositoryProvider.overrideWithValue(
+            FakeAttachmentRepository(),
+          ),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -196,6 +202,9 @@ void main() {
               await SharedPreferences.getInstance(),
             ),
             reminderPortProvider.overrideWithValue(FakePort()),
+            attachmentRepositoryProvider.overrideWithValue(
+              FakeAttachmentRepository(),
+            ),
           ],
           child: MaterialApp.router(
             routerConfig: router,

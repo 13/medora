@@ -13,6 +13,8 @@ import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/screens/rx/rx_list_view.dart';
 
+import '../../../helpers/fake_attachment_repository.dart';
+
 /// A person repository whose list can be mutated between pumps, so a test
 /// can simulate Settings -> Persons deleting someone while this tab (which
 /// never unmounts) is showing a filter set to them.
@@ -49,6 +51,11 @@ void main() {
       ProviderScope(
         overrides: [
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23, 10)),
+          // A real repository would try to open sqlite, which isn't set up
+          // in these widget tests.
+          attachmentRepositoryProvider.overrideWithValue(
+            FakeAttachmentRepository(),
+          ),
           personsProvider.overrideWith(
             (ref) async => const [Person(id: 'p1', name: 'Ben')],
           ),
@@ -92,6 +99,11 @@ void main() {
       ProviderScope(
         overrides: [
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23, 10)),
+          // A real repository would try to open sqlite, which isn't set up
+          // in these widget tests.
+          attachmentRepositoryProvider.overrideWithValue(
+            FakeAttachmentRepository(),
+          ),
           personsProvider.overrideWith(
             (ref) async => const [
               Person(id: 'p1', name: 'Ben'),
@@ -154,6 +166,11 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23, 10)),
+          // A real repository would try to open sqlite, which isn't set up
+          // in these widget tests.
+          attachmentRepositoryProvider.overrideWithValue(
+            FakeAttachmentRepository(),
+          ),
           personRepositoryProvider.overrideWithValue(personRepo),
           rxListProvider.overrideWith(
             (ref) async => [
@@ -220,6 +237,11 @@ void main() {
       ProviderScope(
         overrides: [
           nowProvider.overrideWithValue(() => DateTime(2026, 9, 23, 10)),
+          // A real repository would try to open sqlite, which isn't set up
+          // in these widget tests.
+          attachmentRepositoryProvider.overrideWithValue(
+            FakeAttachmentRepository(),
+          ),
           personsProvider.overrideWith((ref) async => const <Person>[]),
           rxListProvider.overrideWith((ref) async {
             reads++;

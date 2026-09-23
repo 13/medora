@@ -9,6 +9,7 @@ import 'package:medora/domain/entities/person.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
+import 'package:medora/presentation/providers/attachment_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -44,6 +45,8 @@ class _RxListViewState extends ConsumerState<RxListView> {
     final now = ref.watch(nowProvider)();
     final personList = ref.watch(personsProvider).value ?? const <Person>[];
     final persons = {for (final p in personList) p.id: p};
+    final attachmentCounts =
+        ref.watch(attachmentCountsProvider).value ?? const <String, int>{};
     // The tab stays mounted while Settings -> Persons can delete the
     // filtered person out from under it; a stale id would otherwise leave
     // the dropdown showing a value with no matching item.
@@ -96,8 +99,12 @@ class _RxListViewState extends ConsumerState<RxListView> {
 
         open.sort(byExpiry);
         partial.sort(byExpiry);
-        Widget tile(RxWithDispensings r) =>
-            _RxTile(item: r, person: persons[r.rx.personId], now: now);
+        Widget tile(RxWithDispensings r) => _RxTile(
+          item: r,
+          person: persons[r.rx.personId],
+          now: now,
+          hasAttachments: (attachmentCounts[r.rx.id] ?? 0) > 0,
+        );
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
@@ -146,11 +153,17 @@ class _Header extends StatelessWidget {
 }
 
 class _RxTile extends StatelessWidget {
-  const _RxTile({required this.item, required this.person, required this.now});
+  const _RxTile({
+    required this.item,
+    required this.person,
+    required this.now,
+    required this.hasAttachments,
+  });
 
   final RxWithDispensings item;
   final Person? person;
   final DateTime now;
+  final bool hasAttachments;
 
   @override
   Widget build(BuildContext context) {
@@ -183,7 +196,19 @@ class _RxTile extends StatelessWidget {
           validity,
         ].nonNulls.join(' · '),
       ),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: hasAttachments
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Semantics(
+                  label: l10n.rxAttachments,
+                  child: const Icon(Icons.attach_file, size: 18),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right),
+              ],
+            )
+          : const Icon(Icons.chevron_right),
       onTap: () => context.push(AppRoutes.rxDetail.replaceFirst(':id', rx.id)),
     );
   }

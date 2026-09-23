@@ -286,4 +286,9 @@ class _FailingAttachmentRepo implements AttachmentRepository {
   @override
   Future<Result<bool>> markUploaded(String id, String remotePath) async =>
       const Result.failure('not used in this test');
+
+  @override
+  Future<Result<Map<String, int>>> countsForKind(
+    AttachmentOwnerKind kind,
+  ) async => const Result.success({});
 }

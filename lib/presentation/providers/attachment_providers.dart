@@ -15,3 +15,13 @@ final attachmentsForOwnerProvider =
           .forOwner(owner.$1, owner.$2);
       return result.when(success: (a) => a, failure: (m) => throw Exception(m));
     });
+
+/// Attachment counts per prescription id, one query for the whole list — so
+/// `RxListView` can show which tiles have attachments without a query per
+/// tile.
+final attachmentCountsProvider = FutureProvider<Map<String, int>>((ref) async {
+  final result = await ref
+      .watch(attachmentRepositoryProvider)
+      .countsForKind(AttachmentOwnerKind.rx);
+  return result.when(success: (c) => c, failure: (m) => throw Exception(m));
+});

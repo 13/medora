@@ -18,6 +18,7 @@ import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/rx/pharmacy_screen.dart';
 import 'package:medora/presentation/screens/rx/redeem_sheet.dart';
+import 'package:medora/presentation/screens/rx/rx_attachments_section.dart';
 import 'package:medora/presentation/screens/rx/rx_labels.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
@@ -357,6 +358,8 @@ class RxDetailScreen extends ConsumerWidget {
                         )
                       : const Icon(Icons.inventory_2_outlined),
                 ),
+              const SizedBox(height: 16),
+              RxAttachmentsSection(rxId: rx.id),
               if (entry.dispensings.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(

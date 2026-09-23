@@ -46,6 +46,7 @@ extension RxDataRefresh on Ref {
     invalidate(rxByIdProvider);
     invalidate(rxForTreatmentProvider);
     invalidate(attachmentsForOwnerProvider);
+    invalidate(attachmentCountsProvider);
   }
 }
 
@@ -57,6 +58,7 @@ extension WidgetRxDataRefresh on WidgetRef {
     invalidate(rxByIdProvider);
     invalidate(rxForTreatmentProvider);
     invalidate(attachmentsForOwnerProvider);
+    invalidate(attachmentCountsProvider);
   }
 }
 

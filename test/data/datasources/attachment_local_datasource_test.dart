@@ -64,6 +64,20 @@ void main() {
     },
   );
 
+  test('getForKind returns every live row of that kind, across owners, in '
+      'one query', () async {
+    final local = AttachmentLocalDatasource(now: () => at);
+    await local.upsert(model('a1'), syncStatus: SyncStatus.pendingCreate);
+    await local.upsert(model('a2', owner: 'r2'), syncStatus: SyncStatus.synced);
+    await local.upsert(model('a3', owner: 'r2'), syncStatus: SyncStatus.synced);
+    await local.markDeleted('a3');
+    expect(
+      (await local.getForKind(AttachmentOwnerKind.rx)).map((a) => a.id),
+      unorderedEquals(['a1', 'a2']),
+    );
+    expect(await local.getForKind(AttachmentOwnerKind.treatment), isEmpty);
+  });
+
   test('the removal queue keeps each path once until completed', () async {
     final local = AttachmentLocalDatasource(now: () => at);
     await local.enqueueRemoval('u/a1.jpg');

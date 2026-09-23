@@ -11,6 +11,11 @@ abstract class AttachmentRepository {
     String ownerId,
   );
 
+  /// Attachment counts by owner id, for every owner of [kind] — one query,
+  /// so a list of many owners (e.g. every prescription) can show which ones
+  /// have attachments without a query per row.
+  Future<Result<Map<String, int>>> countsForKind(AttachmentOwnerKind kind);
+
   /// Stores [imported] as a new attachment of the owner; the file is
   /// written before the row, so a row never points at nothing here.
   Future<Result<Attachment>> add(

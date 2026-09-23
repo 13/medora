@@ -9,9 +9,13 @@ void main() {
     // A barcode has to read black-on-white to a scanner whatever the app's
     // theme is (dark mode would print a light barcode on a dark page), so
     // these two intentionally paint fixed colors rather than theme tokens.
+    // The attachment viewer is a full-screen photo/PDF chrome, black with
+    // white icons like a native gallery, on purpose regardless of the
+    // app's light/dark setting.
     const exemptFiles = {
       'lib/presentation/screens/rx/pharmacy_screen.dart',
       'lib/presentation/widgets/code39.dart',
+      'lib/presentation/screens/rx/attachment_viewer.dart',
     };
     for (final file in Directory(
       'lib/presentation',

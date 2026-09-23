@@ -40,6 +40,11 @@ class AttachmentLocalDatasource {
     orderBy: 'created_at',
   );
 
+  /// Every live row of [kind], across all owners — one query, for callers
+  /// that need counts per owner without a query per owner.
+  Future<List<AttachmentModel>> getForKind(AttachmentOwnerKind kind) =>
+      _table.getAll(where: 'owner_kind = ?', whereArgs: [kind.wire]);
+
   Future<List<AttachmentModel>> getAwaitingUpload() =>
       _table.getAll(where: 'remote_path IS NULL', orderBy: 'created_at');
 

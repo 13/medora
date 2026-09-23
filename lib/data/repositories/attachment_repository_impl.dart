@@ -50,6 +50,22 @@ class AttachmentRepositoryImpl implements AttachmentRepository {
   }
 
   @override
+  Future<Result<Map<String, int>>> countsForKind(
+    AttachmentOwnerKind kind,
+  ) async {
+    try {
+      final rows = await local.getForKind(kind);
+      final counts = <String, int>{};
+      for (final r in rows) {
+        counts[r.ownerId] = (counts[r.ownerId] ?? 0) + 1;
+      }
+      return Result.success(counts);
+    } catch (e, st) {
+      return Result.failure('Failed to load attachment counts: $e', st);
+    }
+  }
+
+  @override
   Future<Result<Attachment>> add(
     AttachmentOwnerKind kind,
     String ownerId,

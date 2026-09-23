@@ -82,6 +82,19 @@ void main() {
     },
   );
 
+  test(
+    'countsForKind counts by owner, in one query, and ignores other kinds',
+    () async {
+      await repo.add(AttachmentOwnerKind.rx, 'r1', imported());
+      await repo.add(AttachmentOwnerKind.rx, 'r1', imported());
+      await repo.add(AttachmentOwnerKind.rx, 'r2', imported());
+      await repo.add(AttachmentOwnerKind.treatment, 't1', imported());
+      final result = await repo.countsForKind(AttachmentOwnerKind.rx);
+      expect(result.isSuccess, isTrue);
+      expect(result.dataOrNull, {'r1': 2, 'r2': 1});
+    },
+  );
+
   test('deleting an uploaded attachment tombstones it, removes the file and '
       'queues its path', () async {
     final added = (await repo.add(
