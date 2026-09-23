@@ -13,8 +13,10 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/models/rx_dispensing_model.dart';
 import 'package:medora/data/models/rx_model.dart';
 import 'package:medora/data/sync/request_sync.dart';
+import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/entities/rx_dispensing.dart';
+import 'package:medora/domain/repositories/attachment_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
 
@@ -23,6 +25,7 @@ class RxRepositoryImpl implements RxRepository {
     required this.rxLocal,
     required this.dispensingLocal,
     required this.medications,
+    this.attachments,
     this._requestSync,
     this._now = systemNow,
   });
@@ -30,6 +33,10 @@ class RxRepositoryImpl implements RxRepository {
   final RxLocalDatasource rxLocal;
   final RxDispensingLocalDatasource dispensingLocal;
   final MedicationRepository medications;
+
+  /// Null until the attachments feature is wired up for every caller; when
+  /// present, [deleteRx] removes a prescription's attachments with it.
+  final AttachmentRepository? attachments;
   final RequestSync? _requestSync;
   final Now _now;
 
@@ -123,6 +130,11 @@ class RxRepositoryImpl implements RxRepository {
         await dispensingLocal.markDeleted(d.id);
       }
       await rxLocal.markDeleted(id);
+      final atts = attachments;
+      if (atts != null) {
+        final result = await atts.deleteForOwner(AttachmentOwnerKind.rx, id);
+        if (result.isFailure) return result;
+      }
       _syncSoon();
       return const Result.success(null);
     } catch (e, st) {

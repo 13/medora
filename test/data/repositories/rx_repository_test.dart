@@ -1,14 +1,22 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/result.dart';
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
 import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
+import 'package:medora/data/repositories/attachment_repository_impl.dart';
 import 'package:medora/data/repositories/rx_repository_impl.dart';
+import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/entities/rx_dispensing.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
+import 'package:medora/services/attachment_import.dart';
 
 import '../../helpers/failing_medication_repo.dart';
 import '../../helpers/test_database.dart';
@@ -153,4 +161,60 @@ void main() {
       expect(stock.calls, [('m1', 20)]);
     },
   );
+
+  group('deleting a prescription', () {
+    late Directory attachmentsRoot;
+    late AttachmentRepositoryImpl attachments;
+
+    setUp(() async {
+      attachmentsRoot = await Directory.systemTemp.createTemp('rx-att');
+      attachments = AttachmentRepositoryImpl(
+        local: AttachmentLocalDatasource(now: () => now),
+        files: AttachmentFiles(rootDirectory: () async => attachmentsRoot),
+        now: () => now,
+      );
+      repo = RxRepositoryImpl(
+        rxLocal: RxLocalDatasource(now: () => now),
+        dispensingLocal: RxDispensingLocalDatasource(now: () => now),
+        medications: stock,
+        attachments: attachments,
+        requestSync: () async => syncs++,
+        now: () => now,
+      );
+    });
+    tearDown(() => attachmentsRoot.delete(recursive: true));
+
+    test('deleteRx tombstones the rx\'s attachments', () async {
+      await repo.saveRx(rx('r1'));
+      final a1 = (await attachments.add(
+        AttachmentOwnerKind.rx,
+        'r1',
+        Imported(
+          kind: AttachmentKind.photo,
+          mime: 'image/jpeg',
+          bytes: Uint8List.fromList([1, 2, 3]),
+          sha256: 'abc',
+        ),
+      )).dataOrNull!;
+
+      final result = await repo.deleteRx('r1');
+
+      expect(result.isSuccess, isTrue);
+      final remaining = await attachments.forOwner(
+        AttachmentOwnerKind.rx,
+        'r1',
+      );
+      expect(remaining.dataOrNull, isEmpty);
+      // The file is removed too, but that's AttachmentRepositoryImpl's own
+      // behaviour (covered in attachment_repository_test.dart); the point
+      // here is that deleteRx actually calls through to it.
+      final db = await AppDatabase.instance.database;
+      final row = (await db.query(
+        'attachments',
+        where: 'id = ?',
+        whereArgs: [a1.id],
+      )).single;
+      expect(row['deleted_at'], isNotNull);
+    });
+  });
 }

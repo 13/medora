@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/person.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
+import 'package:medora/presentation/providers/attachment_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
 
 final personsProvider = FutureProvider<List<Person>>((ref) async {
@@ -44,6 +45,7 @@ extension RxDataRefresh on Ref {
     invalidate(rxListProvider);
     invalidate(rxByIdProvider);
     invalidate(rxForTreatmentProvider);
+    invalidate(attachmentsForOwnerProvider);
   }
 }
 
@@ -54,6 +56,7 @@ extension WidgetRxDataRefresh on WidgetRef {
     invalidate(rxListProvider);
     invalidate(rxByIdProvider);
     invalidate(rxForTreatmentProvider);
+    invalidate(attachmentsForOwnerProvider);
   }
 }
 

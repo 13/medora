@@ -14,33 +14,10 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:medora/domain/entities/attachment.dart';
+import 'package:medora/domain/entities/attachment_import_result.dart';
 import 'package:path/path.dart' as p;
 
-sealed class ImportResult {
-  const ImportResult();
-}
-
-final class Imported extends ImportResult {
-  const Imported({
-    required this.kind,
-    required this.mime,
-    required this.bytes,
-    required this.sha256,
-    this.originalName,
-  });
-  final AttachmentKind kind;
-  final String mime;
-  final Uint8List bytes;
-  final String sha256;
-  final String? originalName;
-}
-
-enum ImportRefusal { tooLarge, unsupported, unreadable }
-
-final class ImportRefused extends ImportResult {
-  const ImportRefused(this.reason);
-  final ImportRefusal reason;
-}
+export 'package:medora/domain/entities/attachment_import_result.dart';
 
 abstract final class AttachmentImport {
   static const maxLongEdge = 2400;

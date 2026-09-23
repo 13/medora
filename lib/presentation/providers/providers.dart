@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/datasources/account_data_remote_datasource.dart';
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/attachment_remote_datasource.dart';
 import 'package:medora/data/datasources/barcode_lookup_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
@@ -30,6 +31,8 @@ import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_remote_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
+import 'package:medora/data/repositories/attachment_repository_impl.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
@@ -40,6 +43,7 @@ import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/entities/person.dart';
 import 'package:medora/domain/entities/prescription.dart';
+import 'package:medora/domain/repositories/attachment_repository.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/domain/repositories/family_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
@@ -116,6 +120,10 @@ final rxDispensingLocalDatasourceProvider =
     Provider<RxDispensingLocalDatasource>(
       (ref) => RxDispensingLocalDatasource(now: ref.watch(nowProvider)),
     );
+
+final attachmentLocalDatasourceProvider = Provider<AttachmentLocalDatasource>(
+  (ref) => AttachmentLocalDatasource(now: ref.watch(nowProvider)),
+);
 
 // ============================================================
 // Supabase client (null in local-only mode or unconfigured builds)
@@ -270,10 +278,20 @@ final rxRepositoryProvider = Provider<RxRepository>(
     rxLocal: ref.watch(rxLocalDatasourceProvider),
     dispensingLocal: ref.watch(rxDispensingLocalDatasourceProvider),
     medications: ref.watch(medicationRepositoryProvider),
+    attachments: ref.watch(attachmentRepositoryProvider),
     requestSync: _requestSyncInCloud(
       ref,
       ref.watch(rxRemoteDatasourceProvider),
     ),
+    now: ref.watch(nowProvider),
+  ),
+);
+
+final attachmentRepositoryProvider = Provider<AttachmentRepository>(
+  (ref) => AttachmentRepositoryImpl(
+    local: ref.watch(attachmentLocalDatasourceProvider),
+    files: ref.watch(attachmentFilesProvider),
+    requestSync: _requestSyncInCloud(ref, ref.watch(attachmentRemoteProvider)),
     now: ref.watch(nowProvider),
   ),
 );
@@ -390,6 +408,10 @@ final connectivityServiceProvider = Provider<ConnectivityService>(
 
 final photoStorageProvider = Provider<PhotoStorage>(
   (ref) => PhotoStorage.appDocuments(),
+);
+
+final attachmentFilesProvider = Provider<AttachmentFiles>(
+  (ref) => AttachmentFiles.appDocuments(),
 );
 
 /// Resolved photo file for a stored image name (null when absent/missing).
