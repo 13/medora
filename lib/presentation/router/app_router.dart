@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/route_paths.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
@@ -32,7 +33,11 @@ import 'package:medora/presentation/widgets/biometric_gate.dart';
 class AppRoutes {
   AppRoutes._();
 
-  static const home = '/';
+  // `home`, `doses` and `rxDetail` are shared with [RoutePaths] (`lib/core`)
+  // so `ReminderService` can build these three routes without importing
+  // presentation code; the constants are declared there and just used here,
+  // so the two cannot drift.
+  static const home = RoutePaths.home;
   static const auth = '/auth';
   static const medications = '/medications';
   static const medicationDetail = '/medications/:id';
@@ -46,7 +51,7 @@ class AppRoutes {
   static const treatmentDetail = '/treatments/:id';
   static const addTreatment = '/treatments/add';
   static const editTreatment = '/treatments/:id/edit';
-  static const doses = '/doses';
+  static const doses = RoutePaths.doses;
   static const doseHistory = '/doses/history';
   static const scanner = '/scanner';
 
@@ -61,7 +66,7 @@ class AppRoutes {
   static const addPerson = '/persons/add';
   static const editPerson = '/persons/:id/edit';
   static const addRx = '/rx/add';
-  static const rxDetail = '/rx/:id';
+  static const rxDetail = RoutePaths.rxDetail;
   static const editRx = '/rx/:id/edit';
 }
 

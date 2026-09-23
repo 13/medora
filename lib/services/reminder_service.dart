@@ -10,9 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:go_router/go_router.dart';
 import 'package:medora/core/platform_capabilities.dart';
+import 'package:medora/core/route_paths.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
-import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_text.dart';
 import 'package:medora/services/stock_expiry_reminders.dart';
@@ -37,29 +37,29 @@ class ReminderService implements ReminderPort {
   ///
   /// A notification can be tapped before `main.dart` has finished building
   /// the router (e.g. a cold start from a notification). Assigning `null`
-  /// clears any pending route along with the router — that reads as
+  /// clears any pending navigation along with the router — that reads as
   /// "detached", not "remember this for later" — while assigning a router
-  /// flushes a pending route recorded by [handleNotificationTap] in the
+  /// flushes a navigation recorded by [handleNotificationTap] in the
   /// meantime.
   static GoRouter? get router => _router;
 
   static set router(GoRouter? value) {
     _router = value;
     if (value == null) {
-      _pendingRoute = null;
+      _pendingNavigation = null;
       return;
     }
-    final pending = _pendingRoute;
+    final pending = _pendingNavigation;
     if (pending != null) {
-      _pendingRoute = null;
+      _pendingNavigation = null;
       // The router is installed from `initState`, so navigating straight
       // away would run during a build; defer it by a microtask.
-      scheduleMicrotask(() => value.go(pending));
+      scheduleMicrotask(() => pending(value));
     }
   }
 
   static GoRouter? _router;
-  static String? _pendingRoute;
+  static void Function(GoRouter)? _pendingNavigation;
 
   /// Resolves the user's chosen locale. Services must not import presentation
   /// code, so `main.dart` installs this seam next to [router]; `null` (or no
@@ -103,21 +103,35 @@ class ReminderService implements ReminderPort {
   /// (`rx:<id>`) opens that prescription, everything else the doses screen.
   /// When [router] has not been assigned yet (e.g. a cold start from a
   /// notification, before `main.dart` finishes building the router), the
-  /// route is remembered and applied as soon as [router] is set.
+  /// navigation is remembered and applied as soon as [router] is set.
   @visibleForTesting
   void handleNotificationTap(String? payload) {
     final rxId = payload != null && payload.startsWith('rx:')
         ? payload.substring(3)
         : '';
-    final route = rxId.isEmpty
-        ? AppRoutes.doses
-        : AppRoutes.rxDetail.replaceFirst(':id', rxId);
+    final navigate = rxId.isEmpty
+        ? (GoRouter r) => r.go(RoutePaths.doses)
+        : _openRxDetail(rxId);
     final currentRouter = router;
     if (currentRouter == null) {
-      _pendingRoute = route;
+      _pendingNavigation = navigate;
       return;
     }
-    currentRouter.go(route);
+    navigate(currentRouter);
+  }
+
+  /// `/rx/:id` is a leaf route inside the shell: going there directly (as a
+  /// lone `go`) leaves it as the only page on the navigator — no back
+  /// button, no bottom nav, and nowhere for `Navigator.maybePop` to go when
+  /// the prescription is deleted from that screen. Landing on home first,
+  /// then pushing the detail on top, gives it a page to pop (or delete) back
+  /// to.
+  void Function(GoRouter) _openRxDetail(String rxId) {
+    final route = RoutePaths.rxDetail.replaceFirst(':id', rxId);
+    return (r) {
+      r.go(RoutePaths.home);
+      r.push(route);
+    };
   }
 
   /// Localizations for the app's current locale, or `null` when it is not one

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:medora/core/result.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/person.dart';
@@ -163,6 +164,56 @@ void main() {
     expect(find.text('Brufen 400'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'with nothing to pop (a notification tap landed here directly), the '
+    'AppBar shows a leading button that goes home',
+    (tester) async {
+      final router = GoRouter(
+        initialLocation: '/rx/rx1',
+        routes: [
+          GoRoute(path: '/', builder: (_, _) => const Text('home')),
+          GoRoute(
+            path: '/rx/:id',
+            builder: (_, state) =>
+                RxDetailScreen(rxId: state.pathParameters['id']!),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            rxRepositoryProvider.overrideWithValue(
+              _Repo(byId: Result.success(RxWithDispensings(rx, const []))),
+            ),
+            personsProvider.overrideWith(
+              (ref) async => const [Person(id: 'p1', name: 'Ben')],
+            ),
+            nowProvider.overrideWithValue(() => DateTime(2026, 9, 23)),
+            medicationListProvider.overrideWith(_EmptyMeds.new),
+            sharedPreferencesProvider.overrideWithValue(
+              await SharedPreferences.getInstance(),
+            ),
+            reminderPortProvider.overrideWithValue(FakePort()),
+          ],
+          child: MaterialApp.router(
+            routerConfig: router,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: const Locale('en'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final leading = find.byKey(const Key('rx_detail_go_home'));
+      expect(leading, findsOneWidget);
+      await tester.tap(leading);
+      await tester.pumpAndSettle();
+      expect(find.text('home'), findsOneWidget);
+    },
+  );
 
   testWidgets('linking with an empty medication list opens no dialog', (
     tester,

@@ -103,8 +103,17 @@ class RxDetailScreen extends ConsumerWidget {
           // invalidating the deleted prescription's own provider would
           // refetch it and flash the error view underneath before the
           // route is gone.
+          //
+          // A notification tap can land here with nothing to pop to (a
+          // leaf route pushed straight onto the shell): `maybePop` would
+          // then do nothing and strand the user on a deleted prescription,
+          // so fall back to home.
           success: (_) {
-            Navigator.of(context).maybePop();
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).maybePop();
+            } else {
+              context.go(AppRoutes.home);
+            }
             invalidateRxLists(ref);
           },
           failure: (_) => _reportFailure(context),
@@ -202,8 +211,24 @@ class RxDetailScreen extends ConsumerWidget {
         final left = RxRules.daysLeft(rx, now);
         final canCollect =
             status == RxStatus.open || status == RxStatus.partial;
+        // A notification tap opens this screen with home landed on first
+        // (see `ReminderService._openRxDetail`), but a defensive fallback
+        // still belongs here: with nothing to pop to, the default AppBar
+        // would show no back button at all, so add one that goes home
+        // instead of leaving the user stranded.
+        final canPop = Navigator.of(context).canPop();
         return Scaffold(
           appBar: AppBar(
+            leading: canPop
+                ? null
+                : IconButton(
+                    key: const Key('rx_detail_go_home'),
+                    icon: const Icon(Icons.close),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                    onPressed: () => context.go(AppRoutes.home),
+                  ),
             title: Text(rxKindLabel(l10n, rx.kind)),
             actions: [
               if (rx.nre != null)
