@@ -15,6 +15,40 @@ Uint8List _jpeg(int w, int h, {img.ExifData? exif}) {
   return Uint8List.fromList(img.encodeJpg(image));
 }
 
+// Standard PNG/zlib CRC-32, used to patch a real PNG's IHDR dimensions
+// without invalidating its checksum.
+final _crcTable = List<int>.generate(256, (n) {
+  var c = n;
+  for (var k = 0; k < 8; k++) {
+    c = (c & 1) != 0 ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
+  }
+  return c;
+});
+
+int _crc32(List<int> bytes) {
+  var c = 0xFFFFFFFF;
+  for (final b in bytes) {
+    c = _crcTable[(c ^ b) & 0xFF] ^ (c >> 8);
+  }
+  return c ^ 0xFFFFFFFF;
+}
+
+/// A tiny, otherwise-valid PNG whose IHDR chunk claims [width]x[height] —
+/// enough to trip the header-only size gate without ever decoding
+/// [width]x[height] worth of pixels.
+Uint8List _pngClaiming(int width, int height) {
+  final bytes = Uint8List.fromList(
+    img.encodePng(img.Image(width: 4, height: 4)),
+  );
+  final view = ByteData.view(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  // IHDR chunk type + data spans offset 12..29 (4 'IHDR' + 13 data bytes);
+  // the CRC that follows must match or the decoder rejects the chunk.
+  view.setUint32(29, _crc32(bytes.sublist(12, 29)));
+  return bytes;
+}
+
 void main() {
   test('a large photo is scaled to a 2400 px long edge', () {
     final result =
@@ -107,6 +141,62 @@ void main() {
           .reason,
       ImportRefusal.unreadable,
     );
+  });
+
+  test('exceedsMaxPixels is true only once width*height passes the limit', () {
+    expect(AttachmentImport.exceedsMaxPixels(8000, 7500), isFalse);
+    expect(AttachmentImport.exceedsMaxPixels(8000, 7501), isTrue);
+    expect(AttachmentImport.exceedsMaxPixels(9000, 7000), isTrue);
+  });
+
+  test('a PNG whose header claims 9000x7000 is refused as too large without '
+      'decoding pixels', () {
+    final result = AttachmentImport.prepare(
+      _pngClaiming(9000, 7000),
+      nameOrPath: 'huge.png',
+    );
+    expect((result as ImportRefused).reason, ImportRefusal.tooLarge);
+  });
+
+  test('a JPEG whose header claims 9000x7000 is refused as too large without '
+      'decoding pixels', () {
+    final jpeg = Uint8List.fromList(
+      img.encodeJpg(img.Image(width: 4, height: 4)),
+    );
+    final view = ByteData.view(jpeg.buffer);
+    var patched = false;
+    for (var i = 0; i < jpeg.length - 1; i++) {
+      if (jpeg[i] == 0xFF && (jpeg[i + 1] == 0xC0 || jpeg[i + 1] == 0xC2)) {
+        view.setUint16(i + 5, 7000); // height
+        view.setUint16(i + 7, 9000); // width
+        patched = true;
+        break;
+      }
+    }
+    expect(patched, isTrue, reason: 'expected to find a JPEG SOF marker');
+    final result = AttachmentImport.prepare(jpeg, nameOrPath: 'huge.jpg');
+    expect((result as ImportRefused).reason, ImportRefusal.tooLarge);
+  });
+
+  test('a 25 MB byte buffer named .jpg is refused as too large without '
+      'decoding', () {
+    final big = Uint8List(AttachmentImport.maxPdfBytes + (5 * 1024 * 1024))
+      ..setAll(0, [0xFF, 0xD8, 0xFF]);
+    final result = AttachmentImport.prepare(big, nameOrPath: 'huge.jpg');
+    expect((result as ImportRefused).reason, ImportRefusal.tooLarge);
+  });
+
+  test('an exception after a successful decode is a refusal, not a crash', () {
+    final original = AttachmentImport.jpegEncoder;
+    AttachmentImport.jpegEncoder = (image, {quality = 100}) =>
+        throw StateError('simulated encode failure');
+    addTearDown(() => AttachmentImport.jpegEncoder = original);
+
+    final result = AttachmentImport.prepare(
+      _jpeg(400, 300),
+      nameOrPath: 'a.jpg',
+    );
+    expect((result as ImportRefused).reason, ImportRefusal.unreadable);
   });
 
   test('fromPath reads a file from disk and prepares it', () async {

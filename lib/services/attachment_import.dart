@@ -47,7 +47,19 @@ abstract final class AttachmentImport {
   static const jpegQuality = 85;
   static const maxPdfBytes = 20 * 1024 * 1024;
 
+  /// A decoded image above this many pixels needs ~4 bytes/px of RGBA plus
+  /// resize/encode buffers — an 8000x6000 photo alone is ~192 MB — enough to
+  /// OOM a phone isolate. Checked against header-only dimensions, before any
+  /// pixel data is decoded.
+  static const maxImagePixels = 60 * 1000 * 1000;
+
   static const _imageExtensions = {'.jpg', '.jpeg', '.png', '.heic', '.webp'};
+
+  /// Exposed so tests can simulate an encode failure after a successful
+  /// decode; production code always uses [img.encodeJpg] itself.
+  @visibleForTesting
+  static Uint8List Function(img.Image image, {int quality}) jpegEncoder =
+      img.encodeJpg;
 
   /// Reads [path] and prepares it off the main isolate; a 12 MP decode takes
   /// seconds and would otherwise jank the UI.
@@ -79,30 +91,78 @@ abstract final class AttachmentImport {
         originalName: name,
       );
     }
+    // A large image would otherwise decode to hundreds of MB of pixels
+    // before we get a chance to resize it down. Refuse by raw byte size
+    // first (cheapest possible check), then by header-only dimensions —
+    // neither touches a single pixel.
+    if (raw.length > maxPdfBytes) {
+      return const ImportRefused(ImportRefusal.tooLarge);
+    }
     if (!_imageExtensions.contains(ext) && !_hasImageDecoder(raw)) {
       return const ImportRefused(ImportRefusal.unsupported);
     }
+    if (_imageDimensionsExceedLimit(raw)) {
+      return const ImportRefused(ImportRefusal.tooLarge);
+    }
     final decoded = _decodeImage(raw);
     if (decoded == null) return const ImportRefused(ImportRefusal.unreadable);
-    var image = img.bakeOrientation(decoded);
-    final longEdge = image.width > image.height ? image.width : image.height;
-    if (longEdge > maxLongEdge) {
-      image = image.width >= image.height
-          ? img.copyResize(image, width: maxLongEdge)
-          : img.copyResize(image, height: maxLongEdge);
-    }
-    image.exif = img.ExifData();
-    final bytes = Uint8List.fromList(
-      img.encodeJpg(image, quality: jpegQuality),
-    );
-    return Imported(
-      kind: AttachmentKind.photo,
-      mime: 'image/jpeg',
-      bytes: bytes,
-      sha256: sha256.convert(bytes).toString(),
-      originalName: name,
-    );
+    return _finishPhoto(decoded, name);
   }
+
+  /// Bakes orientation, resizes and re-encodes an already-decoded image.
+  /// These calls operate on a successfully decoded pixel buffer so they
+  /// should never fail, but "should never" isn't a guarantee (see the
+  /// image-package quirk documented on [_hasImageDecoder]) — every import
+  /// failure must be a result, never an exception out of [prepare].
+  static ImportResult _finishPhoto(img.Image decoded, String name) {
+    try {
+      var image = img.bakeOrientation(decoded);
+      final longEdge = image.width > image.height ? image.width : image.height;
+      if (longEdge > maxLongEdge) {
+        image = image.width >= image.height
+            ? img.copyResize(image, width: maxLongEdge)
+            : img.copyResize(image, height: maxLongEdge);
+      }
+      image.exif = img.ExifData();
+      final bytes = Uint8List.fromList(
+        jpegEncoder(image, quality: jpegQuality),
+      );
+      return Imported(
+        kind: AttachmentKind.photo,
+        mime: 'image/jpeg',
+        bytes: bytes,
+        sha256: sha256.convert(bytes).toString(),
+        originalName: name,
+      );
+    } catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
+      return const ImportRefused(ImportRefusal.unreadable);
+    }
+  }
+
+  /// True when the image's header-only dimensions (no pixel data decoded)
+  /// exceed [maxImagePixels]. False when the header can't be read at all —
+  /// that input still goes on to the real decode, which already refuses
+  /// malformed data as [ImportRefusal.unreadable].
+  static bool _imageDimensionsExceedLimit(Uint8List raw) {
+    try {
+      final info = img.findDecoderForData(raw)?.startDecode(raw);
+      if (info == null) return false;
+      return exceedsMaxPixels(info.width, info.height);
+    } on RangeError catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
+      return false;
+    } on img.ImageException catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
+      return false;
+    }
+  }
+
+  /// Pure width/height check against [maxImagePixels], split out so it's
+  /// testable without constructing real image bytes.
+  @visibleForTesting
+  static bool exceedsMaxPixels(int width, int height) =>
+      width * height > maxImagePixels;
 
   /// `image`'s decoder probing can throw on very short/malformed input
   /// (e.g. the PSD sniffer reads past the buffer) instead of returning
@@ -110,7 +170,11 @@ abstract final class AttachmentImport {
   static bool _hasImageDecoder(Uint8List raw) {
     try {
       return img.findDecoderForData(raw) != null;
-    } catch (_) {
+    } on RangeError catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
+      return false;
+    } on img.ImageException catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
       return false;
     }
   }
@@ -121,7 +185,11 @@ abstract final class AttachmentImport {
   static img.Image? _decodeImage(Uint8List raw) {
     try {
       return img.decodeImage(raw);
-    } catch (_) {
+    } on RangeError catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
+      return null;
+    } on img.ImageException catch (e) {
+      if (kDebugMode) debugPrint('AttachmentImport: ${e.runtimeType}');
       return null;
     }
   }
