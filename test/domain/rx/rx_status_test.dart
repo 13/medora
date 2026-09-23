@@ -77,11 +77,26 @@ void main() {
     );
   });
 
-  test('a repeatable prescription is redeemed after its max dispensings', () {
+  RxDispensing giveOn(String itemId, DateTime day) => RxDispensing(
+    id: '$itemId-${day.day}',
+    rxId: 'r1',
+    itemId: itemId,
+    packs: 1,
+    dispensedOn: day,
+  );
+
+  test('a repeatable prescription is redeemed after its max pharmacy visits: '
+      'two items collected on one day are one visit', () {
     final rep = rx.copyWith(kind: RxKind.whiteRepeatable, maxDispensings: 2);
-    expect(RxRules.statusOf(rep, [give('i1', 1)], now), RxStatus.partial);
+    final day1 = DateTime(2026, 9, 21);
+    final day2 = DateTime(2026, 9, 22);
+    expect(RxRules.statusOf(rep, [giveOn('i1', day1)], now), RxStatus.partial);
     expect(
-      RxRules.statusOf(rep, [give('i1', 1), give('i2', 1)], now),
+      RxRules.statusOf(rep, [giveOn('i1', day1), giveOn('i2', day1)], now),
+      RxStatus.partial,
+    );
+    expect(
+      RxRules.statusOf(rep, [giveOn('i1', day1), giveOn('i1', day2)], now),
       RxStatus.redeemed,
     );
   });

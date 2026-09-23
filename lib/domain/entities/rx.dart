@@ -106,7 +106,8 @@ class Rx {
   /// Referral priority class; null for other kinds.
   final RxPriority? priority;
 
-  /// Repeatable white prescriptions only.
+  /// Repeatable white prescriptions only: how many pharmacy visits (days
+  /// something was collected) the prescription allows.
   final int? maxDispensings;
   final List<RxItem> items;
 

@@ -154,13 +154,24 @@ abstract final class RxRules {
     return dispensings.isEmpty ? RxStatus.open : RxStatus.partial;
   }
 
+  /// A repeatable prescription is used up after [Rx.maxDispensings]
+  /// pharmacy visits, not rows: the rule limits how often it is presented,
+  /// and one visit that collects two items is still one use. A visit is a
+  /// distinct `dispensedOn` date.
   static bool _fullyDispensed(Rx rx, List<RxDispensing> dispensings) {
     final max = rx.maxDispensings;
-    if (max != null) return dispensings.length >= max;
+    if (max != null) return visits(dispensings) >= max;
     if (rx.items.isEmpty) return false;
     final given = dispensedPacks(dispensings);
     return rx.items.every((i) => (given[i.id] ?? 0) >= i.packs);
   }
+
+  /// Pharmacy visits among [dispensings]: the distinct days they were
+  /// collected on.
+  static int visits(List<RxDispensing> dispensings) => {
+    for (final d in dispensings)
+      DateTime(d.dispensedOn.year, d.dispensedOn.month, d.dispensedOn.day),
+  }.length;
 
   /// Calendar days from [now] to the last valid day: 0 on that day,
   /// negative once it has passed, null when no validity is known.
