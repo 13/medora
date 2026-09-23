@@ -12,6 +12,7 @@ import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -124,6 +125,7 @@ void showDeleteAllDialog(
                       ref.invalidate(treatmentListProvider);
                       ref.invalidateDoseData();
                       ref.invalidate(activePrescriptionsProvider);
+                      ref.invalidateRxData();
 
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(

@@ -211,4 +211,47 @@ void main() {
       expect(find.text('Med b'), findsOneWidget);
     },
   );
+
+  testWidgets('pulling the list down reads the prescriptions again', (
+    tester,
+  ) async {
+    var reads = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          nowProvider.overrideWithValue(() => DateTime(2026, 9, 23, 10)),
+          personsProvider.overrideWith((ref) async => const <Person>[]),
+          rxListProvider.overrideWith((ref) async {
+            reads++;
+            return [
+              RxWithDispensings(
+                Rx(
+                  id: 'r$reads',
+                  kind: RxKind.ssn,
+                  issuedOn: DateTime(2026, 9),
+                  validUntil: DateTime(2026, 10),
+                  items: [RxItem(id: 'i', description: 'Med $reads')],
+                ),
+                const [],
+              ),
+            ];
+          }),
+        ],
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          locale: Locale('en'),
+          home: Scaffold(body: RxListView()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Med 1'), findsOneWidget);
+
+    await tester.fling(find.text('Med 1'), const Offset(0, 400), 1000);
+    await tester.pumpAndSettle();
+
+    expect(reads, 2);
+    expect(find.text('Med 2'), findsOneWidget);
+  });
 }

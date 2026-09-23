@@ -27,6 +27,17 @@ class _RxListViewState extends ConsumerState<RxListView> {
   /// Null means "every person"; set from the dropdown below.
   String? _personFilter;
 
+  /// Re-reads the prescriptions, like the other lists' pull-to-refresh:
+  /// a row a sync pulled shows here at the latest after this.
+  Future<void> _refresh() async {
+    ref.invalidateRxData();
+    try {
+      await ref.read(rxListProvider.future);
+    } on Exception catch (_) {
+      // The list renders the failure itself; this only stops the spinner.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -87,33 +98,36 @@ class _RxListViewState extends ConsumerState<RxListView> {
         partial.sort(byExpiry);
         Widget tile(RxWithDispensings r) =>
             _RxTile(item: r, person: persons[r.rx.personId], now: now);
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 88),
-          children: [
-            if (showFilter)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: DropdownButton<String?>(
-                  value: _personFilter,
-                  isExpanded: true,
-                  underline: const SizedBox.shrink(),
-                  items: [
-                    DropdownMenuItem(child: Text(l10n.all)),
-                    for (final p in personList)
-                      DropdownMenuItem(value: p.id, child: Text(p.name)),
-                  ],
-                  onChanged: (id) => setState(() => _personFilter = id),
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 88),
+            children: [
+              if (showFilter)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: DropdownButton<String?>(
+                    value: _personFilter,
+                    isExpanded: true,
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      DropdownMenuItem(child: Text(l10n.all)),
+                      for (final p in personList)
+                        DropdownMenuItem(value: p.id, child: Text(p.name)),
+                    ],
+                    onChanged: (id) => setState(() => _personFilter = id),
+                  ),
                 ),
-              ),
-            for (final r in open) tile(r),
-            if (partial.isNotEmpty) _Header(l10n.rxStatusPartial),
-            for (final r in partial) tile(r),
-            if (done.isNotEmpty)
-              ExpansionTile(
-                title: Text(l10n.rxGroupDone),
-                children: [for (final r in done) tile(r)],
-              ),
-          ],
+              for (final r in open) tile(r),
+              if (partial.isNotEmpty) _Header(l10n.rxStatusPartial),
+              for (final r in partial) tile(r),
+              if (done.isNotEmpty)
+                ExpansionTile(
+                  title: Text(l10n.rxGroupDone),
+                  children: [for (final r in done) tile(r)],
+                ),
+            ],
+          ),
         );
       },
     );

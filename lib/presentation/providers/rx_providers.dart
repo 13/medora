@@ -32,6 +32,31 @@ final rxForTreatmentProvider =
       return result.when(success: (r) => r, failure: (m) => throw Exception(m));
     });
 
+/// Refetches every prescription and person view.
+///
+/// These providers are not auto-dispose, so after anything that writes
+/// underneath them — a sync pull, a wipe, a restore — they keep serving
+/// what they first read until they are invalidated. Call this wherever the
+/// medication and treatment lists are refreshed for the same reason.
+extension RxDataRefresh on Ref {
+  void invalidateRxData() {
+    invalidate(personsProvider);
+    invalidate(rxListProvider);
+    invalidate(rxByIdProvider);
+    invalidate(rxForTreatmentProvider);
+  }
+}
+
+/// Widget-side twin of [RxDataRefresh.invalidateRxData].
+extension WidgetRxDataRefresh on WidgetRef {
+  void invalidateRxData() {
+    invalidate(personsProvider);
+    invalidate(rxListProvider);
+    invalidate(rxByIdProvider);
+    invalidate(rxForTreatmentProvider);
+  }
+}
+
 /// Refresh everything that shows prescriptions, after a write.
 ///
 /// Also re-plans the stock scheduler's prescription-expiry alerts:

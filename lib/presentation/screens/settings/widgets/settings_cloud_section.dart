@@ -16,6 +16,7 @@ import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/screens/settings/widgets/settings_dialogs.dart';
@@ -290,6 +291,7 @@ Future<bool> _confirmTurnOffCloud(
       ref.invalidate(treatmentListProvider);
       ref.invalidateDoseData();
       ref.invalidate(activePrescriptionsProvider);
+      ref.invalidateRxData();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(

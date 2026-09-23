@@ -15,6 +15,7 @@ import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/providers.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
@@ -213,6 +214,7 @@ Future<void> _afterRestore(WidgetRef ref, {required bool isCloud}) async {
   await ref.read(treatmentListProvider.notifier).refresh();
   ref.invalidateDoseData();
   ref.invalidate(activePrescriptionsProvider);
+  ref.invalidateRxData();
   if (!isCloud) return;
   // Restored rows are already pending_update; this also clears the pull
   // cursors so the next cycle re-reads everything the account holds.

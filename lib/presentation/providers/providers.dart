@@ -52,6 +52,7 @@ import 'package:medora/presentation/providers/app_update_provider.dart';
 import 'package:medora/presentation/providers/dose_providers.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
+import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
@@ -477,6 +478,7 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
       // cycle still applied every row that did not fail.
       ref.read(medicationListProvider.notifier).refresh();
       ref.read(treatmentListProvider.notifier).refresh();
+      ref.invalidateRxData();
       unawaited(_afterSync(ref));
       // The plain refresh() does not re-plan the stock alerts (only the
       // mutation methods do), so without this a restock on another device
