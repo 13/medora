@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/models/medication_model.dart';
+import 'package:medora/services/sync_service.dart';
 
 import '../helpers/test_database.dart';
 import 'sync_service_test.dart' show Harness;
@@ -136,5 +138,102 @@ void main() {
     await h.service.syncAll();
     expect(h.rx.rx.get('r1')?['deleted_at'], isNotNull);
     expect(h.rx.dispensings.get('d1')?['deleted_at'], isNotNull);
+  });
+
+  group('a server without the prescription tables', () {
+    Future<void> insertRxRows() async {
+      await insertLocal('persons', {
+        'id': 'p1',
+        'name': 'Ben',
+        'exemptions': '[]',
+      });
+      await insertLocal('rx', {
+        'id': 'r1',
+        'person_id': 'p1',
+        'kind': 'ssn',
+        'issued_on': '2026-03-01',
+        'items': '[]',
+        'cancelled': 0,
+      });
+      await insertLocal('rx_dispensings', {
+        'id': 'd1',
+        'rx_id': 'r1',
+        'item_id': 'i1',
+        'packs': 1,
+        'dispensed_on': '2026-03-02',
+        'units_added': 0,
+      });
+    }
+
+    Future<int> count(String table) async =>
+        (await (await AppDatabase.instance.database).query(table)).length;
+
+    test('a sync still syncs the other tables and names the missing '
+        'migration', () async {
+      final h = Harness();
+      h.rx.dropTables();
+      h.meds.table.seed(
+        const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson(),
+      );
+      await insertRxRows();
+
+      final report = (await h.service.syncAll())!;
+
+      expect(report.fatal, isNull);
+      expect(h.service.currentState, SyncState.partial);
+      final db = await AppDatabase.instance.database;
+      expect((await db.query('medications')).single['name'], 'A');
+      expect(
+        report.failures.any(
+          (f) => f.table == 'rx' && f.error.contains('20260923000000_rx.sql'),
+        ),
+        isTrue,
+      );
+      // Nothing of the prescriptions is lost; they wait for the migration.
+      expect(await count('rx'), 1);
+    });
+
+    test(
+      'a force pull keeps the prescriptions here and re-pulls the rest',
+      () async {
+        final h = Harness();
+        h.rx.dropTables();
+        h.meds.table.seed(
+          const MedicationModel(id: 'a', name: 'A', quantity: 1).toJson(),
+        );
+        await insertRxRows();
+        final db = await AppDatabase.instance.database;
+        await db.insert('medications', {
+          'id': 'local-only',
+          'name': 'Gone',
+          'quantity': 1,
+          'quantity_unit': 'tablets',
+          'is_archived': 0,
+          'created_at': '2026-03-04T12:00:00.000Z',
+          'updated_at': '2026-03-04T12:00:00.000Z',
+          'sync_status': SyncStatus.synced,
+        });
+
+        final report = (await h.service.forcePull())!;
+
+        expect(report.fatal, isNull);
+        // The rest of the force pull ran: the local-only row is gone and the
+        // server's is back.
+        expect((await db.query('medications')).map((r) => r['id']).toList(), [
+          'a',
+        ]);
+        // The rows no server holds were never sent anywhere: wiping them
+        // would lose them for good.
+        expect(await count('persons'), 1);
+        expect(await count('rx'), 1);
+        expect(await count('rx_dispensings'), 1);
+        expect(
+          report.failures.any(
+            (f) => f.table == 'rx' && f.error.contains('20260923000000_rx.sql'),
+          ),
+          isTrue,
+        );
+      },
+    );
   });
 }

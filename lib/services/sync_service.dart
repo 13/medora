@@ -277,19 +277,55 @@ class SyncService {
   });
 
   /// Wipe local rows and pull everything again.
+  ///
+  /// A project without the prescription tables (the rx migration not yet
+  /// applied) keeps this device's prescriptions: they were never uploaded,
+  /// so clearing them would lose them for good, and their fetch would fail
+  /// the whole force pull. The rest is still replaced by the server's, and
+  /// the report names the missing migration, as an ordinary sync does.
   Future<SyncReport?> forcePull() => _run('force pull', (report) async {
     final state = await _remote(syncState!.read());
+    // Probed before anything is cleared; any other error aborts here, with
+    // nothing lost.
+    final rxMissing = await _missingRxTables();
     await _cursors.clear();
     // Every local row is about to be replaced by the server's, so no row is
     // still waiting to be pushed and no backoff record means anything.
     await _failures.clearAll();
-    await AppDatabase.instance.clearAllData();
+    await AppDatabase.instance.clearAllData(keepRx: rxMissing.isNotEmpty);
     // Nothing from before any wipe is left here.
     await _recordWipeSeen(state);
-    await _pullAll(report, force: true, horizon: state.horizon);
+    await _pullAll(
+      report,
+      force: true,
+      horizon: state.horizon,
+      pullRx: rxMissing.isEmpty,
+    );
+    for (final missing in rxMissing) {
+      report.failures.add(SyncFailure(missing.table, '*', 'pull: $missing'));
+    }
     // Everything was pulled from the start: that is the repair.
     await _cursors.finishPullRepair();
   });
+
+  /// The prescription tables the project lacks: one single-row read of
+  /// each, which a project without the rx migration answers with a
+  /// [MissingTableException].
+  Future<List<MissingTableException>> _missingRxTables() async {
+    if (rxRemote == null) return const [];
+    final missing = <MissingTableException>[];
+    for (final table in const ['persons', 'rx', 'rx_dispensings']) {
+      try {
+        await _tables[table]!.remote.fetch(_probeId);
+      } on MissingTableException catch (e) {
+        missing.add(e);
+      }
+    }
+    return missing;
+  }
+
+  /// An id no row has, for [_missingRxTables].
+  static const _probeId = '00000000-0000-0000-0000-000000000000';
 
   /// How many times one [syncAll] runs another cycle on its own, for rows
   /// still pending after their push or for requests made meanwhile. Past
@@ -1202,10 +1238,13 @@ class SyncService {
 
   /// Returns false when a fetch failed, so some table was not read to its
   /// end (or to [maxPullPages]).
+  ///
+  /// [pullRx] false leaves out the prescription tables (see [forcePull]).
   Future<bool> _pullAll(
     SyncReport report, {
     required bool force,
     required int horizon,
+    bool pullRx = true,
   }) async {
     final pulled = PulledPrescriptions();
     final families = await _pullFamilies(report, failFast: force);
@@ -1228,7 +1267,7 @@ class SyncService {
       pulled: pulled,
     );
     var rxTables = true;
-    if (rxRemote != null) {
+    if (rxRemote != null && pullRx) {
       final roots = await Future.wait([
         _pullTable('persons', report, force: force, horizon: horizon),
         _pullTable('rx', report, force: force, horizon: horizon),

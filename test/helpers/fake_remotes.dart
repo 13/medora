@@ -191,6 +191,14 @@ class FakeRxRemote implements RxRemoteDatasource {
   final FakeSyncTable rx;
   @override
   final FakeSyncTable dispensings;
+
+  /// A project that never ran [rxMigration]: none of the three tables is
+  /// there.
+  void dropTables() {
+    for (final t in [persons, rx, dispensings]) {
+      t.missingFrom = rxMigration;
+    }
+  }
 }
 
 class FakeSyncState implements SyncStateRemoteDatasource {

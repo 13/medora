@@ -28,6 +28,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:medora/data/datasources/schema_errors.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/stock_remote.dart';
 import 'package:medora/data/datasources/sync_page.dart';
@@ -829,6 +830,24 @@ class FakeSyncTable implements SyncTable {
   /// When set, every page request throws it.
   Object? throwOnFetch;
 
+  /// When set, the project lacks this table, which the named migration
+  /// creates: every request fails the way [PostgrestSyncTable] reports a
+  /// `PGRST205` answer.
+  String? missingFrom;
+
+  void _checkPresent() {
+    final migration = missingFrom;
+    if (migration == null) return;
+    throw MissingTableException(
+      table: table,
+      migration: migration,
+      cause: PostgrestException(
+        message: "Could not find the table 'public.$table' in the schema cache",
+        code: 'PGRST205',
+      ),
+    );
+  }
+
   /// Awaited before every request; a test can hold a cycle open.
   Future<void> Function()? beforeCall;
 
@@ -871,6 +890,7 @@ class FakeSyncTable implements SyncTable {
     required int horizon,
   }) async {
     await beforeCall?.call();
+    _checkPresent();
     pageCalls.add((after: after, horizon: horizon));
     onPage?.call(pageCalls.length, after);
     final failure = throwOnFetch;
@@ -888,6 +908,7 @@ class FakeSyncTable implements SyncTable {
   @override
   Future<Map<String, dynamic>?> fetch(String id) async {
     await beforeCall?.call();
+    _checkPresent();
     if (failGetIds.contains(id)) {
       throw StateError('remote get failure for $id');
     }
@@ -898,6 +919,7 @@ class FakeSyncTable implements SyncTable {
   @override
   Future<List<Map<String, dynamic>>> fetchMany(List<String> ids) async {
     await beforeCall?.call();
+    _checkPresent();
     for (final id in ids) {
       if (failGetIds.contains(id)) {
         throw StateError('remote get failure for $id');
@@ -920,6 +942,7 @@ class FakeSyncTable implements SyncTable {
     bool ifLive = false,
   }) async {
     await beforeCall?.call();
+    _checkPresent();
     ids.forEach(_guard);
     patchManyCalls.add((ids: ids, ifVersion: ifVersion, ifStatus: ifStatus));
     for (final _ in ids) {
@@ -955,6 +978,7 @@ class FakeSyncTable implements SyncTable {
     bool ifLive = false,
   }) async {
     await beforeCall?.call();
+    _checkPresent();
     _guard(id);
     sent.add(Map.of(changes));
     final http = wire;
@@ -981,6 +1005,7 @@ class FakeSyncTable implements SyncTable {
   @override
   Future<void> insertIfAbsent(List<Map<String, Object?>> rows) async {
     await beforeCall?.call();
+    _checkPresent();
     for (final r in rows) {
       _guard(r['id']! as String);
     }

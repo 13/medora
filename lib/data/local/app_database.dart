@@ -241,15 +241,20 @@ class AppDatabase {
     );
   }
 
-  Future<void> clearAllData() async {
+  /// Empties every table; with [keepRx], all but the prescription tables
+  /// (`persons`, `rx`, `rx_dispensings`), which a force pull from a server
+  /// without them could never bring back.
+  Future<void> clearAllData({bool keepRx = false}) async {
     final db = await database;
     // First: its rows reference medications.
     await db.delete('stock_outbox');
     await db.delete('dose_logs');
     await db.delete('prescriptions');
-    await db.delete('rx_dispensings');
-    await db.delete('rx');
-    await db.delete('persons');
+    if (!keepRx) {
+      await db.delete('rx_dispensings');
+      await db.delete('rx');
+      await db.delete('persons');
+    }
     await db.delete('treatments');
     await db.delete('medications');
     await db.delete('family_members');
