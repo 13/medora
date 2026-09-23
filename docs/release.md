@@ -417,7 +417,12 @@ updates. Every migration can be run again.
   prescriptions and dispensings). Without it every sync of a 0.6.0 device
   reports a `MissingTableException` naming this file; nothing else breaks:
   the other tables still sync, and prescriptions stay on the device until
-  the migration is applied and the next sync sends them.
+  the migration is applied and the next sync sends them. A force pull keeps
+  them on the device as well; it replaces only the other tables.
+- Re-running `20260918000000_sync_v2.sql` after the rx migration recreates
+  `medora_delete_all_data` without the prescription tables, so "delete all
+  data" would leave them on the server. Run `20260923000000_rx.sql` again
+  afterwards: it restores the function with them.
 
 ### Hand-written release notes
 
