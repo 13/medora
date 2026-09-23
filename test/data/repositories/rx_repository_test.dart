@@ -284,8 +284,11 @@ class _FailingAttachmentRepo implements AttachmentRepository {
   ) async => const Result.failure('attachment cleanup failed');
 
   @override
-  Future<Result<bool>> markUploaded(String id, String remotePath) async =>
-      const Result.failure('not used in this test');
+  Future<Result<bool>> markUploaded(
+    String id,
+    String remotePath, {
+    required String? signedInUserId,
+  }) async => const Result.failure('not used in this test');
 
   @override
   Future<Result<Map<String, int>>> countsForKind(

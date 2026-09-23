@@ -126,7 +126,7 @@ class AttachmentTransfer {
     try {
       report += await _removals(store, uid);
       report += await _uploads(store, uid);
-      report += await _sweep();
+      report += TransferReport(swept: await sweep());
     } catch (e) {
       debugPrint('Attachments: transfer pass failed: ${e.runtimeType}');
       report += const TransferReport(failed: 1);
@@ -215,7 +215,13 @@ class AttachmentTransfer {
         failed++;
         continue;
       }
-      final marked = await _repository.markUploaded(a.id, path);
+      // Whoever is signed in now, not at the start of the pass: an account
+      // change during the upload must not record the old account's path.
+      final marked = await _repository.markUploaded(
+        a.id,
+        path,
+        signedInUserId: _currentUserId(),
+      );
       marked.when(
         success: (recorded) {
           _backoff.remove(a.id);
@@ -238,7 +244,10 @@ class AttachmentTransfer {
   /// file; so does a file written within [sweepGrace]. A `.part` file (a
   /// write still running, or one a kill interrupted) never matches a row,
   /// so it goes once it is older than [sweepGrace].
-  Future<TransferReport> _sweep() async {
+  ///
+  /// Needs no store, user or network: it runs on its own after "delete all
+  /// data" on another device removed rows here. Returns how many files went.
+  Future<int> sweep() async {
     final ids = (await _local.getAllIds()).toSet();
     final cutoff = _now().subtract(sweepGrace);
     var swept = 0;
@@ -249,7 +258,7 @@ class AttachmentTransfer {
       await _files.delete(name);
       swept++;
     }
-    return TransferReport(swept: swept);
+    return swept;
   }
 
   /// The file of [a], downloading it when it is not here yet. Null when it

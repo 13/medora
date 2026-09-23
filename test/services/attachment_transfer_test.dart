@@ -461,4 +461,48 @@ void main() {
     expect(store.objects, contains('user-b/${a.id}.jpg'));
     expect((await rowOf(a.id))['remote_path'], 'user-b/${a.id}.jpg');
   });
+
+  test('signed out and in as another account during an upload: the old '
+      "account's path is not recorded, and the file goes to the new "
+      'folder', () async {
+    final a = await add();
+    SharedPreferences.setMockInitialValues({LocalUploadMarker.ownerKey: _uid});
+    final marker = LocalUploadMarker(
+      database: AppDatabase.instance,
+      cursors: SyncCursorStore.inMemory(),
+      prefs: await SharedPreferences.getInstance(),
+    );
+    store.afterUpload = () async {
+      store.afterUpload = null;
+      await marker.markAllForUpload('user-b');
+      uid = 'user-b';
+    };
+    final t = transfer();
+    final report = await t.run();
+    expect(report.uploaded, 0);
+    final row = await rowOf(a.id);
+    expect(row['remote_path'], isNull);
+    expect(await local.pendingRemovals(), ['$_uid/${a.id}.jpg']);
+
+    store.currentUserId = 'user-b';
+    final next = await t.run();
+    expect(next.uploaded, 1);
+    expect((await rowOf(a.id))['remote_path'], 'user-b/${a.id}.jpg');
+  });
+
+  test('sweep alone deletes orphaned files, with no store, user or '
+      'network', () async {
+    final live = await add();
+    final orphan = await files.write('gone.jpg', [5]);
+    final old = now.subtract(const Duration(hours: 1));
+    orphan.setLastModifiedSync(old);
+    (await files.fileFor(live)).setLastModifiedSync(old);
+    uid = null;
+    online = false;
+
+    final swept = await transfer(withStore: false).sweep();
+
+    expect(swept, 1);
+    expect(await files.listNames(), [live.fileName]);
+  });
 }

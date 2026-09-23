@@ -54,22 +54,40 @@ class AttachmentLocalDatasource {
   ];
 
   /// Records the upload of [id] at [remotePath] as a pending update, in one
-  /// transaction with the check that the row is still live. When it is
-  /// gone or deleted, [remotePath] is queued for removal instead (same
-  /// transaction) and the result is false. [updatedAt] gives the new
-  /// `updated_at` from the stored one.
+  /// transaction with the check that the row is still live and that
+  /// [remotePath] lies in its owner's folder: the row's `user_id`, or
+  /// [signedInUserId] when the row has none. When it is gone, deleted or
+  /// owned by another account (a sign-out and sign-in while the upload
+  /// ran), [remotePath] is queued for removal instead (same transaction)
+  /// and the result is false. [updatedAt] gives the new `updated_at` from
+  /// the stored one.
   Future<bool> setRemotePathIfLive(
     String id,
     String remotePath, {
+    required String? signedInUserId,
     required DateTime Function(DateTime? stored) updatedAt,
   }) async => (await _db).transaction((txn) async {
-    final recorded = await _table.updateLiveIn(
-      txn,
-      id,
-      (m) =>
-          m.copyWith(remotePath: remotePath, updatedAt: updatedAt(m.updatedAt)),
-      syncStatus: SyncStatus.pendingUpdate,
+    final owner = await txn.query(
+      'attachments',
+      columns: ['user_id'],
+      where: 'id = ?',
+      whereArgs: [id],
     );
+    final folder = owner.isEmpty
+        ? null
+        : (owner.single['user_id'] as String?) ?? signedInUserId;
+    final recorded =
+        folder != null &&
+        remotePath.startsWith('$folder/') &&
+        await _table.updateLiveIn(
+          txn,
+          id,
+          (m) => m.copyWith(
+            remotePath: remotePath,
+            updatedAt: updatedAt(m.updatedAt),
+          ),
+          syncStatus: SyncStatus.pendingUpdate,
+        );
     if (!recorded) await _enqueueRemoval(txn, remotePath);
     return recorded;
   });

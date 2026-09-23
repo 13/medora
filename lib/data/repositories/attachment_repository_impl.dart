@@ -158,7 +158,11 @@ class AttachmentRepositoryImpl implements AttachmentRepository {
   }
 
   @override
-  Future<Result<bool>> markUploaded(String id, String remotePath) async {
+  Future<Result<bool>> markUploaded(
+    String id,
+    String remotePath, {
+    required String? signedInUserId,
+  }) async {
     try {
       final row = await local.getById(id);
       if (row != null && p.basename(remotePath) != row.toDomain().fileName) {
@@ -174,6 +178,7 @@ class AttachmentRepositoryImpl implements AttachmentRepository {
       final recorded = await local.setRemotePathIfLive(
         id,
         remotePath,
+        signedInUserId: signedInUserId,
         updatedAt: (stored) => nextUpdatedAt(stored, _now()),
       );
       if (recorded) _syncSoon();

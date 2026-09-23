@@ -73,8 +73,11 @@ class FakeAttachmentRepository implements AttachmentRepository {
   }
 
   @override
-  Future<Result<bool>> markUploaded(String id, String remotePath) async =>
-      const Result.success(true);
+  Future<Result<bool>> markUploaded(
+    String id,
+    String remotePath, {
+    required String? signedInUserId,
+  }) async => const Result.success(true);
 
   @override
   Future<Result<Map<String, int>>> countsForKind(

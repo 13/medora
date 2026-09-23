@@ -147,7 +147,11 @@ void main() {
       )).dataOrNull!;
       syncs = 0;
 
-      final result = await repo.markUploaded(added.id, 'u1/${added.fileName}');
+      final result = await repo.markUploaded(
+        added.id,
+        'u1/${added.fileName}',
+        signedInUserId: 'u1',
+      );
 
       expect(result.isSuccess, isTrue);
       expect(result.dataOrNull, isTrue);
@@ -173,7 +177,11 @@ void main() {
       )).dataOrNull!;
       await repo.delete(added.id);
 
-      final result = await repo.markUploaded(added.id, 'u1/${added.fileName}');
+      final result = await repo.markUploaded(
+        added.id,
+        'u1/${added.fileName}',
+        signedInUserId: 'u1',
+      );
 
       expect(result.isSuccess, isTrue);
       expect(result.dataOrNull, isFalse);
@@ -189,7 +197,11 @@ void main() {
       imported(),
     )).dataOrNull!;
 
-    final result = await repo.markUploaded(added.id, 'u1/other.jpg');
+    final result = await repo.markUploaded(
+      added.id,
+      'u1/other.jpg',
+      signedInUserId: 'u1',
+    );
 
     expect(result.isFailure, isTrue);
     final row = await local.getById(added.id);
@@ -242,7 +254,7 @@ void main() {
     final path = 'u1/${added.fileName}';
     racing.deleteAfterRead = added.id;
 
-    final result = await r.markUploaded(added.id, path);
+    final result = await r.markUploaded(added.id, path, signedInUserId: 'u1');
 
     expect(result.dataOrNull, isFalse);
     final row = (await (await AppDatabase.instance.database).query(
@@ -255,8 +267,93 @@ void main() {
   });
 
   test('markUploaded of a row that is gone queues the object', () async {
-    final result = await repo.markUploaded('nope', 'u1/nope.jpg');
+    final result = await repo.markUploaded(
+      'nope',
+      'u1/nope.jpg',
+      signedInUserId: 'u1',
+    );
     expect(result.dataOrNull, isFalse);
     expect(await local.pendingRemovals(), ['u1/nope.jpg']);
+  });
+
+  group('markUploaded accepts only a path in the owner\'s folder', () {
+    Future<Attachment> addOwnedBy(String? userId) async {
+      final added = (await repo.add(
+        AttachmentOwnerKind.rx,
+        'r1',
+        imported(),
+      )).dataOrNull!;
+      await (await AppDatabase.instance.database).update(
+        'attachments',
+        {'user_id': userId},
+        where: 'id = ?',
+        whereArgs: [added.id],
+      );
+      return added;
+    }
+
+    test("a row of u1 refuses a path in u2's folder and queues it", () async {
+      final added = await addOwnedBy('u1');
+      final path = 'u2/${added.fileName}';
+
+      final result = await repo.markUploaded(
+        added.id,
+        path,
+        signedInUserId: 'u2',
+      );
+
+      expect(result.dataOrNull, isFalse);
+      expect((await local.getById(added.id))!.remotePath, isNull);
+      expect(await local.pendingRemovals(), [path]);
+    });
+
+    test('a row of u1 takes a path in its own folder, whoever is signed '
+        'in', () async {
+      final added = await addOwnedBy('u1');
+      final path = 'u1/${added.fileName}';
+
+      final result = await repo.markUploaded(
+        added.id,
+        path,
+        signedInUserId: 'u1',
+      );
+
+      expect(result.dataOrNull, isTrue);
+      expect((await local.getById(added.id))!.remotePath, path);
+    });
+
+    test('a row without an owner (cleared for another account) refuses the '
+        "previous account's path", () async {
+      final added = await addOwnedBy(null);
+      final path = 'u1/${added.fileName}';
+
+      final result = await repo.markUploaded(
+        added.id,
+        path,
+        signedInUserId: 'u2',
+      );
+
+      expect(result.dataOrNull, isFalse);
+      expect((await local.getById(added.id))!.remotePath, isNull);
+      expect(await local.pendingRemovals(), [path]);
+    });
+
+    test(
+      'a row without an owner and nobody signed in refuses the path',
+      () async {
+        final added = await addOwnedBy(null);
+        final path = 'u1/${added.fileName}';
+
+        final result = await repo.markUploaded(
+          added.id,
+          path,
+          signedInUserId: null,
+        );
+
+        expect(result.dataOrNull, isFalse);
+        expect((await local.getById(added.id))!.remotePath, isNull);
+        expect(await local.pendingRemovals(), [path]);
+      },
+    );
   });
 }
