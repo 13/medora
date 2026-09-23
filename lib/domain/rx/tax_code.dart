@@ -23,12 +23,28 @@ abstract final class TaxCode {
   }
 
   /// The check character of the first fifteen characters [head].
+  ///
+  /// [head] must be exactly 15 characters from the codice fiscale alphabet
+  /// (`A`-`Z`, `0`-`9`); anything else is a caller bug, so this throws
+  /// rather than crashing on a null-checked map lookup.
   static String checkCharacter(String head) {
+    if (head.length != 15) {
+      throw ArgumentError.value(head, 'head', 'must be exactly 15 characters');
+    }
     var sum = 0;
     for (var i = 0; i < 15; i++) {
       final c = head[i];
+      final oddValue = _odd[c];
+      if (oddValue == null) {
+        throw ArgumentError.value(
+          head,
+          'head',
+          'character "$c" at position $i is not in the codice fiscale '
+              'alphabet (A-Z, 0-9)',
+        );
+      }
       // Positions are counted from 1, so index 0 is an odd position.
-      sum += i.isEven ? _odd[c]! : _even(c);
+      sum += i.isEven ? oddValue : _even(c);
     }
     return String.fromCharCode(0x41 + sum % 26);
   }

@@ -21,9 +21,19 @@
 ///   is kept because it is the value repeated across the majority of
 ///   pharmacist-facing sources checked, but flag as not settled by a single
 ///   authoritative legal citation.
-/// - priority classes U/B/D/P (72h / 10 / 30 / 120 days), from the national
-///   waiting-list plan, reproduced on ASL/ASU institutional pages -
-///   https://asugi.sanita.fvg.it/it/schede/s_dir_san/cup_tmp_criteri_priorita-codici_ubdp.html
+/// - priority classes U/B/D/P (72h / 10 / 30 / 120 days): Piano Nazionale di
+///   Governo delle Liste d'Attesa (PNGLA) 2019-2021, Intesa Stato-Regioni
+///   21 febbraio 2019 - these are the national deadlines by which the
+///   service must be *delivered* ("da eseguirsi entro"), not a booking
+///   deadline (D is 30 days for visits, 60 for instrumental exams; the app
+///   uses the visit value) -
+///   https://www.salute.gov.it/new/it/pubblicazione/piano-nazionale-di-governo-delle-liste-di-attesa-il-triennio-2019-2021/ ;
+///   the exact wording ("prestazioni da eseguirsi entro ...") is quoted at
+///   https://leparoledellasalute.federsanitatoscana.it/classe-di-priorita/ .
+///   The PDF of the plan itself is blocked to automated fetches by
+///   salute.gov.it's bot protection, so it could not be quoted directly;
+///   the Ministry publication page above and the independent secondary
+///   source were both confirmed reachable.
 library;
 
 enum RxKind {
@@ -45,11 +55,11 @@ enum RxPriority {
   d('D', 30),
   p('P', 120);
 
-  const RxPriority(this.wire, this.bookWithinDays);
+  const RxPriority(this.wire, this.visitWithinDays);
   final String wire;
 
   /// Days from issue within which the visit should take place.
-  final int bookWithinDays;
+  final int visitWithinDays;
 
   static RxPriority? fromWire(String? raw) {
     for (final p in values) {
@@ -82,10 +92,13 @@ abstract final class RxValidity {
   static int? defaultMaxDispensings(RxKind kind) =>
       kind == RxKind.whiteRepeatable ? _repeatableDispensings : null;
 
-  static DateTime bookBy(RxPriority priority, DateTime issuedOn) => DateTime(
+  /// The date by which the visit should take place (national priority
+  /// class deadline); D is 30 days for visits, 60 for instrumental exams —
+  /// the app uses the visit value.
+  static DateTime visitBy(RxPriority priority, DateTime issuedOn) => DateTime(
     issuedOn.year,
     issuedOn.month,
-    issuedOn.day + priority.bookWithinDays,
+    issuedOn.day + priority.visitWithinDays,
   );
 
   /// [months] later, on the same day or the month's last day when that

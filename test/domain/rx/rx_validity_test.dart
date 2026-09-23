@@ -38,11 +38,11 @@ void main() {
     expect(RxValidity.defaultValidUntil(RxKind.referral, issued), isNull);
   });
 
-  test('book-by dates follow the priority class', () {
-    expect(RxValidity.bookBy(RxPriority.u, issued), DateTime(2026, 9, 26));
-    expect(RxValidity.bookBy(RxPriority.b, issued), DateTime(2026, 10, 3));
-    expect(RxValidity.bookBy(RxPriority.d, issued), DateTime(2026, 10, 23));
-    expect(RxValidity.bookBy(RxPriority.p, issued), DateTime(2027, 1, 21));
+  test('visit-by dates follow the priority class', () {
+    expect(RxValidity.visitBy(RxPriority.u, issued), DateTime(2026, 9, 26));
+    expect(RxValidity.visitBy(RxPriority.b, issued), DateTime(2026, 10, 3));
+    expect(RxValidity.visitBy(RxPriority.d, issued), DateTime(2026, 10, 23));
+    expect(RxValidity.visitBy(RxPriority.p, issued), DateTime(2027, 1, 21));
   });
 
   test('wire names round-trip, unknown kinds read as SSN', () {

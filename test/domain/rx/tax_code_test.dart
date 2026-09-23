@@ -20,13 +20,26 @@ void main() {
   });
 
   test('accepts omocodia (digits replaced by LMNPQRSTUV)', () {
-    // 85 -> RS in the year; check character recomputed for the new code.
-    const omocode = 'RSSMRARST10A562S';
-    final expected = TaxCode.checkCharacter(omocode.substring(0, 15));
-    expect(TaxCode.isValid('${omocode.substring(0, 15)}$expected'), isTrue);
+    // RSSMRA85T10A562S with the year digits '85' replaced by their
+    // omocodia letters ('8'->'U', '5'->'R'): head 'RSSMRAURT10A562'.
+    // Check letter hand-computed with the odd/even tables: 'B' (see the
+    // fix-round report for the worked sum).
+    expect(TaxCode.isValid('RSSMRAURT10A562B'), isTrue);
+    expect(TaxCode.isValid('RSSMRAURT10A562A'), isFalse);
   });
 
   test('normalize strips whitespace and upper-cases', () {
     expect(TaxCode.normalize(' rss mra85t10a562s\n'), 'RSSMRA85T10A562S');
   });
+
+  test(
+    'checkCharacter rejects a head that is not 15 normalised characters',
+    () {
+      expect(() => TaxCode.checkCharacter('TOOSHORT'), throwsArgumentError);
+      expect(
+        () => TaxCode.checkCharacter('RSSMRA85T10A56!'),
+        throwsArgumentError,
+      );
+    },
+  );
 }
