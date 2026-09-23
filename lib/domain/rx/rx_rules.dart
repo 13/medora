@@ -36,6 +36,10 @@
 ///   source were both confirmed reachable.
 library;
 
+import 'package:medora/core/clock.dart';
+import 'package:medora/domain/entities/rx.dart';
+import 'package:medora/domain/entities/rx_dispensing.dart';
+
 enum RxKind {
   ssn('ssn'),
   white('white'),
@@ -116,4 +120,64 @@ abstract final class RxValidity {
       day.day > lastDay ? lastDay : day.day,
     );
   }
+}
+
+enum RxStatus { open, partial, redeemed, expired, cancelled }
+
+abstract final class RxRules {
+  /// Packs collected per item id.
+  static Map<String, int> dispensedPacks(List<RxDispensing> dispensings) {
+    final sums = <String, int>{};
+    for (final d in dispensings) {
+      sums[d.itemId] = (sums[d.itemId] ?? 0) + d.packs;
+    }
+    return sums;
+  }
+
+  /// The state of [rx] at [now], given its [dispensings]. Never stored:
+  /// "expired" changes with the date alone.
+  ///
+  /// Order matters: a cancelled prescription is cancelled whatever was
+  /// collected, and one fully collected is redeemed even after its last
+  /// valid day.
+  static RxStatus statusOf(
+    Rx rx,
+    List<RxDispensing> dispensings,
+    DateTime now,
+  ) {
+    if (rx.cancelled) return RxStatus.cancelled;
+    if (rx.closedOn != null || _fullyDispensed(rx, dispensings)) {
+      return RxStatus.redeemed;
+    }
+    final left = daysLeft(rx, now);
+    if (left != null && left < 0) return RxStatus.expired;
+    return dispensings.isEmpty ? RxStatus.open : RxStatus.partial;
+  }
+
+  static bool _fullyDispensed(Rx rx, List<RxDispensing> dispensings) {
+    final max = rx.maxDispensings;
+    if (max != null) return dispensings.length >= max;
+    if (rx.items.isEmpty) return false;
+    final given = dispensedPacks(dispensings);
+    return rx.items.every((i) => (given[i.id] ?? 0) >= i.packs);
+  }
+
+  /// Calendar days from [now] to the last valid day: 0 on that day,
+  /// negative once it has passed, null when no validity is known.
+  static int? daysLeft(Rx rx, DateTime now) {
+    final until = rx.validUntil;
+    return until == null ? null : calendarDaysBetween(now, until);
+  }
+
+  /// Units in one pack, read from a pack description ("20 compresse",
+  /// "30 cpr", "20 Tabletten"); null for volumes or when none is named.
+  static int? packSizeOf(String description) {
+    final match = _packCount.firstMatch(description.toLowerCase());
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  static final _packCount = RegExp(
+    r'(\d+)\s*(?:compresse|compressa|cpr|cp|capsule|caps|cps|bustine|'
+    r'tabletten|tabl|kapseln|stück|stk|tablets|capsules|pz|pezzi)\b',
+  );
 }
