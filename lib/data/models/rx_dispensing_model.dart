@@ -87,4 +87,21 @@ class RxDispensingModel {
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   );
+
+  RxDispensingModel copyWithStamps({
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => RxDispensingModel(
+    id: id,
+    userId: userId,
+    rxId: rxId,
+    itemId: itemId,
+    packs: packs,
+    dispensedOn: dispensedOn,
+    pharmacy: pharmacy,
+    unitsAdded: unitsAdded,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt,
+  );
 }

@@ -18,8 +18,11 @@ import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/family_remote_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/medication_remote_datasource.dart';
+import 'package:medora/data/datasources/person_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_remote_datasource.dart';
+import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
+import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/datasources/rx_remote_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
@@ -29,13 +32,17 @@ import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/data/repositories/family_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
+import 'package:medora/data/repositories/person_repository_impl.dart';
 import 'package:medora/data/repositories/prescription_repository_impl.dart';
+import 'package:medora/data/repositories/rx_repository_impl.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/data/sync/request_sync.dart';
 import 'package:medora/domain/repositories/dose_log_repository.dart';
 import 'package:medora/domain/repositories/family_repository.dart';
 import 'package:medora/domain/repositories/medication_repository.dart';
+import 'package:medora/domain/repositories/person_repository.dart';
 import 'package:medora/domain/repositories/prescription_repository.dart';
+import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/domain/repositories/treatment_repository.dart';
 import 'package:medora/presentation/providers/app_config_provider.dart';
 import 'package:medora/presentation/providers/app_mode_provider.dart';
@@ -92,6 +99,19 @@ final doseLogLocalDatasourceProvider = Provider<DoseLogLocalDatasource>(
 final familyLocalDatasourceProvider = Provider<FamilyLocalDatasource>(
   (ref) => FamilyLocalDatasource(),
 );
+
+final personLocalDatasourceProvider = Provider<PersonLocalDatasource>(
+  (ref) => PersonLocalDatasource(now: ref.watch(nowProvider)),
+);
+
+final rxLocalDatasourceProvider = Provider<RxLocalDatasource>(
+  (ref) => RxLocalDatasource(now: ref.watch(nowProvider)),
+);
+
+final rxDispensingLocalDatasourceProvider =
+    Provider<RxDispensingLocalDatasource>(
+      (ref) => RxDispensingLocalDatasource(now: ref.watch(nowProvider)),
+    );
 
 // ============================================================
 // Supabase client (null in local-only mode or unconfigured builds)
@@ -219,6 +239,30 @@ final familyRepositoryProvider = Provider<FamilyRepository>(
   (ref) => FamilyRepositoryImpl(
     localDatasource: ref.watch(familyLocalDatasourceProvider),
     remoteDatasource: ref.watch(familyDatasourceProvider),
+    now: ref.watch(nowProvider),
+  ),
+);
+
+final personRepositoryProvider = Provider<PersonRepository>(
+  (ref) => PersonRepositoryImpl(
+    local: ref.watch(personLocalDatasourceProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(rxRemoteDatasourceProvider),
+    ),
+    now: ref.watch(nowProvider),
+  ),
+);
+
+final rxRepositoryProvider = Provider<RxRepository>(
+  (ref) => RxRepositoryImpl(
+    rxLocal: ref.watch(rxLocalDatasourceProvider),
+    dispensingLocal: ref.watch(rxDispensingLocalDatasourceProvider),
+    medications: ref.watch(medicationRepositoryProvider),
+    requestSync: _requestSyncInCloud(
+      ref,
+      ref.watch(rxRemoteDatasourceProvider),
+    ),
     now: ref.watch(nowProvider),
   ),
 );
