@@ -34,9 +34,16 @@ class PersonListScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (ok != true) return;
-    await ref.read(personRepositoryProvider).deletePerson(p.id);
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await ref.read(personRepositoryProvider).deletePerson(p.id);
+    if (!context.mounted) return;
     ref.invalidate(personsProvider);
+    result.when(
+      success: (_) {},
+      failure: (_) =>
+          messenger.showSnackBar(SnackBar(content: Text(l10n.genericError))),
+    );
   }
 
   @override

@@ -28,6 +28,10 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
   Person? _existing;
   bool _saving = false;
 
+  /// True once the user has typed into any field. Guards [_load] from
+  /// overwriting input that was entered while the async load was in flight.
+  bool _dirty = false;
+
   @override
   void initState() {
     super.initState();
@@ -40,11 +44,15 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
     final p = persons.where((p) => p.id == id).firstOrNull;
     if (p == null || !mounted) return;
     setState(() {
+      // _existing is set regardless, so saving still updates this row; the
+      // controllers are only filled if the user has not started typing.
       _existing = p;
-      _name.text = p.name;
-      _taxCode.text = p.taxCode ?? '';
-      _exemptions.text = p.exemptions.join(', ');
-      _notes.text = p.notes ?? '';
+      if (!_dirty) {
+        _name.text = p.name;
+        _taxCode.text = p.taxCode ?? '';
+        _exemptions.text = p.exemptions.join(', ');
+        _notes.text = p.notes ?? '';
+      }
     });
   }
 
@@ -110,6 +118,7 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
               textCapitalization: TextCapitalization.words,
               decoration: InputDecoration(labelText: l10n.name),
               validator: (v) => (v ?? '').trim().isEmpty ? l10n.required : null,
+              onChanged: (_) => _dirty = true,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -122,6 +131,7 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
                 if (raw.isEmpty) return null;
                 return TaxCode.isValid(raw) ? null : l10n.rxTaxCodeInvalid;
               },
+              onChanged: (_) => _dirty = true,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -132,12 +142,14 @@ class _PersonFormScreenState extends ConsumerState<PersonFormScreen> {
                 labelText: l10n.personExemptions,
                 hintText: l10n.personExemptionsHint,
               ),
+              onChanged: (_) => _dirty = true,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _notes,
               maxLines: 3,
               decoration: InputDecoration(labelText: l10n.notes),
+              onChanged: (_) => _dirty = true,
             ),
             const SizedBox(height: 24),
             FilledButton(
