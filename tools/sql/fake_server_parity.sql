@@ -333,4 +333,53 @@ do $$ begin
     format('parity step 24, prescriptions/par-p2: postgres %s', pg_temp.parity_row('prescriptions', 'par-p2'));
 end $$;
 
+-- Step 25: 0.6.0 inserts a prescription document
+begin;
+insert into parity_now values (25, now());
+insert into public.rx (id, user_id, kind, issued_on, write_id, edited_at, field_edited_at)
+  values ('par-rx1', '00000000-0000-0000-0000-00000000000a', 'ssn', '2020-05-01', '00000000-0000-0000-0000-000000000016', '2020-05-01T00:00:00.000Z', '{"kind":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('rx', 'par-rx1') = '{"deleted":false,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"kind":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@25","write_id":true}'::jsonb,
+    format('parity step 25, rx/par-rx1: postgres %s', pg_temp.parity_row('rx', 'par-rx1'));
+end $$;
+
+-- Step 26: and a dispensing of it
+begin;
+insert into parity_now values (26, now());
+insert into public.rx_dispensings (id, user_id, rx_id, item_id, packs, dispensed_on, write_id, edited_at, field_edited_at)
+  values ('par-rxd1', '00000000-0000-0000-0000-00000000000a', 'par-rx1', 'i1', 1, '2020-05-02', '00000000-0000-0000-0000-000000000017', '2020-05-01T00:00:00.000Z', '{"packs":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('rx_dispensings', 'par-rxd1') = '{"deleted":false,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"packs":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@26","write_id":true}'::jsonb,
+    format('parity step 26, rx_dispensings/par-rxd1: postgres %s', pg_temp.parity_row('rx_dispensings', 'par-rxd1'));
+end $$;
+
+-- Step 27: a person deletes the prescription: the tombstone cascades to its dispensing as the app's own change
+begin;
+insert into parity_now values (27, now());
+update public.rx set deleted_at = '2020-05-01T00:00:00.000Z', write_id = '00000000-0000-0000-0000-000000000018', edited_at = '2020-05-01T00:00:00.000Z'
+  where id = 'par-rx1';
+commit;
+do $$ begin
+  assert pg_temp.parity_row('rx', 'par-rx1') = '{"deleted":true,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"kind":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":2,"updated_at":"@27","write_id":true}'::jsonb,
+    format('parity step 27, rx/par-rx1: postgres %s', pg_temp.parity_row('rx', 'par-rx1'));
+  assert pg_temp.parity_row('rx_dispensings', 'par-rxd1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"packs":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":2,"updated_at":"@27","write_id":false}'::jsonb,
+    format('parity step 27, rx_dispensings/par-rxd1: postgres %s', pg_temp.parity_row('rx_dispensings', 'par-rxd1'));
+end $$;
+
+-- Step 28: a device that has not heard of it sends a dispensing: stored deleted
+begin;
+insert into parity_now values (28, now());
+insert into public.rx_dispensings (id, user_id, rx_id, item_id, packs, dispensed_on, write_id, edited_at, field_edited_at)
+  values ('par-rxd2', '00000000-0000-0000-0000-00000000000a', 'par-rx1', 'i1', 1, '2020-05-03', '00000000-0000-0000-0000-000000000019', '2020-05-01T00:00:00.000Z', '{"packs":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('rx_dispensings', 'par-rxd2') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"packs":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@28","write_id":true}'::jsonb,
+    format('parity step 28, rx_dispensings/par-rxd2: postgres %s', pg_temp.parity_row('rx_dispensings', 'par-rxd2'));
+end $$;
+
 select 'fake server parity passed' as result;

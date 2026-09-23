@@ -380,7 +380,54 @@ final parityScript = <ParityStep>[
       'field_edited_at': <String, Object?>{},
     },
   ),
+  ParityStep.insert('0.6.0 inserts a prescription document', 'rx', {
+    'id': 'par-rx1',
+    'user_id': _parityUser,
+    'kind': 'ssn',
+    'issued_on': '2020-05-01',
+    'write_id': _uuid(16),
+    'edited_at': _may,
+    'field_edited_at': {'kind': _at(_may)},
+  }),
+  ParityStep.insert('and a dispensing of it', 'rx_dispensings', {
+    'id': 'par-rxd1',
+    'user_id': _parityUser,
+    'rx_id': 'par-rx1',
+    'item_id': 'i1',
+    'packs': 1,
+    'dispensed_on': '2020-05-02',
+    'write_id': _uuid(17),
+    'edited_at': _may,
+    'field_edited_at': {'packs': _at(_may)},
+  }),
+  ParityStep.update(
+    'a person deletes the prescription: the tombstone cascades to its '
+        'dispensing as the app\'s own change',
+    'rx',
+    'par-rx1',
+    {'deleted_at': _may, 'write_id': _uuid(18), 'edited_at': _may},
+    check: const [('rx', 'par-rx1'), ('rx_dispensings', 'par-rxd1')],
+  ),
+  ParityStep.insert(
+    'a device that has not heard of it sends a dispensing: stored deleted',
+    'rx_dispensings',
+    {
+      'id': 'par-rxd2',
+      'user_id': _parityUser,
+      'rx_id': 'par-rx1',
+      'item_id': 'i1',
+      'packs': 1,
+      'dispensed_on': '2020-05-03',
+      'write_id': _uuid(19),
+      'edited_at': _may,
+      'field_edited_at': {'packs': _at(_may)},
+    },
+  ),
 ];
+
+/// The owner of the parity rows of tables whose `user_id` has no default
+/// (user A of tools/sql/sync_v2_checks.sql, which runs first).
+const _parityUser = '00000000-0000-0000-0000-00000000000a';
 
 /// The step whose arrival the fake's clock gives while it runs.
 DateTime _arrival(int step) => DateTime.utc(2021).add(Duration(hours: step));

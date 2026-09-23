@@ -26,10 +26,11 @@ class RemovedData {
 /// prescription document (rx) and dispensing this device created before
 /// [wipedAt] (by their `created_at`; a row without one counts as older),
 /// whatever its sync state: synced copies, and changes still waiting to be
-/// sent, which belong to rows the person deleted everywhere. A row created after [wipedAt] stays, with its sync state:
-/// it is new data. Children go with a removed parent, and stock changes
-/// with their medication (the local foreign keys cascade). Families are
-/// not part of "delete all data" and stay.
+/// sent, which belong to rows the person deleted everywhere. A row created
+/// after [wipedAt] stays, with its sync state: it is new data. Children go
+/// with a removed parent, and stock changes with their medication (the
+/// local foreign keys cascade). Families are not part of "delete all data"
+/// and stay.
 ///
 /// The device's clock decides "after", so a row made within the clock's
 /// error of the wipe can land on the wrong side.

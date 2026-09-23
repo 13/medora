@@ -21,11 +21,12 @@
 ///   horizon, in pages; a pending local row is merged, not overwritten.
 ///
 /// For medications, treatments, prescriptions, dose logs, persons, rx and
-/// dispensings this is the only push path: the repositories write locally and ask for a [syncAll], which
-/// queues behind a running cycle. One [syncAll] re-runs itself at most
-/// [SyncService.maxAutomaticReruns] times, then retries once after
-/// [SyncService.capRetryDelay]. Every request to the server has a timeout
-/// ([SyncService.requestTimeout]) and fails like a network error.
+/// dispensings this is the only push path: the repositories write locally
+/// and ask for a [syncAll], which queues behind a running cycle. One
+/// [syncAll] re-runs itself at most [SyncService.maxAutomaticReruns] times,
+/// then retries once after [SyncService.capRetryDelay]. Every request to the
+/// server has a timeout ([SyncService.requestTimeout]) and fails like a
+/// network error.
 ///
 /// After an upgrade, the first cycle that runs pulls every table from the
 /// beginning once ([SyncCursorStore.startPullRepair]), so every row gets its

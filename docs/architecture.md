@@ -208,6 +208,47 @@ connectivity returns, and a mid-cycle `syncAll()` is queued, up to **3**
 re-runs; a sync stopped there retries once **15 s** later. Schema, RLS and
 triggers live in `supabase/migrations/`.
 
+## Prescriptions (Rx)
+
+The entity is `Rx` (the existing `Prescription` is the dosing plan of a
+treatment). Three synced tables, local and server
+(`supabase/migrations/20260923000000_rx.sql`): `persons` (who a prescription
+is for, with tax code and exemptions), `rx` (the document: kind, NRE, dates,
+doctor, priority, its items) and `rx_dispensings` (one row per pickup at the
+pharmacy). They carry the sync v2 columns, stamp trigger and owner-only
+row-level security of the other tables, and back-ups and "delete all data"
+include them.
+
+- **Soft references.** `rx.person_id`, `rx.treatment_id` and the medication
+  an item names have no foreign key, locally or on the server: deleting a
+  person, a treatment or a medication never deletes a prescription, and
+  `rx` stays a root table for sync, with no orphans to handle. The UI shows
+  a missing reference as unknown.
+- **One sync child.** `rx_dispensings` is the only child: its `rx_id` is a
+  real foreign key, an `rx` tombstone cascades to its dispensings
+  (`cascade_tombstone_rx`), and a live dispensing sent under a deleted
+  prescription is stored deleted by the `rx_dispensings_sync_stamp_parent`
+  trigger, as the app's own change (1970 edit time). That trigger's name
+  sorts between `_sync_stamp` and `_updated_at` on purpose, since BEFORE
+  triggers fire in name order. The row-level security checks the parent on
+  insert and update, so a dispensing can only ever name its owner's
+  prescription.
+- **Items as one JSON column.** `rx.items` is a JSON list (`jsonb` on the
+  server, text locally) and merges as a whole, like any other column: two
+  devices editing different items of one prescription keep the later edit,
+  not both. Items are edited rarely and together with their prescription;
+  only dispensings need a row per event, so two devices redeeming at the
+  same time never lose one to a whole-row last-write-wins.
+- **Reminders.** Expiry reminders for open prescriptions (three days before
+  the last valid day, then the day itself; one booked at a time) share the
+  stock scheduler: same hour, same 16-slot id block per id, offset **10**
+  (`0xA`, after expiry `0x8` and low stock `0x9`), payload `rx:<id>` which
+  opens the prescription.
+- **Pharmacy view.** `PharmacyScreen` shows the NRE and the tax code as Code
+  39 barcodes (`code39.dart`, drawn without a library, with the quiet zone
+  kept at every width) for the pharmacist to scan off the screen. It does
+  not raise the screen brightness yet: that needs a plugin.
+
 ## Theme and localization rules
 
 Colors come from the Material 3 scheme plus the `MedoraColors` theme extension

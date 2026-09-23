@@ -108,10 +108,18 @@ begin
 end;
 $$;
 
--- A dispensing may only name a prescription of the same owner.
+-- A dispensing may only name a prescription of the same owner, when it is
+-- written and when it is moved: the lookup runs under the caller's own
+-- `rx_select` policy, so another user's prescription is not found.
 drop policy if exists "rx_dispensings_insert" on public.rx_dispensings;
 create policy "rx_dispensings_insert" on public.rx_dispensings
   for insert with check (
+    user_id = auth.uid()
+    and exists (select 1 from public.rx r where r.id = rx_id)
+  );
+drop policy if exists "rx_dispensings_update" on public.rx_dispensings;
+create policy "rx_dispensings_update" on public.rx_dispensings
+  for update using (user_id = auth.uid()) with check (
     user_id = auth.uid()
     and exists (select 1 from public.rx r where r.id = rx_id)
   );

@@ -406,6 +406,19 @@ Flutter pin in `.fvmrc` moves, not before.
    `tools/release_notes.sh` builds from commit subjects only.
 6. Tag the commit and upload.
 
+### Server migrations before a release
+
+A release whose code reads a new table or column needs its Supabase migration
+applied to the hosted project (`supabase db push`) **before** the first device
+updates. Every migration can be run again.
+
+- `supabase/migrations/20260918000000_sync_v2.sql` — before 0.4.0.
+- `supabase/migrations/20260923000000_rx.sql` — before **0.6.0** (persons,
+  prescriptions and dispensings). Without it every sync of a 0.6.0 device
+  reports a `MissingTableException` naming this file; nothing else breaks:
+  the other tables still sync, and prescriptions stay on the device until
+  the migration is applied and the next sync sends them.
+
 ### Hand-written release notes
 
 - **The first release with as-needed prescriptions** (`as_needed`) needs this
