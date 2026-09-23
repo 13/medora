@@ -316,7 +316,7 @@ class SyncService {
     final missing = <MissingTableException>[];
     for (final table in const ['persons', 'rx', 'rx_dispensings']) {
       try {
-        await _tables[table]!.remote.fetch(_probeId);
+        await _remote(_tables[table]!.remote.fetch(_probeId));
       } on MissingTableException catch (e) {
         missing.add(e);
       }
