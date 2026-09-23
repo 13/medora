@@ -19,6 +19,7 @@ import 'package:medora/presentation/screens/medication/expiring_medications_scre
 import 'package:medora/presentation/screens/medication/medication_detail_screen.dart';
 import 'package:medora/presentation/screens/persons/person_form_screen.dart';
 import 'package:medora/presentation/screens/persons/person_list_screen.dart';
+import 'package:medora/presentation/screens/rx/rx_form_screen.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
 import 'package:medora/presentation/screens/stats/stats_screen.dart';
@@ -58,6 +59,9 @@ class AppRoutes {
   static const persons = '/persons';
   static const addPerson = '/persons/add';
   static const editPerson = '/persons/:id/edit';
+  static const addRx = '/rx/add';
+  static const rxDetail = '/rx/:id';
+  static const editRx = '/rx/:id/edit';
 }
 
 /// Pure redirect rule (unit-tested).
@@ -201,6 +205,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: AppRoutes.editPerson,
             builder: (_, state) =>
                 PersonFormScreen(personId: state.pathParameters['id']),
+          ),
+          // addRx before rxDetail (Task 10) so '/rx/add' is not read as an id.
+          GoRoute(
+            path: AppRoutes.addRx,
+            builder: (_, state) => RxFormScreen(
+              treatmentId: state.uri.queryParameters['treatmentId'],
+              personId: state.uri.queryParameters['personId'],
+            ),
+          ),
+          GoRoute(
+            path: AppRoutes.editRx,
+            builder: (_, state) =>
+                RxFormScreen(rxId: state.pathParameters['id']),
           ),
           GoRoute(
             path: AppRoutes.export,

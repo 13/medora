@@ -13,6 +13,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
+import 'package:medora/presentation/screens/rx/rx_list_view.dart';
 import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/settings_action.dart';
@@ -21,6 +22,10 @@ import 'package:medora/presentation/widgets/sick_leave_badge.dart';
 
 /// Filter options for treatment list.
 enum TreatmentFilter { active, ended, all }
+
+/// Which pane the treatments tab shows: the treatments themselves, or their
+/// prescriptions.
+enum _TreatmentsPane { treatments, prescriptions }
 
 class TreatmentListScreen extends ConsumerStatefulWidget {
   const TreatmentListScreen({super.key});
@@ -34,6 +39,7 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
   final _searchController = TextEditingController();
   bool _isSearching = false;
   TreatmentFilter _filter = TreatmentFilter.active;
+  _TreatmentsPane _pane = _TreatmentsPane.treatments;
 
   @override
   void dispose() {
@@ -88,18 +94,21 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
               )
             : Text(l10n.treatments),
         actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
-            tooltip: _isSearching
-                ? MaterialLocalizations.of(context).closeButtonTooltip
-                : MaterialLocalizations.of(context).searchFieldLabel,
-            onPressed: () {
-              setState(() {
-                _isSearching = !_isSearching;
-                if (!_isSearching) _searchController.clear();
-              });
-            },
-          ),
+          // Search only applies to the treatments pane: the prescriptions
+          // pane has its own person filter instead.
+          if (_pane == _TreatmentsPane.treatments)
+            IconButton(
+              icon: Icon(_isSearching ? Icons.close : Icons.search),
+              tooltip: _isSearching
+                  ? MaterialLocalizations.of(context).closeButtonTooltip
+                  : MaterialLocalizations.of(context).searchFieldLabel,
+              onPressed: () {
+                setState(() {
+                  _isSearching = !_isSearching;
+                  if (!_isSearching) _searchController.clear();
+                });
+              },
+            ),
           // Search is a short mode whose only exit is the close button, so
           // its app bar holds the field and that button only: the gear's
           // 48 dp cut the German hint from a 1.1x text scale.
@@ -115,153 +124,206 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
       ),
       body: Column(
         children: [
-          // Filter chips. Scrollable, as on the medications tab: at large
-          // text scales on narrow screens the three chips are wider than the
-          // screen.
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Row(
-              children: [
-                _FilterChip(
-                  label: l10n.active,
-                  selected: _filter == TreatmentFilter.active,
-                  onTap: () => setState(() => _filter = TreatmentFilter.active),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: SegmentedButton<_TreatmentsPane>(
+              segments: [
+                ButtonSegment(
+                  value: _TreatmentsPane.treatments,
+                  // A long label ("Behandlungen", "Verschreibungen") in a
+                  // two-way split of a 360 dp phone has little width to
+                  // give; ellipsizing rather than wrapping keeps the
+                  // segmented control one line tall at any text scale.
+                  label: Text(
+                    l10n.treatments,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  icon: const Icon(Icons.healing_outlined),
                 ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: l10n.ended,
-                  selected: _filter == TreatmentFilter.ended,
-                  onTap: () => setState(() => _filter = TreatmentFilter.ended),
-                ),
-                const SizedBox(width: 8),
-                _FilterChip(
-                  label: l10n.all,
-                  selected: _filter == TreatmentFilter.all,
-                  onTap: () => setState(() => _filter = TreatmentFilter.all),
+                ButtonSegment(
+                  value: _TreatmentsPane.prescriptions,
+                  label: Text(
+                    l10n.rxTab,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  icon: const Icon(Icons.receipt_long_outlined),
                 ),
               ],
+              selected: {_pane},
+              onSelectionChanged: (s) => setState(() {
+                _pane = s.first;
+                // Search only exists in the treatments pane; leaving it
+                // stranded on would hide the button that closes it.
+                if (_pane != _TreatmentsPane.treatments && _isSearching) {
+                  _isSearching = false;
+                  _searchController.clear();
+                }
+              }),
             ),
           ),
-          const Divider(height: 1),
-
-          // Treatment list
-          Expanded(
-            child: AsyncValueView<List<Treatment>>(
-              value: treatmentsAsync,
-              onRetry: () async =>
-                  ref.read(treatmentListProvider.notifier).refresh(),
-              emptyWhen: (treatments) => treatments.isEmpty,
-              empty: EmptyStateWidget(
-                icon: Icons.healing_outlined,
-                title: l10n.noTreatmentsYet,
-                subtitle: l10n.createTreatmentPlan,
-                actionLabel: l10n.addTreatment,
-                onAction: () => context.push(AppRoutes.addTreatment),
+          if (_pane == _TreatmentsPane.treatments) ...[
+            // Filter chips. Scrollable, as on the medications tab: at large
+            // text scales on narrow screens the three chips are wider than
+            // the screen.
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  _FilterChip(
+                    label: l10n.active,
+                    selected: _filter == TreatmentFilter.active,
+                    onTap: () =>
+                        setState(() => _filter = TreatmentFilter.active),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: l10n.ended,
+                    selected: _filter == TreatmentFilter.ended,
+                    onTap: () =>
+                        setState(() => _filter = TreatmentFilter.ended),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: l10n.all,
+                    selected: _filter == TreatmentFilter.all,
+                    onTap: () => setState(() => _filter = TreatmentFilter.all),
+                  ),
+                ],
               ),
-              data: (treatments) {
-                final filtered = _applyFilter(treatments);
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.search_off,
-                          size: 48,
-                          color: context.colors.outline,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          l10n.noResults,
-                          style: TextStyle(
-                            color: context.colors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
+            ),
+            const Divider(height: 1),
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    await ref.read(treatmentListProvider.notifier).refresh();
-                  },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 80),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final t = filtered[index];
-                      return Slidable(
-                        endActionPane: ActionPane(
-                          motion: const ScrollMotion(),
-                          children: [
-                            if (t.isActive)
+            // Treatment list
+            Expanded(
+              child: AsyncValueView<List<Treatment>>(
+                value: treatmentsAsync,
+                onRetry: () async =>
+                    ref.read(treatmentListProvider.notifier).refresh(),
+                emptyWhen: (treatments) => treatments.isEmpty,
+                empty: EmptyStateWidget(
+                  icon: Icons.healing_outlined,
+                  title: l10n.noTreatmentsYet,
+                  subtitle: l10n.createTreatmentPlan,
+                  actionLabel: l10n.addTreatment,
+                  onAction: () => context.push(AppRoutes.addTreatment),
+                ),
+                data: (treatments) {
+                  final filtered = _applyFilter(treatments);
+                  if (filtered.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.search_off,
+                            size: 48,
+                            color: context.colors.outline,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            l10n.noResults,
+                            style: TextStyle(
+                              color: context.colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      await ref.read(treatmentListProvider.notifier).refresh();
+                    },
+                    child: ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 80),
+                      itemCount: filtered.length,
+                      itemBuilder: (context, index) {
+                        final t = filtered[index];
+                        return Slidable(
+                          endActionPane: ActionPane(
+                            motion: const ScrollMotion(),
+                            children: [
+                              if (t.isActive)
+                                SlidableAction(
+                                  // Asks first, like the detail screen: it
+                                  // is the same write, and the dialog is
+                                  // where an open sick leave can be ended
+                                  // too.
+                                  onPressed: (_) =>
+                                      confirmAndEndTreatment(context, ref, t),
+                                  backgroundColor: context.medora.warning,
+                                  foregroundColor: context.medora.onWarning,
+                                  icon: Icons.stop_circle,
+                                  label: l10n.end,
+                                ),
                               SlidableAction(
-                                // Asks first, like the detail screen: it
-                                // is the same write, and the dialog is where
-                                // an open sick leave can be ended too.
-                                onPressed: (_) =>
-                                    confirmAndEndTreatment(context, ref, t),
-                                backgroundColor: context.medora.warning,
-                                foregroundColor: context.medora.onWarning,
-                                icon: Icons.stop_circle,
-                                label: l10n.end,
-                              ),
-                            SlidableAction(
-                              onPressed: (_) async {
-                                final confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: Text(l10n.deleteTreatment),
-                                    content: Text(
-                                      l10n.deleteTreatmentConfirm(t.name),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: Text(l10n.cancel),
+                                onPressed: (_) async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Text(l10n.deleteTreatment),
+                                      content: Text(
+                                        l10n.deleteTreatmentConfirm(t.name),
                                       ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: Text(
-                                          l10n.delete,
-                                          style: TextStyle(
-                                            color: context.colors.error,
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: Text(l10n.cancel),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: Text(
+                                            l10n.delete,
+                                            style: TextStyle(
+                                              color: context.colors.error,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (confirm == true) {
-                                  await ref
-                                      .read(treatmentListProvider.notifier)
-                                      .deleteTreatment(t.id);
-                                }
-                              },
-                              backgroundColor: context.colors.error,
-                              foregroundColor: context.colors.onError,
-                              icon: Icons.delete,
-                              label: l10n.delete,
-                            ),
-                          ],
-                        ),
-                        child: _TreatmentTile(treatment: t),
-                      );
-                    },
-                  ),
-                );
-              },
-              loading: LoadingWidget(message: l10n.loadingTreatments),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    await ref
+                                        .read(treatmentListProvider.notifier)
+                                        .deleteTreatment(t.id);
+                                  }
+                                },
+                                backgroundColor: context.colors.error,
+                                foregroundColor: context.colors.onError,
+                                icon: Icons.delete,
+                                label: l10n.delete,
+                              ),
+                            ],
+                          ),
+                          child: _TreatmentTile(treatment: t),
+                        );
+                      },
+                    ),
+                  );
+                },
+                loading: LoadingWidget(message: l10n.loadingTreatments),
+              ),
             ),
-          ),
+          ],
+          if (_pane == _TreatmentsPane.prescriptions)
+            const Expanded(child: RxListView()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push(AppRoutes.addTreatment),
+        onPressed: () => context.push(
+          _pane == _TreatmentsPane.treatments
+              ? AppRoutes.addTreatment
+              : AppRoutes.addRx,
+        ),
+        tooltip: _pane == _TreatmentsPane.treatments
+            ? l10n.addTreatment
+            : l10n.rxAdd,
         child: const Icon(Icons.add),
       ),
     );
