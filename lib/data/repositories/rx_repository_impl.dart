@@ -123,6 +123,15 @@ class RxRepositoryImpl implements RxRepository {
   @override
   Future<Result<void>> deleteRx(String id) async {
     try {
+      // Clean up attachments first: if it fails, the rx is left untouched so
+      // the user can retry without data loss. A failed attachment cleanup must
+      // not leave the prescription and its dispensings orphaned.
+      final atts = attachments;
+      if (atts != null) {
+        final result = await atts.deleteForOwner(AttachmentOwnerKind.rx, id);
+        if (result.isFailure) return result;
+      }
+
       // The local FK removes the dispensings only on a hard delete; mark
       // them too, so this device shows none and the server gets their
       // tombstones even if its cascade has not run yet.
@@ -130,11 +139,6 @@ class RxRepositoryImpl implements RxRepository {
         await dispensingLocal.markDeleted(d.id);
       }
       await rxLocal.markDeleted(id);
-      final atts = attachments;
-      if (atts != null) {
-        final result = await atts.deleteForOwner(AttachmentOwnerKind.rx, id);
-        if (result.isFailure) return result;
-      }
       _syncSoon();
       return const Result.success(null);
     } catch (e, st) {

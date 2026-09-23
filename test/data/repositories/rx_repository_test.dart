@@ -14,6 +14,7 @@ import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/entities/rx_dispensing.dart';
+import 'package:medora/domain/repositories/attachment_repository.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/services/attachment_import.dart';
@@ -216,5 +217,73 @@ void main() {
       )).single;
       expect(row['deleted_at'], isNotNull);
     });
+
+    test(
+      'when attachment deletion fails, the rx stays live and dispensings are not tombstoned',
+      () async {
+        await repo.saveRx(rx('r1'));
+        await repo.redeem('r1', [
+          RxDispensing(
+            id: 'd1',
+            rxId: 'r1',
+            itemId: 'i1',
+            packs: 1,
+            dispensedOn: DateTime(2026, 9, 23),
+          ),
+        ]);
+
+        // Replace with a failing attachment repo
+        repo = RxRepositoryImpl(
+          rxLocal: RxLocalDatasource(now: () => now),
+          dispensingLocal: RxDispensingLocalDatasource(now: () => now),
+          medications: stock,
+          attachments: _FailingAttachmentRepo(),
+          requestSync: () async => syncs++,
+          now: () => now,
+        );
+
+        final result = await repo.deleteRx('r1');
+
+        // Deletion should fail
+        expect(result.isFailure, isTrue);
+
+        // The rx should still exist
+        final rxStillExists = await repo.getById('r1');
+        expect(rxStillExists.isSuccess, isTrue);
+
+        // The dispensing should still exist
+        expect(rxStillExists.dataOrNull!.dispensings, isNotEmpty);
+      },
+    );
   });
+}
+
+/// Fake attachment repository that always fails deleteForOwner.
+class _FailingAttachmentRepo implements AttachmentRepository {
+  @override
+  Future<Result<List<Attachment>>> forOwner(
+    AttachmentOwnerKind kind,
+    String ownerId,
+  ) async => const Result.success([]);
+
+  @override
+  Future<Result<Attachment>> add(
+    AttachmentOwnerKind kind,
+    String ownerId,
+    Imported imported,
+  ) async => const Result.failure('not used in this test');
+
+  @override
+  Future<Result<void>> delete(String id) async =>
+      const Result.failure('not used in this test');
+
+  @override
+  Future<Result<void>> deleteForOwner(
+    AttachmentOwnerKind kind,
+    String ownerId,
+  ) async => const Result.failure('attachment cleanup failed');
+
+  @override
+  Future<Result<bool>> markUploaded(String id, String remotePath) async =>
+      const Result.failure('not used in this test');
 }

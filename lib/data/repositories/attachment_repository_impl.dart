@@ -156,6 +156,8 @@ class AttachmentRepositoryImpl implements AttachmentRepository {
         return const Result.success(false);
       }
       final now = _now();
+      // Writing pendingUpdate on a never-pushed row is safe because sync_version == null
+      // is treated as a create (TableSync.pushRow → _pushCreate).
       await local.upsert(
         row.copyWith(
           remotePath: remotePath,
