@@ -128,7 +128,8 @@ void main() {
       'edited_at': now.toIso8601String(),
       'updated_at': now.toIso8601String(),
     }, at: now);
-    await sync.applyPulled(server);
+    final applied = await sync.applyPulled(server);
+    expect(applied.outcome, PullOutcome.merged);
     final local = (await (await db()).query('persons')).single;
     expect(local['tax_code'], 'RSSMRA85T10A562S');
     expect(local['notes'], 'Allergie: Penicillin');

@@ -36,7 +36,7 @@ class TreatmentRxSection extends ConsumerWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
-              l10n.rxTab,
+              l10n.rxSectionTitle,
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
