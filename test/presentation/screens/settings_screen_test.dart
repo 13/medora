@@ -499,6 +499,8 @@ void main() {
     final lowStockId = stockAlertId('x', StockAlertKind.lowStock);
     expect(port.pendingStockAlertIds, {lowStockId});
 
+    await tester.ensureVisible(find.text('Cancel All Reminders'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Cancel All Reminders'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Yes'));

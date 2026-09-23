@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:medora/core/constants.dart';
 import 'package:medora/core/extensions.dart';
 import 'package:medora/core/platform_capabilities.dart';
@@ -13,6 +14,7 @@ import 'package:medora/core/theme_extensions.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
+import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/settings/widgets/settings_cloud_section.dart';
 import 'package:medora/presentation/screens/settings/widgets/settings_data_section.dart';
 import 'package:medora/presentation/screens/settings/widgets/settings_dialogs.dart';
@@ -108,6 +110,15 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: Text(l10n.colorSchemeDesc),
                 trailing: ColorDot(ref.watch(colorSchemeProvider).color),
                 onTap: () => showColorSchemePicker(context, ref, l10n),
+              ),
+
+              // Persons
+              ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: Text(l10n.persons),
+                subtitle: Text(l10n.personsHint),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoutes.persons),
               ),
             ],
           ),

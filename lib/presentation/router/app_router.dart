@@ -17,6 +17,8 @@ import 'package:medora/presentation/screens/main_shell_screen.dart';
 import 'package:medora/presentation/screens/medication/add_medication_screen.dart';
 import 'package:medora/presentation/screens/medication/expiring_medications_screen.dart';
 import 'package:medora/presentation/screens/medication/medication_detail_screen.dart';
+import 'package:medora/presentation/screens/persons/person_form_screen.dart';
+import 'package:medora/presentation/screens/persons/person_list_screen.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
 import 'package:medora/presentation/screens/stats/stats_screen.dart';
@@ -53,6 +55,9 @@ class AppRoutes {
   static const family = '/family';
   static const export = '/export';
   static const stats = '/stats';
+  static const persons = '/persons';
+  static const addPerson = '/persons/add';
+  static const editPerson = '/persons/:id/edit';
 }
 
 /// Pure redirect rule (unit-tested).
@@ -183,6 +188,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.family,
             builder: (_, _) => const FamilyScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.persons,
+            builder: (_, _) => const PersonListScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.addPerson,
+            builder: (_, _) => const PersonFormScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.editPerson,
+            builder: (_, state) =>
+                PersonFormScreen(personId: state.pathParameters['id']),
           ),
           GoRoute(
             path: AppRoutes.export,
