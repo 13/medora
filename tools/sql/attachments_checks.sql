@@ -97,6 +97,30 @@ do $$ begin
     assert false, 'mime: only JPEG and PDF';
   exception when check_violation then null;
   end;
+  begin
+    insert into attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256)
+      values ('att/sub', auth.uid(), 'rx', 'rx-1', 'photo', 'image/jpeg', 10, 'x');
+    assert false, 'id: a slash must be refused';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256)
+      values ('att-mix-1', auth.uid(), 'rx', 'rx-1', 'photo', 'application/pdf', 10, 'x');
+    assert false, 'kind/mime: a photo must be a JPEG';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256)
+      values ('att-mix-2', auth.uid(), 'rx', 'rx-1', 'pdf', 'image/jpeg', 10, 'x');
+    assert false, 'kind/mime: a PDF must be a PDF';
+  exception when check_violation then null;
+  end;
+  begin
+    update attachments set mime = 'image/jpeg', write_id = gen_random_uuid(), edited_at = now()
+     where id = 'att-2';
+    assert false, 'kind/mime: an update that mismatches them must be refused';
+  exception when check_violation then null;
+  end;
   update attachments set remote_path = auth.uid()::text || '/att-2.pdf',
          write_id = gen_random_uuid(), edited_at = now()
    where id = 'att-2';

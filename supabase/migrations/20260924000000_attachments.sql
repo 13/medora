@@ -26,6 +26,13 @@ create table if not exists public.attachments (
   write_id        uuid,
   edited_at       timestamptz,
   field_edited_at jsonb not null default '{}'::jsonb,
+  -- The id is the object's file name: it cannot open a sub-folder.
+  constraint attachments_id_plain check (id !~ '/'),
+  -- A photo is always a JPEG and a PDF always a PDF.
+  constraint attachments_kind_mime check (
+    (kind = 'photo' and mime = 'image/jpeg')
+    or (kind = 'pdf' and mime = 'application/pdf')
+  ),
   -- A path always sits in the owner's folder and names this attachment.
   constraint attachments_remote_path check (
     remote_path is null
