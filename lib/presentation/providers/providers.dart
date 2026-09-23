@@ -443,6 +443,7 @@ final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(
     database: AppDatabase.instance,
     photos: ref.watch(photoStorageProvider),
+    attachments: ref.watch(attachmentFilesProvider),
     now: ref.watch(nowProvider),
     appVersion: info == null ? '' : '${info.version}+${info.buildNumber}',
   );
@@ -496,13 +497,17 @@ final syncServiceProvider = Provider<SyncService>((ref) {
       await ref.read(doseScheduleServiceProvider).applyPulled(pulled);
     },
     // "Delete all data" on another device: the photos of the medications
-    // it removed here go too (the lists and reminders refresh when the
-    // cycle ends, as after every sync).
+    // it removed here go too, and so do the files of the attachments it
+    // removed (the sweep deletes every file no row points at). The lists
+    // and reminders refresh when the cycle ends, as after every sync.
     onRemoteWipe: (removed) async {
       if (kIsWeb) return;
       final photos = ref.read(photoStorageProvider);
       for (final name in removed.photos) {
         await photos.delete(name);
+      }
+      if (removed.attachments > 0) {
+        await ref.read(attachmentTransferProvider).sweep();
       }
     },
   );

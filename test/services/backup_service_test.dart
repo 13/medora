@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/data/local/migrations.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/photo_storage.dart';
@@ -26,23 +27,33 @@ void main() {
   late Directory root;
   late Directory outDir;
   late PhotoStorage photos;
+  late Directory attachmentRoot;
+  late AttachmentFiles attachments;
 
   setUp(() async {
     await setUpTestDatabase();
     root = await Directory.systemTemp.createTemp('medora_backup_photos_');
     outDir = await Directory.systemTemp.createTemp('medora_backup_out_');
+    attachmentRoot = await Directory.systemTemp.createTemp(
+      'medora_backup_attachments_',
+    );
     photos = PhotoStorage(rootDirectory: () async => root);
+    attachments = AttachmentFiles(rootDirectory: () async => attachmentRoot);
   });
 
   tearDown(() async {
     await tearDownTestDatabase();
     if (root.existsSync()) await root.delete(recursive: true);
     if (outDir.existsSync()) await outDir.delete(recursive: true);
+    if (attachmentRoot.existsSync()) {
+      await attachmentRoot.delete(recursive: true);
+    }
   });
 
   BackupService makeService({DateTime? now}) => BackupService(
     database: AppDatabase.instance,
     photos: photos,
+    attachments: attachments,
     now: () => now ?? DateTime(2026, 3, 4, 17, 5),
     appVersion: '0.1.1+11',
   );
@@ -615,6 +626,7 @@ void main() {
       await BackupService(
         database: AppDatabase.instance,
         photos: photos,
+        attachments: attachments,
         now: () => DateTime.utc(2026, 3, 4, 17, 5),
         appVersion: '0.1.1+11',
         newOpId: () => 'count-${n++}',
@@ -1040,4 +1052,162 @@ void main() {
       expect(await snapshot(db), before);
     },
   );
+
+  group('attachments', () {
+    const bytes = [0xFF, 0xD8, 0xFF, 1, 2, 3];
+
+    Future<void> seedAttachment(
+      Database db,
+      String id, {
+      String kind = 'photo',
+      String? deletedAt,
+    }) => db.insert('attachments', {
+      'id': id,
+      'user_id': 'user-a',
+      'owner_kind': 'rx',
+      'owner_id': 'rx-1',
+      'kind': kind,
+      'mime': kind == 'photo' ? 'image/jpeg' : 'application/pdf',
+      'size_bytes': bytes.length,
+      'sha256': 'abc',
+      'remote_path': 'user-a/$id.${kind == 'photo' ? 'jpg' : 'pdf'}',
+      'created_at': '2026-09-01T08:00:00.000',
+      'updated_at': '2026-09-01T08:00:00.000',
+      'deleted_at': deletedAt,
+      'sync_status': SyncStatus.synced,
+    });
+
+    test('a row and its file survive export, a cleared device and a '
+        'restore', () async {
+      final db = await AppDatabase.instance.database;
+      await seedAttachment(db, 'att-1');
+      await attachments.write('att-1.jpg', bytes);
+
+      final file = await makeService().exportToFile(outDir);
+      await AppDatabase.instance.clearAllData();
+      await attachments.deleteAll();
+
+      final manifest = await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+      );
+
+      expect(manifest.rowCounts['attachments'], 1);
+      expect(manifest.attachmentFileCount, 1);
+      final row = (await db.query('attachments')).single;
+      expect(row['id'], 'att-1');
+      expect(row['remote_path'], 'user-a/att-1.jpg');
+      expect(await attachments.listNames(), ['att-1.jpg']);
+      expect(
+        await File(
+          p.join(attachmentRoot.path, 'attachments', 'att-1.jpg'),
+        ).readAsBytes(),
+        bytes,
+      );
+    });
+
+    test('without photos the row is restored and its file is not: it is '
+        'downloaded again', () async {
+      final db = await AppDatabase.instance.database;
+      await seedAttachment(db, 'att-1');
+      await attachments.write('att-1.jpg', bytes);
+
+      final file = await makeService().exportToFile(
+        outDir,
+        includePhotos: false,
+      );
+      final json =
+          jsonDecode(await file.readAsString()) as Map<String, Object?>;
+      expect(json['attachmentFiles'] ?? const <String, Object?>{}, isEmpty);
+      await AppDatabase.instance.clearAllData();
+      await attachments.deleteAll();
+
+      final manifest = await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+      );
+
+      expect(manifest.attachmentFileCount, 0);
+      expect(
+        (await db.query('attachments')).single['remote_path'],
+        'user-a/att-1.jpg',
+      );
+      expect(await attachments.listNames(), isEmpty);
+    });
+
+    test(
+      'only the files of live rows are carried, counted and sized',
+      () async {
+        final db = await AppDatabase.instance.database;
+        await seedAttachment(db, 'att-1');
+        await seedAttachment(db, 'att-2', kind: 'pdf');
+        await seedAttachment(
+          db,
+          'att-gone',
+          deletedAt: '2026-09-02T08:00:00.000',
+        );
+        await attachments.write('att-1.jpg', bytes);
+        await attachments.write('att-gone.jpg', bytes);
+        await attachments.write('orphan.jpg', bytes);
+        // att-2 has no file here (not downloaded yet).
+        await photos.writeBytes('med_a.png', _png);
+        final service = makeService();
+
+        expect(await service.countPhotos(), 2);
+        expect(await service.estimatePhotoBytes(), _png.length + bytes.length);
+
+        final file = await service.exportToFile(outDir);
+        final json =
+            jsonDecode(await file.readAsString()) as Map<String, Object?>;
+        expect((json['attachmentFiles']! as Map).keys, ['att-1.jpg']);
+      },
+    );
+
+    test('a backup from before attachments still restores', () async {
+      final db = await AppDatabase.instance.database;
+      await seedEverything(db);
+      final file = await makeService().exportToFile(outDir);
+      final json =
+          jsonDecode(await file.readAsString()) as Map<String, Object?>;
+      (json['tables']! as Map).remove('attachments');
+      json
+        ..remove('attachmentFiles')
+        ..['schemaVersion'] = 17;
+      await file.writeAsString(jsonEncode(json));
+      await seedAttachment(db, 'att-1');
+
+      for (final mode in RestoreMode.values) {
+        final manifest = await makeService().restore(file, mode: mode);
+        expect(manifest.attachmentFileCount, 0);
+        expect(manifest.rowCounts['attachments'], 0);
+      }
+      // Replace empties the table; the backup had none to put back.
+      expect(await db.query('attachments'), isEmpty);
+    });
+
+    test('a merge compares attachment rows by updated_at', () async {
+      final db = await AppDatabase.instance.database;
+      await seedAttachment(db, 'att-1');
+      final file = await makeService().exportToFile(outDir);
+
+      // An older local copy: the backup's wins.
+      await db.update('attachments', {
+        'remote_path': null,
+        'updated_at': '2026-08-01T08:00:00.000',
+      });
+      await makeService().restore(file, mode: RestoreMode.merge);
+      expect(
+        (await db.query('attachments')).single['remote_path'],
+        'user-a/att-1.jpg',
+      );
+
+      // A newer local copy: it stays.
+      await db.update('attachments', {
+        'remote_path': null,
+        'updated_at': '2026-09-03T08:00:00.000',
+      });
+      await makeService().restore(file, mode: RestoreMode.merge);
+      expect((await db.query('attachments')).single['remote_path'], isNull);
+    });
+  });
 }

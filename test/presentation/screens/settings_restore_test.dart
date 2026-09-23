@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/core/platform_capabilities.dart';
 import 'package:medora/core/supabase_config.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/settings_providers.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
@@ -168,6 +169,7 @@ void main() {
     final service = BackupService(
       database: AppDatabase.instance,
       photos: PhotoStorage(rootDirectory: () async => photoRoot),
+      attachments: AttachmentFiles(rootDirectory: () async => photoRoot),
       now: () => DateTime(2026, 3, 4, 17, 5),
       appVersion: '1.0.0+11',
     );

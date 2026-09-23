@@ -423,6 +423,15 @@ updates. Every migration can be run again.
   `medora_delete_all_data` without the prescription tables, so "delete all
   data" would leave them on the server. Run `20260923000000_rx.sql` again
   afterwards: it restores the function with them.
+- `supabase/migrations/20260924000000_attachments.sql` — after the rx
+  migration and before the release that adds attachments (the `attachments`
+  table, the private `attachments` bucket and its storage policies). Without
+  it the sync reports a `MissingTableException` naming this file, and
+  attachments stay on the device.
+- Re-running any older migration that defines `medora_delete_all_data`
+  (`20260918000000_sync_v2.sql`, `20260923000000_rx.sql`) drops attachments
+  from "delete all data". Run `20260924000000_attachments.sql` again
+  afterwards: it redefines the function with them.
 
 ### Hand-written release notes
 

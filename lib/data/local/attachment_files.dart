@@ -32,6 +32,10 @@ class AttachmentFiles {
   Future<File> fileFor(Attachment a) async =>
       File(p.join((await _attachmentsDir()).path, p.basename(a.fileName)));
 
+  /// The file stored under [fileName] (basename only); it may not exist.
+  Future<File> fileNamed(String fileName) async =>
+      File(p.join((await _attachmentsDir()).path, p.basename(fileName)));
+
   Future<bool> has(Attachment a) async => (await fileFor(a)).existsSync();
 
   /// Suffix of a file still being written.

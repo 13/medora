@@ -249,6 +249,52 @@ include them.
   kept at every width) for the pharmacist to scan off the screen. It does
   not raise the screen brightness yet: that needs a plugin.
 
+### Attachments
+
+Photos and PDFs attached to a prescription (the model also allows a
+treatment or a person as the owner; the UI offers prescriptions only).
+
+- **Row and bytes.** The `attachments` row (local migration 18, server
+  `supabase/migrations/20260924000000_attachments.sql`) holds the metadata
+  (owner, kind, MIME type, size, sha256, `remote_path`) and syncs like every
+  other table. The bytes live in `<documents>/attachments/<id>.<ext>`
+  (`AttachmentFiles`; written as `<name>.part` and renamed, so a file is
+  never seen half-written) and in the private storage bucket `attachments`.
+  Contents never change: a changed file is a new attachment.
+- **Path.** `<auth.uid>/<id>.jpg` or `.pdf`. The server checks it: an id
+  never holds `/`, the path must be the owner's folder plus this id and the
+  kind's extension, and a photo is always `image/jpeg`, a PDF always
+  `application/pdf`. Storage policies let an account read, add and remove
+  objects in its own folder only; there is no update policy, no public URL
+  and no signed URL.
+- **Transfer order.** `AttachmentTransfer.run()` (after each sync that ends
+  in success or partial; calls during a pass fold into one more pass) first
+  removes the queued objects of deleted attachments (`attachment_removals`,
+  100 per request, only paths in the signed-in user's folder), then uploads
+  the files of rows without a `remote_path` and records the path, which the
+  next sync pushes, then sweeps. Failures back off per item (1 min, 5 min,
+  30 min, then 2 h). Recording refuses a path outside the row's owner's
+  folder (or, for a row cleared by an account change, the signed-in user's)
+  and queues that object for removal instead. Downloads happen on demand
+  when an attachment is opened, and a download of the wrong size is thrown
+  away.
+- **Sweep.** Local files with no row at all go, except those written in the
+  last five minutes (an `add` that has written its file but not its row).
+  It also runs on its own after "delete all data" on another device removed
+  attachment rows here.
+- **Import.** A photo is decoded, turned upright (the EXIF orientation is
+  baked into the pixels), scaled to at most 2400 px on the long edge and
+  re-encoded as JPEG quality 85, which drops every EXIF field (location,
+  camera). A PDF is stored unchanged, up to 20 MB; any other type is
+  refused. The bucket enforces the same 20 MB and the two MIME types.
+- **Backups and wipes.** A backup carries the rows under `attachments` and,
+  with the photos, the files of live attachments under `attachmentFiles`;
+  without the photos a restored attachment is downloaded again when opened
+  (or shows "not available" if it was never uploaded). "Delete all data"
+  removes the rows in `medora_delete_all_data` and then the user's storage
+  folder from the client, because SQL cannot delete storage objects
+  (`storage.protect_delete()`); the local wipe deletes the folder of files.
+
 ## Theme and localization rules
 
 Colors come from the Material 3 scheme plus the `MedoraColors` theme extension

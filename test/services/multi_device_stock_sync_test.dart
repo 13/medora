@@ -18,6 +18,7 @@ import 'package:medora/data/datasources/prescription_local_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
 import 'package:medora/domain/entities/medication.dart';
@@ -452,6 +453,7 @@ void main() {
     BackupService backup() => BackupService(
       database: AppDatabase.instance,
       photos: PhotoStorage(rootDirectory: () async => photos),
+      attachments: AttachmentFiles(rootDirectory: () async => photos),
       now: () => clock.now,
       appVersion: '0.4.0+19',
       newOpId: () => 'B-restore',

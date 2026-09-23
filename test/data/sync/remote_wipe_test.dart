@@ -143,9 +143,36 @@ void main() {
     expect(removed.rows, 4);
   });
 
+  test('attachments made before the wipe go and are counted apart, so their '
+      'files can be swept', () async {
+    final db = await AppDatabase.instance.database;
+    Future<void> attachment(String id, String createdAt) =>
+        db.insert('attachments', {
+          'id': id,
+          'owner_kind': 'rx',
+          'owner_id': 'r1',
+          'kind': 'photo',
+          'mime': 'image/jpeg',
+          'size_bytes': 3,
+          'sha256': 'abc',
+          'created_at': createdAt,
+          'sync_status': 'synced',
+        });
+    await attachment('a-old', before());
+    await attachment('a-old-2', before(5));
+    await attachment('a-new', after());
+
+    final removed = await removeLocalDataFromBefore(wipedAt);
+
+    expect(await ids('attachments'), ['a-new']);
+    expect(removed.rows, 2);
+    expect(removed.attachments, 2);
+  });
+
   test('nothing to remove', () async {
     final removed = await removeLocalDataFromBefore(wipedAt);
     expect(removed.rows, 0);
     expect(removed.photos, isEmpty);
+    expect(removed.attachments, 0);
   });
 }

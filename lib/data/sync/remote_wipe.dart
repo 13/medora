@@ -11,7 +11,11 @@ import 'package:sqflite/sqflite.dart';
 
 /// What [removeDataFromBefore] removed.
 class RemovedData {
-  const RemovedData({required this.rows, required this.photos});
+  const RemovedData({
+    required this.rows,
+    required this.photos,
+    this.attachments = 0,
+  });
 
   /// How many rows of the synced tables went, children taken with their
   /// parents included.
@@ -20,6 +24,10 @@ class RemovedData {
   /// The stored photo names of removed medications that no medication kept
   /// here still uses.
   final List<String> photos;
+
+  /// How many attachment rows went. Their files stay on disk until the
+  /// attachment transfer's sweep, which the caller runs when this is not 0.
+  final int attachments;
 }
 
 /// Removes every medication, treatment, prescription, dose, person,
@@ -62,6 +70,7 @@ Future<RemovedData> removeDataFromBefore(
 
   final before = await count();
   final photos = <String>{};
+  var attachments = 0;
   for (final table in tables) {
     final rows = await db.query(
       table,
@@ -74,6 +83,7 @@ Future<RemovedData> removeDataFromBefore(
       final image = row['image_path'];
       if (image is String && image.isNotEmpty) photos.add(image);
       await db.delete(table, where: 'id = ?', whereArgs: [row['id']]);
+      if (table == 'attachments') attachments++;
     }
   }
   final kept = await db.query('medications', columns: ['image_path']);
@@ -81,6 +91,7 @@ Future<RemovedData> removeDataFromBefore(
   return RemovedData(
     rows: before - await count(),
     photos: photos.toList()..sort(),
+    attachments: attachments,
   );
 }
 
