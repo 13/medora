@@ -866,12 +866,12 @@ void main() {
 
   // 0.3.0 (schema 15) accepts a backup only up to its own schema and
   // refuses a newer one as `newerSchema` (the test above). A backup made
-  // now carries columns (edit times, then the prescription tables) it has
-  // no place for, so it must say 17.
-  test('a backup made now is marked schema 17, which 0.3.0 refuses', () async {
+  // now carries columns (edit times, then the prescription tables, then
+  // attachments) it has no place for, so it must say 18.
+  test('a backup made now is marked schema 18, which 0.3.0 refuses', () async {
     final file = await makeService().exportToFile(outDir);
     final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
-    expect(json['schemaVersion'], 17);
+    expect(json['schemaVersion'], 18);
   });
 
   test('a backup made by 0.3.0 (schema 15) still restores', () async {

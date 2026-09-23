@@ -88,6 +88,7 @@ void main() {
         15,
         16,
         17,
+        18,
       ]);
 
       // Reopen: nothing re-applied, no duplicate rows.
@@ -101,6 +102,7 @@ void main() {
         15,
         16,
         17,
+        18,
       ]);
       await again.close();
       await dir.delete(recursive: true);
@@ -161,6 +163,7 @@ void main() {
       15,
       16,
       17,
+      18,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
@@ -232,6 +235,7 @@ void main() {
         15,
         16,
         17,
+        18,
       ]);
       await AppDatabase.instance.reset();
       await dir.delete(recursive: true);
@@ -308,6 +312,7 @@ void main() {
       15,
       16,
       17,
+      18,
     ]);
     // The pre-existing row survives with the new columns null.
     final row = (await upgraded.query(
@@ -470,6 +475,7 @@ void main() {
       15,
       16,
       17,
+      18,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
@@ -503,6 +509,40 @@ void main() {
     final fks = await db.rawQuery('PRAGMA foreign_key_list(rx_dispensings)');
     expect(fks.single['table'], 'rx');
     expect(fks.single['on_delete'], 'CASCADE');
+    await tearDownTestDatabase();
+  });
+
+  test('migration 18 creates attachments and attachment_removals', () async {
+    await setUpTestDatabase();
+    final db = await AppDatabase.instance.database;
+    expect(
+      await columnsOf(db, 'attachments'),
+      containsAll(<String>[
+        'id',
+        'user_id',
+        'owner_kind',
+        'owner_id',
+        'kind',
+        'mime',
+        'size_bytes',
+        'sha256',
+        'original_name',
+        'remote_path',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+        'sync_status',
+        'edited_at',
+        'field_edited_at',
+        'sync_version',
+        'sync_base',
+        'sync_write_id',
+      ]),
+    );
+    expect(
+      await columnsOf(db, 'attachment_removals'),
+      containsAll(<String>['remote_path', 'created_at']),
+    );
     await tearDownTestDatabase();
   });
 
@@ -553,6 +593,19 @@ void main() {
       'packs': 1,
       'dispensed_on': '2026-01-02',
     });
+    await db.insert('attachments', {
+      'id': 'a1',
+      'owner_kind': 'rx',
+      'owner_id': 'r1',
+      'kind': 'photo',
+      'mime': 'image/jpeg',
+      'size_bytes': 1234,
+      'sha256': 'abc',
+    });
+    await db.insert('attachment_removals', {
+      'remote_path': 'u/a1.jpg',
+      'created_at': '2026-01-01T08:00:00.000Z',
+    });
 
     await AppDatabase.instance.clearAllData();
 
@@ -567,6 +620,8 @@ void main() {
       'persons',
       'rx',
       'rx_dispensings',
+      'attachments',
+      'attachment_removals',
     ]) {
       expect(await db.query(table), isEmpty, reason: table);
     }

@@ -246,6 +246,8 @@ class AppDatabase {
   /// without them could never bring back.
   Future<void> clearAllData({bool keepRx = false}) async {
     final db = await database;
+    await db.delete('attachment_removals');
+    await db.delete('attachments');
     // First: its rows reference medications.
     await db.delete('stock_outbox');
     await db.delete('dose_logs');

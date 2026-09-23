@@ -16,7 +16,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 17;
+const int kSchemaVersion = 18;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -207,6 +207,44 @@ $sync
     await db.execute(
       'CREATE INDEX idx_local_rx_disp_rx ON rx_dispensings(rx_id)',
     );
+  }),
+  // v18: attachments (spec 2026-09-23 §7). Metadata only; the bytes live in
+  // `<documents>/attachments/<id>.<ext>`. `owner_id` is a soft reference:
+  // an attachment outlives nothing and blocks nothing. Removals of uploaded
+  // objects wait in their own queue until the storage API confirms them.
+  Migration(18, (db) async {
+    await db.execute('''
+      CREATE TABLE attachments (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        owner_kind TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        original_name TEXT,
+        remote_path TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        deleted_at TEXT,
+        sync_status TEXT NOT NULL DEFAULT 'synced',
+        edited_at TEXT,
+        field_edited_at TEXT,
+        sync_version INTEGER,
+        sync_base TEXT,
+        sync_write_id TEXT
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_local_att_owner ON attachments(owner_kind, owner_id)',
+    );
+    await db.execute('''
+      CREATE TABLE attachment_removals (
+        remote_path TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }),
 ];
 
