@@ -80,28 +80,44 @@ notes?, created_at, updated_at, deleted
 id, user_id, person_id?, treatment_id?,
 kind: ssn | white | white_repeatable | referral,
 nre?            -- 15 chars; null for white prescriptions
-issued_on DATE, valid_until DATE,
+issued_on DATE, valid_until DATE?,
 doctor?, exemption_code?, priority?  -- U|B|D|P, referral only
 max_dispensings?                     -- white_repeatable
-cancelled BOOL, notes?, created_at, updated_at, deleted
+items JSONB     -- list of RxItem, see below
+closed_on DATE? -- the user marked it done by hand (e.g. a referral used)
+cancelled BOOL, notes?, created_at, updated_at, deleted_at
 ```
 
-### 4.3 `rx_items` (phase A)
+`person_id`, `treatment_id` and each item's `medication_id` are **soft
+references**: no foreign key, not sync parents. Deleting a person, treatment or
+medication never deletes a prescription; the UI shows "unknown" for a dangling
+reference. This keeps `rx` a root table for sync (no orphan handling).
+
+### 4.3 Items (JSON column on `rx`)
 
 ```
-id, rx_id, medication_id?, aic?, description, packs INT >= 1,
-non_substitutable BOOL, updated_at, deleted
+RxItem { id (uuid), medication_id?, aic?, description, packs INT >= 1,
+         non_substitutable BOOL }
 ```
+
+Items are edited together with their prescription and rarely, so they live in
+one column that merges as a whole (last edit wins). Only dispensings need
+per-event rows.
 
 ### 4.4 `rx_dispensings` (phase A)
 
 ```
-id, rx_item_id, packs INT >= 1, dispensed_on DATE, pharmacy?,
-added_to_stock BOOL, created_at, deleted
+id, user_id, rx_id, item_id, packs INT >= 1, dispensed_on DATE, pharmacy?,
+units_added INT >= 0,   -- units put into the medication's stock (0 = none)
+created_at, updated_at, deleted_at
 ```
 
 Dispensings are their own append-style rows (not a counter on the item), so two
-devices redeeming at the same time never lose one to whole-row LWW.
+devices redeeming at the same time never lose one to whole-row LWW. `rx_id` is
+their sync parent: a prescription's tombstone cascades to them. Medications
+carry no pack size, so the redeem dialog proposes `units_added` (packs × the
+pack size parsed from the item description, e.g. "20 compresse", else packs)
+and the user corrects it.
 
 ### 4.5 `attachments` (phase B)
 
@@ -126,12 +142,12 @@ Contents are immutable: a new file is a new attachment.
   sources and records the source URL in the table; the table is the only place
   they live.
 - **Status** is derived and never stored:
-  `cancelled` → cancelled; all items fully dispensed (or `max_dispensings`
-  reached) → redeemed; `valid_until < today` → expired; some dispensed → partial;
+  `cancelled` → cancelled; `closed_on` set, all items fully dispensed, or
+  `max_dispensings` reached → redeemed; `valid_until < today` → expired; some dispensed → partial;
   else open.
 - **Dispensed packs** per item = sum of non-deleted dispensings.
-- **Redeem with "add to stock"** enqueues a `stock_changes` entry of
-  `packs × medication pack size` through the existing stock path; never a direct
+- **Redeem with "add to stock"** adds `units_added` through
+  `MedicationRepository.updateQuantity` (the stock outbox), never a direct
   quantity write.
 - **NRE format:** 15 alphanumeric chars; the regional prefix is checked only as a
   hint, never a hard rejection.
