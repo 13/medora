@@ -641,7 +641,7 @@
   "backupData": "Backup dei dati",
   "backupDataHint": "Salva tutto in un file JSON non cifrato — conservalo in un luogo sicuro",
   "backupAction": "Esegui backup",
-  "backupIncludePhotos": "Includi le foto e i allegati ({count} file, ~{megabytes} MB)",
+  "backupIncludePhotos": "Includi le foto e gli allegati ({count} file, ~{megabytes} MB)",
   "backupPhotosTooLarge": "Sono molte foto — escluderle mantiene il backup abbastanza piccolo da condividere.",
   "restoreBackup": "Ripristina da backup",
   "restoreBackupHint": "Rileggi un file di backup nell'app",

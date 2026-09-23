@@ -2082,7 +2082,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String backupIncludePhotos(int count, String megabytes) {
-    return 'Includi le foto e i allegati ($count file, ~$megabytes MB)';
+    return 'Includi le foto e gli allegati ($count file, ~$megabytes MB)';
   }
 
   @override
