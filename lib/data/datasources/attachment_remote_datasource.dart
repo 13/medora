@@ -21,6 +21,22 @@ class AttachmentNotFound implements Exception {
   String toString() => 'Attachment not in storage';
 }
 
+/// Storage has no `attachments` bucket: the project lacks
+/// [attachmentsMigration]. storage-api answers `{"statusCode": "404",
+/// "error": "Bucket not found", ...}`; for a JSON request `storage_client`
+/// puts that `error` into [StorageException.error], for a download the raw
+/// body is the message.
+bool isMissingBucket(StorageException e) {
+  if (e.error == 'Bucket not found') return true;
+  Object? body;
+  try {
+    body = jsonDecode(e.message);
+  } on FormatException {
+    return false;
+  }
+  return body is Map && body['error'] == 'Bucket not found';
+}
+
 /// The bytes of attachments, one object per attachment under
 /// `<auth.uid>/<attachment id>.<ext>`.
 abstract interface class AttachmentStore {

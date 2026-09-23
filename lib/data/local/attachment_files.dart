@@ -49,6 +49,14 @@ class AttachmentFiles {
     if (file.existsSync()) await file.delete();
   }
 
+  /// When [fileName] was last written; null when there is no such file.
+  Future<DateTime?> modifiedAt(String fileName) async {
+    final file = File(
+      p.join((await _attachmentsDir()).path, p.basename(fileName)),
+    );
+    return file.existsSync() ? file.lastModifiedSync() : null;
+  }
+
   /// Every stored file's bare name, sorted.
   Future<List<String>> listNames() async {
     final dir = await _attachmentsDir();

@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/foundation.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/services/local_upload_marker.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
@@ -14,16 +15,19 @@ class LocalDataWiper {
   LocalDataWiper({
     required this._database,
     required this._photos,
+    required this._attachments,
     required this._reminders,
     required this._prefs,
   });
 
   final AppDatabase _database;
   final PhotoStorage _photos;
+  final AttachmentFiles _attachments;
   final ReminderPort _reminders;
   final SharedPreferences _prefs;
 
-  /// Removes user data: notifications, database rows, photo files.
+  /// Removes user data: notifications, database rows (attachments and
+  /// their removal queue included), photo and attachment files.
   /// App preferences (theme, language, AIFA cache metadata) are kept.
   ///
   /// The database clear runs before photo cleanup so it is never blocked by
@@ -38,6 +42,13 @@ class LocalDataWiper {
         await _photos.deleteAll();
       } catch (e) {
         debugPrint('LocalDataWiper: photo cleanup failed: $e');
+      }
+      try {
+        await _attachments.deleteAll();
+      } catch (e) {
+        debugPrint(
+          'LocalDataWiper: attachment cleanup failed: ${e.runtimeType}',
+        );
       }
     }
     await _prefs.reload();

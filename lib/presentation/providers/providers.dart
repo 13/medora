@@ -63,6 +63,7 @@ import 'package:medora/presentation/providers/sync_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/services/aifa_cache_service.dart';
 import 'package:medora/services/app_startup_tasks.dart';
+import 'package:medora/services/attachment_transfer.dart';
 import 'package:medora/services/backup_file_picker.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/connectivity_service.dart';
@@ -192,7 +193,12 @@ final accountDataDatasourceProvider = Provider<AccountDataRemoteDatasource?>((
   ref,
 ) {
   final client = ref.watch(supabaseClientProvider);
-  return client == null ? null : AccountDataRemoteDatasource(client);
+  return client == null
+      ? null
+      : AccountDataRemoteDatasource(
+          client,
+          attachments: ref.watch(attachmentRemoteProvider)?.store,
+        );
 });
 
 /// The stock changes waiting to go out (sync v2).
@@ -414,6 +420,19 @@ final attachmentFilesProvider = Provider<AttachmentFiles>(
   (ref) => AttachmentFiles.appDocuments(),
 );
 
+/// Uploads, removes and fetches attachment bytes; idle in local-only mode.
+final attachmentTransferProvider = Provider<AttachmentTransfer>(
+  (ref) => AttachmentTransfer(
+    local: ref.watch(attachmentLocalDatasourceProvider),
+    repository: ref.watch(attachmentRepositoryProvider),
+    files: ref.watch(attachmentFilesProvider),
+    store: ref.watch(attachmentRemoteProvider)?.store,
+    currentUserId: () => SupabaseConfig.currentUserId,
+    isOnline: () => ConnectivityService.instance.isOnline,
+    now: ref.watch(nowProvider),
+  ),
+);
+
 /// Resolved photo file for a stored image name (null when absent/missing).
 final resolvedPhotoProvider = FutureProvider.family<File?, String?>(
   (ref, stored) => ref.watch(photoStorageProvider).resolve(stored),
@@ -438,6 +457,7 @@ final localDataWiperProvider = Provider<LocalDataWiper>(
   (ref) => LocalDataWiper(
     database: AppDatabase.instance,
     photos: ref.watch(photoStorageProvider),
+    attachments: ref.watch(attachmentFilesProvider),
     reminders: ref.watch(reminderPortProvider),
     prefs: ref.watch(sharedPreferencesProvider),
   ),
@@ -511,6 +531,8 @@ final syncStateStreamProvider = StreamProvider<SyncState>((ref) {
       ref.read(treatmentListProvider.notifier).refresh();
       ref.invalidateRxData();
       unawaited(_afterSync(ref));
+      // The rows are in; now their bytes (no local files on the web).
+      if (!kIsWeb) unawaited(ref.read(attachmentTransferProvider).run());
       // The plain refresh() does not re-plan the stock alerts (only the
       // mutation methods do), so without this a restock on another device
       // still announces "0 left" here until the next cold start.

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/photo_storage.dart';
@@ -71,6 +72,9 @@ void main() {
       await LocalDataWiper(
         database: AppDatabase.instance,
         photos: photos,
+        attachments: AttachmentFiles(
+          rootDirectory: () async => throw StateError('no fs'),
+        ),
         reminders: port,
         prefs: prefs,
       ).wipe();
@@ -119,6 +123,9 @@ void main() {
       await LocalDataWiper(
         database: AppDatabase.instance,
         photos: photos,
+        attachments: AttachmentFiles(
+          rootDirectory: () async => throw StateError('no fs'),
+        ),
         reminders: port,
         prefs: prefs,
       ).wipe();
@@ -157,6 +164,9 @@ void main() {
     await LocalDataWiper(
       database: AppDatabase.instance,
       photos: photos,
+      attachments: AttachmentFiles(
+        rootDirectory: () async => throw StateError('no fs'),
+      ),
       reminders: port,
       prefs: prefs,
     ).wipe();
@@ -176,4 +186,36 @@ void main() {
     );
     expect(prefs.getString('theme_mode'), 'dark');
   });
+
+  test(
+    'wipe deletes the attachment files and both attachment tables',
+    () async {
+      final root = await Directory.systemTemp.createTemp('medora_wipe_att_');
+      addTearDown(() => root.delete(recursive: true));
+      final attachments = AttachmentFiles(rootDirectory: () async => root);
+      await attachments.write('a1.jpg', [1]);
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final db = await AppDatabase.instance.database;
+      await db.insert('attachment_removals', {
+        'remote_path': 'u/a0.jpg',
+        'created_at': '2026-09-24T09:00:00.000',
+      });
+
+      await LocalDataWiper(
+        database: AppDatabase.instance,
+        photos: PhotoStorage(rootDirectory: () async => root),
+        attachments: attachments,
+        reminders: _Port(),
+        prefs: prefs,
+      ).wipe();
+
+      expect(
+        Directory(p.join(root.path, AttachmentFiles.folder)).existsSync(),
+        isFalse,
+      );
+      expect(await db.query('attachments'), isEmpty);
+      expect(await db.query('attachment_removals'), isEmpty);
+    },
+  );
 }

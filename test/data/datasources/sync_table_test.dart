@@ -3,6 +3,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -15,6 +16,22 @@ import 'package:medora/data/datasources/sync_page.dart';
 import 'package:medora/data/datasources/sync_state_remote_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../helpers/fake_remotes.dart';
+
+/// What storage-api answers for a bucket that does not exist, as
+/// `storage_client` hands it on for a JSON request.
+class _NoBucketStore extends FakeAttachmentStore {
+  @override
+  Future<List<String>> listFolder(String folder) async {
+    lists++;
+    throw const StorageException(
+      'Bucket not found',
+      error: 'Bucket not found',
+      statusCode: '404',
+    );
+  }
+}
 
 void main() {
   late List<http.Request> seen;
@@ -518,6 +535,61 @@ void main() {
         throwsA(isA<PostgrestException>()),
       );
       expect(seen, hasLength(1));
+    });
+
+    test('afterwards every object in the user\'s folder is removed', () async {
+      final store = FakeAttachmentStore();
+      for (var i = 0; i < 150; i++) {
+        store.objects['user-a/a$i.jpg'] = Uint8List(1);
+      }
+      store.objects['user-b/b.jpg'] = Uint8List(1);
+      await AccountDataRemoteDatasource(
+        answering(null),
+        attachments: store,
+        currentUserId: () => 'user-a',
+      ).deleteAllData();
+      expect(seen, hasLength(1));
+      expect(store.objects.keys, ['user-b/b.jpg']);
+      expect(store.removes, 2, reason: 'removed in batches');
+    });
+
+    test('a storage failure after the rows are gone is thrown', () async {
+      final store = FakeAttachmentStore()
+        ..objects['user-a/a.jpg'] = Uint8List(1)
+        ..failNext = 1;
+      await expectLater(
+        AccountDataRemoteDatasource(
+          answering(null),
+          attachments: store,
+          currentUserId: () => 'user-a',
+        ).deleteAllData(),
+        throwsA(isA<StorageException>()),
+      );
+      expect(seen, hasLength(1), reason: 'the rows were deleted first');
+    });
+
+    test('a failed server call leaves the objects alone', () async {
+      final store = FakeAttachmentStore()
+        ..objects['user-a/a.jpg'] = Uint8List(1);
+      await expectLater(
+        AccountDataRemoteDatasource(
+          answering({'code': '42501', 'message': 'denied'}, status: 403),
+          attachments: store,
+          currentUserId: () => 'user-a',
+        ).deleteAllData(),
+        throwsA(isA<PostgrestException>()),
+      );
+      expect(store.lists + store.removes, 0);
+    });
+
+    test('a project without the attachments bucket still deletes', () async {
+      final store = _NoBucketStore();
+      await AccountDataRemoteDatasource(
+        answering(null),
+        attachments: store,
+        currentUserId: () => 'user-a',
+      ).deleteAllData();
+      expect(store.lists, 1);
     });
   });
 

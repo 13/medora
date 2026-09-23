@@ -202,4 +202,32 @@ void main() {
     final listed = await stub.store.listFolder(_uid);
     expect(listed, [for (final n in names) '$_uid/$n']);
   });
+
+  test('a missing bucket is recognised, whichever request met it', () async {
+    final stub = Stub((_) => noBucket);
+    Object? listError;
+    try {
+      await stub.store.listFolder(_uid);
+    } catch (e) {
+      listError = e;
+    }
+    expect(listError, isA<StorageException>());
+    expect(isMissingBucket(listError! as StorageException), isTrue);
+    Object? downloadError;
+    try {
+      await stub.store.download('$_uid/a1.jpg');
+    } catch (e) {
+      downloadError = e;
+    }
+    expect(isMissingBucket(downloadError! as StorageException), isTrue);
+    for (final other in [badJwt, notFound, rlsDenied]) {
+      final s = Stub((_) => other);
+      try {
+        await s.store.listFolder(_uid);
+        fail('expected an error');
+      } on StorageException catch (e) {
+        expect(isMissingBucket(e), isFalse);
+      }
+    }
+  });
 }
