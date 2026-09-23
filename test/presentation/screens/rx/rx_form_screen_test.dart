@@ -240,6 +240,30 @@ void main() {
     },
   );
 
+  testWidgets('a valid-until before the issue date is refused on save', (
+    tester,
+  ) async {
+    final existing = Rx(
+      id: 'rx1',
+      kind: RxKind.ssn,
+      issuedOn: DateTime(2026, 9, 20),
+      validUntil: DateTime(2026, 9, 10),
+    );
+    final repo = await pump(
+      tester,
+      repo: _Repo(byId: Result.success(RxWithDispensings(existing, const []))),
+      rxId: 'rx1',
+    );
+    await save(tester);
+    expect(repo.saved, isEmpty);
+    await tester.dragUntilVisible(
+      find.text('Valid-until is before the issue date'),
+      find.byType(ListView),
+      const Offset(0, 200),
+    );
+    expect(find.text('Valid-until is before the issue date'), findsOneWidget);
+  });
+
   testWidgets('a picked valid-until date is kept when the kind changes', (
     tester,
   ) async {

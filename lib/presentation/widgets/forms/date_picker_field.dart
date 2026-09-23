@@ -19,6 +19,7 @@ class DatePickerField extends StatelessWidget {
     required this.onDateSelected,
     this.firstDate,
     this.lastDate,
+    this.errorText,
   });
 
   final String label;
@@ -31,6 +32,9 @@ class DatePickerField extends StatelessWidget {
   final ValueChanged<DateTime?> onDateSelected;
   final DateTime? firstDate;
   final DateTime? lastDate;
+
+  /// Shown under the field, as a form field's validation error.
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +64,7 @@ class DatePickerField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
+          errorText: errorText,
           prefixIcon: Icon(icon),
           suffixIcon: date != null
               ? IconButton(

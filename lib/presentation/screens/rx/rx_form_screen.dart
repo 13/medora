@@ -71,6 +71,10 @@ class _RxFormScreenState extends ConsumerState<RxFormScreen> {
   String? _nreDuplicateHint;
   bool _saving = false;
 
+  /// Set by a save refused for [_validBeforeIssued]; the error then shows
+  /// until the dates are fixed.
+  bool _showValidityError = false;
+
   /// Set when [_load] fails, so [build] shows a static error state instead
   /// of an indeterminate spinner that would otherwise animate forever if
   /// [Navigator.maybePop] has nowhere to go (this is the only route).
@@ -153,8 +157,23 @@ class _RxFormScreenState extends ConsumerState<RxFormScreen> {
     return t.isEmpty ? null : t;
   }
 
+  /// True when the last valid day comes before the issue date: the issue
+  /// date can be moved past a picked validity after the picker (whose first
+  /// date is the issue date) was used, and a stored row can be so too.
+  bool get _validBeforeIssued {
+    final until = _validUntil;
+    if (until == null) return false;
+    return DateTime(
+      until.year,
+      until.month,
+      until.day,
+    ).isBefore(DateTime(_issuedOn.year, _issuedOn.month, _issuedOn.day));
+  }
+
   Future<void> _save() async {
-    if (_saving || !_form.currentState!.validate()) return;
+    final valid = _form.currentState!.validate();
+    setState(() => _showValidityError = _validBeforeIssued);
+    if (_saving || !valid || _showValidityError) return;
     setState(() => _saving = true);
     final l10n = AppLocalizations.of(context);
     final nre = _text(_nre);
@@ -327,6 +346,9 @@ class _RxFormScreenState extends ConsumerState<RxFormScreen> {
               date: _validUntil,
               now: now,
               firstDate: _issuedOn,
+              errorText: _showValidityError && _validBeforeIssued
+                  ? l10n.rxValidBeforeIssued
+                  : null,
               onDateSelected: (d) => setState(() => _validUntilPicked = d),
             ),
             if (_kind == RxKind.referral) ...[
