@@ -3604,7 +3604,7 @@ abstract class AppLocalizations {
   /// No description provided for @backupIncludePhotos.
   ///
   /// In en, this message translates to:
-  /// **'Include photos ({count} files, ~{megabytes} MB)'**
+  /// **'Include photos and attachments ({count} files, ~{megabytes} MB)'**
   String backupIncludePhotos(int count, String megabytes);
 
   /// No description provided for @backupPhotosTooLarge.
@@ -4320,6 +4320,84 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prescription slips'**
   String get rxSectionTitle;
+
+  /// No description provided for @rxAttachments.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get rxAttachments;
+
+  /// No description provided for @rxAttachmentAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add attachment'**
+  String get rxAttachmentAdd;
+
+  /// No description provided for @rxAttachmentCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Take photo'**
+  String get rxAttachmentCamera;
+
+  /// No description provided for @rxAttachmentGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose photo'**
+  String get rxAttachmentGallery;
+
+  /// No description provided for @rxAttachmentFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose PDF or image file'**
+  String get rxAttachmentFile;
+
+  /// No description provided for @rxAttachmentDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete attachment'**
+  String get rxAttachmentDelete;
+
+  /// No description provided for @rxAttachmentDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this attachment on all devices?'**
+  String get rxAttachmentDeleteConfirm;
+
+  /// No description provided for @rxAttachmentTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The file is larger than 20 MB'**
+  String get rxAttachmentTooLarge;
+
+  /// No description provided for @rxAttachmentUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Only photos and PDF files can be attached'**
+  String get rxAttachmentUnsupported;
+
+  /// No description provided for @rxAttachmentUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'This image could not be read'**
+  String get rxAttachmentUnreadable;
+
+  /// No description provided for @rxAttachmentNotAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Not on this device yet — it arrives with the next sync'**
+  String get rxAttachmentNotAvailable;
+
+  /// No description provided for @rxAttachmentPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get rxAttachmentPreparing;
+
+  /// No description provided for @rxAttachmentCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 attachment} other{{count} attachments}}'**
+  String rxAttachmentCount(int count);
 }
 
 class _AppLocalizationsDelegate

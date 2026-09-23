@@ -641,7 +641,7 @@
   "backupData": "Backup dei dati",
   "backupDataHint": "Salva tutto in un file JSON non cifrato — conservalo in un luogo sicuro",
   "backupAction": "Esegui backup",
-  "backupIncludePhotos": "Includi le foto ({count} file, ~{megabytes} MB)",
+  "backupIncludePhotos": "Includi le foto e i allegati ({count} file, ~{megabytes} MB)",
   "backupPhotosTooLarge": "Sono molte foto — escluderle mantiene il backup abbastanza piccolo da condividere.",
   "restoreBackup": "Ripristina da backup",
   "restoreBackupHint": "Rileggi un file di backup nell'app",
@@ -761,5 +761,18 @@
   "rxStockNotUpdated": "Ritirata, ma non è stato possibile aggiornare le scorte",
   "rxValidBeforeIssued": "La validità termina prima della data di emissione",
   "rxRemoveCollectionConfirm": "Rimuovere questo ritiro? Le scorte non cambiano.",
-  "rxSectionTitle": "Ricette"
+  "rxSectionTitle": "Ricette",
+  "rxAttachments": "Allegati",
+  "rxAttachmentAdd": "Aggiungi allegato",
+  "rxAttachmentCamera": "Scatta foto",
+  "rxAttachmentGallery": "Scegli foto",
+  "rxAttachmentFile": "Scegli PDF o immagine",
+  "rxAttachmentDelete": "Elimina allegato",
+  "rxAttachmentDeleteConfirm": "Eliminare questo allegato su tutti i dispositivi?",
+  "rxAttachmentTooLarge": "Il file supera i 20 MB",
+  "rxAttachmentUnsupported": "Si possono allegare solo foto e PDF",
+  "rxAttachmentUnreadable": "Impossibile leggere questa immagine",
+  "rxAttachmentNotAvailable": "Non ancora su questo dispositivo: arriva con la prossima sincronizzazione",
+  "rxAttachmentPreparing": "Preparazione…",
+  "rxAttachmentCount": "{count, plural, =1{1 allegato} other{{count} allegati}}"
 }

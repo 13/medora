@@ -641,7 +641,7 @@
   "backupData": "Daten sichern",
   "backupDataHint": "Alles als unverschlüsselte JSON-Datei speichern — bewahre sie sicher auf",
   "backupAction": "Sichern",
-  "backupIncludePhotos": "Fotos einschließen ({count} Dateien, ~{megabytes} MB)",
+  "backupIncludePhotos": "Fotos und Anhänge einschließen ({count} Dateien, ~{megabytes} MB)",
   "backupPhotosTooLarge": "Das sind sehr viele Fotos — ohne sie bleibt die Sicherung klein genug zum Teilen.",
   "restoreBackup": "Aus Sicherung wiederherstellen",
   "restoreBackupHint": "Eine Sicherungsdatei zurück in die App einlesen",
@@ -761,5 +761,18 @@
   "rxStockNotUpdated": "Eingelöst, aber der Bestand konnte nicht aktualisiert werden",
   "rxValidBeforeIssued": "Gültig bis liegt vor dem Ausstellungsdatum",
   "rxRemoveCollectionConfirm": "Diese Einlösung entfernen? Der Bestand bleibt unverändert.",
-  "rxSectionTitle": "Rezepte"
+  "rxSectionTitle": "Rezepte",
+  "rxAttachments": "Anhänge",
+  "rxAttachmentAdd": "Anhang hinzufügen",
+  "rxAttachmentCamera": "Foto aufnehmen",
+  "rxAttachmentGallery": "Foto auswählen",
+  "rxAttachmentFile": "PDF oder Bilddatei auswählen",
+  "rxAttachmentDelete": "Anhang löschen",
+  "rxAttachmentDeleteConfirm": "Diesen Anhang auf allen Geräten löschen?",
+  "rxAttachmentTooLarge": "Die Datei ist größer als 20 MB",
+  "rxAttachmentUnsupported": "Nur Fotos und PDF-Dateien können angehängt werden",
+  "rxAttachmentUnreadable": "Dieses Bild konnte nicht gelesen werden",
+  "rxAttachmentNotAvailable": "Noch nicht auf diesem Gerät – kommt mit der nächsten Synchronisierung",
+  "rxAttachmentPreparing": "Wird vorbereitet …",
+  "rxAttachmentCount": "{count, plural, =1{1 Anhang} other{{count} Anhänge}}"
 }

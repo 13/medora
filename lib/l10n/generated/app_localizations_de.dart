@@ -2092,7 +2092,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String backupIncludePhotos(int count, String megabytes) {
-    return 'Fotos einschließen ($count Dateien, ~$megabytes MB)';
+    return 'Fotos und Anhänge einschließen ($count Dateien, ~$megabytes MB)';
   }
 
   @override
@@ -2500,4 +2500,55 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get rxSectionTitle => 'Rezepte';
+
+  @override
+  String get rxAttachments => 'Anhänge';
+
+  @override
+  String get rxAttachmentAdd => 'Anhang hinzufügen';
+
+  @override
+  String get rxAttachmentCamera => 'Foto aufnehmen';
+
+  @override
+  String get rxAttachmentGallery => 'Foto auswählen';
+
+  @override
+  String get rxAttachmentFile => 'PDF oder Bilddatei auswählen';
+
+  @override
+  String get rxAttachmentDelete => 'Anhang löschen';
+
+  @override
+  String get rxAttachmentDeleteConfirm =>
+      'Diesen Anhang auf allen Geräten löschen?';
+
+  @override
+  String get rxAttachmentTooLarge => 'Die Datei ist größer als 20 MB';
+
+  @override
+  String get rxAttachmentUnsupported =>
+      'Nur Fotos und PDF-Dateien können angehängt werden';
+
+  @override
+  String get rxAttachmentUnreadable =>
+      'Dieses Bild konnte nicht gelesen werden';
+
+  @override
+  String get rxAttachmentNotAvailable =>
+      'Noch nicht auf diesem Gerät – kommt mit der nächsten Synchronisierung';
+
+  @override
+  String get rxAttachmentPreparing => 'Wird vorbereitet …';
+
+  @override
+  String rxAttachmentCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Anhänge',
+      one: '1 Anhang',
+    );
+    return '$_temp0';
+  }
 }

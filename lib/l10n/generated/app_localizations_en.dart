@@ -2067,7 +2067,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String backupIncludePhotos(int count, String megabytes) {
-    return 'Include photos ($count files, ~$megabytes MB)';
+    return 'Include photos and attachments ($count files, ~$megabytes MB)';
   }
 
   @override
@@ -2469,4 +2469,54 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rxSectionTitle => 'Prescription slips';
+
+  @override
+  String get rxAttachments => 'Attachments';
+
+  @override
+  String get rxAttachmentAdd => 'Add attachment';
+
+  @override
+  String get rxAttachmentCamera => 'Take photo';
+
+  @override
+  String get rxAttachmentGallery => 'Choose photo';
+
+  @override
+  String get rxAttachmentFile => 'Choose PDF or image file';
+
+  @override
+  String get rxAttachmentDelete => 'Delete attachment';
+
+  @override
+  String get rxAttachmentDeleteConfirm =>
+      'Delete this attachment on all devices?';
+
+  @override
+  String get rxAttachmentTooLarge => 'The file is larger than 20 MB';
+
+  @override
+  String get rxAttachmentUnsupported =>
+      'Only photos and PDF files can be attached';
+
+  @override
+  String get rxAttachmentUnreadable => 'This image could not be read';
+
+  @override
+  String get rxAttachmentNotAvailable =>
+      'Not on this device yet — it arrives with the next sync';
+
+  @override
+  String get rxAttachmentPreparing => 'Preparing…';
+
+  @override
+  String rxAttachmentCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count attachments',
+      one: '1 attachment',
+    );
+    return '$_temp0';
+  }
 }

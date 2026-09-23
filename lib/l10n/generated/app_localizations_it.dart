@@ -2082,7 +2082,7 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String backupIncludePhotos(int count, String megabytes) {
-    return 'Includi le foto ($count file, ~$megabytes MB)';
+    return 'Includi le foto e i allegati ($count file, ~$megabytes MB)';
   }
 
   @override
@@ -2489,4 +2489,53 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get rxSectionTitle => 'Ricette';
+
+  @override
+  String get rxAttachments => 'Allegati';
+
+  @override
+  String get rxAttachmentAdd => 'Aggiungi allegato';
+
+  @override
+  String get rxAttachmentCamera => 'Scatta foto';
+
+  @override
+  String get rxAttachmentGallery => 'Scegli foto';
+
+  @override
+  String get rxAttachmentFile => 'Scegli PDF o immagine';
+
+  @override
+  String get rxAttachmentDelete => 'Elimina allegato';
+
+  @override
+  String get rxAttachmentDeleteConfirm =>
+      'Eliminare questo allegato su tutti i dispositivi?';
+
+  @override
+  String get rxAttachmentTooLarge => 'Il file supera i 20 MB';
+
+  @override
+  String get rxAttachmentUnsupported => 'Si possono allegare solo foto e PDF';
+
+  @override
+  String get rxAttachmentUnreadable => 'Impossibile leggere questa immagine';
+
+  @override
+  String get rxAttachmentNotAvailable =>
+      'Non ancora su questo dispositivo: arriva con la prossima sincronizzazione';
+
+  @override
+  String get rxAttachmentPreparing => 'Preparazione…';
+
+  @override
+  String rxAttachmentCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count allegati',
+      one: '1 allegato',
+    );
+    return '$_temp0';
+  }
 }
