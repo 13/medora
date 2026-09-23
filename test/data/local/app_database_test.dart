@@ -87,6 +87,7 @@ void main() {
         14,
         15,
         16,
+        17,
       ]);
 
       // Reopen: nothing re-applied, no duplicate rows.
@@ -99,6 +100,7 @@ void main() {
         14,
         15,
         16,
+        17,
       ]);
       await again.close();
       await dir.delete(recursive: true);
@@ -158,6 +160,7 @@ void main() {
       14,
       15,
       16,
+      17,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
@@ -228,6 +231,7 @@ void main() {
         14,
         15,
         16,
+        17,
       ]);
       await AppDatabase.instance.reset();
       await dir.delete(recursive: true);
@@ -303,6 +307,7 @@ void main() {
       14,
       15,
       16,
+      17,
     ]);
     // The pre-existing row survives with the new columns null.
     final row = (await upgraded.query(
@@ -464,9 +469,41 @@ void main() {
       14,
       15,
       16,
+      17,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
+  });
+
+  test('migration 17 creates the prescription tables', () async {
+    await setUpTestDatabase();
+    final db = await AppDatabase.instance.database;
+    for (final table in ['persons', 'rx', 'rx_dispensings']) {
+      final columns = (await db.rawQuery(
+        'PRAGMA table_info($table)',
+      )).map((c) => c['name']).toSet();
+      expect(
+        columns,
+        containsAll(<String>[
+          'id',
+          'user_id',
+          'created_at',
+          'updated_at',
+          'deleted_at',
+          'sync_status',
+          'edited_at',
+          'field_edited_at',
+          'sync_version',
+          'sync_base',
+          'sync_write_id',
+        ]),
+        reason: table,
+      );
+    }
+    final fks = await db.rawQuery('PRAGMA foreign_key_list(rx_dispensings)');
+    expect(fks.single['table'], 'rx');
+    expect(fks.single['on_delete'], 'CASCADE');
+    await tearDownTestDatabase();
   });
 
   test('clearAllData empties every table', () async {

@@ -16,7 +16,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 16;
+const int kSchemaVersion = 17;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -139,6 +139,73 @@ final List<Migration> kMigrations = [
     await db.execute(
       'CREATE INDEX idx_local_stock_outbox_med '
       'ON stock_outbox(medication_id, seq)',
+    );
+  }),
+  // v17: prescriptions (spec 2026-09-23 §4). Persons and prescriptions are
+  // roots; a dispensing belongs to its prescription and goes with it. A
+  // prescription names its person, treatment and medications without a
+  // foreign key: deleting one of those must never take a prescription with
+  // it. Created with every sync-v2 bookkeeping column from the start.
+  Migration(17, (db) async {
+    const sync = '''
+        created_at TEXT,
+        updated_at TEXT,
+        deleted_at TEXT,
+        sync_status TEXT NOT NULL DEFAULT 'synced',
+        edited_at TEXT,
+        field_edited_at TEXT,
+        sync_version INTEGER,
+        sync_base TEXT,
+        sync_write_id TEXT''';
+    await db.execute('''
+      CREATE TABLE persons (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        name TEXT NOT NULL,
+        tax_code TEXT,
+        exemptions TEXT,
+        notes TEXT,
+$sync
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE rx (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        person_id TEXT,
+        treatment_id TEXT,
+        kind TEXT NOT NULL,
+        nre TEXT,
+        issued_on TEXT NOT NULL,
+        valid_until TEXT,
+        doctor TEXT,
+        exemption_code TEXT,
+        priority TEXT,
+        max_dispensings INTEGER,
+        items TEXT NOT NULL DEFAULT '[]',
+        closed_on TEXT,
+        cancelled INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+$sync
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_local_rx_nre ON rx(nre)');
+    await db.execute('CREATE INDEX idx_local_rx_treatment ON rx(treatment_id)');
+    await db.execute('''
+      CREATE TABLE rx_dispensings (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        rx_id TEXT NOT NULL REFERENCES rx(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL,
+        packs INTEGER NOT NULL,
+        dispensed_on TEXT NOT NULL,
+        pharmacy TEXT,
+        units_added INTEGER NOT NULL DEFAULT 0,
+$sync
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_local_rx_disp_rx ON rx_dispensings(rx_id)',
     );
   }),
 ];
