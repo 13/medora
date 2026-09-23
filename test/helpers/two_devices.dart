@@ -14,10 +14,13 @@ import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/family_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/prescription_local_datasource.dart';
+import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
+import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/repositories/dose_log_repository_impl.dart';
 import 'package:medora/data/repositories/medication_repository_impl.dart';
+import 'package:medora/data/repositories/rx_repository_impl.dart';
 import 'package:medora/data/repositories/treatment_repository_impl.dart';
 import 'package:medora/services/sync_cursor_store.dart';
 import 'package:medora/services/sync_failure_store.dart';
@@ -40,6 +43,7 @@ class Device {
       prescriptionRemote: server.prescriptions,
       doseLogLocal: DoseLogLocalDatasource(now: now),
       doseLogRemote: server.doses,
+      rxRemote: server.rx,
       familyLocal: FamilyLocalDatasource(),
       familyRemote: server.families,
       syncState: server.state,
@@ -59,6 +63,13 @@ class Device {
     );
     treatments = TreatmentRepositoryImpl(
       localDatasource: TreatmentLocalDatasource(now: now),
+      requestSync: _requestSync,
+      now: now,
+    );
+    rx = RxRepositoryImpl(
+      rxLocal: RxLocalDatasource(now: now),
+      dispensingLocal: RxDispensingLocalDatasource(now: now),
+      medications: medications,
       requestSync: _requestSync,
       now: now,
     );
@@ -82,6 +93,9 @@ class Device {
   late final MedicationRepositoryImpl medications;
   late final TreatmentRepositoryImpl treatments;
   late final DoseLogRepositoryImpl doses;
+
+  /// Persons' prescriptions and what was collected on them.
+  late final RxRepositoryImpl rx;
   final List<Future<void>> _requests = [];
 
   Future<void> _requestSync() {
