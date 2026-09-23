@@ -1546,7 +1546,7 @@ abstract class AppLocalizations {
   /// No description provided for @stockAndExpiryRemindersHint.
   ///
   /// In en, this message translates to:
-  /// **'{days, plural, =1{Notify when a medication runs low or expires within 1 day} other{Notify when a medication runs low or expires within {days} days}}'**
+  /// **'{days, plural, =1{Notify when a medication runs low or expires within 1 day, and prescriptions about to expire} other{Notify when a medication runs low or expires within {days} days, and prescriptions about to expire}}'**
   String stockAndExpiryRemindersHint(int days);
 
   /// No description provided for @cancelAllReminders.
@@ -4296,6 +4296,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No persons yet'**
   String get personNoneYet;
+
+  /// No description provided for @rxStockNotUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Collected, but the stock could not be updated'**
+  String get rxStockNotUpdated;
+
+  /// No description provided for @rxValidBeforeIssued.
+  ///
+  /// In en, this message translates to:
+  /// **'Valid-until is before the issue date'**
+  String get rxValidBeforeIssued;
+
+  /// No description provided for @rxRemoveCollectionConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this collection? The stock is not changed.'**
+  String get rxRemoveCollectionConfirm;
+
+  /// No description provided for @rxSectionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription slips'**
+  String get rxSectionTitle;
 }
 
 class _AppLocalizationsDelegate

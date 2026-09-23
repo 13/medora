@@ -131,7 +131,7 @@ class RxRepositoryImpl implements RxRepository {
   }
 
   @override
-  Future<Result<void>> redeem(
+  Future<Result<RedeemOutcome>> redeem(
     String rxId,
     List<RxDispensing> dispensings,
   ) async {
@@ -153,6 +153,7 @@ class RxRepositoryImpl implements RxRepository {
       // Stock after the dispensings are safe: a failed stock change must
       // not lose the record of what was collected.
       final byItem = {for (final i in rx.items) i.id: i};
+      var stockFailures = 0;
       for (final d in dispensings) {
         final medicationId = byItem[d.itemId]?.medicationId;
         if (medicationId == null || d.unitsAdded <= 0) continue;
@@ -161,10 +162,11 @@ class RxRepositoryImpl implements RxRepository {
           d.unitsAdded,
         );
         if (added.isFailure) {
+          stockFailures++;
           debugPrint('Rx: stock not updated for $medicationId');
         }
       }
-      return const Result.success(null);
+      return Result.success(RedeemOutcome(stockFailures: stockFailures));
     } catch (e, st) {
       return Result.failure('Failed to record dispensing: $e', st);
     }

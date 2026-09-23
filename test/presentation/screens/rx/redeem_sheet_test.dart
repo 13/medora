@@ -18,11 +18,15 @@ import '../../../helpers/test_database.dart';
 
 class _Repo implements RxRepository {
   final redeemed = <List<RxDispensing>>[];
+  int stockFailures = 0;
 
   @override
-  Future<Result<void>> redeem(String rxId, List<RxDispensing> d) async {
+  Future<Result<RedeemOutcome>> redeem(
+    String rxId,
+    List<RxDispensing> d,
+  ) async {
     redeemed.add(d);
-    return const Result.success(null);
+    return Result.success(RedeemOutcome(stockFailures: stockFailures));
   }
 
   @override
@@ -65,13 +69,14 @@ void main() {
     RxWithDispensings entry, {
     Size size = const Size(360, 640),
     double viewInsetsBottom = 0,
+    int stockFailures = 0,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetViewInsets);
-    final repo = _Repo();
+    final repo = _Repo()..stockFailures = stockFailures;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -249,5 +254,41 @@ void main() {
       find.byKey(const Key('rx_redeem_save')),
     );
     expect(save.onPressed, isNotNull);
+  });
+
+  RxWithDispensings linked() => RxWithDispensings(
+    Rx(
+      id: 'rx1',
+      kind: RxKind.ssn,
+      issuedOn: DateTime(2026, 9),
+      createdAt: DateTime(2026, 9),
+      items: const [
+        RxItem(id: 'i0', medicationId: 'm1', description: 'Item 0'),
+      ],
+    ),
+    const [],
+  );
+
+  testWidgets('units to add are never negative: the server would refuse the '
+      'row for ever', (tester) async {
+    final repo = await pump(tester, linked());
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Units to add'),
+      '-5',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('rx_redeem_save')));
+    await tester.pumpAndSettle();
+    expect(repo.redeemed.single.single.unitsAdded, 5);
+  });
+
+  testWidgets('a collection whose stock change failed says so', (tester) async {
+    await pump(tester, linked(), stockFailures: 1);
+    await tester.tap(find.byKey(const Key('rx_redeem_save')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Collected, but the stock could not be updated'),
+      findsOneWidget,
+    );
   });
 }

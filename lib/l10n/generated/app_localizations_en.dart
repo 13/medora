@@ -880,8 +880,10 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       days,
       locale: localeName,
-      other: 'Notify when a medication runs low or expires within $days days',
-      one: 'Notify when a medication runs low or expires within 1 day',
+      other:
+          'Notify when a medication runs low or expires within $days days, and prescriptions about to expire',
+      one:
+          'Notify when a medication runs low or expires within 1 day, and prescriptions about to expire',
     );
     return '$_temp0';
   }
@@ -2453,4 +2455,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get personNoneYet => 'No persons yet';
+
+  @override
+  String get rxStockNotUpdated =>
+      'Collected, but the stock could not be updated';
+
+  @override
+  String get rxValidBeforeIssued => 'Valid-until is before the issue date';
+
+  @override
+  String get rxRemoveCollectionConfirm =>
+      'Remove this collection? The stock is not changed.';
+
+  @override
+  String get rxSectionTitle => 'Prescription slips';
 }

@@ -1,7 +1,10 @@
 /// Medora - Record what was collected at the pharmacy.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/entities/rx_dispensing.dart';
@@ -106,8 +109,10 @@ class _RedeemSheetState extends ConsumerState<_RedeemSheet> {
             packs: int.parse(l.packs.text),
             dispensedOn: today,
             pharmacy: pharmacy.isEmpty ? null : pharmacy,
+            // Never negative: the server's check refuses such a row, and
+            // it would stay stuck in the outbox for ever.
             unitsAdded: l.addToStock && l.item.medicationId != null
-                ? int.tryParse(l.units.text) ?? 0
+                ? math.max(0, int.tryParse(l.units.text) ?? 0)
                 : 0,
           ),
     ];
@@ -116,10 +121,18 @@ class _RedeemSheetState extends ConsumerState<_RedeemSheet> {
         .redeem(rx.id, dispensings);
     if (!mounted) return;
     result.when(
-      success: (_) {
+      success: (outcome) {
         invalidateRx(ref);
         ref.invalidate(medicationListProvider);
+        // Read before the pop: the sheet's context is gone after it.
+        final messenger = ScaffoldMessenger.of(context);
+        final l10n = AppLocalizations.of(context);
         Navigator.of(context).pop();
+        if (outcome.stockFailures > 0) {
+          messenger.showSnackBar(
+            SnackBar(content: Text(l10n.rxStockNotUpdated)),
+          );
+        }
       },
       failure: (_) {
         setState(() => _saving = false);
@@ -200,6 +213,9 @@ class _RedeemSheetState extends ConsumerState<_RedeemSheet> {
                                 controller: l.units,
                                 enabled: l.addToStock,
                                 keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
                                 decoration: InputDecoration(
                                   labelText: l10n.rxUnitsToAdd,
                                 ),

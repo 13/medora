@@ -18,6 +18,16 @@ class RxWithDispensings {
   RxStatus statusAt(DateTime now) => RxRules.statusOf(rx, dispensings, now);
 }
 
+/// What [RxRepository.redeem] did besides saving the dispensings.
+class RedeemOutcome {
+  const RedeemOutcome({this.stockFailures = 0});
+
+  /// Stock changes that failed. The collection is recorded regardless — it
+  /// happened at the pharmacy — but the user has to know the cabinet is not
+  /// up to date.
+  final int stockFailures;
+}
+
 abstract class RxRepository {
   Future<Result<List<RxWithDispensings>>> getAll();
   Future<Result<RxWithDispensings>> getById(String id);
@@ -29,8 +39,12 @@ abstract class RxRepository {
   Future<Result<void>> deleteRx(String id);
 
   /// Records [dispensings] of [rxId]; each with `unitsAdded > 0` and an
-  /// item linked to a medication adds those units to its stock.
-  Future<Result<void>> redeem(String rxId, List<RxDispensing> dispensings);
+  /// item linked to a medication adds those units to its stock. A failed
+  /// stock change does not fail the redeem: it is counted in the outcome.
+  Future<Result<RedeemOutcome>> redeem(
+    String rxId,
+    List<RxDispensing> dispensings,
+  );
 
   /// Removes a dispensing recorded by mistake. The stock is not touched:
   /// the user may already have counted it.

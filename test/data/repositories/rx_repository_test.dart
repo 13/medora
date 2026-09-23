@@ -108,6 +108,9 @@ void main() {
     ]);
     expect(result.isSuccess, isTrue);
     expect(stock.calls, [('m1', 20)]);
+    // The spy fails every stock change: the collection is kept, and the
+    // caller learns the stock was not updated.
+    expect(result.dataOrNull!.stockFailures, 1);
     final back = (await repo.getById('r1')).dataOrNull!;
     expect(back.dispensings.single.packs, 1);
     expect(back.statusAt(now), RxStatus.partial);

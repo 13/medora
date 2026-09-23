@@ -887,8 +887,10 @@ class AppLocalizationsIt extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       days,
       locale: localeName,
-      other: 'Avvisa quando un farmaco sta finendo o scade entro $days giorni',
-      one: 'Avvisa quando un farmaco sta finendo o scade entro 1 giorno',
+      other:
+          'Avvisa quando un farmaco sta finendo o scade entro $days giorni, e quando una ricetta sta per scadere',
+      one:
+          'Avvisa quando un farmaco sta finendo o scade entro 1 giorno, e quando una ricetta sta per scadere',
     );
     return '$_temp0';
   }
@@ -2472,4 +2474,19 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get personNoneYet => 'Nessuna persona';
+
+  @override
+  String get rxStockNotUpdated =>
+      'Ritirata, ma non è stato possibile aggiornare le scorte';
+
+  @override
+  String get rxValidBeforeIssued =>
+      'La validità termina prima della data di emissione';
+
+  @override
+  String get rxRemoveCollectionConfirm =>
+      'Rimuovere questo ritiro? Le scorte non cambiano.';
+
+  @override
+  String get rxSectionTitle => 'Ricette';
 }

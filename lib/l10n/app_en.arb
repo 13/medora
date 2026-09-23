@@ -441,7 +441,7 @@
   "enableNotifications": "Enable Notifications",
   "receiveDoseReminders": "Receive dose reminders",
   "stockAndExpiryReminders": "Stock and expiry reminders",
-  "stockAndExpiryRemindersHint": "{days, plural, =1{Notify when a medication runs low or expires within 1 day} other{Notify when a medication runs low or expires within {days} days}}",
+  "stockAndExpiryRemindersHint": "{days, plural, =1{Notify when a medication runs low or expires within 1 day, and prescriptions about to expire} other{Notify when a medication runs low or expires within {days} days, and prescriptions about to expire}}",
   "@stockAndExpiryRemindersHint": {
     "placeholders": { "days": { "type": "int" } }
   },
@@ -1020,5 +1020,9 @@
   "personDelete": "Delete person",
   "personDeleteConfirm": "Delete {name}? Prescriptions stay.",
   "@personDeleteConfirm": { "placeholders": { "name": { "type": "String" } } },
-  "personNoneYet": "No persons yet"
+  "personNoneYet": "No persons yet",
+  "rxStockNotUpdated": "Collected, but the stock could not be updated",
+  "rxValidBeforeIssued": "Valid-until is before the issue date",
+  "rxRemoveCollectionConfirm": "Remove this collection? The stock is not changed.",
+  "rxSectionTitle": "Prescription slips"
 }

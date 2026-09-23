@@ -264,7 +264,7 @@
   "enableNotifications": "Benachrichtigungen aktivieren",
   "receiveDoseReminders": "Erinnerungen an Einnahmen erhalten",
   "stockAndExpiryReminders": "Bestands- und Ablauferinnerungen",
-  "stockAndExpiryRemindersHint": "{days, plural, =1{Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft} other{Benachrichtigen, wenn ein Medikament zur Neige geht oder in {days} Tagen abläuft}}",
+  "stockAndExpiryRemindersHint": "{days, plural, =1{Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft, und wenn ein Rezept bald abläuft} other{Benachrichtigen, wenn ein Medikament zur Neige geht oder in {days} Tagen abläuft, und wenn ein Rezept bald abläuft}}",
   "cancelAllReminders": "Alle Erinnerungen abbrechen",
   "removePendingNotifications": "Alle ausstehenden Benachrichtigungen entfernen",
   "cancelAllRemindersConfirm": "Möchten Sie wirklich alle ausstehenden Erinnerungen abbrechen?",
@@ -757,5 +757,9 @@
   "personExemptionsHint": "z. B. E01, 048",
   "personDelete": "Person löschen",
   "personDeleteConfirm": "{name} löschen? Rezepte bleiben erhalten.",
-  "personNoneYet": "Noch keine Personen"
+  "personNoneYet": "Noch keine Personen",
+  "rxStockNotUpdated": "Eingelöst, aber der Bestand konnte nicht aktualisiert werden",
+  "rxValidBeforeIssued": "Gültig bis liegt vor dem Ausstellungsdatum",
+  "rxRemoveCollectionConfirm": "Diese Einlösung entfernen? Der Bestand bleibt unverändert.",
+  "rxSectionTitle": "Rezepte"
 }

@@ -56,8 +56,8 @@ class _Repo implements RxRepository {
   @override
   Future<Result<void>> deleteRx(String id) async => const Result.success(null);
   @override
-  Future<Result<void>> redeem(String id, List<RxDispensing> d) async =>
-      const Result.success(null);
+  Future<Result<RedeemOutcome>> redeem(String id, List<RxDispensing> d) async =>
+      const Result.success(RedeemOutcome());
   @override
   Future<Result<void>> undoDispensing(String id) async =>
       const Result.success(null);

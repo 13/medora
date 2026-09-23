@@ -891,9 +891,9 @@ class AppLocalizationsDe extends AppLocalizations {
       days,
       locale: localeName,
       other:
-          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in $days Tagen abläuft',
+          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in $days Tagen abläuft, und wenn ein Rezept bald abläuft',
       one:
-          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft',
+          'Benachrichtigen, wenn ein Medikament zur Neige geht oder in 1 Tag abläuft, und wenn ein Rezept bald abläuft',
     );
     return '$_temp0';
   }
@@ -2485,4 +2485,19 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get personNoneYet => 'Noch keine Personen';
+
+  @override
+  String get rxStockNotUpdated =>
+      'Eingelöst, aber der Bestand konnte nicht aktualisiert werden';
+
+  @override
+  String get rxValidBeforeIssued =>
+      'Gültig bis liegt vor dem Ausstellungsdatum';
+
+  @override
+  String get rxRemoveCollectionConfirm =>
+      'Diese Einlösung entfernen? Der Bestand bleibt unverändert.';
+
+  @override
+  String get rxSectionTitle => 'Rezepte';
 }
