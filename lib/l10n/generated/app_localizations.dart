@@ -3931,6 +3931,12 @@ abstract class AppLocalizations {
   /// **'This prescription number is already saved'**
   String get rxNreDuplicate;
 
+  /// No description provided for @rxNreDuplicateHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Already saved'**
+  String get rxNreDuplicateHint;
+
   /// No description provided for @rxOpenExisting.
   ///
   /// In en, this message translates to:

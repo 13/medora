@@ -2246,6 +2246,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rxNreDuplicate => 'This prescription number is already saved';
 
   @override
+  String get rxNreDuplicateHint => 'Already saved';
+
+  @override
   String get rxOpenExisting => 'Open';
 
   @override

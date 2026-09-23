@@ -2278,6 +2278,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get rxNreDuplicate => 'Diese Rezeptnummer ist schon gespeichert';
 
   @override
+  String get rxNreDuplicateHint => 'Schon gespeichert';
+
+  @override
   String get rxOpenExisting => 'Öffnen';
 
   @override

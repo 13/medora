@@ -954,6 +954,7 @@
   "rxNre": "Prescription number (NRE)",
   "rxNreInvalid": "15 letters or digits",
   "rxNreDuplicate": "This prescription number is already saved",
+  "rxNreDuplicateHint": "Already saved",
   "rxOpenExisting": "Open",
   "rxIssuedOn": "Issued on",
   "rxValidUntil": "Valid until",

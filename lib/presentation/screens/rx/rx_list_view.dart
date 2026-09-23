@@ -33,6 +33,17 @@ class _RxListViewState extends ConsumerState<RxListView> {
     final now = ref.watch(nowProvider)();
     final personList = ref.watch(personsProvider).value ?? const <Person>[];
     final persons = {for (final p in personList) p.id: p};
+    // The tab stays mounted while Settings -> Persons can delete the
+    // filtered person out from under it; a stale id would otherwise leave
+    // the dropdown showing a value with no matching item.
+    if (_personFilter != null && !persons.containsKey(_personFilter)) {
+      _personFilter = null;
+    }
+    // Only in effect while the dropdown that can change it is shown, so
+    // dropping to one (or zero) persons never strands the list filtered
+    // with no control left to clear it.
+    final showFilter = personList.length > 1;
+    final activeFilter = showFilter ? _personFilter : null;
     return AsyncValueView<List<RxWithDispensings>>(
       value: ref.watch(rxListProvider),
       onRetry: () async => ref.invalidate(rxListProvider),
@@ -45,11 +56,11 @@ class _RxListViewState extends ConsumerState<RxListView> {
         onAction: () => context.push(AppRoutes.addRx),
       ),
       data: (fullList) {
-        final list = _personFilter == null
+        final list = activeFilter == null
             ? fullList
             : [
                 for (final r in fullList)
-                  if (r.rx.personId == _personFilter) r,
+                  if (r.rx.personId == activeFilter) r,
               ];
         final open = <RxWithDispensings>[];
         final partial = <RxWithDispensings>[];
@@ -79,7 +90,7 @@ class _RxListViewState extends ConsumerState<RxListView> {
         return ListView(
           padding: const EdgeInsets.only(bottom: 88),
           children: [
-            if (personList.length > 1)
+            if (showFilter)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: DropdownButton<String?>(

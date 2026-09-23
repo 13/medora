@@ -697,6 +697,7 @@
   "rxNre": "Numero ricetta (NRE)",
   "rxNreInvalid": "15 lettere o cifre",
   "rxNreDuplicate": "Questo numero di ricetta è già salvato",
+  "rxNreDuplicateHint": "Già salvato",
   "rxOpenExisting": "Apri",
   "rxIssuedOn": "Emessa il",
   "rxValidUntil": "Valida fino al",
