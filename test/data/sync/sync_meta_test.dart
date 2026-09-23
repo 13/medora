@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/person_local_datasource.dart';
@@ -8,6 +9,7 @@ import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/field_times.dart';
+import 'package:medora/data/models/attachment_model.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/person_model.dart';
@@ -17,6 +19,7 @@ import 'package:medora/data/models/rx_model.dart';
 import 'package:medora/data/models/treatment_model.dart';
 import 'package:medora/data/sync/row_merge.dart';
 import 'package:medora/data/sync/sync_meta.dart';
+import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/domain/entities/dose_log.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
@@ -134,6 +137,21 @@ void main() {
         packs: 1,
         dispensedOn: DateTime(2026, 3, 21),
         pharmacy: 'Farmacia Centrale',
+        updatedAt: editedHere,
+      ),
+      SyncStatus.pendingCreate,
+    ),
+    'attachments': AttachmentLocalDatasource.rowOf(
+      AttachmentModel(
+        id: 'att1',
+        ownerKind: AttachmentOwnerKind.rx,
+        ownerId: 'r1',
+        kind: AttachmentKind.photo,
+        mime: 'image/jpeg',
+        sizeBytes: 12345,
+        sha256:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        originalName: 'scan.jpg',
         updatedAt: editedHere,
       ),
       SyncStatus.pendingCreate,

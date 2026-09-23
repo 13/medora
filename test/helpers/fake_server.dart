@@ -221,6 +221,22 @@ const serverColumns = <String, Map<String, Object?>>{
     'deleted_at': null,
     ..._syncColumns,
   },
+  'attachments': {
+    'id': null,
+    'user_id': null,
+    'owner_kind': null,
+    'owner_id': null,
+    'kind': null,
+    'mime': null,
+    'size_bytes': null,
+    'sha256': null,
+    'original_name': null,
+    'remote_path': null,
+    'created_at': _nowDefault,
+    'updated_at': _nowDefault,
+    'deleted_at': null,
+    ..._syncColumns,
+  },
 };
 
 Map<String, Object?> _entry(DateTime at, bool auto) => {
@@ -759,14 +775,15 @@ class FakeServerCore {
   }
 
   /// `medora_delete_all_data()`: every medication, treatment, prescription,
-  /// dose, person, prescription document (rx) and dispensing goes (with the
-  /// ledger), and the marker moves on, at the server's clock.
+  /// dose, person, prescription document (rx), dispensing and attachment
+  /// goes (with the ledger), and the marker moves on, at the server's clock.
   Map<String, dynamic> deleteAllData() {
     requests.add('rpc:medora_delete_all_data');
     final mark = requests.length;
     final at = clock().toUtc();
     wipe = (generation: (wipe?.generation ?? 0) + 1, wipedAt: at);
     for (final table in const [
+      'attachments',
       'rx_dispensings',
       'rx',
       'persons',

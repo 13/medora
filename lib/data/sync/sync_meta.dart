@@ -12,6 +12,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/dose_log_local_datasource.dart';
 import 'package:medora/data/datasources/medication_local_datasource.dart';
 import 'package:medora/data/datasources/person_local_datasource.dart';
@@ -20,6 +21,7 @@ import 'package:medora/data/datasources/rx_dispensing_local_datasource.dart';
 import 'package:medora/data/datasources/rx_local_datasource.dart';
 import 'package:medora/data/datasources/treatment_local_datasource.dart';
 import 'package:medora/data/local/field_times.dart';
+import 'package:medora/data/models/attachment_model.dart';
 import 'package:medora/data/models/dose_log_model.dart';
 import 'package:medora/data/models/medication_model.dart';
 import 'package:medora/data/models/person_model.dart';
@@ -37,6 +39,7 @@ const syncedTables = [
   'persons',
   'rx',
   'rx_dispensings',
+  'attachments',
 ];
 
 /// The bookkeeping columns of a synced local row.
@@ -60,6 +63,7 @@ Map<String, Object?> canonicalWire(String table, Map<String, dynamic> json) =>
       'persons' => PersonModel.fromJson(json).toJson(),
       'rx' => RxModel.fromJson(json).toJson(),
       'rx_dispensings' => RxDispensingModel.fromJson(json).toJson(),
+      'attachments' => AttachmentModel.fromJson(json).toJson(),
       _ => throw ArgumentError.value(table, 'table', 'not a synced table'),
     };
 
@@ -89,6 +93,10 @@ Map<String, Object?> localWire(
     'user_id': userId ?? row['user_id'],
   }).toJson(),
   'rx_dispensings' => RxDispensingModel.fromLocalMap({
+    ...row,
+    'user_id': userId ?? row['user_id'],
+  }).toJson(),
+  'attachments' => AttachmentModel.fromLocalMap({
     ...row,
     'user_id': userId ?? row['user_id'],
   }).toJson(),
@@ -125,6 +133,10 @@ Map<String, Object?> localRowOf(
   'rx' => RxLocalDatasource.rowOf(RxModel.fromJson(json), syncStatus),
   'rx_dispensings' => RxDispensingLocalDatasource.rowOf(
     RxDispensingModel.fromJson(json),
+    syncStatus,
+  ),
+  'attachments' => AttachmentLocalDatasource.rowOf(
+    AttachmentModel.fromJson(json),
     syncStatus,
   ),
   _ => throw ArgumentError.value(table, 'table', 'not a synced table'),

@@ -269,6 +269,10 @@ const rxMerge = MergePolicy(
 /// A dispensing is written once and only ever deleted.
 const rxDispensingMerge = MergePolicy(groups: []);
 
+/// An attachment's columns are independent; a device only ever adds
+/// `remote_path` once it has uploaded the bytes, contents are immutable.
+const attachmentMerge = MergePolicy(groups: []);
+
 /// The policy of [table].
 MergePolicy mergePolicyOf(String table) => switch (table) {
   'medications' => medicationMerge,
@@ -278,6 +282,7 @@ MergePolicy mergePolicyOf(String table) => switch (table) {
   'persons' => personMerge,
   'rx' => rxMerge,
   'rx_dispensings' => rxDispensingMerge,
+  'attachments' => attachmentMerge,
   _ => throw ArgumentError.value(table, 'table', 'not a merged table'),
 };
 
