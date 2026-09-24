@@ -299,6 +299,77 @@ void main() {
     });
   });
 
+  // Europe/Rome (the zone the suite runs in) moves to summer time on
+  // 2026-03-29 and 2027-03-28 and back on 2026-10-25. In a zone without DST
+  // these pass trivially.
+  group('daylight saving time', () {
+    Map<DateTime, int> perDay(List<DateTime> times) {
+      final counts = <DateTime, int>{};
+      for (final t in times) {
+        final day = DateTime(t.year, t.month, t.day);
+        counts[day] = (counts[day] ?? 0) + 1;
+      }
+      return counts;
+    }
+
+    test('endTime keeps the wall-clock time across a DST change', () {
+      final p = _p(durationDays: 365, startTime: DateTime(2026, 3, 28, 8));
+      expect(p.endTime, DateTime(2027, 3, 28, 8));
+      final autumn = _p(startTime: DateTime(2026, 10, 22, 8));
+      expect(autumn.endTime, DateTime(2026, 10, 29, 8));
+    });
+
+    test('endTime of a UTC start stays UTC', () {
+      final p = _p(durationDays: 2, startTime: DateTime.utc(2026, 3, 28, 8));
+      expect(p.endTime, DateTime.utc(2026, 3, 30, 8));
+      expect(p.endTime.isUtc, isTrue);
+    });
+
+    test('a year from the day before spring forward has one dose per time '
+        'per day', () {
+      final times = _p(
+        scheduleType: 'times_per_day',
+        scheduleTimes: ['08:00', '20:00'],
+        durationDays: 365,
+        startTime: DateTime(2026, 3, 28, 8),
+      ).scheduledDoseTimes;
+      expect(times.length, 365 * 2);
+      expect(times.first, DateTime(2026, 3, 28, 8));
+      expect(times.last, DateTime(2027, 3, 27, 20));
+      final days = perDay(times);
+      expect(days.length, 365);
+      expect(days.values.every((n) => n == 2), isTrue);
+      expect(days[DateTime(2026, 10, 25)], 2);
+      expect(times.toSet().length, times.length);
+    });
+
+    test('a year from the summer visits each day once, the change days '
+        'included', () {
+      final times = _p(
+        scheduleType: 'times_per_day',
+        scheduleTimes: ['08:00', '20:00'],
+        durationDays: 365,
+        startTime: DateTime(2026, 6, 1, 8),
+      ).scheduledDoseTimes;
+      expect(times.length, 365 * 2);
+      final days = perDay(times);
+      expect(days.length, 365);
+      expect(days[DateTime(2026, 10, 25)], 2);
+      expect(days[DateTime(2027, 3, 28)], 2);
+      expect(times.toSet().length, times.length);
+    });
+
+    test('a fixed interval steps in elapsed hours across a DST change', () {
+      final times = _p(
+        intervalHours: 12,
+        durationDays: 3,
+        startTime: DateTime(2026, 3, 28, 8),
+      ).scheduledDoseTimes;
+      // 08:00 CET plus 24 hours is 09:00 CEST.
+      expect(times[2], DateTime(2026, 3, 29, 9));
+    });
+  });
+
   test('a zero duration generates nothing, whatever the type is read as', () {
     // An older build reads 'as_needed' as a fixed interval: with the zero
     // duration an as-needed prescription is saved with, that is no dose.

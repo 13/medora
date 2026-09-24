@@ -229,8 +229,36 @@ class Prescription {
     return dosage;
   }
 
-  /// Calculate the end time based on start + duration.
-  DateTime get endTime => startTime.add(Duration(days: durationDays));
+  /// The start plus [durationDays] calendar days, at the start's wall-clock
+  /// time. Counted on the calendar rather than in 24-hour steps: across a
+  /// DST change a day is 23 or 25 hours long, and elapsed days would move
+  /// the end by an hour (a spring start's end lands at 09:00 instead of
+  /// 08:00, and the 08:00 dose of the day after the last is generated).
+  DateTime get endTime {
+    final s = startTime;
+    final day = s.day + durationDays;
+    return s.isUtc
+        ? DateTime.utc(
+            s.year,
+            s.month,
+            day,
+            s.hour,
+            s.minute,
+            s.second,
+            s.millisecond,
+            s.microsecond,
+          )
+        : DateTime(
+            s.year,
+            s.month,
+            day,
+            s.hour,
+            s.minute,
+            s.second,
+            s.millisecond,
+            s.microsecond,
+          );
+  }
 
   /// Number of doses per day. Zero for an as-needed prescription.
   int get dosesPerDay {
@@ -279,11 +307,21 @@ class Prescription {
             times.add(dt);
           }
         }
-        currentDate = currentDate.add(const Duration(days: 1));
+        // The next calendar day: midnight plus 24 hours is 23:00 of the
+        // same day after the autumn change and 01:00 after the spring one,
+        // which walks one day twice and later skips one.
+        currentDate = DateTime(
+          currentDate.year,
+          currentDate.month,
+          currentDate.day + 1,
+        );
       }
     } else {
       // Fixed interval (ensure interval is at least 1h to avoid infinite loop)
       final safeInterval = intervalHours < 1 ? 1 : intervalHours;
+      // Stepped in elapsed hours on purpose, unlike the calendar days above:
+      // "every 8 hours" means 8 real hours between doses, so across a DST
+      // change the wall-clock times shift by an hour.
       var current = startTime;
       while (current.isBefore(end) && times.length < maxDoses) {
         times.add(current);
