@@ -261,6 +261,22 @@ treatment or a person as the owner; the UI offers prescriptions only).
   (`AttachmentFiles`; written as `<name>.part` and renamed, so a file is
   never seen half-written) and in the private storage bucket `attachments`.
   Contents never change: a changed file is a new attachment.
+- **A prescription's attachments are its children.** An attachment with
+  `owner_kind = 'rx'` is treated like a dispensing: `parentsOf` names its
+  `rx`, so a pulled one waits for (or is passed over with) its
+  prescription, and a pending one under a prescription deleted here is
+  dropped unsent. The server stores a live one under a deleted
+  prescription deleted (`attachments_sync_stamp_parent`, sorting between
+  `_sync_stamp` and `_updated_at`), and an `rx` tombstone cascades to them
+  (`rx_tombstone_cascade_attachments`). There is no local foreign key, so
+  applying a pulled `rx` tombstone (or discarding an `rx` the server has
+  deleted) deletes its attachment rows in the same transaction
+  (`TableSync.deleteRxAttachmentsIn`). Whenever the sync deletes an
+  attachment row here (a tombstone, a parent's delete, a push stored
+  deleted), its object is queued for removal if it lies in the signed-in
+  account's folder, since a delete the server made is queued by no one
+  else; the files go with the sweep. Attachments of treatments and persons
+  are not tied to their owner.
 - **Path.** `<auth.uid>/<id>.jpg` or `.pdf`. The server checks it: an id
   never holds `/`, the path must be the owner's folder plus this id and the
   kind's extension, and a photo is always `image/jpeg`, a PDF always

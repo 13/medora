@@ -382,4 +382,67 @@ do $$ begin
     format('parity step 28, rx_dispensings/par-rxd2: postgres %s', pg_temp.parity_row('rx_dispensings', 'par-rxd2'));
 end $$;
 
+-- Step 29: 0.7.0 inserts another prescription document
+begin;
+insert into parity_now values (29, now());
+insert into public.rx (id, user_id, kind, issued_on, write_id, edited_at, field_edited_at)
+  values ('par-rx2', '00000000-0000-0000-0000-00000000000a', 'ssn', '2020-05-01', '00000000-0000-0000-0000-000000000020', '2020-05-01T00:00:00.000Z', '{"kind":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('rx', 'par-rx2') = '{"deleted":false,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"kind":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@29","write_id":true}'::jsonb,
+    format('parity step 29, rx/par-rx2: postgres %s', pg_temp.parity_row('rx', 'par-rx2'));
+end $$;
+
+-- Step 30: and an attachment of it
+begin;
+insert into parity_now values (30, now());
+insert into public.attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256, write_id, edited_at, field_edited_at)
+  values ('par-att1', '00000000-0000-0000-0000-00000000000a', 'rx', 'par-rx2', 'photo', 'image/jpeg', 10, 'a', '00000000-0000-0000-0000-000000000021', '2020-05-01T00:00:00.000Z', '{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('attachments', 'par-att1') = '{"deleted":false,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@30","write_id":true}'::jsonb,
+    format('parity step 30, attachments/par-att1: postgres %s', pg_temp.parity_row('attachments', 'par-att1'));
+end $$;
+
+-- Step 31: and a treatment's attachment that names the same id
+begin;
+insert into parity_now values (31, now());
+insert into public.attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256, write_id, edited_at, field_edited_at)
+  values ('par-att2', '00000000-0000-0000-0000-00000000000a', 'treatment', 'par-rx2', 'pdf', 'application/pdf', 10, 'b', '00000000-0000-0000-0000-000000000022', '2020-05-01T00:00:00.000Z', '{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('attachments', 'par-att2') = '{"deleted":false,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@31","write_id":true}'::jsonb,
+    format('parity step 31, attachments/par-att2: postgres %s', pg_temp.parity_row('attachments', 'par-att2'));
+end $$;
+
+-- Step 32: a person deletes the prescription: the tombstone cascades to its attachment as the app's own change, not to the treatment's
+begin;
+insert into parity_now values (32, now());
+update public.rx set deleted_at = '2020-05-01T00:00:00.000Z', write_id = '00000000-0000-0000-0000-000000000023', edited_at = '2020-05-01T00:00:00.000Z'
+  where id = 'par-rx2';
+commit;
+do $$ begin
+  assert pg_temp.parity_row('rx', 'par-rx2') = '{"deleted":true,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"kind":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":2,"updated_at":"@32","write_id":true}'::jsonb,
+    format('parity step 32, rx/par-rx2: postgres %s', pg_temp.parity_row('rx', 'par-rx2'));
+  assert pg_temp.parity_row('attachments', 'par-att1') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":2,"updated_at":"@32","write_id":false}'::jsonb,
+    format('parity step 32, attachments/par-att1: postgres %s', pg_temp.parity_row('attachments', 'par-att1'));
+  assert pg_temp.parity_row('attachments', 'par-att2') = '{"deleted":false,"edited_at":"2020-05-01T00:00:00.000Z","field_edited_at":{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@31","write_id":true}'::jsonb,
+    format('parity step 32, attachments/par-att2: postgres %s', pg_temp.parity_row('attachments', 'par-att2'));
+end $$;
+
+-- Step 33: a device that has not heard of it sends an attachment: stored deleted
+begin;
+insert into parity_now values (33, now());
+insert into public.attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256, write_id, edited_at, field_edited_at)
+  values ('par-att3', '00000000-0000-0000-0000-00000000000a', 'rx', 'par-rx2', 'photo', 'image/jpeg', 10, 'c', '00000000-0000-0000-0000-000000000024', '2020-05-01T00:00:00.000Z', '{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}}'::jsonb)
+  on conflict (id) do nothing;
+commit;
+do $$ begin
+  assert pg_temp.parity_row('attachments', 'par-att3') = '{"deleted":true,"edited_at":"1970-01-01T00:00:00.000Z","field_edited_at":{"owner_id":{"at":"2020-05-01T00:00:00.000Z","auto":false}},"row_version":1,"updated_at":"@33","write_id":true}'::jsonb,
+    format('parity step 33, attachments/par-att3: postgres %s', pg_temp.parity_row('attachments', 'par-att3'));
+end $$;
+
 select 'fake server parity passed' as result;

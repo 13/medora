@@ -461,6 +461,7 @@ class SyncService {
     newWriteId: _newWriteId,
     now: _now,
     wipeSeen: () => _wipeSeen,
+    currentUserId: _currentUserId,
   );
 
   Future<void> _pushPendingChanges(
@@ -1120,7 +1121,7 @@ class SyncService {
     'prescriptions': ['dose_logs'],
     'dose_logs': <String>[],
     'persons': <String>[],
-    'rx': ['rx_dispensings'],
+    'rx': ['rx_dispensings', 'attachments'],
     'rx_dispensings': <String>[],
     'attachments': <String>[],
   };
@@ -1153,10 +1154,21 @@ class SyncService {
           'attachments':
         final remote = await _remote(_tables[table]!.remote.fetch(id));
         final db = await AppDatabase.instance.database;
-        await db.delete(table, where: 'id = ?', whereArgs: [id]);
-        if (remote != null && remote['deleted_at'] == null) {
-          await _tables[table]!.applyPulled(remote);
-        }
+        final live = remote != null && remote['deleted_at'] == null;
+        await db.transaction((txn) async {
+          // Gone on the server: the prescription's attachments go with it
+          // here, as its dispensings do along their foreign key.
+          if (table == 'rx' && !live) {
+            await TableSync.deleteRxAttachmentsIn(
+              txn,
+              id,
+              userId: _currentUserId(),
+              at: _now(),
+            );
+          }
+          await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+        });
+        if (live) await _tables[table]!.applyPulled(remote);
         // The local delete took the rows below with it, and a pull may have
         // passed over rows under a parent that was being deleted here: the
         // tables below are pulled again from the start.
@@ -1429,7 +1441,11 @@ class SyncService {
       var found = false;
       for (final (parent, parentId) in parentsOf(table, row)) {
         if (await _hasLocal(parent, parentId)) continue;
-        final remote = await _remote(_tables[parent]!.remote.fetch(parentId));
+        // A parent table this project does not sync (no rx remote): the
+        // row cannot be stored under it.
+        final parentSync = _tables[parent];
+        if (parentSync == null) continue;
+        final remote = await _remote(parentSync.remote.fetch(parentId));
         if (remote == null || remote['deleted_at'] != null) continue;
         await _applyPulledRow(parent, remote, report, pulled, depth: depth + 1);
         found = true;

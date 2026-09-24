@@ -1,6 +1,7 @@
 /// Medora - What a sync cycle does with a row it has just pushed (sync v2).
 library;
 
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -26,12 +27,15 @@ import 'package:sqflite/sqflite.dart';
 /// - **Deleted meanwhile** (`pending_delete`) or gone: left alone; a pending
 ///   delete returns true.
 /// - **Stored deleted by the server** (a parent is deleted there): the row
-///   goes here too; the delete wins.
+///   goes here too; the delete wins. An attachment's object in [userId]'s
+///   folder is queued for removal: nobody else knows of it.
 Future<bool> settlePushedRow(
   Database db,
   String table, {
   required Map<String, Object?> pushed,
   required Map<String, dynamic> server,
+  String? userId,
+  DateTime Function() now = DateTime.now,
 }) {
   final id = pushed['id']! as String;
   final meta = RemoteMeta.fromJson(server);
@@ -41,6 +45,14 @@ Future<bool> settlePushedRow(
     if (rows.isEmpty) return false;
     final current = rows.first;
     if (meta.deletedAt != null) {
+      if (table == 'attachments') {
+        await AttachmentLocalDatasource.enqueueOwnRemovalsIn(
+          txn,
+          [current],
+          userId: userId,
+          at: now(),
+        );
+      }
       await txn.delete(table, where: 'id = ?', whereArgs: [id]);
       return false;
     }

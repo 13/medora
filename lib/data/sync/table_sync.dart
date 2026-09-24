@@ -9,6 +9,7 @@
 /// error propagates to the cycle, which backs the row off.
 library;
 
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/datasources/sync_table.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -79,6 +80,12 @@ List<(String, String)> parentsOf(String table, Map<String, Object?> row) {
       ],
       'dose_logs' => [parent('prescriptions', 'prescription_id')],
       'rx_dispensings' => [parent('rx', 'rx_id')],
+      // A prescription's attachments go with it, as its dispensings do.
+      // Treatments and persons are soft owners: their attachments are not
+      // held back or dropped for them.
+      'attachments' when row['owner_kind'] == 'rx' => [
+        parent('rx', 'owner_id'),
+      ],
       _ => null,
     }?.nonNulls,
   ];
@@ -103,6 +110,7 @@ class TableSync {
     required this.newWriteId,
     required this.now,
     this.wipeSeen,
+    this.currentUserId,
   }) : policy = mergePolicyOf(table);
 
   final String table;
@@ -116,6 +124,11 @@ class TableSync {
   /// The "delete all data" generation this device has applied; every
   /// insert sends it ([insertTimes]).
   final int? Function()? wipeSeen;
+
+  /// The signed-in account: an attachment this sync deletes here has its
+  /// object queued for removal only when it lies in this account's folder
+  /// (another account's cannot be removed by this one).
+  final String? Function()? currentUserId;
 
   /// How many times one push tries again after the server moved on.
   static const maxAttempts = 2;
@@ -149,7 +162,7 @@ class TableSync {
           break;
         case _Parents.deleted:
           if (local == null) return const PullApplied(PullOutcome.kept);
-          await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+          await _deleteLocal(txn, local);
           return const PullApplied(PullOutcome.deleted);
         case _Parents.absent:
           return const PullApplied(PullOutcome.orphaned);
@@ -188,7 +201,7 @@ class TableSync {
             _generatedSince(local, meta.deletedAt)) &&
         await _parentsOf(txn, local) == _Parents.live;
     if (tombstone && !resurrect) {
-      await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+      await _deleteLocal(txn, local);
       return const PullApplied(PullOutcome.deleted);
     }
 
@@ -528,7 +541,14 @@ class TableSync {
       throw StateError('$table/$id is not on the server after insert');
     }
     if (RemoteMeta.fromJson(server).writeId == writeId) {
-      await settlePushedRow(await _db, table, pushed: row, server: server);
+      await settlePushedRow(
+        await _db,
+        table,
+        pushed: row,
+        server: server,
+        userId: currentUserId?.call(),
+        now: now,
+      );
       return _read(id);
     }
     await _putBackStock(id, carried);
@@ -883,8 +903,14 @@ class TableSync {
         'field_edited_at': {'status': missed.toJson()},
       },
       ifStatus: 'pending',
-      onWritten: (row, server) async =>
-          settlePushedRow(await _db, table, pushed: row, server: server),
+      onWritten: (row, server) async => settlePushedRow(
+        await _db,
+        table,
+        pushed: row,
+        server: server,
+        userId: currentUserId?.call(),
+        now: now,
+      ),
       onUnwritten: (txn, row, server) async => server == null
           ? const <MergeConflict>[]
           : (await _applyPulled(txn, server)).conflicts,
@@ -1066,9 +1092,72 @@ class TableSync {
     final db = await _db;
     return db.transaction((txn) async {
       if (await _parentsOf(txn, row) == _Parents.live) return false;
-      await txn.delete(table, where: 'id = ?', whereArgs: [row['id']]);
+      final current = await txn.query(
+        table,
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+      if (current.isNotEmpty) await _deleteLocal(txn, current.first);
       return true;
     });
+  }
+
+  /// Deletes the local row [local] of this table, the sync's own delete
+  /// (a tombstone, a parent deleted here or on the server).
+  ///
+  /// The local database has no foreign key from attachments to their
+  /// owner, so a prescription takes its attachments here as the server's
+  /// tombstone cascade does ([deleteRxAttachmentsIn]). A deleted
+  /// attachment's object is queued for removal when it lies in the
+  /// signed-in account's folder: the device that deleted it may have
+  /// queued it too (a removal of a missing object is fine), but a delete
+  /// the server made (the cascade) is queued by nobody else. The files go
+  /// with the transfer's sweep.
+  Future<void> _deleteLocal(Transaction txn, Map<String, Object?> local) async {
+    final id = local['id']! as String;
+    if (table == 'attachments') {
+      await AttachmentLocalDatasource.enqueueOwnRemovalsIn(
+        txn,
+        [local],
+        userId: currentUserId?.call(),
+        at: now(),
+      );
+    } else if (table == 'rx') {
+      await deleteRxAttachmentsIn(
+        txn,
+        id,
+        userId: currentUserId?.call(),
+        at: now(),
+      );
+    }
+    await txn.delete(table, where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Deletes the attachments of prescription [rxId] here, queuing their
+  /// objects in [userId]'s folder for removal: the local equivalent of the
+  /// server's tombstone cascade (`cascade_tombstone_rx_attachments`), which
+  /// the dispensings get from their foreign key.
+  static Future<void> deleteRxAttachmentsIn(
+    DatabaseExecutor db,
+    String rxId, {
+    required String? userId,
+    required DateTime at,
+  }) async {
+    const where = "owner_kind = 'rx' AND owner_id = ?";
+    final rows = await db.query(
+      'attachments',
+      columns: ['remote_path'],
+      where: where,
+      whereArgs: [rxId],
+    );
+    if (rows.isEmpty) return;
+    await AttachmentLocalDatasource.enqueueOwnRemovalsIn(
+      db,
+      rows,
+      userId: userId,
+      at: at,
+    );
+    await db.delete('attachments', where: where, whereArgs: [rxId]);
   }
 
   /// How the parents [row] names stand here.
@@ -1121,6 +1210,8 @@ class TableSync {
       table,
       pushed: local,
       server: server,
+      userId: currentUserId?.call(),
+      now: now,
     );
     return PushResult(
       pending ? PushOutcome.pending : PushOutcome.settled,

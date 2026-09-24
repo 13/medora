@@ -282,6 +282,11 @@ const _cascade = {
   'rx': ('rx_dispensings', 'rx_id'),
 };
 
+/// Children a parent's tombstone cascades to without a foreign key (a hard
+/// delete leaves them): `(child table, column, owner kind)`, the child's
+/// `owner_kind` matching the kind.
+const _softCascade = {'rx': ('attachments', 'owner_id', 'rx')};
+
 class FakeServerCore {
   FakeServerCore(this.clock);
 
@@ -431,6 +436,12 @@ class FakeServerCore {
             deletedAt('medications', row['medication_id']),
       'dose_logs' => deletedAt('prescriptions', row['prescription_id']),
       'rx_dispensings' => deletedAt('rx', row['rx_id']),
+      // Only a prescription's attachments: treatment and person owners are
+      // soft.
+      'attachments' when row['owner_kind'] == 'rx' => deletedAt(
+        'rx',
+        row['owner_id'],
+      ),
       _ => null,
     };
   }
@@ -623,13 +634,29 @@ class FakeServerCore {
     );
     rowsOf(table)[id] = row;
     final child = _cascade[table];
-    if (child != null &&
-        old['deleted_at'] == null &&
-        row['deleted_at'] != null) {
+    final tombstoned = old['deleted_at'] == null && row['deleted_at'] != null;
+    if (child != null && tombstoned) {
       for (final c in rowsOf(child.$1).values.toList()) {
         if (c[child.$2] == id && c['deleted_at'] == null) {
           _update(
             child.$1,
+            c,
+            {'deleted_at': row['deleted_at']},
+            xid,
+            cascade: true,
+          );
+        }
+      }
+    }
+    final soft = _softCascade[table];
+    if (soft != null && tombstoned) {
+      final (childTable, column, kind) = soft;
+      for (final c in rowsOf(childTable).values.toList()) {
+        if (c[column] == id &&
+            c['owner_kind'] == kind &&
+            c['deleted_at'] == null) {
+          _update(
+            childTable,
             c,
             {'deleted_at': row['deleted_at']},
             xid,

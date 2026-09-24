@@ -21,6 +21,7 @@ void main() {
     remote: remote(table),
     newWriteId: () => 'w${ids++}',
     now: () => now,
+    currentUserId: () => 'u1',
   );
 
   setUp(() async {
@@ -54,7 +55,178 @@ void main() {
     'sync_status': status,
   };
 
+  Future<List<String>> removals() async => [
+    for (final r in await (await db()).query(
+      'attachment_removals',
+      orderBy: 'remote_path',
+    ))
+      r['remote_path']! as String,
+  ];
+
+  Future<void> insertRx(String id, {String status = SyncStatus.synced}) async =>
+      (await db()).insert('rx', {
+        'id': id,
+        'kind': 'ssn',
+        'issued_on': '2026-09-20',
+        'items': '[]',
+        'cancelled': 0,
+        'created_at': '2026-09-23T12:00:00.000Z',
+        'updated_at': '2026-09-23T12:00:00.000Z',
+        'edited_at': '2026-09-23T12:00:00.000Z',
+        if (status == SyncStatus.pendingDelete)
+          'deleted_at': '2026-09-23T12:00:00.000Z',
+        'sync_status': status,
+      });
+
+  Map<String, Object?> serverRow(
+    String id, {
+    String ownerKind = 'rx',
+    String ownerId = 'r1',
+  }) => {
+    'id': id,
+    'user_id': 'u1',
+    'owner_kind': ownerKind,
+    'owner_id': ownerId,
+    'kind': 'photo',
+    'mime': 'image/jpeg',
+    'size_bytes': 10,
+    'sha256': 'd' * 64,
+    'remote_path': 'u1/$id.jpg',
+  };
+
+  group("a prescription's attachments", () {
+    test('name the prescription as their parent; other owners are soft', () {
+      expect(parentsOf('attachments', {'owner_kind': 'rx', 'owner_id': 'r1'}), [
+        ('rx', 'r1'),
+      ]);
+      for (final kind in ['treatment', 'person']) {
+        expect(
+          parentsOf('attachments', {'owner_kind': kind, 'owner_id': 'r1'}),
+          isEmpty,
+        );
+      }
+    });
+
+    test(
+      'one pulled under a prescription deleted here is not stored',
+      () async {
+        await insertRx('r1', status: SyncStatus.pendingDelete);
+        final applied = await syncOf(
+          'attachments',
+        ).applyPulled(remote('attachments').seed(serverRow('a1')));
+        expect(applied.outcome, PullOutcome.kept);
+        expect(await (await db()).query('attachments'), isEmpty);
+      },
+    );
+
+    test('one whose prescription has not arrived is orphaned', () async {
+      final applied = await syncOf(
+        'attachments',
+      ).applyPulled(remote('attachments').seed(serverRow('a1')));
+      expect(applied.outcome, PullOutcome.orphaned);
+    });
+
+    test('a pulled prescription tombstone takes its attachments here and '
+        "queues their objects in this user's folder", () async {
+      await insertRx('r1');
+      await (await db()).insert('attachments', {
+        ...attachmentRow('a1', status: SyncStatus.synced),
+        'remote_path': 'u1/a1.jpg',
+      });
+      await (await db()).insert('attachments', {...attachmentRow('a2')});
+      // Another account's object: not this user's to remove.
+      await (await db()).insert('attachments', {
+        ...attachmentRow('a3', status: SyncStatus.synced),
+        'remote_path': 'u2/a3.jpg',
+      });
+      // A treatment's attachment that happens to name the same id stays.
+      await (await db()).insert('attachments', {
+        ...attachmentRow('t1', status: SyncStatus.synced),
+        'owner_kind': 'treatment',
+        'remote_path': 'u1/t1.jpg',
+      });
+      final server = remote('rx').seed({
+        'id': 'r1',
+        'user_id': 'u1',
+        'kind': 'ssn',
+        'issued_on': '2026-09-20',
+        'items': <Object?>[],
+        'cancelled': false,
+        'deleted_at': '2026-09-23T13:00:00.000Z',
+      });
+
+      final applied = await syncOf('rx').applyPulled(server);
+
+      expect(applied.outcome, PullOutcome.deleted);
+      expect((await (await db()).query('attachments')).map((r) => r['id']), [
+        't1',
+      ]);
+      expect(await removals(), ['u1/a1.jpg']);
+    });
+
+    test("a pulled attachment tombstone queues its object in this user's "
+        'folder', () async {
+      await insertRx('r1');
+      final sync = syncOf('attachments');
+      await sync.applyPulled(remote('attachments').seed(serverRow('a1')));
+      now = now.add(const Duration(minutes: 1));
+      final tombstone = remote('attachments').editFromOtherDevice('a1', {
+        'deleted_at': now.toIso8601String(),
+      }, editedAt: now)!;
+
+      final applied = await sync.applyPulled(tombstone);
+
+      expect(applied.outcome, PullOutcome.deleted);
+      expect(await (await db()).query('attachments'), isEmpty);
+      expect(await removals(), ['u1/a1.jpg']);
+    });
+
+    test('one pushed under a prescription deleted on the server is stored '
+        'deleted: it goes here and its object is queued', () async {
+      await insertRx('r1');
+      remote('rx').seed({
+        'id': 'r1',
+        'user_id': 'u1',
+        'kind': 'ssn',
+        'issued_on': '2026-09-20',
+        'items': <Object?>[],
+        'cancelled': false,
+        'deleted_at': '2026-09-23T11:00:00.000Z',
+      });
+      await (await db()).insert('attachments', {
+        ...attachmentRow('a1'),
+        'remote_path': 'u1/a1.jpg',
+      });
+      final row = (await (await db()).query('attachments')).single;
+
+      final result = await syncOf('attachments').pushRow(row, userId: 'u1');
+
+      expect(result.outcome, PushOutcome.settled);
+      expect(remote('attachments').get('a1')!['deleted_at'], isNotNull);
+      expect(await (await db()).query('attachments'), isEmpty);
+      expect(await removals(), ['u1/a1.jpg']);
+    });
+
+    test('a pending one under a prescription deleted here is dropped '
+        'unsent, and its object is queued', () async {
+      await insertRx('r1', status: SyncStatus.pendingDelete);
+      await (await db()).insert('attachments', {
+        ...attachmentRow('a1'),
+        'remote_path': 'u1/a1.jpg',
+      });
+      final row = (await (await db()).query('attachments')).single;
+
+      final result = await syncOf('attachments').pushRow(row, userId: 'u1');
+
+      expect(result.outcome, PushOutcome.settled);
+      expect(remote('attachments').get('a1'), isNull);
+      expect(await (await db()).query('attachments'), isEmpty);
+      expect(await removals(), ['u1/a1.jpg']);
+    });
+  });
+
   test('a new attachment is pushed and settles', () async {
+    await insertRx('r1');
     await (await db()).insert('attachments', attachmentRow('a1'));
     final row = (await (await db()).query('attachments')).single;
     final result = await syncOf('attachments').pushRow(row, userId: 'u1');
@@ -66,6 +238,7 @@ void main() {
   });
 
   test('a pulled attachment with a remote path is stored', () async {
+    await insertRx('r1');
     final server = remote('attachments').seed({
       'id': 'a2',
       'user_id': 'u1',
@@ -86,6 +259,7 @@ void main() {
   test(
     'a local remote_path upload merges with an unrelated concurrent change',
     () async {
+      await insertRx('r1');
       final sync = syncOf('attachments');
       await sync.applyPulled(
         remote('attachments').seed({

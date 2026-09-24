@@ -96,10 +96,38 @@ class AttachmentLocalDatasource {
       _enqueueRemoval(await _db, remotePath);
 
   Future<void> _enqueueRemoval(DatabaseExecutor db, String remotePath) =>
-      db.insert('attachment_removals', {
-        'remote_path': remotePath,
-        'created_at': _now().toIso8601String(),
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      enqueueRemovalIn(db, remotePath, at: _now());
+
+  /// Queues [remotePath] for removal from storage through [db] (a
+  /// transaction of the caller's); a path already queued stays as it was.
+  static Future<void> enqueueRemovalIn(
+    DatabaseExecutor db,
+    String remotePath, {
+    required DateTime at,
+  }) => db.insert('attachment_removals', {
+    'remote_path': remotePath,
+    'created_at': at.toIso8601String(),
+  }, conflictAlgorithm: ConflictAlgorithm.ignore);
+
+  /// Queues the objects of the attachment [rows] (local rows, about to be
+  /// deleted here without a person's delete: a sync or a remote wipe) for
+  /// removal, those in [userId]'s folder only: another account's objects
+  /// are not this one's to remove, and would stay queued for good. Nothing
+  /// is queued without a signed-in [userId].
+  static Future<void> enqueueOwnRemovalsIn(
+    DatabaseExecutor db,
+    Iterable<Map<String, Object?>> rows, {
+    required String? userId,
+    required DateTime at,
+  }) async {
+    if (userId == null) return;
+    for (final row in rows) {
+      final path = row['remote_path'];
+      if (path is String && path.startsWith('$userId/')) {
+        await enqueueRemovalIn(db, path, at: at);
+      }
+    }
+  }
 
   Future<List<String>> pendingRemovals() async => [
     for (final r in await (await _db).query(

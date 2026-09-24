@@ -42,6 +42,8 @@ create table if not exists public.attachments (
 );
 
 create index if not exists idx_att_sync on public.attachments (user_id, sync_xid, id);
+-- The prescription tombstone cascade finds a prescription's attachments.
+create index if not exists idx_att_owner on public.attachments (owner_id, owner_kind);
 
 alter table public.attachments enable row level security;
 
@@ -68,6 +70,62 @@ drop trigger if exists attachments_updated_at on public.attachments;
 create trigger attachments_updated_at
   before update on public.attachments
   for each row execute function public.update_updated_at();
+
+-- A prescription's attachments go with it, as its dispensings do
+-- (20260923000000_rx.sql): a live attachment of a deleted prescription is
+-- stored deleted, as the app's own change. The trigger's name sorts after
+-- `_sync_stamp` and before `_updated_at`, so it runs between them (BEFORE
+-- triggers of one event fire in name order). Attachments of treatments and
+-- persons are not checked: those owners are soft.
+create or replace function public.medora_attachment_parent()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_parent_deleted timestamptz;
+begin
+  if new.deleted_at is null and new.owner_kind = 'rx' then
+    -- FOR SHARE: see the note on the parent check in medora_sync_stamp.
+    select r.deleted_at into v_parent_deleted
+      from public.rx r where r.id = new.owner_id for share;
+    if v_parent_deleted is not null then
+      new.deleted_at := v_parent_deleted;
+      new.edited_at := timestamptz '1970-01-01 00:00:00+00';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists attachments_sync_stamp_parent on public.attachments;
+create trigger attachments_sync_stamp_parent
+  before insert or update on public.attachments
+  for each row execute function public.medora_attachment_parent();
+
+-- A prescription's tombstone takes its attachments with it. A trigger of
+-- its own beside rx_tombstone_cascade, which is released already.
+create or replace function public.cascade_tombstone_rx_attachments()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.deleted_at is not null and old.deleted_at is null then
+    update public.attachments set deleted_at = new.deleted_at
+     where owner_kind = 'rx' and owner_id = new.id and deleted_at is null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists rx_tombstone_cascade_attachments on public.rx;
+create trigger rx_tombstone_cascade_attachments
+  after update of deleted_at on public.rx
+  for each row execute function public.cascade_tombstone_rx_attachments();
+
+revoke all on function public.medora_attachment_parent() from public, anon, authenticated;
+revoke all on function public.cascade_tombstone_rx_attachments() from public, anon, authenticated;
 
 -- The bucket: private, 20 MB per object, JPEG and PDF only.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

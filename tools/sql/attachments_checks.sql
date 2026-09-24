@@ -11,16 +11,38 @@ insert into auth.users (id) values
   ('00000000-0000-0000-0000-0000000000f1'),
   ('00000000-0000-0000-0000-0000000000f2');
 
--- Clients never truncate, add triggers or add foreign keys.
+-- Clients never truncate, add triggers or add foreign keys; the trigger
+-- functions run as triggers only.
 do $$
-declare r text; p text;
+declare r text; p text; f text;
 begin
   foreach r in array array['anon', 'authenticated'] loop
     foreach p in array array['TRUNCATE', 'TRIGGER', 'REFERENCES'] loop
       assert not has_table_privilege(r, 'public.attachments', p),
         format('grants: %s must not hold %s on attachments', r, p);
     end loop;
+    foreach f in array array['medora_attachment_parent()',
+                             'cascade_tombstone_rx_attachments()'] loop
+      assert not has_function_privilege(r, 'public.' || f, 'EXECUTE'),
+        format('grants: %s must not execute %s', r, f);
+    end loop;
   end loop;
+end $$;
+
+-- BEFORE triggers of one event fire in name order: the parent check must
+-- run after the stamp (which would otherwise take its 1970 edit time for a
+-- person's) and before updated_at, as for rx_dispensings.
+do $$
+declare names text[];
+begin
+  select array_agg(tgname::text order by tgname) into names
+    from pg_trigger
+   where tgrelid = 'public.attachments'::regclass
+     and not tgisinternal
+     and tgtype & 2 = 2; -- BEFORE
+  assert names = array['attachments_sync_stamp', 'attachments_sync_stamp_parent',
+                       'attachments_updated_at'],
+    'triggers: attachments BEFORE triggers in the wrong order ' || names::text;
 end $$;
 
 -- The bucket: private, 20 MB per object, JPEG and PDF only.
@@ -171,8 +193,62 @@ do $$ begin
   assert not found, 'storage: G must not delete F''s objects';
 end $$;
 
--- "Delete all data" removes the caller's attachment rows, and only those.
+-- A prescription's tombstone takes its attachments with it, as the app's
+-- own change; a live attachment sent under a deleted prescription is stored
+-- deleted. Attachments of another kind of owner with the same id stay.
 set request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000f1';
+insert into persons (id, user_id, name, write_id, edited_at)
+  values ('att-person', auth.uid(), 'Anna', gen_random_uuid(), now());
+insert into rx (id, user_id, person_id, kind, issued_on, items, write_id, edited_at)
+  values ('att-rx', auth.uid(), 'att-person', 'ssn', '2026-09-01', '[]',
+          gen_random_uuid(), now());
+insert into attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256,
+                         write_id, edited_at)
+  values ('att-rx-1', auth.uid(), 'rx', 'att-rx', 'photo', 'image/jpeg', 10, 'a',
+          gen_random_uuid(), now()),
+         ('att-rx-2', auth.uid(), 'rx', 'att-rx', 'pdf', 'application/pdf', 10, 'b',
+          gen_random_uuid(), now()),
+         ('att-tr', auth.uid(), 'treatment', 'att-rx', 'photo', 'image/jpeg', 10, 'c',
+          gen_random_uuid(), now());
+update attachments set deleted_at = now() - interval '1 hour', write_id = gen_random_uuid(),
+       edited_at = now()
+ where id = 'att-rx-2';
+update rx set deleted_at = now(), write_id = gen_random_uuid(), edited_at = now()
+ where id = 'att-rx';
+do $$ begin
+  assert (select deleted_at = (select deleted_at from rx where id = 'att-rx')
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+              and row_version = 2
+            from attachments where id = 'att-rx-1'),
+    'cascade: the prescription''s tombstone deletes its attachment as the app''s own';
+  assert (select deleted_at < (select deleted_at from rx where id = 'att-rx')
+            from attachments where id = 'att-rx-2'),
+    'cascade: an attachment deleted before keeps its own delete';
+  assert (select deleted_at is null from attachments where id = 'att-tr'),
+    'cascade: a treatment''s attachment with the same owner id stays live';
+end $$;
+insert into attachments (id, user_id, owner_kind, owner_id, kind, mime, size_bytes, sha256,
+                         write_id, edited_at)
+  values ('att-rx-3', auth.uid(), 'rx', 'att-rx', 'photo', 'image/jpeg', 10, 'd',
+          gen_random_uuid(), now()),
+         ('att-tr-2', auth.uid(), 'treatment', 'att-rx', 'photo', 'image/jpeg', 10, 'e',
+          gen_random_uuid(), now());
+update attachments set deleted_at = null, original_name = 'x', write_id = gen_random_uuid(),
+       edited_at = now()
+ where id = 'att-rx-1';
+do $$ begin
+  assert (select deleted_at = (select deleted_at from rx where id = 'att-rx')
+              and edited_at = timestamptz '1970-01-01T00:00:00Z'
+            from attachments where id = 'att-rx-3'),
+    'parent: a live attachment under a deleted prescription is stored deleted';
+  assert (select deleted_at is not null and edited_at = timestamptz '1970-01-01T00:00:00Z'
+            from attachments where id = 'att-rx-1'),
+    'parent: an attachment brought back under a deleted prescription stays deleted';
+  assert (select deleted_at is null from attachments where id = 'att-tr-2'),
+    'parent: a treatment''s attachment is not checked against prescriptions';
+end $$;
+
+-- "Delete all data" removes the caller's attachment rows, and only those.
 do $$ begin
   assert (select count(*) from storage.objects where bucket_id = 'attachments') = 1,
     'storage: F reads its own object';
