@@ -100,7 +100,7 @@ class DoseScheduleService {
       final now = _now();
       final today = DateTime(now.year, now.month, now.day);
       for (final p in prescriptions) {
-        if (p.scheduleType == 'as_needed' || p.endTime.isBefore(today)) {
+        if (p.scheduleType == 'as_needed' || p.scheduleEnd.isBefore(today)) {
           continue;
         }
         final times = p.scheduledDoseTimes;

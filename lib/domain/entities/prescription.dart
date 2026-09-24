@@ -230,10 +230,15 @@ class Prescription {
   }
 
   /// The start plus [durationDays] calendar days, at the start's wall-clock
-  /// time. Counted on the calendar rather than in 24-hour steps: across a
-  /// DST change a day is 23 or 25 hours long, and elapsed days would move
-  /// the end by an hour (a spring start's end lands at 09:00 instead of
-  /// 08:00, and the 08:00 dose of the day after the last is generated).
+  /// time: the end of the course as a date, which is what a times-per-day
+  /// schedule is bounded by. Counted on the calendar rather than in 24-hour
+  /// steps: across a DST change a day is 23 or 25 hours long, and elapsed
+  /// days would move the end by an hour (a spring start's end lands at 09:00
+  /// instead of 08:00, and the 08:00 dose of the day after the last is
+  /// generated).
+  ///
+  /// Not the bound of a fixed-interval schedule, which counts real hours:
+  /// use [scheduleEnd] to ask whether a dose time falls inside the course.
   DateTime get endTime {
     final s = startTime;
     final day = s.day + durationDays;
@@ -260,6 +265,23 @@ class Prescription {
           );
   }
 
+  /// The instant the generated doses stay strictly before.
+  ///
+  /// For a fixed interval, [durationDays] times 24 elapsed hours after the
+  /// start: its doses are stepped in real hours, so bounding them by the
+  /// calendar [endTime] would add a dose to a course that spans the autumn
+  /// change (a 25-hour day) — 8 doses for "every 24 h for 7 days". For a
+  /// times-per-day schedule (and anything else) the calendar [endTime].
+  DateTime get scheduleEnd =>
+      _isFixedInterval ? startTime.add(Duration(days: durationDays)) : endTime;
+
+  /// Whether [scheduledDoseTimes] steps in elapsed hours.
+  bool get _isFixedInterval =>
+      scheduleType != 'as_needed' &&
+      !(scheduleType == 'times_per_day' &&
+          scheduleTimes != null &&
+          scheduleTimes!.isNotEmpty);
+
   /// Number of doses per day. Zero for an as-needed prescription.
   int get dosesPerDay {
     if (scheduleType == 'as_needed') return 0;
@@ -277,7 +299,7 @@ class Prescription {
     // the reminders or the missed-dose sweep to find.
     if (scheduleType == 'as_needed') return const [];
     final times = <DateTime>[];
-    final end = endTime;
+    final end = scheduleEnd;
     const maxDoses = 1000;
 
     if (scheduleType == 'times_per_day' &&

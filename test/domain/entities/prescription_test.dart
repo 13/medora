@@ -368,6 +368,42 @@ void main() {
       // 08:00 CET plus 24 hours is 09:00 CEST.
       expect(times[2], DateTime(2026, 3, 29, 9));
     });
+
+    test('a fixed-interval course across a DST change has exactly '
+        'days x doses-per-day doses', () {
+      for (final start in [
+        DateTime(2026, 10, 22, 8),
+        DateTime(2026, 3, 25, 8),
+      ]) {
+        for (final (interval, expected) in [(24, 7), (12, 14), (8, 21)]) {
+          final p = _p(intervalHours: interval, startTime: start);
+          final times = p.scheduledDoseTimes;
+          expect(times.length, expected, reason: '$start every $interval h');
+          expect(
+            times.every((t) => t.isBefore(p.scheduleEnd)),
+            isTrue,
+            reason: '$start every $interval h',
+          );
+        }
+      }
+    });
+
+    test('scheduleEnd is elapsed for a fixed interval and on the calendar '
+        'for times per day', () {
+      final start = DateTime(2026, 10, 22, 8);
+      expect(
+        _p(startTime: start).scheduleEnd,
+        start.add(const Duration(days: 7)),
+      );
+      expect(
+        _p(
+          startTime: start,
+          scheduleType: 'times_per_day',
+          scheduleTimes: ['08:00'],
+        ).scheduleEnd,
+        DateTime(2026, 10, 29, 8),
+      );
+    });
   });
 
   test('a zero duration generates nothing, whatever the type is read as', () {
