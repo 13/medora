@@ -462,6 +462,73 @@ void main() {
     expect((await rowOf(a.id))['remote_path'], 'user-b/${a.id}.jpg');
   });
 
+  for (final owner in [null, 'user-b']) {
+    test("a restored backup of another account's rows is uploaded again "
+        'into the signed-in folder (device owner $owner)', () async {
+      final a = await add();
+      // As a restore writes them: user A's owner and path, the file here.
+      await (await AppDatabase.instance.database).update('attachments', {
+        'user_id': _uid,
+        'remote_path': '$_uid/${a.id}.jpg',
+        'sync_status': SyncStatus.synced,
+      });
+      SharedPreferences.setMockInitialValues({
+        LocalUploadMarker.ownerKey: ?owner,
+      });
+      final marker = LocalUploadMarker(
+        database: AppDatabase.instance,
+        cursors: SyncCursorStore.inMemory(),
+        prefs: await SharedPreferences.getInstance(),
+      );
+      await marker.markAllForUpload('user-b');
+      final row = await rowOf(a.id);
+      expect(row['remote_path'], isNull);
+      expect(row['user_id'], isNull);
+
+      uid = 'user-b';
+      store.currentUserId = 'user-b';
+      final report = await transfer().run();
+      expect(report.uploaded, 1);
+      expect((await rowOf(a.id))['remote_path'], 'user-b/${a.id}.jpg');
+    });
+  }
+
+  test("a row with no owner but another account's path is uploaded "
+      'again', () async {
+    final a = await add();
+    await (await AppDatabase.instance.database).update('attachments', {
+      'remote_path': '$_uid/${a.id}.jpg',
+      'sync_status': SyncStatus.synced,
+    });
+    SharedPreferences.setMockInitialValues({});
+    final marker = LocalUploadMarker(
+      database: AppDatabase.instance,
+      cursors: SyncCursorStore.inMemory(),
+      prefs: await SharedPreferences.getInstance(),
+    );
+    await marker.markAllForUpload('user-b');
+    expect((await rowOf(a.id))['remote_path'], isNull);
+  });
+
+  test("a signed-in user's own uploaded rows keep their path", () async {
+    final a = await add();
+    await (await AppDatabase.instance.database).update('attachments', {
+      'user_id': 'user-b',
+      'remote_path': 'user-b/${a.id}.jpg',
+      'sync_status': SyncStatus.synced,
+    });
+    SharedPreferences.setMockInitialValues({});
+    final marker = LocalUploadMarker(
+      database: AppDatabase.instance,
+      cursors: SyncCursorStore.inMemory(),
+      prefs: await SharedPreferences.getInstance(),
+    );
+    await marker.markAllForUpload('user-b');
+    final row = await rowOf(a.id);
+    expect(row['remote_path'], 'user-b/${a.id}.jpg');
+    expect(row['user_id'], 'user-b');
+  });
+
   test('signed out and in as another account during an upload: the old '
       "account's path is not recorded, and the file goes to the new "
       'folder', () async {

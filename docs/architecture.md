@@ -294,6 +294,22 @@ treatment or a person as the owner; the UI offers prescriptions only).
   removes the rows in `medora_delete_all_data` and then the user's storage
   folder from the client, because SQL cannot delete storage objects
   (`storage.protect_delete()`); the local wipe deletes the folder of files.
+  A restored backup's rows keep the backing-up account's owner and path;
+  when a different account then signs in (or the first one after a restore
+  in local mode), `LocalUploadMarker.markAllForUpload` clears the owner and
+  path of every attachment row of another account, so its file is uploaded
+  again into the signed-in folder instead of being refused by the server
+  forever. A backup's `attachmentFiles` may only name `<id>.jpg` or
+  `<id>.pdf` of its own attachment rows (extension by kind); any other name
+  makes it corrupt before anything is written.
+- **Force pull.** When the server has no `attachments` table yet, a force
+  pull keeps the local `attachments` rows and `attachment_removals`: the
+  pull could never bring them back. Otherwise it clears both with the other
+  tables and pulls the rows again. Objects that were queued for removal then
+  stay in the bucket until the next "delete all data" removes the folder.
+  That is deliberate: the force pull may bring back a row whose object is
+  in the queue, and removing the queued object would leave that row without
+  its file.
 
 ## Theme and localization rules
 

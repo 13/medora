@@ -307,6 +307,22 @@ void main() {
       expect(await local.pendingRemovals(), [path]);
     });
 
+    test("a row of user-a refuses a path in user-ab's folder: the folder "
+        'is matched with its slash, not as a bare prefix', () async {
+      final added = await addOwnedBy('user-a');
+      final path = 'user-ab/${added.fileName}';
+
+      final result = await repo.markUploaded(
+        added.id,
+        path,
+        signedInUserId: 'user-a',
+      );
+
+      expect(result.dataOrNull, isFalse);
+      expect((await local.getById(added.id))!.remotePath, isNull);
+      expect(await local.pendingRemovals(), [path]);
+    });
+
     test('a row of u1 takes a path in its own folder, whoever is signed '
         'in', () async {
       final added = await addOwnedBy('u1');

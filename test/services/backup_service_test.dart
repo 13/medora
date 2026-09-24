@@ -1163,6 +1163,56 @@ void main() {
       },
     );
 
+    for (final key in ['', '.', '..', 'x.jpg', 'evil.sh', 'att-1.pdf']) {
+      test("a file named '$key' that is not a row's file makes the backup "
+          'corrupt, before anything is written', () async {
+        final db = await AppDatabase.instance.database;
+        await seedAttachment(db, 'att-1');
+        await attachments.write('att-1.jpg', bytes);
+        final file = await makeService().exportToFile(outDir);
+        final json =
+            jsonDecode(await file.readAsString()) as Map<String, Object?>;
+        (json['attachmentFiles']! as Map<String, Object?>)[key] = base64Encode(
+          bytes,
+        );
+        await file.writeAsString(jsonEncode(json));
+        await AppDatabase.instance.clearAllData();
+        await attachments.deleteAll();
+
+        await expectLater(
+          makeService().restore(file, mode: RestoreMode.replace),
+          throwsA(
+            isA<BackupException>().having(
+              (e) => e.kind,
+              'kind',
+              BackupErrorKind.corrupt,
+            ),
+          ),
+        );
+        expect(await db.query('attachments'), isEmpty);
+        expect(await attachments.listNames(), isEmpty);
+      });
+    }
+
+    test('the files of a PDF and a photo row restore under their own '
+        'names', () async {
+      final db = await AppDatabase.instance.database;
+      await seedAttachment(db, 'att-1');
+      await seedAttachment(db, 'att-2', kind: 'pdf');
+      await attachments.write('att-1.jpg', bytes);
+      await attachments.write('att-2.pdf', bytes);
+      final file = await makeService().exportToFile(outDir);
+      await AppDatabase.instance.clearAllData();
+      await attachments.deleteAll();
+
+      final manifest = await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+      );
+      expect(manifest.attachmentFileCount, 2);
+      expect(await attachments.listNames(), ['att-1.jpg', 'att-2.pdf']);
+    });
+
     test('a backup from before attachments still restores', () async {
       final db = await AppDatabase.instance.database;
       await seedEverything(db);

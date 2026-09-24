@@ -25,6 +25,7 @@ import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/data/local/migrations.dart';
+import 'package:medora/domain/entities/attachment.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
@@ -514,13 +515,25 @@ class BackupService {
       }
     }
 
+    // The only file names a backup may carry: `<id>.<ext>` of its own
+    // attachment rows, the extension matching the row's kind. Anything else
+    // (an empty name, `.`, `..`, a file without a row, another type) makes
+    // the backup corrupt before the database is touched.
+    final expectedFileNames = <String>{
+      for (final row in rows['attachments'] ?? const <Map<String, Object?>>[])
+        if (row['id'] case final String id when id.isNotEmpty)
+          for (final kind in AttachmentKind.values)
+            if (row['kind'] == kind.wire) '$id.${kind.extension}',
+    };
     final attachmentFiles = <String, String>{};
     final rawAttachmentFiles = decoded['attachmentFiles'];
     if (rawAttachmentFiles is Map<String, Object?>) {
       for (final entry in rawAttachmentFiles.entries) {
         final value = entry.value;
-        // A bare file name: nothing may be written outside the folder.
-        if (value is! String || p.basename(entry.key) != entry.key) {
+        // A bare file name too: nothing may be written outside the folder.
+        if (value is! String ||
+            !expectedFileNames.contains(entry.key) ||
+            p.basename(entry.key) != entry.key) {
           throw BackupException(BackupErrorKind.corrupt, entry.key);
         }
         attachmentFiles[entry.key] = value;

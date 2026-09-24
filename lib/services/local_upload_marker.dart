@@ -76,7 +76,9 @@ class LocalUploadMarker {
   /// queues the restored counts before it calls this. The new account has
   /// none of the old one's medications, so each is created with its local
   /// quantity instead. For the same reason attachments forget their storage
-  /// paths, so their files are uploaded again under the new account.
+  /// paths, so their files are uploaded again under the new account; so do
+  /// attachment rows of another account on an unchanged one (a restored
+  /// backup).
   ///
   /// Everything runs in one transaction: a kill half-way must not leave the
   /// bases gone and the rows still `synced`, which would never upload them.
@@ -113,6 +115,21 @@ class LocalUploadMarker {
           'remote_path': null,
           'user_id': null,
         });
+      } else {
+        // Rows of another account can be here without an account change: a
+        // backup of account A restored while signed in as B, or restored in
+        // local mode before B's first sign-in. Their paths point into A's
+        // folder, which the server refuses for B's rows, so they would never
+        // sync. Forgetting them uploads the files again under B.
+        final folder = '$userId/';
+        await txn.update(
+          'attachments',
+          const {'remote_path': null, 'user_id': null},
+          where:
+              '(user_id IS NOT NULL AND user_id != ?) OR '
+              '(remote_path IS NOT NULL AND substr(remote_path, 1, ?) != ?)',
+          whereArgs: [userId, folder.length, folder],
+        );
       }
       var count = 0;
       for (final table in tables) {
