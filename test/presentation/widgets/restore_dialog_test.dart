@@ -12,6 +12,7 @@ final _manifest = BackupManifest(
   appVersion: '0.1.1+11',
   rowCounts: const {'medications': 2, 'treatments': 1, 'dose_logs': 4},
   photoCount: 3,
+  attachmentFileCount: 2,
 );
 
 void main() {
@@ -34,7 +35,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('7 rows'), findsOneWidget);
-    expect(find.textContaining('3 photos'), findsOneWidget);
+    expect(
+      find.textContaining('3 photos · 2 attachment files'),
+      findsOneWidget,
+    );
     expect(find.text('0.1.1+11'), findsOneWidget);
     // Replace is preselected, so its warning is visible from the start.
     expect(find.text('Replace everything'), findsOneWidget);

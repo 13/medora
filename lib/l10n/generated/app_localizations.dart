@@ -3655,6 +3655,12 @@ abstract class AppLocalizations {
   /// **'Created {created} · {rows} rows · {photos} photos'**
   String restoreSummary(String created, int rows, int photos);
 
+  /// No description provided for @restoreAttachmentFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 attachment file} other{{count} attachment files}}'**
+  String restoreAttachmentFiles(int count);
+
   /// No description provided for @restoreInProgress.
   ///
   /// In en, this message translates to:

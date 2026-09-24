@@ -2114,6 +2114,17 @@ class AppLocalizationsIt extends AppLocalizations {
   }
 
   @override
+  String restoreAttachmentFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count file allegati',
+      one: '1 file allegato',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get restoreInProgress => 'Ripristino in corso…';
 
   @override

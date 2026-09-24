@@ -14,6 +14,7 @@ library;
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:medora/core/clock.dart';
 import 'package:medora/data/datasources/attachment_local_datasource.dart';
@@ -262,7 +263,8 @@ class AttachmentTransfer {
   }
 
   /// The file of [a], downloading it when it is not here yet. Null when it
-  /// is not uploaded yet, gone from storage, or cannot be fetched now.
+  /// is not uploaded yet, gone from storage, cannot be fetched now, or
+  /// arrives with another size or SHA-256 than the row records.
   Future<File?> open(Attachment a) => _opening[a.id] ??= _open(a).whenComplete(
     // A block body: returning the removed future would make this wait on
     // itself.
@@ -281,8 +283,11 @@ class AttachmentTransfer {
         return null;
       }
       final bytes = await store.download(path);
-      if (bytes.length != a.sizeBytes) {
-        debugPrint('Attachments: ${a.id} downloaded with the wrong size');
+      // Size first, the cheap check; then the contents: a file that is not
+      // the one this row describes is never shown or kept.
+      if (bytes.length != a.sizeBytes ||
+          crypto.sha256.convert(bytes).toString() != a.sha256) {
+        debugPrint('Attachments: ${a.id} downloaded with other contents');
         return null;
       }
       return await _files.write(a.fileName, bytes);

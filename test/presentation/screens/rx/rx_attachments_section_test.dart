@@ -148,7 +148,7 @@ void main() {
     required _FakeTransfer transfer,
     required _FakePicker picker,
     _BytesImporter? importer,
-    bool hasCamera = true,
+    PlatformCapabilities capabilities = PlatformCapabilities.mobile,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -162,9 +162,7 @@ void main() {
           attachmentFilesProvider.overrideWithValue(
             AttachmentFiles(rootDirectory: () async => tempDir),
           ),
-          platformCapabilitiesProvider.overrideWithValue(
-            hasCamera ? PlatformCapabilities.mobile : PlatformCapabilities.web,
-          ),
+          platformCapabilitiesProvider.overrideWithValue(capabilities),
         ],
         child: const MaterialApp(
           localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -302,7 +300,7 @@ void main() {
       repo: repo,
       transfer: transfer,
       picker: _FakePicker(),
-      hasCamera: false,
+      capabilities: PlatformCapabilities.desktop,
     );
 
     await tester.tap(find.byTooltip(l10n.rxAttachmentAdd));
@@ -310,6 +308,25 @@ void main() {
 
     expect(find.text(l10n.rxAttachmentCamera), findsNothing);
     expect(find.text(l10n.rxAttachmentGallery), findsOneWidget);
+  });
+
+  testWidgets('without a file system (web) there is no add button, and a '
+      'photo shows no local file', (tester) async {
+    // A file where a device would keep it: the web must not look for it.
+    File(
+      p.join(tempDir.path, AttachmentFiles.folder, photo.fileName),
+    ).writeAsBytesSync(_validPng);
+    await pump(
+      tester,
+      repo: FakeAttachmentRepository(attachments: const [photo]),
+      transfer: _FakeTransfer(),
+      picker: _FakePicker(),
+      capabilities: PlatformCapabilities.web,
+    );
+
+    expect(find.byTooltip(l10n.rxAttachmentAdd), findsNothing);
+    expect(find.byIcon(Icons.cloud_outlined), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
   });
 
   testWidgets(

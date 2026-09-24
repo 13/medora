@@ -304,6 +304,9 @@ class _RxAttachmentsSectionState extends ConsumerState<RxAttachmentsSection> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final attachments = ref.watch(attachmentsForOwnerProvider(_owner));
+    // Attachments are stored as files: without a file system (web) they
+    // are listed, never added here.
+    final canAdd = ref.watch(platformCapabilitiesProvider).hasFileSystem;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -323,7 +326,7 @@ class _RxAttachmentsSectionState extends ConsumerState<RxAttachmentsSection> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               )
-            else
+            else if (canAdd)
               IconButton(
                 icon: const Icon(Icons.add_circle_outline),
                 tooltip: l10n.rxAttachmentAdd,
@@ -400,9 +403,10 @@ class _ThumbnailState extends ConsumerState<_Thumbnail> {
   }
 
   /// Only a photo's thumbnail depends on the local file; skip the lookup
-  /// for PDFs entirely.
+  /// for PDFs entirely, and everywhere without a file system (web).
   Future<File?> _resolve() async {
     if (widget.attachment.kind != AttachmentKind.photo) return null;
+    if (!ref.read(platformCapabilitiesProvider).hasFileSystem) return null;
     final file = await ref
         .read(attachmentFilesProvider)
         .fileFor(widget.attachment);

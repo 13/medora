@@ -650,6 +650,7 @@
   "restoreMerge": "Mit diesem Gerät zusammenführen",
   "restoreReplaceWarning": "Alles auf diesem Gerät wird zuerst gelöscht und durch die Sicherung ersetzt.",
   "restoreSummary": "Erstellt {created} · {rows} Datensätze · {photos} Fotos",
+  "restoreAttachmentFiles": "{count, plural, =1{1 Anhangdatei} other{{count} Anhangdateien}}",
   "restoreInProgress": "Wird wiederhergestellt …",
   "restoreDone": "{rows} Datensätze wiederhergestellt",
   "backupNotABackup": "Diese Datei ist keine Medora-Sicherung.",

@@ -292,8 +292,8 @@ treatment or a person as the owner; the UI offers prescriptions only).
   30 min, then 2 h). Recording refuses a path outside the row's owner's
   folder (or, for a row cleared by an account change, the signed-in user's)
   and queues that object for removal instead. Downloads happen on demand
-  when an attachment is opened, and a download of the wrong size is thrown
-  away.
+  when an attachment is opened, and a download whose size or SHA-256
+  differs from the row's is thrown away.
 - **Sweep.** Local files with no row at all go, except those written in the
   last five minutes (an `add` that has written its file but not its row).
   It also runs on its own after "delete all data" on another device removed
@@ -310,6 +310,11 @@ treatment or a person as the owner; the UI offers prescriptions only).
   removes the rows in `medora_delete_all_data` and then the user's storage
   folder from the client, because SQL cannot delete storage objects
   (`storage.protect_delete()`); the local wipe deletes the folder of files.
+  A device that follows a wipe made elsewhere removes its attachment rows
+  from before it (and those of removed prescriptions) and queues their
+  objects in its own folder for removal, since it may have uploaded after
+  the folder went. The web build has no file system: it lists attachments
+  but offers no add button and no local thumbnails.
   A restored backup's rows keep the backing-up account's owner and path;
   when a different account then signs in (or the first one after a restore
   in local mode), `LocalUploadMarker.markAllForUpload` clears the owner and

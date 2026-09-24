@@ -2099,6 +2099,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String restoreAttachmentFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count attachment files',
+      one: '1 attachment file',
+    );
+    return '$_temp0';
+  }
+
+  @override
   String get restoreInProgress => 'Restoring…';
 
   @override

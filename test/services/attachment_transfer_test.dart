@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -19,6 +20,9 @@ import '../helpers/fake_remotes.dart';
 import '../helpers/test_database.dart';
 
 const _uid = 'user-a';
+
+/// The SHA-256 of the bytes [7, 8] the download tests store.
+final _sha78 = sha256.convert([7, 8]).toString();
 
 /// A store whose uploads can be held open, or run a hook once stored.
 class _GatedStore extends FakeAttachmentStore {
@@ -261,14 +265,14 @@ void main() {
   });
 
   test('open downloads a synced attachment once, then reads it here', () async {
-    const a = Attachment(
+    final a = Attachment(
       id: 'a9',
       ownerKind: AttachmentOwnerKind.rx,
       ownerId: 'r1',
       kind: AttachmentKind.photo,
       mime: 'image/jpeg',
       sizeBytes: 2,
-      sha256: 'x',
+      sha256: _sha78,
       remotePath: '$_uid/a9.jpg',
     );
     store.objects['$_uid/a9.jpg'] = Uint8List.fromList([7, 8]);
@@ -337,7 +341,7 @@ void main() {
     kind: AttachmentKind.photo,
     mime: 'image/jpeg',
     sizeBytes: sizeBytes,
-    sha256: 'x',
+    sha256: _sha78,
     remotePath: '$_uid/$id.jpg',
   );
 
@@ -369,6 +373,14 @@ void main() {
   test('a download of the wrong size is not written', () async {
     final a = synced('a9');
     store.objects['$_uid/a9.jpg'] = Uint8List.fromList([7, 8, 9]);
+    expect(await transfer().open(a), isNull);
+    expect(await files.listNames(), isEmpty);
+  });
+
+  test('a download of the right size but other contents is not '
+      'written', () async {
+    final a = synced('a9');
+    store.objects['$_uid/a9.jpg'] = Uint8List.fromList([8, 7]);
     expect(await transfer().open(a), isNull);
     expect(await files.listNames(), isEmpty);
   });

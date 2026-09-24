@@ -398,7 +398,11 @@ class SyncService {
             ? generation > 0 && _cursors.hasLegacyCursors
             : generation > seen);
     if (follow) {
-      final removed = await removeLocalDataFromBefore(wipedAt);
+      final removed = await removeLocalDataFromBefore(
+        wipedAt,
+        userId: userId,
+        now: _now,
+      );
       await _cursors.clear();
       await _failures.clearAll();
       report.wiped = removed.rows;

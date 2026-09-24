@@ -39,12 +39,17 @@ abstract final class AttachmentImport {
       img.encodeJpg;
 
   /// Reads [path] and prepares it off the main isolate; a 12 MP decode takes
-  /// seconds and would otherwise jank the UI.
+  /// seconds and would otherwise jank the UI. A file over [maxPdfBytes] is
+  /// refused from its length, before a byte of it is read into memory.
   static Future<ImportResult> fromPath(
     String path, {
     String? originalName,
   }) async {
-    final raw = await File(path).readAsBytes();
+    final file = File(path);
+    if (await file.length() > maxPdfBytes) {
+      return const ImportRefused(ImportRefusal.tooLarge);
+    }
+    final raw = await file.readAsBytes();
     final name = originalName ?? p.basename(path);
     return compute(_prepareArgs, (raw, name));
   }

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
+import 'package:medora/data/local/field_times.dart';
 import 'package:medora/data/models/attachment_model.dart';
 import 'package:medora/domain/entities/attachment.dart';
 
@@ -86,5 +87,35 @@ void main() {
     expect(await local.pendingRemovals(), ['u/a1.jpg', 'u/a2.pdf']);
     await local.completeRemoval('u/a1.jpg');
     expect(await local.pendingRemovals(), ['u/a2.pdf']);
+  });
+
+  test('updateLiveIn (recording an upload) stamps the edit time of the '
+      'changed column only', () async {
+    var now = at;
+    final local = AttachmentLocalDatasource(now: () => now);
+    await local.upsert(model('a1'), syncStatus: SyncStatus.synced);
+    final db = await AppDatabase.instance.database;
+    Future<Map<String, FieldTime>> times() async => FieldTimes.decode(
+      (await db.query('attachments')).single['field_edited_at'],
+    ).entries;
+    final before = await times();
+    now = at.add(const Duration(minutes: 5));
+
+    final recorded = await local.setRemotePathIfLive(
+      'a1',
+      'u1/a1.jpg',
+      signedInUserId: 'u1',
+      updatedAt: (_) => now,
+    );
+
+    expect(recorded, isTrue);
+    final after = await times();
+    expect(after['remote_path']!.at, now.toUtc());
+    expect(after['remote_path']!.automatic, isFalse);
+    // Every other column keeps an older time: only the path changed now.
+    for (final column in after.keys.where((k) => k != 'remote_path')) {
+      expect(after[column]!.at.isBefore(now.toUtc()), isTrue, reason: column);
+    }
+    expect(before['remote_path'], isNull);
   });
 }

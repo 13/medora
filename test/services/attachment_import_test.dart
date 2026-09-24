@@ -215,4 +215,23 @@ void main() {
     expect(decoded.width, 2400);
     expect(decoded.height, 1800);
   });
+
+  test('fromPath refuses a file over 20 MB from its length, without reading '
+      'it', () async {
+    final dir = await Directory.systemTemp.createTemp('attachment_import_');
+    addTearDown(() => dir.delete(recursive: true));
+    final path = p.join(dir.path, 'huge.pdf');
+    // Sparse: 20 MB and one byte on disk costs nothing.
+    final raf = await File(path).open(mode: FileMode.write);
+    await raf.setPosition(AttachmentImport.maxPdfBytes);
+    await raf.writeByte(0);
+    await raf.close();
+    // Unreadable: a read would throw, the length does not.
+    await Process.run('chmod', ['000', path]);
+    addTearDown(() => Process.run('chmod', ['600', path]));
+
+    final result = await AttachmentImport.fromPath(path);
+
+    expect((result as ImportRefused).reason, ImportRefusal.tooLarge);
+  });
 }

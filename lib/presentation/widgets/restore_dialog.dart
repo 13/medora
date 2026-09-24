@@ -42,11 +42,15 @@ class _RestoreDialogState extends State<RestoreDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              l10n.restoreSummary(
-                manifest.createdAt.toLocal().dateTimeFormatted,
-                manifest.totalRows,
-                manifest.photoCount,
-              ),
+              [
+                l10n.restoreSummary(
+                  manifest.createdAt.toLocal().dateTimeFormatted,
+                  manifest.totalRows,
+                  manifest.photoCount,
+                ),
+                if (manifest.attachmentFileCount > 0)
+                  l10n.restoreAttachmentFiles(manifest.attachmentFileCount),
+              ].join(' · '),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (manifest.appVersion.isNotEmpty)

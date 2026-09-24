@@ -6,6 +6,7 @@
 /// whatever the server has.
 library;
 
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -42,10 +43,18 @@ class RemovedData {
 ///
 /// The device's clock decides "after", so a row made within the clock's
 /// error of the wipe can land on the wrong side.
+///
+/// Attachments have no local foreign key: those of a removed prescription
+/// go with it here, whenever they were made. The objects of removed
+/// attachments in [userId]'s folder are queued for removal: the wiping
+/// device removed the folder as it was then, and this one may have
+/// uploaded since.
 Future<RemovedData> removeDataFromBefore(
   DatabaseExecutor db,
-  DateTime wipedAt,
-) async {
+  DateTime wipedAt, {
+  String? userId,
+  DateTime Function() now = DateTime.now,
+}) async {
   const tables = [
     'medications',
     'treatments',
@@ -74,7 +83,12 @@ Future<RemovedData> removeDataFromBefore(
   for (final table in tables) {
     final rows = await db.query(
       table,
-      columns: ['id', 'created_at', if (table == 'medications') 'image_path'],
+      columns: [
+        'id',
+        'created_at',
+        if (table == 'medications') 'image_path',
+        if (table == 'attachments') 'remote_path',
+      ],
     );
     for (final row in rows) {
       final raw = row['created_at'];
@@ -82,8 +96,40 @@ Future<RemovedData> removeDataFromBefore(
       if (created != null && created.isAfter(wipedAt)) continue;
       final image = row['image_path'];
       if (image is String && image.isNotEmpty) photos.add(image);
-      await db.delete(table, where: 'id = ?', whereArgs: [row['id']]);
-      if (table == 'attachments') attachments++;
+      if (table == 'rx') {
+        const where = "owner_kind = 'rx' AND owner_id = ?";
+        final owned = await db.query(
+          'attachments',
+          columns: ['remote_path'],
+          where: where,
+          whereArgs: [row['id']],
+        );
+        await AttachmentLocalDatasource.enqueueOwnRemovalsIn(
+          db,
+          owned,
+          userId: userId,
+          at: now(),
+        );
+        attachments += await db.delete(
+          'attachments',
+          where: where,
+          whereArgs: [row['id']],
+        );
+      }
+      if (table == 'attachments') {
+        await AttachmentLocalDatasource.enqueueOwnRemovalsIn(
+          db,
+          [row],
+          userId: userId,
+          at: now(),
+        );
+      }
+      final deleted = await db.delete(
+        table,
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+      if (table == 'attachments') attachments += deleted;
     }
   }
   final kept = await db.query('medications', columns: ['image_path']);
@@ -96,7 +142,13 @@ Future<RemovedData> removeDataFromBefore(
 }
 
 /// [removeDataFromBefore] in one transaction of the app's database.
-Future<RemovedData> removeLocalDataFromBefore(DateTime wipedAt) async {
+Future<RemovedData> removeLocalDataFromBefore(
+  DateTime wipedAt, {
+  String? userId,
+  DateTime Function() now = DateTime.now,
+}) async {
   final db = await AppDatabase.instance.database;
-  return db.transaction((txn) => removeDataFromBefore(txn, wipedAt));
+  return db.transaction(
+    (txn) => removeDataFromBefore(txn, wipedAt, userId: userId, now: now),
+  );
 }

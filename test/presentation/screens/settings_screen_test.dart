@@ -35,6 +35,7 @@ const _notificationsOnly = PlatformCapabilities(
   hasBiometrics: false,
   hasInAppUpdates: false,
   hasSupplementRegister: false,
+  hasFileSystem: true,
 );
 
 const _fixedBuildInfo = BuildInfo(

@@ -169,6 +169,63 @@ void main() {
     expect(removed.attachments, 2);
   });
 
+  test('the objects of removed attachments in the signed-in folder are '
+      'queued for removal; an attachment made after the wipe goes with its '
+      'old prescription', () async {
+    final db = await AppDatabase.instance.database;
+    Future<void> attachment(
+      String id,
+      String createdAt, {
+      String? path,
+      String ownerId = 'r1',
+    }) => db.insert('attachments', {
+      'id': id,
+      'owner_kind': 'rx',
+      'owner_id': ownerId,
+      'kind': 'photo',
+      'mime': 'image/jpeg',
+      'size_bytes': 3,
+      'sha256': 'abc',
+      'remote_path': path,
+      'created_at': createdAt,
+      'sync_status': 'synced',
+    });
+    await db.insert('rx', {
+      'id': 'r-old',
+      'kind': 'white',
+      'issued_on': '2026-03-01',
+      'items': '[]',
+      'cancelled': 0,
+      'created_at': before(),
+      'sync_status': 'synced',
+    });
+    await attachment('a-own', before(), path: 'user-a/a-own.jpg');
+    await attachment('a-other', before(), path: 'user-b/a-other.jpg');
+    await attachment('a-local', before());
+    await attachment(
+      'a-under-old',
+      after(),
+      path: 'user-a/a-under-old.jpg',
+      ownerId: 'r-old',
+    );
+    await attachment('a-new', after(), path: 'user-a/a-new.jpg');
+
+    final removed = await removeLocalDataFromBefore(wipedAt, userId: 'user-a');
+
+    expect(await ids('attachments'), ['a-new']);
+    expect(removed.attachments, 4);
+    expect(
+      [
+        for (final r in await db.query(
+          'attachment_removals',
+          orderBy: 'remote_path',
+        ))
+          r['remote_path'],
+      ],
+      ['user-a/a-own.jpg', 'user-a/a-under-old.jpg'],
+    );
+  });
+
   test('nothing to remove', () async {
     final removed = await removeLocalDataFromBefore(wipedAt);
     expect(removed.rows, 0);

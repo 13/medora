@@ -650,6 +650,7 @@
   "restoreMerge": "Unisci a questo dispositivo",
   "restoreReplaceWarning": "Tutto ciò che è su questo dispositivo viene prima eliminato e sostituito dal backup.",
   "restoreSummary": "Creato {created} · {rows} righe · {photos} foto",
+  "restoreAttachmentFiles": "{count, plural, =1{1 file allegato} other{{count} file allegati}}",
   "restoreInProgress": "Ripristino in corso…",
   "restoreDone": "Ripristinate {rows} righe",
   "backupNotABackup": "Questo file non è un backup di Medora.",

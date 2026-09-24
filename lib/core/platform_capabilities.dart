@@ -17,6 +17,7 @@ class PlatformCapabilities {
     required this.hasBiometrics,
     required this.hasInAppUpdates,
     required this.hasSupplementRegister,
+    required this.hasFileSystem,
   });
 
   /// Camera + ML Kit OCR (mobile only).
@@ -38,6 +39,10 @@ class PlatformCapabilities {
   /// SQLite database; everything except web).
   final bool hasSupplementRegister;
 
+  /// A local file system for app files (attachments are stored as files;
+  /// everything except web).
+  final bool hasFileSystem;
+
   static const web = PlatformCapabilities(
     hasCamera: false,
     hasLocalNotifications: false,
@@ -45,6 +50,7 @@ class PlatformCapabilities {
     hasBiometrics: false,
     hasInAppUpdates: false,
     hasSupplementRegister: false,
+    hasFileSystem: false,
   );
   static const mobile = PlatformCapabilities(
     hasCamera: true,
@@ -53,6 +59,7 @@ class PlatformCapabilities {
     hasBiometrics: true,
     hasInAppUpdates: true,
     hasSupplementRegister: true,
+    hasFileSystem: true,
   );
   static const desktop = PlatformCapabilities(
     hasCamera: false,
@@ -61,6 +68,7 @@ class PlatformCapabilities {
     hasBiometrics: false,
     hasInAppUpdates: false,
     hasSupplementRegister: true,
+    hasFileSystem: true,
   );
 
   /// Like [mobile], but iOS has no sideloading - the App Store updates the app.
@@ -71,6 +79,7 @@ class PlatformCapabilities {
     hasBiometrics: true,
     hasInAppUpdates: false,
     hasSupplementRegister: true,
+    hasFileSystem: true,
   );
 
   factory PlatformCapabilities.detect() {
@@ -88,7 +97,8 @@ class PlatformCapabilities {
       other.hasFileShare == hasFileShare &&
       other.hasBiometrics == hasBiometrics &&
       other.hasInAppUpdates == hasInAppUpdates &&
-      other.hasSupplementRegister == hasSupplementRegister;
+      other.hasSupplementRegister == hasSupplementRegister &&
+      other.hasFileSystem == hasFileSystem;
 
   @override
   int get hashCode => Object.hash(
@@ -98,6 +108,7 @@ class PlatformCapabilities {
     hasBiometrics,
     hasInAppUpdates,
     hasSupplementRegister,
+    hasFileSystem,
   );
 }
 
