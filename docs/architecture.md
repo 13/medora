@@ -301,7 +301,12 @@ treatment or a person as the owner; the UI offers prescriptions only).
   again into the signed-in folder instead of being refused by the server
   forever. A backup's `attachmentFiles` may only name `<id>.jpg` or
   `<id>.pdf` of its own attachment rows (extension by kind); any other name
-  makes it corrupt before anything is written.
+  makes it corrupt before anything is written. A restored live attachment
+  whose file is on the device forgets its path, so the transfer uploads it
+  again (its object may be gone after "delete all data"; one still there
+  counts as done); a restored one without its file keeps its path. A
+  queued removal of a restored live row's path is dropped, so it cannot
+  delete the object under the restored attachment.
 - **Force pull.** When the server has no `attachments` table yet, a force
   pull keeps the local `attachments` rows and `attachment_removals`: the
   pull could never bring them back. Otherwise it clears both with the other

@@ -1,17 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:medora/data/datasources/attachment_local_datasource.dart';
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
 import 'package:medora/data/local/attachment_files.dart';
 import 'package:medora/data/local/migrations.dart';
+import 'package:medora/data/repositories/attachment_repository_impl.dart';
+import 'package:medora/services/attachment_transfer.dart';
 import 'package:medora/services/backup_service.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import '../helpers/fake_remotes.dart';
 import '../helpers/seed.dart';
 import '../helpers/test_database.dart';
 
@@ -1096,7 +1101,8 @@ void main() {
       expect(manifest.attachmentFileCount, 1);
       final row = (await db.query('attachments')).single;
       expect(row['id'], 'att-1');
-      expect(row['remote_path'], 'user-a/att-1.jpg');
+      // Its file is here, so it is uploaded again: the object may be gone.
+      expect(row['remote_path'], isNull);
       expect(await attachments.listNames(), ['att-1.jpg']);
       expect(
         await File(
@@ -1193,6 +1199,73 @@ void main() {
         expect(await attachments.listNames(), isEmpty);
       });
     }
+
+    AttachmentTransfer transferFor(String uid, FakeAttachmentStore store) {
+      final local = AttachmentLocalDatasource();
+      return AttachmentTransfer(
+        local: local,
+        repository: AttachmentRepositoryImpl(local: local, files: attachments),
+        files: attachments,
+        store: store,
+        currentUserId: () => uid,
+        isOnline: () => true,
+      );
+    }
+
+    test('delete all data, then a restore with the files: the transfer '
+        'uploads them to the folder again', () async {
+      final db = await AppDatabase.instance.database;
+      await seedAttachment(db, 'att-1');
+      await seedAttachment(db, 'att-2', kind: 'pdf');
+      await attachments.write('att-1.jpg', bytes);
+      final file = await makeService().exportToFile(outDir);
+      // "Delete all data": the rows, the files and the objects are gone.
+      await AppDatabase.instance.clearAllData();
+      await attachments.deleteAll();
+      final store = FakeAttachmentStore();
+
+      await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+        markPending: true,
+      );
+      Future<Object?> pathOf(String id) async => (await db.query(
+        'attachments',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).single['remote_path'];
+      expect(await pathOf('att-1'), isNull);
+      // No file here: nothing to upload, and it may still download.
+      expect(await pathOf('att-2'), 'user-a/att-2.pdf');
+
+      final report = await transferFor('user-a', store).run();
+      expect(report.uploaded, 1);
+      expect(store.objects.keys, ['user-a/att-1.jpg']);
+      expect(await pathOf('att-1'), 'user-a/att-1.jpg');
+    });
+
+    test('an attachment deleted after the backup, its removal queued: the '
+        'restore drops the queue entry and the object stays', () async {
+      final db = await AppDatabase.instance.database;
+      await seedAttachment(db, 'att-1');
+      await attachments.write('att-1.jpg', bytes);
+      final file = await makeService().exportToFile(outDir);
+      final store = FakeAttachmentStore();
+      store.objects['user-a/att-1.jpg'] = Uint8List.fromList(bytes);
+      final local = AttachmentLocalDatasource();
+      await local.markDeleted('att-1');
+      await local.enqueueRemoval('user-a/att-1.jpg');
+
+      await makeService().restore(
+        file,
+        mode: RestoreMode.replace,
+        markPending: true,
+      );
+      expect(await local.pendingRemovals(), isEmpty);
+
+      await transferFor('user-a', store).run();
+      expect(store.objects.keys, ['user-a/att-1.jpg']);
+    });
 
     test('the files of a PDF and a photo row restore under their own '
         'names', () async {

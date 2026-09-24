@@ -20,6 +20,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:medora/data/datasources/stock_outbox_local_datasource.dart';
 import 'package:medora/data/local/app_database.dart';
@@ -330,6 +331,9 @@ class BackupService {
     final backup = await _read(file);
     final status = markPending ? SyncStatus.pendingUpdate : SyncStatus.synced;
     final db = await _database.database;
+    // Live attachment rows this restore wrote, by id: their files may have
+    // to be uploaded again (see [_reuploadRestoredFiles]).
+    final restoredAttachments = <String>{};
 
     try {
       await db.transaction((txn) async {
@@ -346,6 +350,21 @@ class BackupService {
           for (final row in rows) {
             final written = await _applyRow(txn, table, row, mode, tableStatus);
             final id = row['id'];
+            if (written &&
+                table == 'attachments' &&
+                id is String &&
+                row['deleted_at'] == null) {
+              restoredAttachments.add(id);
+              // A removal queued when this attachment was deleted after the
+              // backup would delete the object under the restored row.
+              if (row['remote_path'] case final String path) {
+                await txn.delete(
+                  'attachment_removals',
+                  where: 'remote_path = ?',
+                  whereArgs: [path],
+                );
+              }
+            }
             if (written &&
                 markPending &&
                 table == 'medications' &&
@@ -386,8 +405,44 @@ class BackupService {
         throw BackupException(BackupErrorKind.io, e.message);
       }
     }
+    await _reuploadRestoredFiles(db, restoredAttachments);
 
     return backup.manifest;
+  }
+
+  /// Forgets the storage path of each restored live attachment in [ids]
+  /// whose file is on this device, so the transfer uploads it again.
+  ///
+  /// The backup's path may point at an object that is gone: "delete all
+  /// data" removed it, or the attachment was deleted after the backup. An
+  /// upload of an object that is still there counts as done, so this costs
+  /// at most one upload. A row without its file here keeps its path:
+  /// there is nothing to upload, and the object may still download.
+  Future<void> _reuploadRestoredFiles(Database db, Set<String> ids) async {
+    if (ids.isEmpty) return;
+    final present = <String>[];
+    for (final row in await db.query(
+      'attachments',
+      columns: ['id', 'kind'],
+      where: 'deleted_at IS NULL AND remote_path IS NOT NULL',
+    )) {
+      final id = row['id']! as String;
+      if (!ids.contains(id)) continue;
+      for (final kind in AttachmentKind.values) {
+        if (row['kind'] != kind.wire) continue;
+        final file = await _attachments.fileNamed('$id.${kind.extension}');
+        if (file.existsSync()) present.add(id);
+      }
+    }
+    for (var i = 0; i < present.length; i += 500) {
+      final chunk = present.sublist(i, math.min(i + 500, present.length));
+      await db.update(
+        'attachments',
+        const {'remote_path': null},
+        where: 'id IN (${List.filled(chunk.length, '?').join(', ')})',
+        whereArgs: chunk,
+      );
+    }
   }
 
   /// Writes one backed-up row; returns whether it was written.
