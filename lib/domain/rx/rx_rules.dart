@@ -19,8 +19,11 @@
 ///   the Italian Wikipedia page above instead gives 3 months / 5 packages
 ///   for a *private* repeatable prescription; the plan's 6-months/10 value
 ///   is kept because it is the value repeated across the majority of
-///   pharmacist-facing sources checked, but flag as not settled by a single
-///   authoritative legal citation.
+///   pharmacist-facing sources checked. Confirmed 2026-09-24 against a real
+///   2026 white repeatable prescription the user photographed (not
+///   reproduced here, per the privacy rule): it prints "RIPETIBILE PER 10
+///   VOLTE E VALIDA FINO AL" with a valid-until date six months after
+///   issue, closing the citation gap above (design doc §11).
 /// - priority classes U/B/D/P (72h / 10 / 30 / 120 days): Piano Nazionale di
 ///   Governo delle Liste d'Attesa (PNGLA) 2019-2021, Intesa Stato-Regioni
 ///   21 febbraio 2019 - these are the national deadlines by which the

@@ -2284,6 +2284,27 @@ class AppLocalizationsIt extends AppLocalizations {
   String get rxOpenExisting => 'Apri';
 
   @override
+  String get rxNrePart1 => 'NRE 1/2';
+
+  @override
+  String get rxNrePart2 => 'NRE 2/2';
+
+  @override
+  String get rxNrbe => 'Numero ricetta (NRBE)';
+
+  @override
+  String get rxNrbeInvalid => '12 caratteri: una lettera e 11 cifre';
+
+  @override
+  String get rxPin => 'PIN';
+
+  @override
+  String get rxPinHint => '5 caratteri sotto il codice a barre NRBE';
+
+  @override
+  String get rxPinInvalid => '5 lettere o cifre';
+
+  @override
   String get rxIssuedOn => 'Emessa il';
 
   @override
@@ -2333,6 +2354,9 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get rxNonSubstitutable => 'Non sostituibile';
+
+  @override
+  String get rxPosology => 'Posologia';
 
   @override
   String get rxStatusOpen => 'Aperta';
@@ -2432,6 +2456,19 @@ class AppLocalizationsIt extends AppLocalizations {
   String rxShareTextNreOnly(String nre) {
     return 'Ricetta $nre';
   }
+
+  @override
+  String rxShareTextPin(String nre, String pin, String taxCode) {
+    return 'Ricetta $nre\nPIN $pin\nCodice fiscale $taxCode';
+  }
+
+  @override
+  String rxShareTextPinNoTaxCode(String nre, String pin) {
+    return 'Ricetta $nre\nPIN $pin';
+  }
+
+  @override
+  String get rxScanFirstPageOnly => 'È stata letta solo la prima pagina';
 
   @override
   String get rxExpiringTitle => 'Ricette in scadenza';
@@ -2549,4 +2586,30 @@ class AppLocalizationsIt extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get rxScan => 'Scansiona ricetta';
+
+  @override
+  String get rxScanReading => 'Lettura della ricetta…';
+
+  @override
+  String get rxScanNothing => 'Nessun dato riconosciuto: compila a mano';
+
+  @override
+  String get rxFromScan => 'Letto dalla scansione: controlla';
+
+  @override
+  String rxScanNewPerson(String name, String taxCode) {
+    return 'Aggiungere $name ($taxCode) come persona?';
+  }
+
+  @override
+  String get rxScanUnknownName => 'nome sconosciuto';
+
+  @override
+  String get rxScanManual => 'Inserisci a mano';
+
+  @override
+  String get rxPdfOrFile => 'PDF o immagine';
 }

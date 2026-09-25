@@ -14,6 +14,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/rx/rx_labels.dart';
+import 'package:medora/presentation/screens/rx/rx_scan_sheet.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/shared_widgets.dart';
 
@@ -67,7 +68,7 @@ class _RxListViewState extends ConsumerState<RxListView> {
         title: l10n.rxNoneYet,
         subtitle: l10n.rxNoneYetHint,
         actionLabel: l10n.rxAdd,
-        onAction: () => context.push(AppRoutes.addRx),
+        onAction: () => showAddRxSheet(context),
       ),
       data: (fullList) {
         final list = activeFilter == null

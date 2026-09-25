@@ -41,6 +41,7 @@ create table if not exists public.rx (
   kind            text not null
                   check (kind in ('ssn', 'white', 'white_repeatable', 'referral')),
   nre             text,
+  pin             text check (pin is null or pin ~ '^[A-Z0-9]{5}$'),
   issued_on       date not null,
   valid_until     date,
   doctor          text,

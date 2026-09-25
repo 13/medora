@@ -71,10 +71,12 @@ import 'package:medora/services/dose_maintenance_service.dart';
 import 'package:medora/services/dose_schedule_service.dart';
 import 'package:medora/services/local_data_wiper.dart';
 import 'package:medora/services/mlkit_scanner_ports.dart';
+import 'package:medora/services/pdf_page_port.dart';
 import 'package:medora/services/photo_storage.dart';
 import 'package:medora/services/reminder_port.dart';
 import 'package:medora/services/reminder_scheduler.dart';
 import 'package:medora/services/reminder_service.dart';
+import 'package:medora/services/rx_scan_service.dart';
 import 'package:medora/services/scan_temp_cleanup.dart';
 import 'package:medora/services/scanner_ports.dart';
 import 'package:medora/services/stock_alert_store.dart';
@@ -688,6 +690,34 @@ final cameraPortProvider = Provider<CameraPort>((ref) {
 
 final galleryPortProvider = Provider<GalleryPort>(
   (ref) => ImagePickerGalleryPort(),
+);
+
+/// Raw barcode values for the prescription scan (Code 128 and friends,
+/// see `rxBarcodeFormats`); closed with the container.
+final rxRawBarcodePortProvider = Provider<RawBarcodePort>((ref) {
+  final port = MlKitRawBarcodePort();
+  ref.onDispose(port.close);
+  return port;
+});
+
+final pdfPagePortProvider = Provider<PdfPagePort>((ref) => PdfrxPagePort());
+
+/// Reads a prescription photo or PDF into a draft. The known tax codes are
+/// the persons' own: a failed read just means none are known, which only
+/// makes the extractor less sure which tax code is the patient's.
+final rxScanServiceProvider = Provider<RxScanService>(
+  (ref) => RxScanService(
+    barcodes: ref.watch(rxRawBarcodePortProvider),
+    text: ref.watch(textRecognitionPortProvider),
+    pdf: ref.watch(pdfPagePortProvider),
+    knownTaxCodes: () async {
+      final result = await ref.read(personRepositoryProvider).getPersons();
+      return result.when(
+        success: (persons) => {for (final p in persons) ?p.taxCode},
+        failure: (_) => const <String>{},
+      );
+    },
+  ),
 );
 
 /// AIFA lookup by code, behind a function so widget tests can answer it

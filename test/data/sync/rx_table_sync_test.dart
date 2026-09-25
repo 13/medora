@@ -78,6 +78,38 @@ void main() {
     expect(local['max_dispensings'], 10);
   });
 
+  test("a white prescription's PIN is pushed and pulled", () async {
+    await (await db()).insert('rx', {
+      ...rxRow('w1'),
+      'kind': 'white',
+      'nre': 'G00001234567',
+      'pin': '7XQ2K',
+    });
+    final row = (await (await db()).query('rx')).single;
+    final pushed = await syncOf('rx').pushRow(row, userId: 'u1');
+    expect(pushed.outcome, PushOutcome.settled);
+    expect(remote('rx').get('w1')!['pin'], '7XQ2K');
+
+    final server = remote('rx').seed({
+      'id': 'w2',
+      'user_id': 'u1',
+      'kind': 'white',
+      'nre': 'G00001234568',
+      'pin': '8YR3L',
+      'issued_on': '2026-09-01',
+      'items': <Object?>[],
+      'cancelled': false,
+    });
+    final applied = await syncOf('rx').applyPulled(server);
+    expect(applied.outcome, PullOutcome.inserted);
+    final local = await (await db()).query(
+      'rx',
+      where: 'id = ?',
+      whereArgs: ['w2'],
+    );
+    expect(local.single['pin'], '8YR3L');
+  });
+
   test('a dispensing under an rx deleted here goes with it', () async {
     await (await db()).insert('rx', {
       ...rxRow('r3', status: SyncStatus.pendingDelete),

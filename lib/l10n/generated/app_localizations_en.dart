@@ -2265,6 +2265,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rxOpenExisting => 'Open';
 
   @override
+  String get rxNrePart1 => 'NRE 1/2';
+
+  @override
+  String get rxNrePart2 => 'NRE 2/2';
+
+  @override
+  String get rxNrbe => 'Prescription number (NRBE)';
+
+  @override
+  String get rxNrbeInvalid => '12 characters: a letter and 11 digits';
+
+  @override
+  String get rxPin => 'PIN';
+
+  @override
+  String get rxPinHint => '5 characters under the NRBE barcode';
+
+  @override
+  String get rxPinInvalid => '5 letters or digits';
+
+  @override
   String get rxIssuedOn => 'Issued on';
 
   @override
@@ -2314,6 +2335,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rxNonSubstitutable => 'Not substitutable';
+
+  @override
+  String get rxPosology => 'Dosage';
 
   @override
   String get rxStatusOpen => 'Open';
@@ -2413,6 +2437,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String rxShareTextNreOnly(String nre) {
     return 'Prescription $nre';
   }
+
+  @override
+  String rxShareTextPin(String nre, String pin, String taxCode) {
+    return 'Prescription $nre\nPIN $pin\nTax code $taxCode';
+  }
+
+  @override
+  String rxShareTextPinNoTaxCode(String nre, String pin) {
+    return 'Prescription $nre\nPIN $pin';
+  }
+
+  @override
+  String get rxScanFirstPageOnly => 'Only the first page was read';
 
   @override
   String get rxExpiringTitle => 'Prescriptions expiring';
@@ -2530,4 +2567,30 @@ class AppLocalizationsEn extends AppLocalizations {
     );
     return '$_temp0';
   }
+
+  @override
+  String get rxScan => 'Scan prescription';
+
+  @override
+  String get rxScanReading => 'Reading the prescription…';
+
+  @override
+  String get rxScanNothing => 'Nothing could be read – please fill in by hand';
+
+  @override
+  String get rxFromScan => 'Read from the scan – please check';
+
+  @override
+  String rxScanNewPerson(String name, String taxCode) {
+    return 'Add $name ($taxCode) as a person?';
+  }
+
+  @override
+  String get rxScanUnknownName => 'unknown name';
+
+  @override
+  String get rxScanManual => 'Enter manually';
+
+  @override
+  String get rxPdfOrFile => 'PDF or image file';
 }

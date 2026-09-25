@@ -15,6 +15,7 @@ class RxItem {
     required this.description,
     this.packs = 1,
     this.nonSubstitutable = false,
+    this.posology,
   });
 
   factory RxItem.fromJson(Map<String, dynamic> json) => RxItem(
@@ -24,6 +25,7 @@ class RxItem {
     description: json['description'] as String? ?? '',
     packs: (json['packs'] as num?)?.toInt() ?? 1,
     nonSubstitutable: json['non_substitutable'] == true,
+    posology: json['posology'] as String?,
   );
 
   final String id;
@@ -37,6 +39,9 @@ class RxItem {
   /// "Non sostituibile": the pharmacy may not hand out a generic.
   final bool nonSubstitutable;
 
+  /// How to take it, as printed on the prescription ("1x3 bei Bedarf").
+  final String? posology;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'medication_id': medicationId,
@@ -44,6 +49,7 @@ class RxItem {
     'description': description,
     'packs': packs,
     'non_substitutable': nonSubstitutable,
+    if (posology != null) 'posology': posology,
   };
 
   RxItem copyWith({
@@ -52,6 +58,7 @@ class RxItem {
     String? description,
     int? packs,
     bool? nonSubstitutable,
+    String? posology,
   }) => RxItem(
     id: id,
     medicationId: medicationId ?? this.medicationId,
@@ -59,6 +66,7 @@ class RxItem {
     description: description ?? this.description,
     packs: packs ?? this.packs,
     nonSubstitutable: nonSubstitutable ?? this.nonSubstitutable,
+    posology: posology ?? this.posology,
   );
 }
 
@@ -82,6 +90,7 @@ class Rx {
     this.notes,
     this.createdAt,
     this.updatedAt,
+    this.pin,
   });
 
   final String id;
@@ -92,7 +101,8 @@ class Rx {
   final String? treatmentId;
   final RxKind kind;
 
-  /// Normalised NRE; null for a white prescription.
+  /// Normalised NRE (SSN/referral) or NRBE (white electronic); null for a
+  /// paper white prescription, which carries neither.
   final String? nre;
 
   /// Date only.
@@ -119,6 +129,10 @@ class Rx {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// The 5-character PIN printed under an NRBE barcode (white electronic
+  /// prescriptions only); null for every other kind.
+  final String? pin;
+
   /// A null argument keeps the current value (codebase convention); build a
   /// new [Rx] to clear a field.
   Rx copyWith({
@@ -140,6 +154,7 @@ class Rx {
     String? notes,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? pin,
   }) => Rx(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -159,5 +174,6 @@ class Rx {
     notes: notes ?? this.notes,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    pin: pin ?? this.pin,
   );
 }

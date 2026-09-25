@@ -18,6 +18,7 @@ class PlatformCapabilities {
     required this.hasInAppUpdates,
     required this.hasSupplementRegister,
     required this.hasFileSystem,
+    required this.hasOnDeviceScanner,
   });
 
   /// Camera + ML Kit OCR (mobile only).
@@ -43,6 +44,13 @@ class PlatformCapabilities {
   /// everything except web).
   final bool hasFileSystem;
 
+  /// An on-device text/barcode reader (ML Kit) to scan a prescription with;
+  /// true only on Android and iOS. Screens that offer scanning fall back to
+  /// the plain (manual) form everywhere else, even where [hasCamera] or
+  /// [hasFileSystem] is true (desktop can still pick a file, but there is no
+  /// on-device reader to run over it).
+  final bool hasOnDeviceScanner;
+
   static const web = PlatformCapabilities(
     hasCamera: false,
     hasLocalNotifications: false,
@@ -51,6 +59,7 @@ class PlatformCapabilities {
     hasInAppUpdates: false,
     hasSupplementRegister: false,
     hasFileSystem: false,
+    hasOnDeviceScanner: false,
   );
   static const mobile = PlatformCapabilities(
     hasCamera: true,
@@ -60,6 +69,7 @@ class PlatformCapabilities {
     hasInAppUpdates: true,
     hasSupplementRegister: true,
     hasFileSystem: true,
+    hasOnDeviceScanner: true,
   );
   static const desktop = PlatformCapabilities(
     hasCamera: false,
@@ -69,6 +79,7 @@ class PlatformCapabilities {
     hasInAppUpdates: false,
     hasSupplementRegister: true,
     hasFileSystem: true,
+    hasOnDeviceScanner: false,
   );
 
   /// Like [mobile], but iOS has no sideloading - the App Store updates the app.
@@ -80,6 +91,7 @@ class PlatformCapabilities {
     hasInAppUpdates: false,
     hasSupplementRegister: true,
     hasFileSystem: true,
+    hasOnDeviceScanner: true,
   );
 
   factory PlatformCapabilities.detect() {
@@ -98,7 +110,8 @@ class PlatformCapabilities {
       other.hasBiometrics == hasBiometrics &&
       other.hasInAppUpdates == hasInAppUpdates &&
       other.hasSupplementRegister == hasSupplementRegister &&
-      other.hasFileSystem == hasFileSystem;
+      other.hasFileSystem == hasFileSystem &&
+      other.hasOnDeviceScanner == hasOnDeviceScanner;
 
   @override
   int get hashCode => Object.hash(
@@ -109,6 +122,7 @@ class PlatformCapabilities {
     hasInAppUpdates,
     hasSupplementRegister,
     hasFileSystem,
+    hasOnDeviceScanner,
   );
 }
 

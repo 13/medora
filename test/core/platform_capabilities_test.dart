@@ -23,6 +23,13 @@ void main() {
     expect(PlatformCapabilities.desktop.hasSupplementRegister, isTrue);
   });
 
+  test('the on-device scanner (ML Kit) is offered only on Android and iOS, '
+      'never desktop or web', () {
+    expect(PlatformCapabilities.mobile.hasOnDeviceScanner, isTrue);
+    expect(PlatformCapabilities.web.hasOnDeviceScanner, isFalse);
+    expect(PlatformCapabilities.desktop.hasOnDeviceScanner, isFalse);
+  });
+
   test('detect() on the test host (Linux) yields the desktop preset', () {
     expect(PlatformCapabilities.detect(), PlatformCapabilities.desktop);
   });

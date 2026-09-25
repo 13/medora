@@ -20,6 +20,7 @@ class DatePickerField extends StatelessWidget {
     this.firstDate,
     this.lastDate,
     this.errorText,
+    this.helperText,
   });
 
   final String label;
@@ -35,6 +36,9 @@ class DatePickerField extends StatelessWidget {
 
   /// Shown under the field, as a form field's validation error.
   final String? errorText;
+
+  /// Shown under the field when there is no [errorText].
+  final String? helperText;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +69,7 @@ class DatePickerField extends StatelessWidget {
         decoration: InputDecoration(
           labelText: label,
           errorText: errorText,
+          helperText: helperText,
           prefixIcon: Icon(icon),
           suffixIcon: date != null
               ? IconButton(

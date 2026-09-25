@@ -55,6 +55,34 @@ class MlKitBarcodeScanPort implements BarcodeScanPort {
   Future<void> close() => _scanner.close();
 }
 
+/// The formats a prescription's barcodes are printed in: Code 128 is what
+/// real prescriptions use (the NRE/NRBE, PIN and tax codes), the others
+/// cover layouts not yet seen.
+const rxBarcodeFormats = [
+  BarcodeFormat.code128,
+  BarcodeFormat.code39,
+  BarcodeFormat.qrCode,
+  BarcodeFormat.dataMatrix,
+];
+
+/// [RawBarcodePort] on ML Kit's barcode scanner, restricted to
+/// [rxBarcodeFormats]. Unlike [MlKitBarcodeScanPort], it hands back the raw
+/// decoded values: `RxExtractor` reads the NRE/NRBE, PIN and tax codes
+/// straight out of them, with no [CodeCandidate] ranking in between.
+class MlKitRawBarcodePort implements RawBarcodePort {
+  final BarcodeScanner _scanner = BarcodeScanner(formats: rxBarcodeFormats);
+
+  @override
+  Future<List<String>> valuesIn(ScanImage image) async {
+    final barcodes = await _scanner.processImage(_inputImage(image));
+    scanLog(describeBarcodes(barcodes));
+    return [for (final b in barcodes) ?b.rawValue];
+  }
+
+  @override
+  Future<void> close() => _scanner.close();
+}
+
 /// [CameraPort] on a `camera` [CameraController] for the back camera.
 class CameraControllerPort implements CameraPort {
   /// [listCameras] and [createController] are seams for

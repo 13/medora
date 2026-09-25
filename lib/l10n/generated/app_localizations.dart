@@ -3949,6 +3949,48 @@ abstract class AppLocalizations {
   /// **'Open'**
   String get rxOpenExisting;
 
+  /// No description provided for @rxNrePart1.
+  ///
+  /// In en, this message translates to:
+  /// **'NRE 1/2'**
+  String get rxNrePart1;
+
+  /// No description provided for @rxNrePart2.
+  ///
+  /// In en, this message translates to:
+  /// **'NRE 2/2'**
+  String get rxNrePart2;
+
+  /// No description provided for @rxNrbe.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription number (NRBE)'**
+  String get rxNrbe;
+
+  /// No description provided for @rxNrbeInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'12 characters: a letter and 11 digits'**
+  String get rxNrbeInvalid;
+
+  /// No description provided for @rxPin.
+  ///
+  /// In en, this message translates to:
+  /// **'PIN'**
+  String get rxPin;
+
+  /// No description provided for @rxPinHint.
+  ///
+  /// In en, this message translates to:
+  /// **'5 characters under the NRBE barcode'**
+  String get rxPinHint;
+
+  /// No description provided for @rxPinInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'5 letters or digits'**
+  String get rxPinInvalid;
+
   /// No description provided for @rxIssuedOn.
   ///
   /// In en, this message translates to:
@@ -4050,6 +4092,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not substitutable'**
   String get rxNonSubstitutable;
+
+  /// No description provided for @rxPosology.
+  ///
+  /// In en, this message translates to:
+  /// **'Dosage'**
+  String get rxPosology;
 
   /// No description provided for @rxStatusOpen.
   ///
@@ -4218,6 +4266,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Prescription {nre}'**
   String rxShareTextNreOnly(String nre);
+
+  /// No description provided for @rxShareTextPin.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription {nre}\nPIN {pin}\nTax code {taxCode}'**
+  String rxShareTextPin(String nre, String pin, String taxCode);
+
+  /// No description provided for @rxShareTextPinNoTaxCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Prescription {nre}\nPIN {pin}'**
+  String rxShareTextPinNoTaxCode(String nre, String pin);
+
+  /// No description provided for @rxScanFirstPageOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first page was read'**
+  String get rxScanFirstPageOnly;
 
   /// No description provided for @rxExpiringTitle.
   ///
@@ -4404,6 +4470,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count, plural, =1{1 attachment} other{{count} attachments}}'**
   String rxAttachmentCount(int count);
+
+  /// No description provided for @rxScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan prescription'**
+  String get rxScan;
+
+  /// No description provided for @rxScanReading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading the prescription…'**
+  String get rxScanReading;
+
+  /// No description provided for @rxScanNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing could be read – please fill in by hand'**
+  String get rxScanNothing;
+
+  /// No description provided for @rxFromScan.
+  ///
+  /// In en, this message translates to:
+  /// **'Read from the scan – please check'**
+  String get rxFromScan;
+
+  /// No description provided for @rxScanNewPerson.
+  ///
+  /// In en, this message translates to:
+  /// **'Add {name} ({taxCode}) as a person?'**
+  String rxScanNewPerson(String name, String taxCode);
+
+  /// No description provided for @rxScanUnknownName.
+  ///
+  /// In en, this message translates to:
+  /// **'unknown name'**
+  String get rxScanUnknownName;
+
+  /// No description provided for @rxScanManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter manually'**
+  String get rxScanManual;
+
+  /// No description provided for @rxPdfOrFile.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF or image file'**
+  String get rxPdfOrFile;
 }
 
 class _AppLocalizationsDelegate

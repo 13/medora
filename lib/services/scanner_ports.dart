@@ -64,6 +64,18 @@ abstract class BarcodeScanPort {
   Future<void> close();
 }
 
+/// Barcode decoding over a [ScanImage] for prescription scanning: the raw
+/// decoded values, with no mapping to a package's [CodeCandidate] — a
+/// prescription's NRE, NRBE, PIN and tax codes are read from these strings
+/// by `RxExtractor`, not from candidate ranking.
+abstract class RawBarcodePort {
+  /// The decoded values, in the order ML Kit found them.
+  Future<List<String>> valuesIn(ScanImage image);
+
+  /// Releases the detector. The caller closes it; nothing else does.
+  Future<void> close();
+}
+
 /// The still camera the capture stage drives.
 ///
 /// One instance survives [dispose]: the screen disposes the camera when the

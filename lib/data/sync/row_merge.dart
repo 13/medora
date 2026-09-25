@@ -258,11 +258,13 @@ const personMerge = MergePolicy(groups: []);
 
 /// Validity follows the kind and the issue date: the kind, the issue date,
 /// the validity, the dispensing limit and the priority move together, as do
-/// closing and cancelling; the items list merges as one value.
+/// closing and cancelling; the items list merges as one value. A PIN only
+/// means anything next to its NRBE, so it moves with `nre`.
 const rxMerge = MergePolicy(
   groups: [
     {'kind', 'issued_on', 'valid_until', 'max_dispensings', 'priority'},
     {'closed_on', 'cancelled'},
+    {'nre', 'pin'},
   ],
 );
 

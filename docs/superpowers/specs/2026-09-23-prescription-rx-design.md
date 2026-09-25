@@ -295,3 +295,20 @@ calibrate the NRE prefix and label keywords.
 
 Share-target intake; family-shared prescriptions; FSE/SPID integration; ticket
 cost calculation; full layout parsing of the promemoria; OCR → dosing plan.
+
+## 11. Phase C addendum (2026-09-24): what real South Tyrol prescriptions look like
+
+Calibrated on two real prescriptions the user photographed (kept off the repo;
+every fixture below is invented). Decoded locally with zxing:
+
+| Document | Barcodes (all **Code 128**) | Text anchors |
+|---|---|---|
+| SSN *promemoria* ("Elektronische Verschreibung – Merkzettel / Ricetta elettronica – promemoria") | NRE split in two: `041A0` (region + "A0") and `0012345678` (10 digits); patient tax code | `DATUM/DATA: dd/mm/yyyy`, `TIPO RICETTA: Assist.SSN`, `Verschreibung gültig für 30 Tage / PRESCRIZIONE VALIDA PER 30 GIORNI`, `BEFREIUNG: NICHT BEFREIT` / `ESENZIONE: NON ESENTE`, `PRIORITA' PRESCRIZIONE (U,B,D,P):`, items `(AIC9) NAME` with quantity column and posology text (`1x3 bei Bedarf`), doctor `ZUNAME UND NAME DES ARZTES: …`, doctor tax code `COD. FIS. MED.` |
+| White electronic prescription ("Ricetta Bianca Elettronica – Promemoria") | **NRBE** `G` + 11 digits (12 chars); **PIN-NRBE** 5 characters; patient tax code; doctor tax code; a QR code with no data ("STAMPATO DA SISTEMATS - RICETTA BIANCA") | `DATA COMPILAZIONE/AUSSTELLUNGSDATUM : dd/mm/yyyy`, items `PRESCRIZIONE/VERSCHREIBUNG: AIC9 - NAME … QTA/MENGE: n`, `POSOLOGIA/POSOLOGIE: …`, `RIPETIBILE PER/WIEDERHOLBAR FÜR 10 VOLTE … GÜLTIG BIS ZUM: dd/mm/yyyy` |
+
+Consequences for the design:
+- **Pharmacy view uses Code 128**, like the paper, not Code 39. An SSN prescription shows the NRE as the same two barcodes as the paper; a white electronic one shows NRBE and PIN; both show the patient's tax code.
+- **`rx.pin`** is added (white electronic prescriptions); `nre` holds either a 15-char NRE or a 12-char NRBE, validated by kind.
+- The repeatable white prescription really is **6 months / 10 times** ("RIPETIBILE PER 10 VOLTE E VALIDA FINO AL" six months after issue) — the phase A default is confirmed.
+- Items carry an optional **posology** text (JSON field, no schema change).
+- Extraction trusts barcodes first; tax codes are told apart by their check character and by the doctor/patient labels next to them; everything read from text is a suggestion the user confirms.

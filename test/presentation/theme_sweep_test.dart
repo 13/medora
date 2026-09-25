@@ -14,7 +14,7 @@ void main() {
     // app's light/dark setting.
     const exemptFiles = {
       'lib/presentation/screens/rx/pharmacy_screen.dart',
-      'lib/presentation/widgets/code39.dart',
+      'lib/presentation/widgets/code128.dart',
       'lib/presentation/screens/rx/attachment_viewer.dart',
     };
     for (final file in Directory(

@@ -196,6 +196,17 @@ void main() {
         'cancelled': 0,
         ...stamps,
       });
+      await db.insert('rx', {
+        'id': 'r2',
+        'person_id': 'p1',
+        'kind': 'white',
+        'nre': 'G00001234567',
+        'pin': '7XQ2K',
+        'issued_on': '2026-09-20',
+        'items': '[]',
+        'cancelled': 0,
+        ...stamps,
+      });
       await db.insert('rx_dispensings', {
         'id': 'd1',
         'rx_id': 'r1',
@@ -212,7 +223,11 @@ void main() {
         (await db.query('persons')).single['tax_code'],
         'RSSMRA85T10A562S',
       );
-      expect((await db.query('rx')).single['nre'], '0410A1234567890');
+      final rx = {for (final r in await db.query('rx')) r['id']: r};
+      expect(rx['r1']!['nre'], '0410A1234567890');
+      expect(rx['r1']!['pin'], isNull);
+      expect(rx['r2']!['nre'], 'G00001234567');
+      expect(rx['r2']!['pin'], '7XQ2K');
       expect((await db.query('rx_dispensings')).single['rx_id'], 'r1');
     },
   );
@@ -884,11 +899,11 @@ void main() {
   // 0.3.0 (schema 15) accepts a backup only up to its own schema and
   // refuses a newer one as `newerSchema` (the test above). A backup made
   // now carries columns (edit times, then the prescription tables, then
-  // attachments) it has no place for, so it must say 18.
-  test('a backup made now is marked schema 18, which 0.3.0 refuses', () async {
+  // attachments, then the rx pin) it has no place for, so it must say 19.
+  test('a backup made now is marked schema 19, which 0.3.0 refuses', () async {
     final file = await makeService().exportToFile(outDir);
     final json = jsonDecode(await file.readAsString()) as Map<String, Object?>;
-    expect(json['schemaVersion'], 18);
+    expect(json['schemaVersion'], 19);
   });
 
   test('a backup made by 0.3.0 (schema 15) still restores', () async {

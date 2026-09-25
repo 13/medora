@@ -28,6 +28,7 @@ class RxModel {
     this.createdAt,
     this.updatedAt,
     this.deletedAt,
+    this.pin,
   });
 
   final String id;
@@ -49,6 +50,10 @@ class RxModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? deletedAt;
+
+  /// The 5-character PIN printed under an NRBE barcode (white electronic
+  /// prescriptions only); null for every other kind.
+  final String? pin;
 
   /// A server row: `items` arrives as a JSON array (jsonb), `cancelled` as
   /// a bool.
@@ -72,6 +77,7 @@ class RxModel {
     createdAt: parseStamp(json['created_at']),
     updatedAt: parseStamp(json['updated_at']),
     deletedAt: parseStamp(json['deleted_at']),
+    pin: json['pin'] as String?,
   );
 
   /// A local row: `items` is JSON text, `cancelled` 0/1.
@@ -107,6 +113,7 @@ class RxModel {
     'closed_on': closedOn == null ? null : _dateText(closedOn!),
     'cancelled': cancelled,
     'notes': notes,
+    'pin': pin,
     'updated_at': updatedAt?.toUtc().toIso8601String(),
     if (deletedAt != null) 'deleted_at': deletedAt!.toUtc().toIso8601String(),
   };
@@ -130,6 +137,7 @@ class RxModel {
     notes: notes,
     createdAt: createdAt,
     updatedAt: updatedAt,
+    pin: pin,
   );
 
   factory RxModel.fromDomain(Rx r) => RxModel(
@@ -151,6 +159,7 @@ class RxModel {
     notes: r.notes,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
+    pin: r.pin,
   );
 
   RxModel copyWith({
@@ -177,6 +186,7 @@ class RxModel {
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt ?? this.deletedAt,
+    pin: pin,
   );
 
   static String _dateText(DateTime d) => d.toIso8601String().split('T').first;

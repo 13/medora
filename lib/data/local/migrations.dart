@@ -16,7 +16,7 @@ class Migration {
 }
 
 /// Current schema version. Must equal the last entry of [kMigrations].
-const int kSchemaVersion = 18;
+const int kSchemaVersion = 19;
 
 final List<Migration> kMigrations = [
   // v11: tombstone column for sync (spec §4.3). Photos keep using image_path
@@ -245,6 +245,11 @@ $sync
         created_at TEXT NOT NULL
       )
     ''');
+  }),
+  // v19: white electronic prescriptions carry a PIN under their NRBE
+  // barcode, next to `nre` (spec §11, calibrated on a real prescription).
+  Migration(19, (db) async {
+    await db.execute('ALTER TABLE rx ADD COLUMN pin TEXT');
   }),
 ];
 

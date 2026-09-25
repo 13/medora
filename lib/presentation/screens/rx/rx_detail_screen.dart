@@ -9,6 +9,7 @@ import 'package:medora/domain/entities/medication.dart';
 import 'package:medora/domain/entities/person.dart';
 import 'package:medora/domain/entities/rx.dart';
 import 'package:medora/domain/repositories/rx_repository.dart';
+import 'package:medora/domain/rx/nre.dart';
 import 'package:medora/domain/rx/rx_rules.dart';
 import 'package:medora/l10n/generated/app_localizations.dart';
 import 'package:medora/presentation/providers/medication_providers.dart';
@@ -26,13 +27,73 @@ import 'package:share_plus/share_plus.dart';
 
 enum _Action { edit, markDone, cancelRx, delete }
 
-/// The text shared for [nre]/[taxCode] — with the tax code when there is
-/// one on file, NRE-only otherwise. Pure so it's testable without the
-/// `share_plus` platform channel.
-String rxShareMessage(AppLocalizations l10n, String? nre, String? taxCode) =>
-    taxCode == null || taxCode.isEmpty
-    ? l10n.rxShareTextNreOnly(nre ?? '')
-    : l10n.rxShareText(nre ?? '', taxCode);
+/// The text shared for [nre]/[taxCode] (and a white prescription's [pin]):
+/// with the tax code and PIN when on file, NRE-only otherwise. Pure so
+/// it's testable without the `share_plus` platform channel.
+String rxShareMessage(
+  AppLocalizations l10n,
+  String? nre,
+  String? taxCode, {
+  String? pin,
+}) {
+  final number = nre ?? '';
+  final hasTaxCode = taxCode != null && taxCode.isNotEmpty;
+  if (pin != null && pin.isNotEmpty) {
+    return hasTaxCode
+        ? l10n.rxShareTextPin(number, pin, taxCode)
+        : l10n.rxShareTextPinNoTaxCode(number, pin);
+  }
+  return hasTaxCode
+      ? l10n.rxShareText(number, taxCode)
+      : l10n.rxShareTextNreOnly(number);
+}
+
+bool _isWhite(RxKind kind) =>
+    kind == RxKind.white || kind == RxKind.whiteRepeatable;
+
+/// The label of [rx]'s number: NRBE for the white kinds, NRE otherwise.
+String rxNumberLabel(AppLocalizations l10n, RxKind kind) =>
+    _isWhite(kind) ? l10n.rxNrbe : l10n.rxNre;
+
+/// The barcodes to print at the pharmacy, like the paper: an SSN/referral
+/// NRE as its two printed halves, a white NRBE followed by its PIN when
+/// set, then the person's tax code when known. Pure so it's testable
+/// without pumping a widget.
+List<PharmacyCode> pharmacyCodesFor(
+  AppLocalizations l10n,
+  Rx rx,
+  String? taxCode,
+) {
+  final codes = <PharmacyCode>[];
+  final nre = rx.nre;
+  if (nre != null) {
+    final halves = Nre.split(nre);
+    if (halves != null) {
+      codes.add(PharmacyCode(label: l10n.rxNrePart1, value: halves.$1));
+      codes.add(PharmacyCode(label: l10n.rxNrePart2, value: halves.$2));
+    } else if (Nre.isNrbe(nre)) {
+      codes.add(PharmacyCode(label: l10n.rxNrbe, value: nre));
+      final pin = rx.pin;
+      if (pin != null && pin.isNotEmpty) {
+        codes.add(PharmacyCode(label: l10n.rxPin, value: pin));
+      }
+    } else if (nre.isNotEmpty) {
+      // A number stored before the NRE/NRBE shapes were enforced: print it
+      // whole rather than not at all.
+      codes.add(PharmacyCode(label: rxNumberLabel(l10n, rx.kind), value: nre));
+      if (_isWhite(rx.kind)) {
+        final pin = rx.pin;
+        if (pin != null && pin.isNotEmpty) {
+          codes.add(PharmacyCode(label: l10n.rxPin, value: pin));
+        }
+      }
+    }
+  }
+  if (taxCode != null && taxCode.isNotEmpty) {
+    codes.add(PharmacyCode(label: l10n.rxTaxCode, value: taxCode));
+  }
+  return codes;
+}
 
 class RxDetailScreen extends ConsumerWidget {
   const RxDetailScreen({super.key, required this.rxId});
@@ -125,7 +186,7 @@ class RxDetailScreen extends ConsumerWidget {
   Future<void> _share(BuildContext context, Rx rx, Person? person) async {
     final l10n = AppLocalizations.of(context);
     final box = context.findRenderObject() as RenderBox?;
-    final text = rxShareMessage(l10n, rx.nre, person?.taxCode);
+    final text = rxShareMessage(l10n, rx.nre, person?.taxCode, pin: rx.pin);
     await SharePlus.instance.share(
       ShareParams(
         text: text,
@@ -212,6 +273,7 @@ class RxDetailScreen extends ConsumerWidget {
         final left = RxRules.daysLeft(rx, now);
         final canCollect =
             status == RxStatus.open || status == RxStatus.partial;
+        final pharmacyCodes = pharmacyCodesFor(l10n, rx, person?.taxCode);
         // A notification tap opens this screen with home landed on first
         // (see `ReminderService._openRxDetail`), but a defensive fallback
         // still belongs here: with nothing to pop to, the default AppBar
@@ -279,7 +341,17 @@ class RxDetailScreen extends ConsumerWidget {
                   value: person?.name ?? l10n.rxUnknownPerson,
                 ),
               if (rx.nre != null)
-                DetailRow(icon: Icons.tag, label: l10n.rxNre, value: rx.nre!),
+                DetailRow(
+                  icon: Icons.tag,
+                  label: rxNumberLabel(l10n, rx.kind),
+                  value: rx.nre!,
+                ),
+              if (rx.pin case final pin? when pin.isNotEmpty)
+                DetailRow(
+                  icon: Icons.pin_outlined,
+                  label: l10n.rxPin,
+                  value: pin,
+                ),
               DetailRow(
                 icon: Icons.event_outlined,
                 label: l10n.rxIssuedOn,
@@ -316,7 +388,7 @@ class RxDetailScreen extends ConsumerWidget {
                   value: rx.notes!,
                 ),
               const SizedBox(height: 16),
-              if (rx.nre != null && canCollect)
+              if (canCollect && pharmacyCodes.isNotEmpty)
                 FilledButton.icon(
                   key: const Key('rx_show_pharmacy'),
                   icon: const Icon(Icons.qr_code_2),
@@ -324,8 +396,7 @@ class RxDetailScreen extends ConsumerWidget {
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => PharmacyScreen(
-                        nre: rx.nre!,
-                        taxCode: person?.taxCode,
+                        codes: pharmacyCodes,
                         title: person?.name ?? rxKindLabel(l10n, rx.kind),
                       ),
                     ),
@@ -348,6 +419,7 @@ class RxDetailScreen extends ConsumerWidget {
                     [
                       '${given[i.id] ?? 0} / ${i.packs}',
                       if (i.nonSubstitutable) l10n.rxNonSubstitutable,
+                      if (i.posology case final p? when p.isNotEmpty) p,
                     ].join(' · '),
                   ),
                   trailing: i.medicationId == null

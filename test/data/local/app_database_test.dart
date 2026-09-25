@@ -89,6 +89,7 @@ void main() {
         16,
         17,
         18,
+        19,
       ]);
 
       // Reopen: nothing re-applied, no duplicate rows.
@@ -103,6 +104,7 @@ void main() {
         16,
         17,
         18,
+        19,
       ]);
       await again.close();
       await dir.delete(recursive: true);
@@ -164,6 +166,7 @@ void main() {
       16,
       17,
       18,
+      19,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
@@ -236,6 +239,7 @@ void main() {
         16,
         17,
         18,
+        19,
       ]);
       await AppDatabase.instance.reset();
       await dir.delete(recursive: true);
@@ -313,6 +317,7 @@ void main() {
       16,
       17,
       18,
+      19,
     ]);
     // The pre-existing row survives with the new columns null.
     final row = (await upgraded.query(
@@ -476,6 +481,7 @@ void main() {
       16,
       17,
       18,
+      19,
     ]);
     await AppDatabase.instance.reset();
     await dir.delete(recursive: true);
@@ -543,6 +549,13 @@ void main() {
       await columnsOf(db, 'attachment_removals'),
       containsAll(<String>['remote_path', 'created_at']),
     );
+    await tearDownTestDatabase();
+  });
+
+  test('migration 19 adds the pin column to rx', () async {
+    await setUpTestDatabase();
+    final db = await AppDatabase.instance.database;
+    expect(await columnsOf(db, 'rx'), contains('pin'));
     await tearDownTestDatabase();
   });
 

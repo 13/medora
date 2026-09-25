@@ -97,6 +97,96 @@ void main() {
     );
   });
 
+  test('share text of a white prescription includes its PIN', () {
+    expect(
+      rxShareMessage(l10n, 'G00001234567', 'RSSMRA85T10A562S', pin: '7XQ2K'),
+      'Prescription G00001234567\nPIN 7XQ2K\nTax code RSSMRA85T10A562S',
+    );
+    expect(
+      rxShareMessage(l10n, 'G00001234567', null, pin: '7XQ2K'),
+      'Prescription G00001234567\nPIN 7XQ2K',
+    );
+    expect(
+      rxShareMessage(l10n, 'G00001234567', null, pin: ''),
+      'Prescription G00001234567',
+    );
+  });
+
+  Rx codesRx({RxKind kind = RxKind.ssn, String? nre, String? pin}) => Rx(
+    id: 'rx1',
+    personId: 'p1',
+    kind: kind,
+    nre: nre,
+    pin: pin,
+    issuedOn: DateTime(2026, 9),
+    createdAt: DateTime(2026, 9),
+  );
+
+  test('an SSN prescription prints both NRE halves, then the tax code', () {
+    final codes = pharmacyCodesFor(
+      l10n,
+      codesRx(nre: '041A00012345678'),
+      'RSSMRA85T10A562S',
+    );
+    expect(codes.map((c) => (c.label, c.value)), [
+      ('NRE 1/2', '041A0'),
+      ('NRE 2/2', '0012345678'),
+      ('Tax code', 'RSSMRA85T10A562S'),
+    ]);
+  });
+
+  test('a white prescription prints the NRBE, its PIN, then the tax code', () {
+    final codes = pharmacyCodesFor(
+      l10n,
+      codesRx(kind: RxKind.white, nre: 'G00001234567', pin: '7XQ2K'),
+      'RSSMRA85T10A562S',
+    );
+    expect(codes.map((c) => (c.label, c.value)), [
+      ('Prescription number (NRBE)', 'G00001234567'),
+      ('PIN', '7XQ2K'),
+      ('Tax code', 'RSSMRA85T10A562S'),
+    ]);
+  });
+
+  test('a white prescription with no PIN on file prints only the NRBE', () {
+    final codes = pharmacyCodesFor(
+      l10n,
+      codesRx(kind: RxKind.white, nre: 'G00001234567'),
+      null,
+    );
+    expect(codes.map((c) => (c.label, c.value)), [
+      ('Prescription number (NRBE)', 'G00001234567'),
+    ]);
+  });
+
+  test('no NRE/NRBE and no tax code on file prints nothing', () {
+    expect(pharmacyCodesFor(l10n, codesRx(), null), isEmpty);
+  });
+
+  test('a stored number of neither shape prints as one barcode', () {
+    final codes = pharmacyCodesFor(
+      l10n,
+      codesRx(nre: '0410A1234567890'),
+      'RSSMRA85T10A562S',
+    );
+    expect(codes.map((c) => (c.label, c.value)), [
+      ('Prescription number (NRE)', '0410A1234567890'),
+      ('Tax code', 'RSSMRA85T10A562S'),
+    ]);
+  });
+
+  test('a white stored number of neither shape prints as one NRBE', () {
+    final codes = pharmacyCodesFor(
+      l10n,
+      codesRx(kind: RxKind.white, nre: 'W123', pin: '7XQ2K'),
+      null,
+    );
+    expect(codes.map((c) => (c.label, c.value)), [
+      ('Prescription number (NRBE)', 'W123'),
+      ('PIN', '7XQ2K'),
+    ]);
+  });
+
   final rx = Rx(
     id: 'rx1',
     personId: 'p1',
@@ -169,6 +259,59 @@ void main() {
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.text('Brufen 400'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an item shows its posology', (tester) async {
+    final withPosology = rx.copyWith(
+      items: const [
+        RxItem(
+          id: 'i1',
+          description: 'Brufen 400',
+          packs: 2,
+          posology: '1x3 bei Bedarf',
+        ),
+      ],
+    );
+    await pump(
+      tester,
+      repo: _Repo(
+        byId: Result.success(RxWithDispensings(withPosology, const [])),
+      ),
+      meds: _EmptyMeds.new,
+    );
+    expect(find.text('0 / 2 · 1x3 bei Bedarf'), findsOneWidget);
+  });
+
+  testWidgets('a white prescription labels its NRBE and shows its PIN', (
+    tester,
+  ) async {
+    final white = rx.copyWith(
+      kind: RxKind.white,
+      nre: 'G00001234567',
+      pin: '7XQ2K',
+    );
+    await pump(
+      tester,
+      repo: _Repo(byId: Result.success(RxWithDispensings(white, const []))),
+      meds: _EmptyMeds.new,
+    );
+    expect(find.text('Prescription number (NRBE): '), findsOneWidget);
+    expect(find.text('Prescription number (NRE): '), findsNothing);
+    expect(find.text('G00001234567'), findsOneWidget);
+    expect(find.text('PIN: '), findsOneWidget);
+    expect(find.text('7XQ2K'), findsOneWidget);
+  });
+
+  testWidgets('an SSN prescription labels its NRE and shows no PIN', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      repo: _Repo(byId: Result.success(RxWithDispensings(rx, const []))),
+      meds: _EmptyMeds.new,
+    );
+    expect(find.text('Prescription number (NRE): '), findsOneWidget);
+    expect(find.text('PIN: '), findsNothing);
   });
 
   testWidgets(

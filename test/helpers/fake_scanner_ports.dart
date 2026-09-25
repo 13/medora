@@ -56,6 +56,33 @@ class FakeBarcodeScan implements BarcodeScanPort {
   Future<void> close() async => closeCalls++;
 }
 
+/// Raw barcode decoding (see `RawBarcodePort`) that answers from a script
+/// instead of ML Kit; used by `rx_scan_service_test.dart`.
+class FakeRawBarcodePort implements RawBarcodePort {
+  FakeRawBarcodePort(this.valuesByPass) : assert(valuesByPass.isNotEmpty);
+
+  /// Values returned per call, in order; a null entry throws (the scanner
+  /// failing), and the last entry answers every further call.
+  final List<List<String>?> valuesByPass;
+
+  /// Every image handed in, in order.
+  final calls = <ScanImage>[];
+  int closeCalls = 0;
+  var _index = 0;
+
+  @override
+  Future<List<String>> valuesIn(ScanImage image) async {
+    calls.add(image);
+    final values = valuesByPass[_index.clamp(0, valuesByPass.length - 1)];
+    _index++;
+    if (values == null) throw StateError('barcode scanning failed');
+    return values;
+  }
+
+  @override
+  Future<void> close() async => closeCalls++;
+}
+
 /// A camera that hands out a photo the test wrote.
 class FakeCamera implements CameraPort {
   FakeCamera({this.photoPath, this.opens = true, this.failsToOpen = false});

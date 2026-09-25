@@ -14,6 +14,7 @@ import 'package:medora/presentation/providers/prescription_providers.dart';
 import 'package:medora/presentation/providers/treatment_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/rx/rx_list_view.dart';
+import 'package:medora/presentation/screens/rx/rx_scan_sheet.dart';
 import 'package:medora/presentation/screens/treatment/end_treatment_dialog.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 import 'package:medora/presentation/widgets/settings_action.dart';
@@ -316,11 +317,9 @@ class _TreatmentListScreenState extends ConsumerState<TreatmentListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.push(
-          _pane == _TreatmentsPane.treatments
-              ? AppRoutes.addTreatment
-              : AppRoutes.addRx,
-        ),
+        onPressed: () => _pane == _TreatmentsPane.treatments
+            ? context.push(AppRoutes.addTreatment)
+            : showAddRxSheet(context),
         tooltip: _pane == _TreatmentsPane.treatments
             ? l10n.addTreatment
             : l10n.rxAdd,

@@ -1,26 +1,26 @@
-/// Medora - What the pharmacy scans: the prescription number and the tax
-/// code, as barcodes and in large type, on a white page.
+/// Medora - What the pharmacy scans: the prescription's Code 128 barcodes
+/// and their values in large type, on a white page — the same barcodes,
+/// with the same start/checksum/stop, as the ones printed on the paper.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:medora/l10n/generated/app_localizations.dart';
-import 'package:medora/presentation/widgets/code39.dart';
+import 'package:medora/presentation/widgets/code128.dart';
+
+/// One barcode shown on [PharmacyScreen]: a label and the value it encodes.
+class PharmacyCode {
+  const PharmacyCode({required this.label, required this.value});
+  final String label;
+  final String value;
+}
 
 class PharmacyScreen extends StatelessWidget {
-  const PharmacyScreen({
-    super.key,
-    required this.nre,
-    required this.taxCode,
-    required this.title,
-  });
+  const PharmacyScreen({super.key, required this.title, required this.codes});
 
-  final String nre;
-  final String? taxCode;
   final String title;
+  final List<PharmacyCode> codes;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     const big = TextStyle(
       color: Colors.black,
       fontSize: 26,
@@ -39,14 +39,11 @@ class PharmacyScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 24),
           children: [
-            _Label(l10n.rxNre),
-            Code39Barcode(nre),
-            Center(child: SelectableText(nre, style: big)),
-            if (taxCode != null) ...[
-              const SizedBox(height: 32),
-              _Label(l10n.rxTaxCode),
-              Code39Barcode(taxCode!),
-              Center(child: SelectableText(taxCode!, style: big)),
+            for (var i = 0; i < codes.length; i++) ...[
+              if (i > 0) const SizedBox(height: 32),
+              _Label(codes[i].label),
+              Code128Barcode(codes[i].value),
+              Center(child: SelectableText(codes[i].value, style: big)),
             ],
           ],
         ),

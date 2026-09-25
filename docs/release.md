@@ -258,6 +258,34 @@ If this repository is ever distributed through Google Play instead of GitHub
 Releases, build with `--dart-define=UPDATE_REPO=` (empty) so the Play build
 never checks GitHub for updates — Play does not allow apps to self-update.
 
+## Device checklist (this release: prescription scanning)
+
+Prescription scanning (`docs/architecture.md` → Prescriptions → Scanning)
+only runs where ML Kit does, and the barcode readers on the other end are
+real phone cameras, so no unit or widget test replaces trying it on real
+devices and real paper before this release ships. On an Android and an iOS
+device:
+
+- Scan an SSN paper promemoria (photo, both camera and gallery pick) — the
+  NRE and tax code come from its barcodes, the rest from the printed text.
+- Scan a white electronic promemoria — the NRBE and PIN come from its
+  barcode/print, kind is detected as white (repeatable if the text says so).
+- Scan a PDF saved from the FSE (Fascicolo Sanitario Elettronico) — read
+  from its text layer with no OCR pass when it has one, otherwise from the
+  rendered first page.
+- Open a saved prescription's "Show at pharmacy" view and read each printed
+  Code 128 with an ordinary phone barcode-scanner app, off the screen, to
+  confirm it decodes to the same value shown under it.
+
+Use invented data for anything written down or screenshotted from this
+checklist — never a real name, tax code, NRE, PIN or address (the invented
+values already used in tests are in `test/fixtures/rx_scan/`).
+
+A build made with `--dart-define=SCAN_DEBUG=true` logs every recognised
+text line and decoded barcode — on a prescription that is the tax code,
+NRE/NRBE, PIN and name — to the device log. Never give such a build to a
+tester who will scan real prescriptions; test it with invented ones only.
+
 ## iOS
 
 Signing is handled by Xcode, not by this repo: open `ios/Runner.xcworkspace`,
@@ -386,6 +414,52 @@ systemctl --user daemon-reload
 Enable lingering (`sudo loginctl enable-linger $USER`) if the timer should
 run while nobody is logged in. The app warns when the register it holds is
 45 days old or older (Settings → Data, and on the scan review).
+
+## PDFium binaries (pdfrx)
+
+The prescription scanner reads PDFs through `pdfrx` (`pubspec.yaml` pins
+it exactly, `pdfrx: 2.4.8`, so a `pub upgrade` never moves it — and with it
+the PDFium binary it downloads — unreviewed). That is deliberately not the
+newest release: `pdfrx >=2.6.0` requires Dart SDK `>=3.13.0`, above this
+project's constraint (`^3.12.0`, Dart 3.12.2 through the `.fvmrc` pin) —
+confirmed with `fvm flutter pub add pdfrx:2.6.5 --dry-run`, which fails
+version solving on exactly that. Move it up once the Flutter/Dart pin does,
+the same as the packages under "Dependency deferrals" below.
+
+**`pdfrx` needs network access to `github.com`, not just `pub.dev`, the
+first time it builds or tests on a machine.** It pulls in `pdfrx_engine` →
+`pdfium_flutter` → `pdfium_dart`, and `pdfium_dart` ships PDFium as a Dart
+**native asset** rather than prebuilt inside the package: its build hook
+(`hook/build.dart`, run by every `flutter build` and `flutter test` for
+every code-asset target platform involved — the host OS for `flutter test`,
+each ABI for an Android build) downloads the matching `libpdfium`
+straight from
+
+```
+https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F7811/pdfium-<platform>-<arch>.tgz
+```
+
+The release tag (`chromium/7811` at the time of writing) is a literal
+constant, `_pdfiumRelease` in `pdfium_dart`'s `hook/build.dart` (find it
+under `~/.pub-cache/hosted/pub.dev/pdfium_dart-<version>/hook/build.dart` —
+not recorded in `pubspec.lock`, which only pins the Dart package version,
+not the binary it downloads at build time). **The hook does not verify a
+checksum or signature on what it downloads**: it only checks the HTTP
+response is `200` and that the expected file exists inside the fetched
+`.tgz`, then writes it out — integrity rests entirely on TLS to GitHub and
+that constant matching what `pdfium_dart-<version>` was tested against.
+
+The hook is idempotent per machine (`if (await output.exists()) return;`
+against the shared native-assets output directory), so this only bites a
+**cold cache** — a fresh CI runner, or a clean checkout on a machine that
+has never built this branch's `pdfrx` version before. Once fetched once for
+a given OS/arch, later builds and `flutter test` runs on that same machine
+skip the download entirely. For CI: either allowlist egress to
+`github.com/bblanchon/pdfium-binaries` alongside the usual `pub.dev`
+egress, or cache the native-assets build-hook output directory across runs
+the same way `~/.pub-cache` is cached, keyed on the `pdfium_dart` version.
+A sandboxed/hermetic build with no egress at all will fail outright the
+first time it touches `pdfrx`.
 
 ## Dependency deferrals
 

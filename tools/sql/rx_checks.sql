@@ -67,6 +67,20 @@ do $$ begin
     'insert: a dispensing under a live prescription lands live and stamped';
 end $$;
 
+-- A white electronic prescription's PIN is 5 letters or digits, or absent.
+do $$ begin
+  begin
+    insert into rx (id, user_id, kind, issued_on, pin, write_id, edited_at)
+      values ('rx-pin-bad', auth.uid(), 'white', '2026-09-01', 'bad!', gen_random_uuid(), now());
+    assert false, 'check: pin must be 5 letters or digits';
+  exception when check_violation then null;
+  end;
+end $$;
+update rx set pin = '7XQ2K', write_id = gen_random_uuid(), edited_at = now() where id = 'rx-2';
+do $$ begin
+  assert (select pin from rx where id = 'rx-2') = '7XQ2K', 'pin: a valid PIN is stored';
+end $$;
+
 -- Row-level security: user E sees none of D's rows and cannot hang a
 -- dispensing on D's prescription, neither new nor by moving its own.
 set request.jwt.claim.sub = '00000000-0000-0000-0000-00000000000e';

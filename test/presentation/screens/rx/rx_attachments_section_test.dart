@@ -18,6 +18,7 @@ import 'package:medora/l10n/generated/app_localizations_en.dart';
 import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/providers.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
+import 'package:medora/presentation/screens/rx/attachment_picker.dart';
 import 'package:medora/presentation/screens/rx/attachment_viewer.dart';
 import 'package:medora/presentation/screens/rx/rx_attachments_section.dart';
 import 'package:medora/presentation/screens/rx/rx_list_view.dart';

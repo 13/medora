@@ -36,6 +36,7 @@ const _notificationsOnly = PlatformCapabilities(
   hasInAppUpdates: false,
   hasSupplementRegister: false,
   hasFileSystem: true,
+  hasOnDeviceScanner: false,
 );
 
 const _fixedBuildInfo = BuildInfo(

@@ -244,10 +244,67 @@ include them.
   stock scheduler: same hour, same 16-slot id block per id, offset **10**
   (`0xA`, after expiry `0x8` and low stock `0x9`), payload `rx:<id>` which
   opens the prescription.
-- **Pharmacy view.** `PharmacyScreen` shows the NRE and the tax code as Code
-  39 barcodes (`code39.dart`, drawn without a library, with the quiet zone
-  kept at every width) for the pharmacist to scan off the screen. It does
-  not raise the screen brightness yet: that needs a plugin.
+- **Pharmacy view.** `PharmacyScreen` shows the barcodes the paper itself
+  carries, as Code 128 (`code128.dart`, drawn without a library, with the
+  same start/checksum/stop as the print) for the pharmacist to scan off the
+  screen: an SSN/referral NRE as its two printed halves (5 then 10
+  characters, `Nre.split`), a white NRBE followed by its PIN when set, then
+  the person's tax code when known (`pharmacyCodesFor`). It does not raise
+  the screen brightness yet: that needs a plugin.
+
+### Scanning
+
+Adding a prescription can start from a scan instead of a blank form, but
+scanning is offered only where an on-device reader exists —
+`PlatformCapabilities.hasOnDeviceScanner`, true on Android and iOS only:
+`showAddRxSheet` (`rx_scan_sheet.dart`) then offers a camera photo (also
+needs `hasCamera`), a gallery photo or a PDF/image file. Everywhere else
+(desktop, web) the add action goes straight to the manual form — there is
+no reader to make a scan worthwhile even where a file can still be picked.
+
+Pipeline: picker → `RxScanService` → `RxExtractor` → `RxDraft` → the form,
+prefilled with hints → save, with the original attached.
+
+- **RxScanService** (`lib/services/rx_scan_service.dart`) reads a photo or a
+  PDF. A photo is tried at the four right-angle rotations (0/90/180/270°),
+  since a barcode may be printed sideways; the loop stops early once the
+  barcodes decoded so far already give an NRE/NRBE and a tax code, and text
+  recognition then runs once, on the rotation that decoded the most
+  barcodes. A PDF's own text layer is used as-is when it has one; only a PDF
+  with no text layer at all is rasterized (page 1, via `pdfrx`/PDFium) and
+  OCR'd — barcodes are always read off that rendered first page. Every scan
+  works in its own directory under `<temp>/rx_scan/<scan>/`, deleted when
+  the scan ends and swept by the next scan if still there past 10 minutes
+  (`kRxScanDirMaxAge`), never in the shared temp root, so a late write from
+  a timed-out pass cannot land somewhere still in use. A file over 20 MB or
+  60 MP, or a read that fails outright, ends in `RxScanResult.failed` (the
+  size refusals also set `refusal: ImportRefusal.tooLarge`, which the sheet
+  shows before opening anything) rather than throwing: a scan is a
+  convenience, never a hard requirement.
+- **RxExtractor** (`lib/domain/rx/rx_extractor.dart`) turns decoded barcodes
+  and recognised text into an `RxDraft`. Barcodes are trusted; text is only
+  ever a suggestion the user checks in the form (`RxDraft.fromBarcode` marks
+  which fields came from a barcode, for the `rxFromScan` hint). The
+  NRE/NRBE is never read from text, only from a barcode: a misread digit
+  there would send the user to the pharmacy with a wrong number.
+  - **Barcode classes.** An SSN/referral NRE prints as two barcodes, 5 then
+    10 characters (`Nre.split`); a white electronic NRBE is one
+    12-character barcode, with its 5-character PIN printed (and barcoded)
+    under it; a person's tax code (codice fiscale) is a 16-character
+    barcode, one for the patient and, on some layouts, another for the
+    doctor.
+  - **Patient vs. doctor tax code.** A code matching a person already on
+    the device is the patient; failing that, a text label naming exactly
+    one code decides; failing both, order decides (the first candidate is
+    the patient, the next the doctor) and that guess is never marked
+    barcode-trusted.
+- **Privacy.** Everything runs on the device: no network OCR, nothing
+  scanned is ever sent anywhere. The picked photo/PDF is attached to the
+  prescription once saved (see Attachments below); the intermediate
+  rotation/rasterized images used only to decode it live in the scan's own
+  temp directory and are gone within 10 minutes even if the scan is
+  interrupted.
+- **Platforms.** Android and iOS only; see `hasOnDeviceScanner` above.
 
 ### Attachments
 

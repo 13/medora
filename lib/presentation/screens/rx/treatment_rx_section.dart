@@ -12,6 +12,7 @@ import 'package:medora/presentation/providers/now_provider.dart';
 import 'package:medora/presentation/providers/rx_providers.dart';
 import 'package:medora/presentation/router/app_router.dart';
 import 'package:medora/presentation/screens/rx/rx_labels.dart';
+import 'package:medora/presentation/screens/rx/rx_scan_sheet.dart';
 import 'package:medora/presentation/widgets/async_value_view.dart';
 
 class TreatmentRxSection extends ConsumerWidget {
@@ -49,11 +50,11 @@ class TreatmentRxSection extends ConsumerWidget {
                 final personId = matching.length == 1
                     ? matching.single.id
                     : null;
-                var location = '${AppRoutes.addRx}?treatmentId=${treatment.id}';
-                if (personId != null) {
-                  location = '$location&personId=$personId';
-                }
-                context.push(location);
+                showAddRxSheet(
+                  context,
+                  treatmentId: treatment.id,
+                  personId: personId,
+                );
               },
               icon: const Icon(Icons.add, size: 18),
               label: Text(l10n.add),

@@ -21,7 +21,7 @@ void main() {
     id: 'r1',
     personId: 'p1',
     kind: RxKind.ssn,
-    nre: '0410A1234567890',
+    nre: '041A00012345678',
     issuedOn: DateTime(2026, 9, 20),
     validUntil: DateTime(2026, 10, 20),
     items: const [
@@ -30,6 +30,7 @@ void main() {
         description: 'Tachipirina 20 cpr',
         packs: 2,
         nonSubstitutable: true,
+        posology: '1x3 bei Bedarf',
       ),
     ],
     createdAt: at,
@@ -40,12 +41,44 @@ void main() {
     final local = RxLocalDatasource(now: () => at);
     await local.upsert(rx, syncStatus: SyncStatus.pendingCreate);
     final back = (await local.getById('r1'))!;
-    expect(back.nre, '0410A1234567890');
+    expect(back.nre, '041A00012345678');
     expect(back.issuedOn, DateTime(2026, 9, 20));
     expect(back.validUntil, DateTime(2026, 10, 20));
     expect(back.items.single.nonSubstitutable, isTrue);
     expect(back.items.single.packs, 2);
-    expect((await local.getByNre('0410A1234567890'))?.id, 'r1');
+    expect(back.items.single.posology, '1x3 bei Bedarf');
+    expect((await local.getByNre('041A00012345678'))?.id, 'r1');
+  });
+
+  test('item posology round-trips through the wire JSON', () {
+    final back = RxModel.fromJson(rx.toJson()).toDomain();
+    expect(back.items.single.posology, '1x3 bei Bedarf');
+    final bare = RxModel.fromJson(
+      RxModel.fromDomain(
+        back.copyWith(
+          items: [const RxItem(id: 'i2', description: 'Aspirina')],
+        ),
+      ).toJson(),
+    );
+    expect(bare.items.single.posology, isNull);
+    expect(bare.items.single.toJson().containsKey('posology'), isFalse);
+  });
+
+  test('a pin round-trips with an NRBE', () async {
+    final local = RxLocalDatasource(now: () => at);
+    final white = RxModel(
+      id: 'r2',
+      kind: RxKind.white,
+      nre: 'G00001234567',
+      pin: '7XQ2K',
+      issuedOn: DateTime(2026, 9, 20),
+      createdAt: at,
+      updatedAt: at,
+    );
+    await local.upsert(white, syncStatus: SyncStatus.pendingCreate);
+    final back = (await local.getById('r2'))!;
+    expect(back.nre, 'G00001234567');
+    expect(back.pin, '7XQ2K');
   });
 
   test('the wire copy of a stored row equals the model wire copy', () async {

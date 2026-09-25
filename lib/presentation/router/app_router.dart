@@ -22,6 +22,7 @@ import 'package:medora/presentation/screens/persons/person_form_screen.dart';
 import 'package:medora/presentation/screens/persons/person_list_screen.dart';
 import 'package:medora/presentation/screens/rx/rx_detail_screen.dart';
 import 'package:medora/presentation/screens/rx/rx_form_screen.dart';
+import 'package:medora/presentation/screens/rx/rx_scan_sheet.dart';
 import 'package:medora/presentation/screens/scanner/barcode_scanner_screen.dart';
 import 'package:medora/presentation/screens/settings/settings_screen.dart';
 import 'package:medora/presentation/screens/stats/stats_screen.dart';
@@ -215,10 +216,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           // addRx before rxDetail (Task 10) so '/rx/add' is not read as an id.
           GoRoute(
             path: AppRoutes.addRx,
-            builder: (_, state) => RxFormScreen(
-              treatmentId: state.uri.queryParameters['treatmentId'],
-              personId: state.uri.queryParameters['personId'],
-            ),
+            builder: (_, state) {
+              // Set when the prescription was scanned (rx_scan_sheet.dart).
+              final scan = state.extra is RxScanPrefill
+                  ? state.extra! as RxScanPrefill
+                  : null;
+              return RxFormScreen(
+                treatmentId: state.uri.queryParameters['treatmentId'],
+                personId: state.uri.queryParameters['personId'],
+                draft: scan?.draft,
+                originalPath: scan?.originalPath,
+                originalName: scan?.originalName,
+              );
+            },
           ),
           GoRoute(
             path: AppRoutes.editRx,

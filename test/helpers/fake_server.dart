@@ -192,6 +192,7 @@ const serverColumns = <String, Map<String, Object?>>{
     'treatment_id': null,
     'kind': null,
     'nre': null,
+    'pin': null,
     'issued_on': null,
     'valid_until': null,
     'doctor': null,
