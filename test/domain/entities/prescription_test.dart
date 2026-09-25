@@ -365,8 +365,10 @@ void main() {
         durationDays: 3,
         startTime: DateTime(2026, 3, 28, 8),
       ).scheduledDoseTimes;
-      // 08:00 CET plus 24 hours is 09:00 CEST.
-      expect(times[2], DateTime(2026, 3, 29, 9));
+      // Elapsed hours, whatever the zone: in Europe/Rome 08:00 CET plus
+      // 24 hours is 09:00 CEST; in a zone without DST (CI runs in UTC) it
+      // stays 08:00.
+      expect(times[2], DateTime(2026, 3, 28, 8).add(const Duration(hours: 24)));
     });
 
     test('a fixed-interval course across a DST change has exactly '
